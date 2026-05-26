@@ -12,6 +12,7 @@ import {
 } from '@/services/deliveries';
 import { initiateCall } from '@/services/calls';
 import { ensureMicPermission } from '@/lib/calls/permissions';
+import { canPlaceCall } from '@/lib/calls/availability';
 import {
   AppBar, Avatar, Button, Card, Empty, Hint, Icon, StatusPill,
 } from '@/components/ui';
@@ -344,8 +345,9 @@ export function DeliveryDetail() {
                   </Text>
                   {/* Quick-call the assigned agent. Hidden when the agent IS
                       the one viewing (calling yourself is pointless and the
-                      DB-side RPC would reject anyway). */}
-                  {d.assigned_agent_id && d.assigned_agent_id !== user.userId ? (
+                      DB-side RPC would reject anyway) and on web (no Agora
+                      bridge — see canPlaceCall). */}
+                  {d.assigned_agent_id && d.assigned_agent_id !== user.userId && canPlaceCall() ? (
                     <TouchableOpacity
                       onPress={() => callTeammate(d.assigned_agent_id as string)}
                       disabled={callBusy}
@@ -379,25 +381,27 @@ export function DeliveryDetail() {
               Team directory with related_delivery_id so the call gets linked
               for audit. Agents typically use this to ring admin/dispatch;
               admins/dispatchers can also use it to call someone other than
-              the assigned agent. */}
-          <TouchableOpacity
-            onPress={() => router.push(`/(call)/team?related_delivery_id=${d.id}`)}
-            style={{
-              marginTop: 12, paddingTop: 12,
-              borderTopWidth: 1, borderTopColor: colors.border,
-              flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-            }}
-            accessibilityLabel="Call a teammate about this delivery"
-            accessibilityRole="button"
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Icon name="phone" size={16} color={colors.success} />
-              <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.textPrimary }}>
-                {user.role === 'agent' ? 'Call admin / dispatch' : 'Call a teammate'}
-              </Text>
-            </View>
-            <Icon name="chevronRight" size={16} color={colors.textSecondary} />
-          </TouchableOpacity>
+              the assigned agent. Hidden on web (no Agora bridge). */}
+          {canPlaceCall() ? (
+            <TouchableOpacity
+              onPress={() => router.push(`/(call)/team?related_delivery_id=${d.id}`)}
+              style={{
+                marginTop: 12, paddingTop: 12,
+                borderTopWidth: 1, borderTopColor: colors.border,
+                flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+              }}
+              accessibilityLabel="Call a teammate about this delivery"
+              accessibilityRole="button"
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Icon name="phone" size={16} color={colors.success} />
+                <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.textPrimary }}>
+                  {user.role === 'agent' ? 'Call admin / dispatch' : 'Call a teammate'}
+                </Text>
+              </View>
+              <Icon name="chevronRight" size={16} color={colors.textSecondary} />
+            </TouchableOpacity>
+          ) : null}
         </Card>
 
         {/* Messages (only renders when an agent has flagged) */}

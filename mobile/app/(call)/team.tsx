@@ -3,13 +3,14 @@ import {
   View, Text, FlatList, TouchableOpacity, ActivityIndicator, Alert, RefreshControl, Linking,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { AppBar, Avatar, Empty, Icon } from '@/components/ui';
+import { AppBar, Avatar, Banner, Empty, Icon } from '@/components/ui';
 import { colors, fonts, radii, spacing } from '@/lib/theme';
 import { useAuth } from '@/hooks/useAuth';
 import {
   listCallableUsers, initiateCall, type CallableUser,
 } from '@/services/calls';
 import { ensureMicPermission } from '@/lib/calls/permissions';
+import { canPlaceCall, CALL_UNSUPPORTED_HINT } from '@/lib/calls/availability';
 
 const ROLE_LABEL: Record<string, string> = {
   admin:      'Admin',
@@ -54,6 +55,10 @@ export default function TeamScreen() {
 
   const onCall = useCallback(async (target: CallableUser) => {
     if (callingId) return;
+    if (!canPlaceCall()) {
+      Alert.alert('Calls not available on web', CALL_UNSUPPORTED_HINT);
+      return;
+    }
     setCallingId(target.id);
     try {
       const micOk = await ensureMicPermission();
@@ -98,9 +103,16 @@ export default function TeamScreen() {
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <AppBar
         title="Team"
-        subtitle="Tap a name to start a call"
+        subtitle={canPlaceCall() ? 'Tap a name to start a call' : 'Calls available on the mobile app'}
         onBack={() => router.back()}
       />
+      {!canPlaceCall() ? (
+        <View style={{ paddingHorizontal: spacing.xl, paddingTop: spacing.lg }}>
+          <Banner tone="info" icon="phone" title="Calls work on the mobile app">
+            {CALL_UNSUPPORTED_HINT}
+          </Banner>
+        </View>
+      ) : null}
       {loading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator />
@@ -139,7 +151,7 @@ export default function TeamScreen() {
                     user={u}
                     isLast={i === section.rows.length - 1}
                     busy={callingId === u.id}
-                    disabled={callingId !== null && callingId !== u.id}
+                    disabled={!canPlaceCall() || (callingId !== null && callingId !== u.id)}
                     onPress={() => onCall(u)}
                   />
                 ))}

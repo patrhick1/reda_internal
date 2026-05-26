@@ -10,6 +10,11 @@ import {
 // Singleton engine. Agora's RN SDK doesn't like multiple engine instances and
 // the call lifecycle is shorter than the app lifecycle anyway. We init lazily
 // on first use and never tear down except on sign-out (or app kill).
+//
+// Web users see a stub instead — see ./agora.web.ts. Metro resolves
+// `.web.ts` first when bundling for web, so this file is never reached in
+// the web build (which means react-native-agora's native imports are never
+// followed by Metro). Don't add platform branching here.
 let engine: IRtcEngine | null = null;
 
 export function getEngine(appId: string): IRtcEngine {

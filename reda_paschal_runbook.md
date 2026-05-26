@@ -54,6 +54,37 @@ URI=$(grep -E '^SUPABASE_DB_URI' .env | sed 's/^[^=]*= *//')
 
 (The `SUPABASE_DB_URI` env-var is the pooler connection string — see `.env`.)
 
+### Deploy a new web build (Vercel)
+
+The web app and the Android app are the same source tree. The Android side
+ships via `eas update`; the web side ships via Vercel.
+
+```powershell
+# From repo root.
+cd mobile
+npm run build:web        # produces dist/ (static SPA, ~2.2 MB JS bundle).
+# Sanity-check locally first:
+npm run preview:web      # serves dist/ at http://localhost:3000
+
+# Then either:
+#   (a) push to main if the Vercel project is connected to the GitHub repo (recommended), or
+#   (b) deploy explicitly with the Vercel CLI:
+npx vercel --prod
+```
+
+One-time setup for the Vercel project:
+- Root Directory = `mobile/`
+- Build Command = `npx expo export -p web`
+- Output Directory = `dist`
+- Install Command = `npm install`
+- Framework Preset = Other (NOT Next.js)
+- Env vars: `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_ANON_KEY`, `EXPO_PUBLIC_ENV`
+
+Voice calling, biometric unlock, and push notifications are deliberately
+disabled on web (see [src/lib/calls/availability.ts](mobile/src/lib/calls/availability.ts)
+and `Platform.OS === 'web'` guards in [app/_layout.tsx](mobile/app/_layout.tsx)).
+Users see a clear "use your phone for calls" hint on the team directory.
+
 ### Deploy or update an Edge Function
 
 For Phase 8 bot pipeline functions (`wasender-webhook`, `normalize-address`,

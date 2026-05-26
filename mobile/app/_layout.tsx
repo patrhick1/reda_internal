@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Slot, useRouter, useSegments } from 'expo-router';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, Platform, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider, useAuth, type AccountState } from '@/hooks/useAuth';
@@ -20,20 +20,22 @@ import { IncomingCallOverlay } from '@/components/IncomingCallOverlay';
 
 initSentry();
 configureNotifications();
-// CallKeep setup is best-effort at module load. If react-native-callkeep
-// fails to load (e.g. New Architecture incompatibility on this Android
-// build), DO NOT crash app startup — calling falls back gracefully:
-// outgoing audio still works via Agora directly; only the system ring UI is
-// affected. Wrap each native bridge call in its own try so a partial
-// failure doesn't cascade.
-try { setupCallKeep(); } catch (err) {
-  console.warn('[layout] CallKeep setup failed; calls will degrade gracefully', err);
-}
-try {
-  addAnswerListener(({ callUUID }) => { callCoord.answer(callUUID).catch(() => { /* logged */ }); });
-  addEndListener(({ callUUID }) => { callCoord.declineFromSystemUI(callUUID); });
-} catch (err) {
-  console.warn('[layout] CallKeep listener registration failed', err);
+// CallKeep setup is best-effort at module load. Skipped entirely on web
+// (no native bridge, no system ring UI). On Android, if react-native-callkeep
+// fails to load (e.g. New Architecture incompatibility on this build), DO NOT
+// crash app startup — calling falls back gracefully: outgoing audio still
+// works via Agora directly; only the system ring UI is affected. Wrap each
+// native bridge call in its own try so a partial failure doesn't cascade.
+if (Platform.OS !== 'web') {
+  try { setupCallKeep(); } catch (err) {
+    console.warn('[layout] CallKeep setup failed; calls will degrade gracefully', err);
+  }
+  try {
+    addAnswerListener(({ callUUID }) => { callCoord.answer(callUUID).catch(() => { /* logged */ }); });
+    addEndListener(({ callUUID }) => { callCoord.declineFromSystemUI(callUUID); });
+  } catch (err) {
+    console.warn('[layout] CallKeep listener registration failed', err);
+  }
 }
 
 export default function RootLayout() {
@@ -85,6 +87,10 @@ function AuthGate() {
 
   useEffect(() => {
     if (!userId) { setLockState('checking'); return; }
+    // Web has no biometric API. Even if an enabled flag drifted into
+    // localStorage from a previous session, we can't prompt for Face/Touch
+    // ID in a browser — short-circuit straight to unlocked.
+    if (Platform.OS === 'web') { setLockState('unlocked'); return; }
     let cancelled = false;
     setLockState('checking');
     isBiometricEnabled().then((on) => {
@@ -120,7 +126,10 @@ function AuthGate() {
   return (
     <>
       <Slot />
-      {account.kind === 'active' ? <IncomingCallOverlay /> : null}
+      {/* Calls aren't supported on web (Agora bridge + CallKeep ring UI are
+          native-only). Skip mounting the overlay entirely; users see the
+          "Calls work on the mobile app" hint at the call entry points. */}
+      {account.kind === 'active' && Platform.OS !== 'web' ? <IncomingCallOverlay /> : null}
     </>
   );
 }

@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { Platform } from 'react-native';
 import { supabase } from '@/lib/supabase';
 import * as coord from '@/lib/calls/coordinator';
 import { type Call } from '@/services/calls';
@@ -9,9 +10,16 @@ import { type Call } from '@/services/calls';
 //
 // Insert with status='ringing'  → coord.presentIncoming(...)
 // Update where status flips off 'ringing' (without us accepting first) → coord.externallyDismissed(...)
+//
+// Skipped entirely on web — the callee can't accept (no Agora bridge, no
+// CallKeep ring UI). Subscribing would burn a Realtime channel and leave
+// coordinator state set to 'incoming' for every call that arrives while the
+// browser tab is open, even though the user can't act on it. The call still
+// rings on their phone (where the subscription IS active).
 export function useIncomingCallSubscription(userId: string | null): void {
   useEffect(() => {
     if (!userId) return;
+    if (Platform.OS === 'web') return;
 
     const channel = supabase
       .channel(`incoming-calls:${userId}`)

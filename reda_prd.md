@@ -34,12 +34,12 @@ v1 is shippable when these are true:
 
 ## 3. Tech stack
 
-- **Mobile app:** React Native via Expo (SDK 51+). Android-only for v1 (all internal staff use Android; Uzo on Samsung). iOS deferred — no business case until an iPhone user joins.
-- **Backend:** Supabase (Postgres + Auth + Storage + Realtime + Edge Functions). No custom server. The phone speaks HTTPS to PostgREST + Edge Functions; RLS enforces permissions per-request.
+- **Mobile + web app:** React Native via Expo (SDK 54). One source tree compiles to two targets: Android (`eas build` / `eas update`) and web (`expo export -p web` → static `dist/` deployed on Vercel free). iOS deferred — no business case until an iPhone user joins. Native-only features (voice calling, biometric unlock, push notifications) are mobile-only and gracefully disabled on web via the `canPlaceCall()` helper + `.web.ts` stubs + `Platform.OS === 'web'` guards.
+- **Backend:** Supabase (Postgres + Auth + Storage + Realtime + Edge Functions). No custom server. Clients speak HTTPS to PostgREST + Edge Functions; RLS enforces permissions per-request — identical surface whether the client is the Android app or a browser.
 - **AI:** Gemini 2.5-flash via Google AI API + Google Maps Geocoding API. All AI calls happen in Edge Functions, never on the phone (keys stay server-side).
 - **Push:** Expo Push API
 - **Voice calling (§5.17):** Agora Voice SDK via `react-native-agora` (free tier — 10k voice minutes/month). Ring UX via `react-native-callkeep` (Android ConnectionService → native phone-ringtone vibe). RTC tokens minted server-side by the `issue-agora-token` Edge Function; App Certificate never leaves the server.
-- **Hosting:** Supabase managed for the server side (free tier → Pro $25/mo when traffic warrants). Mobile distribution via **EAS Build + Google Play Internal Testing track** + EAS Update for JS-only OTA patches. One-time $25 Google Play Console fee, no monthly mobile-hosting cost.
+- **Hosting:** Supabase managed for the server side (free tier → Pro $25/mo when traffic warrants). Mobile distribution via **EAS Build + Google Play Internal Testing track** + EAS Update for JS-only OTA patches. One-time $25 Google Play Console fee, no monthly mobile-hosting cost. **Web build hosted on Vercel free tier** as a static site (SPA-routed via `mobile/vercel.json`); no Vercel functions used.
 - **Source control:** Git, GitHub
 
 Schema lives in `reda_schema.sql`.

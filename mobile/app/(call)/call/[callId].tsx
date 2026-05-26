@@ -16,12 +16,32 @@ import {
 } from '@/lib/calls/agora';
 import { dismissCall as callkeepDismiss } from '@/lib/calls/callkeep';
 import { useOutgoingCallSubscription } from '@/hooks/useOutgoingCallSubscription';
+import { canPlaceCall } from '@/lib/calls/availability';
 
 const TERMINAL_STATES = new Set<Call['status']>([
   'declined', 'cancelled', 'missed', 'completed', 'failed',
 ]);
 
-export default function CallScreen() {
+// Wrapper component does ONLY a platform check (no hooks). The inner
+// CallScreen owns every hook and runs only on native. This keeps hook
+// order trivially consistent on each platform — the call screen tree
+// never mounts on web, so its Agora useEffects never fire.
+//
+// The screen is unreachable through normal flows on web (every Call entry
+// point is gated by canPlaceCall()). This is defense-in-depth against
+// stale bookmarks or someone pasting the URL into the browser bar.
+export default function CallScreenRoute() {
+  if (!canPlaceCall()) return <WebUnsupportedRedirect />;
+  return <CallScreen />;
+}
+
+function WebUnsupportedRedirect() {
+  const router = useRouter();
+  useEffect(() => { router.replace('/'); }, [router]);
+  return null;
+}
+
+function CallScreen() {
   const { callId } = useLocalSearchParams<{ callId: string }>();
   const router = useRouter();
   const { account } = useAuth();
