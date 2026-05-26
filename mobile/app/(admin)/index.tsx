@@ -58,6 +58,11 @@ export default function AdminHome() {
             <HeroStat label="Completed"  value={String(stats.delivered)} accent={colors.success} />
             <HeroStat label="Rate"       value={stats.rateLabel}         accent={colors.red} />
           </View>
+          <View style={{ marginTop: 14, flexDirection: 'row', gap: 18, paddingHorizontal: 2 }}>
+            <BreakdownItem label="Active" value={stats.active} />
+            <BreakdownItem label="Closed" value={stats.closed} />
+            <BreakdownItem label="Rolled" value={stats.rolled} />
+          </View>
         </Card>
 
         {/* Needs attention */}
@@ -159,6 +164,19 @@ function HeroStat({ label, value, accent }: { label: string; value: string; acce
     <View style={{ flex: 1, backgroundColor: colors.black, paddingHorizontal: 12, paddingVertical: 14 }}>
       <Text style={kicker('dark', 'sm')}>{label}</Text>
       <Text style={{ fontFamily: fonts.extrabold, fontSize: 26, color: accent, marginTop: 4, letterSpacing: -0.4 }}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+function BreakdownItem({ label, value }: { label: string; value: number }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
+      <Text style={{ fontFamily: fonts.semibold, fontSize: 10, color: colors.textTertiary, letterSpacing: 0.6, textTransform: 'uppercase' }}>
+        {label}
+      </Text>
+      <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.white }}>
         {value}
       </Text>
     </View>
@@ -281,8 +299,9 @@ function QuickAction({
 
 /** Group sibling rows (same race-assignment) into one logical order, so the
  *  hero stats reflect unique customer orders rather than raw row count.
- *  Per group: counted as "delivered" if any sibling reached delivered;
- *  "stale" if no sibling delivered but at least one is in a soft-fail state. */
+ *  Per group outcome (priority order): delivered → active → rolled → closed.
+ *  `stale` is the subset of `active` chains with at least one soft-fail row,
+ *  kept for the Needs Attention block. */
 function summarize(rows: DeliveryRow[]) {
   const groups = new Map<string, DeliveryRow[]>();
   for (const r of rows) {
@@ -292,19 +311,29 @@ function summarize(rows: DeliveryRow[]) {
     arr.push(r);
   }
 
-  let delivered = 0, stale = 0;
+  let delivered = 0, active = 0, rolled = 0, closed = 0, stale = 0;
   for (const group of groups.values()) {
     if (group.some((d) => d.current_status === 'delivered')) {
       delivered++;
       continue;
     }
-    if (group.some((d) => statusBucket(d.current_status) === 'soft')) {
-      stale++;
+    const buckets = group.map((d) => statusBucket(d.current_status));
+    const hasActive = buckets.some((b) => b === 'active');
+    const hasSoft   = buckets.some((b) => b === 'soft');
+    if (hasActive || hasSoft) {
+      active++;
+      if (hasSoft) stale++;
+      continue;
     }
+    if (group.some((d) => d.current_status === 'rolled_over')) {
+      rolled++;
+      continue;
+    }
+    closed++;
   }
   const total = groups.size;
   const rateLabel = total === 0 ? '—' : `${Math.round((delivered / total) * 100)}%`;
-  return { delivered, stale, total, rateLabel };
+  return { delivered, active, rolled, closed, stale, total, rateLabel };
 }
 
 function kicker(theme: 'light' | 'dark' = 'light', size: 'sm' | 'md' = 'md') {
