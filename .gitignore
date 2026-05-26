@@ -1,0 +1,79 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Expo
+mobile/.expo/
+mobile/dist/
+mobile/web-build/
+mobile/.expo-shared/
+mobile/expo-env.d.ts
+
+# Native
+*.orig.*
+mobile/android/
+mobile/ios/
+
+# Build
+mobile/build/
+
+# Env files — never commit secrets
+.env
+.env.*
+!.env.example
+mobile/.env
+mobile/.env.*
+!mobile/.env.example
+
+# Supabase
+supabase/.branches/
+supabase/.temp/
+supabase/.env
+
+# Logs
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+
+# Claude Code — per-developer Bash permission allowlist; contents include
+# pasted commands with plaintext DB passwords. Never share.
+.claude/
+
+# Local AI/debug artifacts produced by one-off scripts (Gemini corridor
+# alias generation, normalize-address test runs). Not source — keep local.
+.corridor-aliases.json
+.norm-*.json
+
+# TypeScript
+*.tsbuildinfo
+
+# Operational scripts — they contain plaintext passwords (phase7 seed SQL),
+# real customer/agent data (stock backfill SQL), and Supabase service-role
+# usage. Never commit. If a generic, secrets-free schema file needs version
+# control, move it to supabase/migrations/ and check it in deliberately.
+scripts/
+
+# Real client/agent operational data — keep out of the repo
+*.xlsx
+
+# Firebase — google-services.json / GoogleService-Info.plist contain only
+# public Firebase identifiers (project id, package-restricted API key) and
+# are intended to be checked in so the build pipeline can pick them up.
+# Service-account JSONs ARE real secrets — keep those out.
+mobile/*-firebase-adminsdk-*.json
+
+# Generated — committed deliberately, not ignored:
+# mobile/src/types/database.gen.ts

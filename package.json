@@ -1,0 +1,11 @@
+{
+  "name": "reda-dev",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Reda Logistics — workspace root. The mobile app lives in mobile/. The Supabase schema and edge functions live in supabase/.",
+  "scripts": {
+    "gen:types": "node scripts/supabase-cli.mjs gen-types",
+    "typecheck": "npm --prefix mobile run typecheck",
+    "lint": "npm --prefix mobile run lint"
+  }
+}

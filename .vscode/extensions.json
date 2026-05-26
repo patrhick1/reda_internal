@@ -1,0 +1,10 @@
+{
+  "recommendations": [
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "expo.vscode-expo-tools",
+    "supabase.vscode-supabase-extension",
+    "mtxr.sqltools",
+    "denoland.vscode-deno"
+  ]
+}

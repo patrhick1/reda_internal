@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  mobile:
+    name: Mobile app — typecheck + lint
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: mobile/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
+
+  security:
+    name: Security checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No service_role key referenced in mobile/
+        run: |
+          if grep -RIn --include='*.ts' --include='*.tsx' --include='*.js' --include='*.json' 'service_role\|sb_secret_' mobile/; then
+            echo "❌ Server-only key referenced in mobile/. Use the publishable/anon key only."
+            exit 1
+          fi

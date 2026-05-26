@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "138388297595",
+    "project_id": "reda-logistics",
+    "storage_bucket": "reda-logistics.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:138388297595:android:ef6210aa18484b3eb64fde",
+        "android_client_info": {
+          "package_name": "com.redalogistics.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCSMf-qih9KtFjEzERhQwhqGlkxHv6t4L8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,16 @@
+{
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+  "typescript.tsdk": "mobile/node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  "[sql]": {
+    "editor.tabSize": 2,
+    "editor.formatOnSave": false
+  },
+  "files.eol": "\n",
+  "deno.enablePaths": ["supabase/functions"],
+  "deno.unstable": false
+}
