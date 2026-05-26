@@ -445,6 +445,7 @@ export type Database = {
       }
       clients: {
         Row: {
+          auto_cancel_soft_fails: boolean
           contact_email: string | null
           contact_phone: string | null
           created_at: string
@@ -455,6 +456,7 @@ export type Database = {
           notes: string | null
         }
         Insert: {
+          auto_cancel_soft_fails?: boolean
           contact_email?: string | null
           contact_phone?: string | null
           created_at?: string
@@ -465,6 +467,7 @@ export type Database = {
           notes?: string | null
         }
         Update: {
+          auto_cancel_soft_fails?: boolean
           contact_email?: string | null
           contact_phone?: string | null
           created_at?: string
@@ -588,6 +591,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deliveries_current_status_fkey"
+            columns: ["current_status"]
+            isOneToOne: false
+            referencedRelation: "delivery_status_defs"
+            referencedColumns: ["status"]
           },
           {
             foreignKeyName: "deliveries_location_id_fkey"
@@ -824,6 +834,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "deliveries_safe"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_status_history_from_status_fkey"
+            columns: ["from_status"]
+            isOneToOne: false
+            referencedRelation: "delivery_status_defs"
+            referencedColumns: ["status"]
+          },
+          {
+            foreignKeyName: "delivery_status_history_to_status_fkey"
+            columns: ["to_status"]
+            isOneToOne: false
+            referencedRelation: "delivery_status_defs"
+            referencedColumns: ["status"]
           },
         ]
       }
@@ -1317,6 +1341,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "deliveries_current_status_fkey"
+            columns: ["current_status"]
+            isOneToOne: false
+            referencedRelation: "delivery_status_defs"
+            referencedColumns: ["status"]
+          },
+          {
             foreignKeyName: "deliveries_location_id_fkey"
             columns: ["location_id"]
             isOneToOne: false
@@ -1452,6 +1483,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "deliveries_current_status_fkey"
+            columns: ["current_status"]
+            isOneToOne: false
+            referencedRelation: "delivery_status_defs"
+            referencedColumns: ["status"]
+          },
+          {
             foreignKeyName: "deliveries_location_id_fkey"
             columns: ["location_id"]
             isOneToOne: false
@@ -1563,16 +1601,28 @@ export type Database = {
         Args: { p_delivery_id: string }
         Returns: undefined
       }
-      _notify_admins_eod_summary: {
-        Args: {
-          p_cap_hit_count: number
-          p_capped_ids: string[]
-          p_for_date: string
-          p_race_lost_count: number
-          p_same_agent_count: number
-        }
-        Returns: undefined
-      }
+      _notify_admins_eod_summary:
+        | {
+            Args: {
+              p_cap_hit_count: number
+              p_capped_ids: string[]
+              p_for_date: string
+              p_race_lost_count: number
+              p_same_agent_count: number
+            }
+            Returns: undefined
+          }
+        | {
+            Args: {
+              p_cap_hit_count: number
+              p_capped_ids: string[]
+              p_for_date: string
+              p_policy_cancel_count?: number
+              p_race_lost_count: number
+              p_same_agent_count: number
+            }
+            Returns: undefined
+          }
       _open_sibling_agents: {
         Args: { p_delivery_id: string }
         Returns: {
@@ -2084,18 +2134,32 @@ export type Database = {
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
-      update_client: {
-        Args: {
-          p_contact_email: string
-          p_contact_phone: string
-          p_id: string
-          p_max_charge_per_delivery?: number
-          p_name: string
-          p_notes: string
-          p_reason?: string
-        }
-        Returns: undefined
-      }
+      update_client:
+        | {
+            Args: {
+              p_contact_email: string
+              p_contact_phone: string
+              p_id: string
+              p_max_charge_per_delivery?: number
+              p_name: string
+              p_notes: string
+              p_reason?: string
+            }
+            Returns: undefined
+          }
+        | {
+            Args: {
+              p_auto_cancel_soft_fails?: boolean
+              p_contact_email: string
+              p_contact_phone: string
+              p_id: string
+              p_max_charge_per_delivery?: number
+              p_name: string
+              p_notes: string
+              p_reason?: string
+            }
+            Returns: undefined
+          }
       update_delivery_fields: {
         Args: {
           p_assigned_agent_id?: string

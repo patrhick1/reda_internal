@@ -12,6 +12,11 @@ export type ClientInput = {
   // remove an existing cap, callers must use clearClientCeiling — keeps an
   // empty form from silently wiping a configured cap.
   maxChargePerDelivery?: number | null;
+  // Per-client EOD policy. When true, customer-unreachable soft-failed
+  // deliveries are marked failed_delivery at EOD instead of being rolled
+  // forward. Server-side coalesce: passing null leaves the existing value
+  // unchanged (parity with maxChargePerDelivery).
+  autoCancelSoftFails?: boolean | null;
 };
 
 // The generated RPC types treat `text` params as strict `string`, but Postgres
@@ -56,6 +61,7 @@ export async function updateClient(id: string, input: ClientInput, reason: RpcTe
     p_notes: input.notes as unknown as string,
     p_reason: reason as unknown as string,
     p_max_charge_per_delivery: input.maxChargePerDelivery as unknown as number,
+    p_auto_cancel_soft_fails: input.autoCancelSoftFails as unknown as boolean,
   });
   if (error) throw error;
 }

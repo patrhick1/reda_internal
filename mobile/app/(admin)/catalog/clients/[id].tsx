@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ActivityIndicator, Alert, Platform, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Platform, StyleSheet, Switch, Text, View } from 'react-native';
 import { Screen } from '@/components/Screen';
 import { Field } from '@/components/Field';
 import { Button } from '@/components/Button';
@@ -28,6 +28,7 @@ export default function EditClient() {
   const [email, setEmail] = useState('');
   const [notes, setNotes] = useState('');
   const [maxCharge, setMaxCharge] = useState('');
+  const [autoCancelSoftFails, setAutoCancelSoftFails] = useState(false);
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -39,6 +40,7 @@ export default function EditClient() {
       setEmail(client.contact_email ?? '');
       setNotes(client.notes ?? '');
       setMaxCharge(ceilingToString(client.max_charge_per_delivery));
+      setAutoCancelSoftFails(client.auto_cancel_soft_fails ?? false);
     }
   }, [client]);
 
@@ -56,12 +58,14 @@ export default function EditClient() {
 
   const initialMaxCharge = ceilingToString(client.max_charge_per_delivery);
   const maxChargeDirty = maxCharge.trim() !== initialMaxCharge;
+  const autoCancelDirty = autoCancelSoftFails !== (client.auto_cancel_soft_fails ?? false);
   const dirty =
     name !== client.name ||
     (phone || null) !== client.contact_phone ||
     (email || null) !== client.contact_email ||
     (notes || null) !== client.notes ||
-    maxChargeDirty;
+    maxChargeDirty ||
+    autoCancelDirty;
 
   async function handleSave() {
     if (!name.trim()) {
@@ -93,6 +97,7 @@ export default function EditClient() {
           contactEmail: email.trim() || null,
           notes: notes.trim() || null,
           maxChargePerDelivery: maxChargeToSend,
+          autoCancelSoftFails: autoCancelDirty ? autoCancelSoftFails : null,
         },
         reason.trim() || null,
       );
@@ -228,6 +233,24 @@ export default function EditClient() {
           : 'No cap — Reda charges the full rate-card amount for the delivery location.'}
       </Text>
 
+      <View style={styles.toggleRow}>
+        <View style={styles.toggleText}>
+          <Text style={styles.toggleLabel}>Cancel soft-failed orders at EOD</Text>
+          <Text style={styles.toggleHelper}>
+            When the customer doesn&apos;t engage and the day ends, mark the
+            delivery as failed instead of rolling it to tomorrow. Applies only
+            to customer-unreachable statuses (didn&apos;t answer, line busy,
+            phone off, couldn&apos;t find them). Customer deferrals (tomorrow /
+            postponed) and in-transit orders (picked up / waybilled) still roll.
+          </Text>
+        </View>
+        <Switch
+          value={autoCancelSoftFails}
+          onValueChange={setAutoCancelSoftFails}
+          disabled={submitting}
+        />
+      </View>
+
       {dirty ? (
         <Field
           label="Reason for change"
@@ -300,4 +323,14 @@ const styles = StyleSheet.create({
   hint: { color: '#6b7280', fontSize: 12, marginTop: -8, marginBottom: 16, lineHeight: 16 },
   removeCap: { marginTop: 12 },
   viewStock: { marginTop: 12 },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    paddingVertical: 12,
+    marginBottom: 4,
+  },
+  toggleText: { flex: 1 },
+  toggleLabel: { fontWeight: '600', fontSize: 14, color: '#111827', marginBottom: 4 },
+  toggleHelper: { color: '#6b7280', fontSize: 12, lineHeight: 16 },
 });
