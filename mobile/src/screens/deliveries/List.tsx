@@ -319,6 +319,27 @@ const DeliveryListRow = memo(function DeliveryListRow({
                 </Text>
               </View>
             ) : null}
+            {delivery.latest_notified ? (
+              <View
+                accessibilityLabel="Client has been notified of the latest status"
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 3,
+                  paddingHorizontal: 6,
+                  paddingVertical: 2,
+                  backgroundColor: colors.successSoft,
+                  borderRadius: 999,
+                }}
+              >
+                <Icon name="check" size={10} color={colors.successDark} />
+                <Text
+                  style={{ fontFamily: fonts.semibold, fontSize: 10, color: colors.successDark }}
+                >
+                  Notified
+                </Text>
+              </View>
+            ) : null}
             <StatusPill status={status} variant="subtle" size="sm" />
           </View>
           <Text

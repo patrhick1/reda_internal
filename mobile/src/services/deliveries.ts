@@ -16,6 +16,13 @@ export type DeliveryDisplayJoins = {
   product_name: string | null;
   location_name: string | null;
   assigned_agent_name: string | null;
+  /** True when the most-recent delivery_status_history row has been tagged
+   *  via mark_client_notified. Powers the "Notified" pill on list rows so
+   *  reps can see at a glance which deliveries have already been
+   *  communicated. Only listDeliveries computes the real value — single-row
+   *  getDelivery defaults this to false, since Detail.tsx renders the
+   *  per-history notification state inline (see listClientNotificationsForDelivery). */
+  latest_notified: boolean;
 };
 
 export type DeliveryRow = (DeliveryAdminRow | DeliverySafeRow) &
@@ -127,6 +134,9 @@ function attachJoins<T extends object>(
     location_name: location?.name ?? null,
     assigned_agent_name: assigned_agent?.display_name ?? null,
     margin: 'margin' in rest && typeof rest.margin === 'number' ? rest.margin : null,
+    // Default for the single-row path; listDeliveries overwrites with the
+    // real value after its delivery_client_notifications query.
+    latest_notified: false,
   };
 }
 
@@ -166,23 +176,47 @@ export async function listDeliveries(
   ) as DeliveryRow[];
 
   // Sort: non-terminal first, then by most recent status change DESC.
-  // Pulls (delivery_id, changed_at) from delivery_status_history for the
+  // Pulls (id, delivery_id, changed_at) from delivery_status_history for the
   // fetched IDs in a single second query, then merges client-side. For
-  // Reda's scale (~hundreds of rows) this is sub-50ms.
+  // Reda's scale (~hundreds of rows) this is sub-50ms. We also record the
+  // latest history row's id per delivery so the next step can check which
+  // of them have been tagged 'client notified'.
   const ids = rows.map((r) => r.id).filter((id): id is string => !!id);
   const lastChange = new Map<string, string>();
+  const latestHistoryByDelivery = new Map<string, string>();
   if (ids.length > 0) {
     const { data: history } = await supabase
       .from('delivery_status_history')
-      .select('delivery_id, changed_at')
+      .select('id, delivery_id, changed_at')
       .in('delivery_id', ids)
       .order('changed_at', { ascending: false });
     for (const h of history ?? []) {
       // First occurrence per delivery_id wins (already ordered DESC).
       if (!lastChange.has(h.delivery_id)) {
         lastChange.set(h.delivery_id, h.changed_at);
+        latestHistoryByDelivery.set(h.delivery_id, h.id);
       }
     }
+  }
+
+  // Resolve which of those latest-history rows have a client-notified tag.
+  // Single keyed-by-PK lookup against delivery_client_notifications — RLS
+  // already restricts visibility to ops + the assigned agent, so this is
+  // safe for every role that hits this code path.
+  const notifiedLatestSet = new Set<string>();
+  const latestHistoryIds = Array.from(new Set(latestHistoryByDelivery.values()));
+  if (latestHistoryIds.length > 0) {
+    const { data: notifs } = await supabase
+      .from('delivery_client_notifications')
+      .select('status_history_id')
+      .in('status_history_id', latestHistoryIds);
+    for (const n of notifs ?? []) {
+      notifiedLatestSet.add(n.status_history_id);
+    }
+  }
+  for (const r of rows) {
+    const latestId = latestHistoryByDelivery.get(r.id ?? '');
+    r.latest_notified = latestId ? notifiedLatestSet.has(latestId) : false;
   }
 
   return rows.sort((a, b) => {
