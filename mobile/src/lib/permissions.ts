@@ -126,6 +126,21 @@ export function canUpdateStatus(role: Role, isAssignedAgent: boolean): boolean {
   return false;
 }
 
+/** Post a message in an existing delivery thread (any reply, agent or ops).
+ *  Server anchor: reply_to_delivery() RPC accepts assigned agent OR ops. */
+export function canPostOnThread(role: Role, isAssignedAgent: boolean): boolean {
+  if (isOps(role)) return true;
+  if (role === 'agent') return isAssignedAgent;
+  return false;
+}
+
+/** Seed an EMPTY delivery thread with a free-text message. Ops-only — agents
+ *  start threads through the structured FlagDeliverySheet (chip + status),
+ *  not the plain composer. Server anchor: reply_to_delivery() RPC. */
+export function canSeedThread(role: Role): boolean {
+  return isOps(role);
+}
+
 /** Soft-delete a delivery. Admin-only.
  * Server anchor: deliveries_delete_admin policy. */
 export function canDeleteDelivery(role: Role): boolean {

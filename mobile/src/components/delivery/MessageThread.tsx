@@ -16,19 +16,28 @@ import {
 import { newClientUuid } from '@/lib/uuid';
 import { errorMessage } from '@/lib/errors';
 
-/** Per-delivery message thread. Stays hidden until the agent has flagged
- *  something — keeps the screen quiet during the common no-issue case. */
+/** Per-delivery message thread. Renders when either:
+ *  - the thread already has messages (anyone with read access sees it), or
+ *  - the viewer can seed an empty thread (ops only — agents seed via
+ *    FlagDeliverySheet, which captures a chip + status change).
+ *
+ *  `canPost` and `canSeed` are computed by the caller from permissions —
+ *  see canPostOnThread() / canSeedThread() in @/lib/permissions. */
 export function MessageThread({
   deliveryId,
   deliveryStatus,
-  canReply,
+  canPost,
+  canSeed,
 }: {
   deliveryId: string;
   /** Parent passes this so we don't re-fetch the delivery just to know if
    *  the thread is open. Pass the optimistic value if the parent screen has
    *  one. */
   deliveryStatus: string | null | undefined;
-  canReply: boolean;
+  /** Viewer can post a reply when the thread already has messages. */
+  canPost: boolean;
+  /** Viewer can seed an empty thread (ops only). */
+  canSeed: boolean;
 }) {
   const messagesQ = useAsync(() => listMessages(deliveryId), [deliveryId]);
 
@@ -55,9 +64,28 @@ export function MessageThread({
     );
   }
 
-  // Stay quiet until an agent flag exists. Ops never seed; agents start a
-  // thread via FlagDeliverySheet (not this composer).
-  if (messages.length === 0) return null;
+  // Empty thread:
+  //   - ops viewer + thread open → render the seed composer
+  //   - everyone else → stay quiet (agents use FlagDeliverySheet)
+  if (messages.length === 0) {
+    if (!canSeed || !isOpen) return null;
+    return (
+      <Card>
+        <Text style={kicker}>Message agent</Text>
+        <Text
+          style={{
+            fontFamily: fonts.medium,
+            fontSize: 12,
+            color: colors.textSecondary,
+            marginTop: 6,
+          }}
+        >
+          Start a thread with the assigned agent. They&apos;ll be notified.
+        </Text>
+        <ReplyComposer deliveryId={deliveryId} onSent={() => messagesQ.reload()} />
+      </Card>
+    );
+  }
 
   return (
     <Card>
@@ -67,7 +95,7 @@ export function MessageThread({
           <Bubble key={m.id} message={m} />
         ))}
       </View>
-      {isOpen && canReply ? (
+      {isOpen && canPost ? (
         <ReplyComposer deliveryId={deliveryId} onSent={() => messagesQ.reload()} />
       ) : !isOpen ? (
         <View
@@ -209,7 +237,12 @@ function ReplyComposer({ deliveryId, onSent }: { deliveryId: string; onSent: () 
 }
 
 function labelForRole(r: AuthorRole): string {
-  return r === 'agent' ? 'Agent' : r === 'admin' ? 'Admin' : 'Dispatcher';
+  switch (r) {
+    case 'agent':      return 'Agent';
+    case 'admin':      return 'Admin';
+    case 'dispatcher': return 'Dispatcher';
+    case 'rep':        return 'Rep';
+  }
 }
 
 const kicker = {

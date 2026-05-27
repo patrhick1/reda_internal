@@ -29,6 +29,8 @@ import {
   canEditDelivery,
   canHandoffToSubAgent,
   canMarkClientNotified,
+  canPostOnThread,
+  canSeedThread,
   canSeeCharged,
   canSeeMargin,
   canUpdateStatus,
@@ -592,12 +594,14 @@ export function DeliveryDetail() {
           ) : null}
         </Card>
 
-        {/* Messages (only renders when an agent has flagged) */}
+        {/* Messages — renders when there are messages OR when an ops viewer
+            can seed an empty thread. */}
         {d.id ? (
           <MessageThread
             deliveryId={d.id}
             deliveryStatus={status}
-            canReply={user.role === 'admin' || user.role === 'dispatcher' || user.role === 'rep'}
+            canPost={canPostOnThread(user.role, d.assigned_agent_id === user.userId)}
+            canSeed={canSeedThread(user.role)}
           />
         ) : null}
 
