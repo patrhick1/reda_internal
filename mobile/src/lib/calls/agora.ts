@@ -23,23 +23,18 @@ export function getEngine(appId: string): IRtcEngine {
   engine.initialize({
     appId,
     channelProfile: ChannelProfileType.ChannelProfileCommunication,
-    audioScenario:  AudioScenarioType.AudioScenarioChatroom,
+    audioScenario: AudioScenarioType.AudioScenarioChatroom,
   });
   engine.setAudioProfile(AudioProfileType.AudioProfileSpeechStandard);
   engine.enableAudio();
   return engine;
 }
 
-export function joinChannel(
-  appId: string,
-  token: string,
-  channel: string,
-  uid: number,
-) {
+export function joinChannel(appId: string, token: string, channel: string, uid: number) {
   const e = getEngine(appId);
   e.joinChannel(token, channel, uid, {
     publishMicrophoneTrack: true,
-    autoSubscribeAudio:     true,
+    autoSubscribeAudio: true,
   });
 }
 
@@ -70,7 +65,11 @@ export function unregisterEventHandler(handler: IRtcEngineEventHandler) {
 // Tear down on sign-out so the next user gets a fresh engine + audio session.
 export function destroyEngine() {
   if (engine) {
-    try { engine.leaveChannel(); } catch { /* noop */ }
+    try {
+      engine.leaveChannel();
+    } catch {
+      /* noop */
+    }
     engine.release();
     engine = null;
   }

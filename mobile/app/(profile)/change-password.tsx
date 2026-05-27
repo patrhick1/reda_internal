@@ -12,19 +12,25 @@ export default function ChangePasswordScreen() {
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
   const [showCurrent, setShowCurrent] = useState(false);
-  const [showNext, setShowNext]       = useState(false);
+  const [showNext, setShowNext] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const validNew     = next.length >= 8;
-  const matches      = next === confirm;
-  const canSubmit    = !!current && validNew && matches && !submitting;
+  const validNew = next.length >= 8;
+  const matches = next === confirm;
+  const canSubmit = !!current && validNew && matches && !submitting;
 
   async function save() {
     setError(null);
-    if (!validNew) { setError('New password must be at least 8 characters'); return; }
-    if (!matches)  { setError('New password and confirmation do not match'); return; }
+    if (!validNew) {
+      setError('New password must be at least 8 characters');
+      return;
+    }
+    if (!matches) {
+      setError('New password and confirmation do not match');
+      return;
+    }
     setSubmitting(true);
     try {
       await changeMyPassword(current, next);
@@ -52,7 +58,9 @@ export default function ChangePasswordScreen() {
               autoCapitalize="none"
               autoComplete="password"
               editable={!submitting}
-              rightAdornment={<EyeToggle on={showCurrent} onPress={() => setShowCurrent((v) => !v)} />}
+              rightAdornment={
+                <EyeToggle on={showCurrent} onPress={() => setShowCurrent((v) => !v)} />
+              }
             />
             <Input
               label="New password"
@@ -77,7 +85,9 @@ export default function ChangePasswordScreen() {
               autoComplete="new-password"
               editable={!submitting}
               error={confirm.length > 0 && !matches ? 'Does not match' : null}
-              rightAdornment={<EyeToggle on={showConfirm} onPress={() => setShowConfirm((v) => !v)} />}
+              rightAdornment={
+                <EyeToggle on={showConfirm} onPress={() => setShowConfirm((v) => !v)} />
+              }
             />
           </View>
         </Card>
@@ -103,9 +113,12 @@ export default function ChangePasswordScreen() {
 
 function EyeToggle({ on, onPress }: { on: boolean; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} hitSlop={8} accessibilityLabel={on ? 'Hide password' : 'Show password'}>
+    <Pressable
+      onPress={onPress}
+      hitSlop={8}
+      accessibilityLabel={on ? 'Hide password' : 'Show password'}
+    >
       <Icon name={on ? 'eyeOff' : 'eye'} size={18} color={colors.textSecondary} />
     </Pressable>
   );
 }
-

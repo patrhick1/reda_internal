@@ -23,30 +23,30 @@ import type {
 
 export function useEnqueueChangeStatus() {
   const { enqueue } = useQueue();
-  return useCallback(async (
-    args: ChangeDeliveryStatusArgs,
-    label: string,
-  ): Promise<string> => {
-    return await enqueue({ kind: 'change_delivery_status', args, label });
-  }, [enqueue]);
+  return useCallback(
+    async (args: ChangeDeliveryStatusArgs, label: string): Promise<string> => {
+      return await enqueue({ kind: 'change_delivery_status', args, label });
+    },
+    [enqueue],
+  );
 }
 
 export function useEnqueueStockAdjustment() {
   const { enqueue } = useQueue();
-  return useCallback(async (
-    args: CreateStockAdjustmentArgs,
-    label: string,
-  ): Promise<string> => {
-    return await enqueue({ kind: 'create_stock_adjustment', args, label });
-  }, [enqueue]);
+  return useCallback(
+    async (args: CreateStockAdjustmentArgs, label: string): Promise<string> => {
+      return await enqueue({ kind: 'create_stock_adjustment', args, label });
+    },
+    [enqueue],
+  );
 }
 
 export function useEnqueueStockTransfer() {
   const { enqueue } = useQueue();
-  return useCallback(async (
-    args: CreateStockTransferArgs,
-    label: string,
-  ): Promise<string> => {
-    return await enqueue({ kind: 'create_stock_transfer', args, label });
-  }, [enqueue]);
+  return useCallback(
+    async (args: CreateStockTransferArgs, label: string): Promise<string> => {
+      return await enqueue({ kind: 'create_stock_transfer', args, label });
+    },
+    [enqueue],
+  );
 }

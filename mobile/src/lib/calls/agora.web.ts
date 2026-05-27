@@ -16,12 +16,7 @@ export function getEngine(_appId: string): IRtcEngine {
   throw new Error(NOT_SUPPORTED);
 }
 
-export function joinChannel(
-  _appId: string,
-  _token: string,
-  _channel: string,
-  _uid: number,
-): void {
+export function joinChannel(_appId: string, _token: string, _channel: string, _uid: number): void {
   throw new Error(NOT_SUPPORTED);
 }
 

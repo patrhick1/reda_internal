@@ -67,11 +67,17 @@ export function reviewReason(row: BotInboundRow): string {
 /** Split a customer_phone string like "08036... or 08150..." into the first
  *  number and any alternate. Returns the original as `primary` and null
  *  alternate when there's no " or "/" / "-separator. */
-export function splitPhone(raw: string | null | undefined): { primary: string; alternate: string | null } {
+export function splitPhone(raw: string | null | undefined): {
+  primary: string;
+  alternate: string | null;
+} {
   if (!raw) return { primary: '', alternate: null };
   const splitters = [/\s+or\s+/i, /\s*\/\s*/];
   for (const re of splitters) {
-    const parts = raw.split(re).map((s) => s.trim()).filter(Boolean);
+    const parts = raw
+      .split(re)
+      .map((s) => s.trim())
+      .filter(Boolean);
     if (parts.length >= 2) {
       return { primary: parts[0]!, alternate: parts[1]! };
     }

@@ -43,30 +43,51 @@ export function RecentActivityCard({ rows, loading, basePath, limit = 4 }: Props
         <ActivityIndicator color={colors.black} />
       ) : recent.length === 0 ? (
         <Card>
-          <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary, textAlign: 'center', paddingVertical: 12 }}>
+          <Text
+            style={{
+              fontFamily: fonts.medium,
+              fontSize: 13,
+              color: colors.textSecondary,
+              textAlign: 'center',
+              paddingVertical: 12,
+            }}
+          >
             No deliveries today yet. They&apos;ll appear here as orders come in.
           </Text>
         </Card>
       ) : (
         <View style={{ gap: 8 }}>
-          {recent.map(d => (
+          {recent.map((d) => (
             <Card
               key={d.id}
               dense
-              onPress={() => router.push({
-                pathname: `${basePath}/deliveries/[id]` as `${RecentBasePath}/deliveries/[id]`,
-                params: { id: d.id! },
-              })}
+              onPress={() =>
+                router.push({
+                  pathname: `${basePath}/deliveries/[id]` as `${RecentBasePath}/deliveries/[id]`,
+                  params: { id: d.id! },
+                })
+              }
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={{ flex: 1, fontFamily: fonts.bold, fontSize: 14, color: colors.black }} numberOfLines={1}>
+                    <Text
+                      style={{ flex: 1, fontFamily: fonts.bold, fontSize: 14, color: colors.black }}
+                      numberOfLines={1}
+                    >
                       {d.customer_name}
                     </Text>
                     <StatusPill status={d.current_status ?? 'pending'} variant="subtle" size="sm" />
                   </View>
-                  <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary, marginTop: 2 }} numberOfLines={1}>
+                  <Text
+                    style={{
+                      fontFamily: fonts.medium,
+                      fontSize: 12,
+                      color: colors.textSecondary,
+                      marginTop: 2,
+                    }}
+                    numberOfLines={1}
+                  >
                     {d.product_name ?? '—'} · {d.assigned_agent_name ?? 'Unassigned'}
                   </Text>
                 </View>

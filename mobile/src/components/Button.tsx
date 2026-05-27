@@ -26,9 +26,9 @@ export function Button({
 }) {
   const isDisabled = disabled || loading;
   const palette = {
-    primary:   { bg: colors.black, fg: colors.white, border: 'transparent', borderWidth: 0 },
-    secondary: { bg: colors.white, fg: colors.black, border: colors.black,  borderWidth: 1.5 },
-    danger:    { bg: colors.red,   fg: colors.white, border: 'transparent', borderWidth: 0 },
+    primary: { bg: colors.black, fg: colors.white, border: 'transparent', borderWidth: 0 },
+    secondary: { bg: colors.white, fg: colors.black, border: colors.black, borderWidth: 1.5 },
+    danger: { bg: colors.red, fg: colors.white, border: 'transparent', borderWidth: 0 },
   }[variant];
 
   return (
@@ -37,27 +37,33 @@ export function Button({
       disabled={isDisabled}
       accessibilityRole="button"
       accessibilityState={{ disabled: isDisabled }}
-      style={({ pressed }) => ([{
-        minHeight: 48,
-        paddingHorizontal: 22,
-        borderRadius: 999,
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: palette.bg,
-        borderColor: palette.border,
-        borderWidth: palette.borderWidth,
-        opacity: isDisabled ? 0.5 : 1,
-      }, pressed && !isDisabled ? { opacity: 0.92 } : null, style as object])}
+      style={({ pressed }) => [
+        {
+          minHeight: 48,
+          paddingHorizontal: 22,
+          borderRadius: 999,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: palette.bg,
+          borderColor: palette.border,
+          borderWidth: palette.borderWidth,
+          opacity: isDisabled ? 0.5 : 1,
+        },
+        pressed && !isDisabled ? { opacity: 0.92 } : null,
+        style as object,
+      ]}
     >
       {loading ? (
         <ActivityIndicator color={palette.fg} />
       ) : (
-        <Text style={{
-          fontFamily: fonts.bold,
-          fontSize: 15,
-          color: palette.fg,
-          letterSpacing: -0.1,
-        }}>
+        <Text
+          style={{
+            fontFamily: fonts.bold,
+            fontSize: 15,
+            color: palette.fg,
+            letterSpacing: -0.1,
+          }}
+        >
           {title}
         </Text>
       )}

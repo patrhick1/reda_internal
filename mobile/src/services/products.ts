@@ -23,7 +23,9 @@ export async function listActiveProductsByClient(clientId: string): Promise<Prod
 }
 
 /** List products joined with client name. Excludes inactive by default. */
-export async function listProducts(opts: { includeInactive?: boolean } = {}): Promise<ProductWithClient[]> {
+export async function listProducts(
+  opts: { includeInactive?: boolean } = {},
+): Promise<ProductWithClient[]> {
   let query = supabase
     .from('product_catalog')
     .select('*, clients!inner(name)')
@@ -62,7 +64,11 @@ export async function createProduct(clientId: string, input: ProductInput): Prom
   return data as string;
 }
 
-export async function updateProduct(id: string, input: ProductInput, reason: string | null): Promise<void> {
+export async function updateProduct(
+  id: string,
+  input: ProductInput,
+  reason: string | null,
+): Promise<void> {
   const { error } = await supabase.rpc('update_product', {
     p_id: id,
     p_product_name: input.productName,

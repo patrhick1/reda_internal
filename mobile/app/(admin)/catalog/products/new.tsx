@@ -11,10 +11,11 @@ import { createProduct } from '@/services/products';
 import { errorMessage } from '@/lib/errors';
 
 export default function NewProduct() {
-  const { data: clients, loading: loadingClients, error: clientsError } = useAsync(
-    () => listClients(),
-    [],
-  );
+  const {
+    data: clients,
+    loading: loadingClients,
+    error: clientsError,
+  } = useAsync(() => listClients(), []);
 
   const [clientId, setClientId] = useState<string | null>(null);
   const [productName, setProductName] = useState('');
@@ -46,10 +47,18 @@ export default function NewProduct() {
   }
 
   if (loadingClients) {
-    return <View style={styles.center}><ActivityIndicator /></View>;
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator />
+      </View>
+    );
   }
   if (clientsError) {
-    return <View style={styles.center}><Text style={styles.error}>{clientsError}</Text></View>;
+    return (
+      <View style={styles.center}>
+        <Text style={styles.error}>{clientsError}</Text>
+      </View>
+    );
   }
   if ((clients ?? []).length === 0) {
     return (
@@ -85,17 +94,30 @@ export default function NewProduct() {
       />
 
       {error ? (
-        <View style={styles.errorBox}><Text style={styles.errorText}>{error}</Text></View>
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
       ) : null}
 
       <Button title="Create product" onPress={handleSubmit} loading={submitting} />
-      <Button title="Cancel" onPress={() => router.back()} variant="secondary" style={styles.cancel} />
+      <Button
+        title="Cancel"
+        onPress={() => router.back()}
+        variant="secondary"
+        style={styles.cancel}
+      />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#fff' },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    backgroundColor: '#fff',
+  },
   error: { color: '#c0392b', textAlign: 'center' },
   errorBox: { backgroundColor: '#fdecea', padding: 12, borderRadius: 8, marginBottom: 12 },
   errorText: { color: '#a02d1b', fontSize: 14 },

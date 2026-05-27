@@ -26,7 +26,9 @@ export function useDismissibleHint(id: HintId): UseDismissibleHint {
       if (cancelled) return;
       setVisible(!dismissed);
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [id, user.userId]);
 
   const dismiss = useCallback(() => {

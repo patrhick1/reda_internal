@@ -18,10 +18,11 @@ export type DeliveryDisplayJoins = {
   assigned_agent_name: string | null;
 };
 
-export type DeliveryRow = (DeliveryAdminRow | DeliverySafeRow) & DeliveryDisplayJoins & {
-  // deliveries_admin contributes `margin`; deliveries_safe contributes null
-  margin: number | null;
-};
+export type DeliveryRow = (DeliveryAdminRow | DeliverySafeRow) &
+  DeliveryDisplayJoins & {
+    // deliveries_admin contributes `margin`; deliveries_safe contributes null
+    margin: number | null;
+  };
 
 export type AgentEarningRow = {
   id: string;
@@ -35,20 +36,25 @@ export type AgentEarningRow = {
  *  Reads from deliveries_safe, which exposes agent_payment_snapshot only to the assigned agent.
  *  Client name is intentionally omitted — agents don't get to see which vendor
  *  the delivery belongs to. */
-export async function listAgentEarnings(userId: string, days: number = 35): Promise<AgentEarningRow[]> {
+export async function listAgentEarnings(
+  userId: string,
+  days: number = 35,
+): Promise<AgentEarningRow[]> {
   const todayLagosDate = new Date(new Date().getTime() + 60 * 60 * 1000);
   const cutoff = new Date(todayLagosDate);
   cutoff.setDate(cutoff.getDate() - days);
 
   const { data, error } = await supabase
     .from('deliveries_safe')
-    .select(`
+    .select(
+      `
       id,
       customer_name,
       scheduled_date,
       agent_payment_snapshot,
       product:product_catalog(product_name)
-    `)
+    `,
+    )
     .eq('assigned_agent_id', userId)
     .eq('current_status', 'delivered')
     .gte('scheduled_date', cutoff.toISOString().slice(0, 10))
@@ -56,8 +62,20 @@ export async function listAgentEarnings(userId: string, days: number = 35): Prom
 
   if (error) throw error;
   return (data ?? [])
-    .filter((row): row is { id: string; customer_name: string; scheduled_date: string; agent_payment_snapshot: number; product: { product_name: string } | null } =>
-      row.id !== null && row.customer_name !== null && row.scheduled_date !== null && row.agent_payment_snapshot !== null,
+    .filter(
+      (
+        row,
+      ): row is {
+        id: string;
+        customer_name: string;
+        scheduled_date: string;
+        agent_payment_snapshot: number;
+        product: { product_name: string } | null;
+      } =>
+        row.id !== null &&
+        row.customer_name !== null &&
+        row.scheduled_date !== null &&
+        row.agent_payment_snapshot !== null,
     )
     .map((row) => ({
       id: row.id,
@@ -69,10 +87,12 @@ export async function listAgentEarnings(userId: string, days: number = 35): Prom
 }
 
 export type DeliveryStatusDef = Database['public']['Tables']['delivery_status_defs']['Row'];
-export type DeliveryStatusTransition = Database['public']['Tables']['delivery_status_transitions']['Row'];
-export type DeliveryStatusHistoryRow = Database['public']['Tables']['delivery_status_history']['Row'] & {
-  changed_by_name: string | null;
-};
+export type DeliveryStatusTransition =
+  Database['public']['Tables']['delivery_status_transitions']['Row'];
+export type DeliveryStatusHistoryRow =
+  Database['public']['Tables']['delivery_status_history']['Row'] & {
+    changed_by_name: string | null;
+  };
 
 const VIEW_FOR: Record<Role, 'deliveries_admin' | 'deliveries_safe'> = {
   admin: 'deliveries_admin',
@@ -96,7 +116,9 @@ type JoinShape = {
   assigned_agent: { display_name: string } | null;
 };
 
-function attachJoins<T extends object>(row: T & JoinShape): T & DeliveryDisplayJoins & { margin: number | null } {
+function attachJoins<T extends object>(
+  row: T & JoinShape,
+): T & DeliveryDisplayJoins & { margin: number | null } {
   const { client, product, location, assigned_agent, ...rest } = row;
   return {
     ...(rest as T),
@@ -122,18 +144,26 @@ function todayLagos(): string {
   return lagos.toISOString().slice(0, 10);
 }
 
-export async function listDeliveries(role: Role, filters: ListFilters = {}): Promise<DeliveryRow[]> {
+export async function listDeliveries(
+  role: Role,
+  filters: ListFilters = {},
+): Promise<DeliveryRow[]> {
   const view = VIEW_FOR[role];
   // created_at DESC is the stable tiebreaker for rows that share a
   // last-change timestamp (or none at all).
-  let query = supabase.from(view).select(`*, ${JOIN_FRAGMENT}`).order('created_at', { ascending: false });
+  let query = supabase
+    .from(view)
+    .select(`*, ${JOIN_FRAGMENT}`)
+    .order('created_at', { ascending: false });
   if (!filters.allDates) {
     const d = filters.date ?? todayLagos();
     query = query.eq('scheduled_date', d);
   }
   const { data, error } = await query;
   if (error) throw error;
-  const rows = (data ?? []).map((row) => attachJoins(row as unknown as JoinShape & object)) as DeliveryRow[];
+  const rows = (data ?? []).map((row) =>
+    attachJoins(row as unknown as JoinShape & object),
+  ) as DeliveryRow[];
 
   // Sort: non-terminal first, then by most recent status change DESC.
   // Pulls (delivery_id, changed_at) from delivery_status_history for the
@@ -186,7 +216,17 @@ export function normalizePhoneForGrouping(p: string | null | undefined): string 
  *  that field. In practice race-assigned rows also share normalized address
  *  + quantity (tier 2), so this key catches them. Rows missing phone or
  *  product or date can't have siblings — they stand alone by id. */
-export function siblingGroupKey(r: Pick<DeliveryRow, 'id' | 'customer_phone' | 'product_catalog_id' | 'scheduled_date' | 'raw_address' | 'quantity_ordered'>): string {
+export function siblingGroupKey(
+  r: Pick<
+    DeliveryRow,
+    | 'id'
+    | 'customer_phone'
+    | 'product_catalog_id'
+    | 'scheduled_date'
+    | 'raw_address'
+    | 'quantity_ordered'
+  >,
+): string {
   const phone = normalizePhoneForGrouping(r.customer_phone);
   if (!phone || !r.product_catalog_id || !r.scheduled_date) {
     return `solo:${r.id}`;
@@ -266,16 +306,16 @@ export async function updateDeliveryFields(
   patch: UpdateDeliveryFieldsPatch,
 ): Promise<void> {
   const { error } = await supabase.rpc('update_delivery_fields', {
-    p_delivery_id:        deliveryId,
-    p_customer_name:      patch.customerName,
-    p_customer_phone:     patch.customerPhone,
-    p_raw_address:        patch.rawAddress,
-    p_location_id:        patch.locationId as unknown as string | undefined,
-    p_client_id:          patch.clientId,
+    p_delivery_id: deliveryId,
+    p_customer_name: patch.customerName,
+    p_customer_phone: patch.customerPhone,
+    p_raw_address: patch.rawAddress,
+    p_location_id: patch.locationId as unknown as string | undefined,
+    p_client_id: patch.clientId,
     p_product_catalog_id: patch.productCatalogId,
-    p_quantity_ordered:   patch.quantityOrdered,
-    p_customer_price:     patch.customerPrice,
-    p_assigned_agent_id:  patch.assignedAgentId as unknown as string | undefined,
+    p_quantity_ordered: patch.quantityOrdered,
+    p_customer_price: patch.customerPrice,
+    p_assigned_agent_id: patch.assignedAgentId as unknown as string | undefined,
   });
   if (error) throw error;
 }
@@ -338,8 +378,8 @@ export async function reassignToSubAgent(
   clientUuid: string,
 ): Promise<void> {
   const { error } = await supabase.rpc('reassign_to_sub_agent', {
-    p_client_uuid:  clientUuid,
-    p_delivery_id:  deliveryId,
+    p_client_uuid: clientUuid,
+    p_delivery_id: deliveryId,
     p_sub_agent_id: subAgentId,
   });
   if (error) throw error;
@@ -398,8 +438,10 @@ export async function previewDeliveryCharge(
   locationId: string,
   clientId: string,
 ): Promise<ChargePreview | null> {
-  const { data, error } = await supabase
-    .rpc('preview_delivery_charge', { p_location_id: locationId, p_client_id: clientId });
+  const { data, error } = await supabase.rpc('preview_delivery_charge', {
+    p_location_id: locationId,
+    p_client_id: clientId,
+  });
   if (error) throw error;
   const row = (data ?? [])[0];
   return row ?? null;

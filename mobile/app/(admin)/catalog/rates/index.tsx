@@ -1,5 +1,13 @@
 import { useCallback } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  FlatList,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { Link, useFocusEffect } from 'expo-router';
 import { Button } from '@/components/Button';
 import { useAsync } from '@/hooks/useAsync';
@@ -8,7 +16,11 @@ import { formatNaira } from '@/lib/format';
 
 export default function RatesMatrix() {
   const { data, loading, error, reload } = useAsync(() => listCurrentRates(), []);
-  useFocusEffect(useCallback(() => { reload(); }, [reload]));
+  useFocusEffect(
+    useCallback(() => {
+      reload();
+    }, [reload]),
+  );
 
   if (error) {
     return (
@@ -19,7 +31,11 @@ export default function RatesMatrix() {
     );
   }
   if (loading && !data) {
-    return <View style={styles.center}><ActivityIndicator /></View>;
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator />
+      </View>
+    );
   }
   if ((data ?? []).length === 0) {
     return (
@@ -55,7 +71,10 @@ function Row({ row }: { row: LocationRate }) {
 
   return (
     <Link
-      href={{ pathname: '/(admin)/catalog/rates/[locationId]', params: { locationId: row.location_id } }}
+      href={{
+        pathname: '/(admin)/catalog/rates/[locationId]',
+        params: { locationId: row.location_id },
+      }}
       asChild
     >
       <TouchableOpacity style={styles.dataRow}>
@@ -101,7 +120,13 @@ const styles = StyleSheet.create({
   cellLoc: { flex: 2 },
   cellNum: { flex: 1, textAlign: 'right' },
   cellNoRate: { flex: 3, textAlign: 'right', color: '#888', fontStyle: 'italic', fontSize: 13 },
-  headerText: { color: '#666', fontWeight: '600', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1 },
+  headerText: {
+    color: '#666',
+    fontWeight: '600',
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
   name: { fontWeight: '500' },
   margin: { fontWeight: '600', color: '#0a7a3a' },
 });

@@ -4,11 +4,7 @@ import { Field } from '@/components/Field';
 import { Button } from '@/components/Button';
 import { Select } from '@/components/Select';
 import { useAsync } from '@/hooks/useAsync';
-import {
-  listStatusDefs,
-  listTransitionsFrom,
-  type DeliveryRow,
-} from '@/services/deliveries';
+import { listStatusDefs, listTransitionsFrom, type DeliveryRow } from '@/services/deliveries';
 import { useEnqueueChangeStatus } from '@/queue/mutations';
 import { errorMessage } from '@/lib/errors';
 
@@ -31,14 +27,21 @@ export function StatusUpdatePanel({
   onCommitted: (newStatus: string) => void;
 }) {
   const currentStatus = delivery.current_status ?? 'pending';
-  const transitionsQ = useAsync(() => listTransitionsFrom(currentStatus, isAdmin), [currentStatus, isAdmin]);
+  const transitionsQ = useAsync(
+    () => listTransitionsFrom(currentStatus, isAdmin),
+    [currentStatus, isAdmin],
+  );
   const defsQ = useAsync(() => listStatusDefs(), []);
 
   const [toStatus, setToStatus] = useState<string | null>(null);
   const [reason, setReason] = useState('');
   const [notes, setNotes] = useState('');
-  const [quantityDelivered, setQuantityDelivered] = useState(String(delivery.quantity_ordered ?? ''));
-  const [paid, setPaid] = useState(delivery.customer_price !== null ? String(delivery.customer_price) : '');
+  const [quantityDelivered, setQuantityDelivered] = useState(
+    String(delivery.quantity_ordered ?? ''),
+  );
+  const [paid, setPaid] = useState(
+    delivery.customer_price !== null ? String(delivery.customer_price) : '',
+  );
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>('transfer');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -59,7 +62,8 @@ export function StatusUpdatePanel({
     [transitionsQ.data, labelByStatus],
   );
 
-  const selectedTransition = (transitionsQ.data ?? []).find((t) => t.to_status === toStatus) ?? null;
+  const selectedTransition =
+    (transitionsQ.data ?? []).find((t) => t.to_status === toStatus) ?? null;
   const reasonRequired = !!selectedTransition?.requires_reason;
   const deliveredFieldsRequired = toStatus === 'delivered';
 
@@ -101,16 +105,19 @@ export function StatusUpdatePanel({
 
     setSubmitting(true);
     try {
-      await enqueueStatus({
-        deliveryId: delivery.id ?? '',
-        toStatus,
-        reason: reason.trim() || null,
-        notes: notes.trim() || null,
-        quantityDelivered: qty,
-        paid: paidNum,
-        paymentMethod: method,
-        newScheduledDate: null,
-      }, `Status → ${toStatus} · ${delivery.customer_name ?? ''}`);
+      await enqueueStatus(
+        {
+          deliveryId: delivery.id ?? '',
+          toStatus,
+          reason: reason.trim() || null,
+          notes: notes.trim() || null,
+          quantityDelivered: qty,
+          paid: paidNum,
+          paymentMethod: method,
+          newScheduledDate: null,
+        },
+        `Status → ${toStatus} · ${delivery.customer_name ?? ''}`,
+      );
       onCommitted(toStatus);
     } catch (e) {
       setError(errorMessage(e));
@@ -119,13 +126,19 @@ export function StatusUpdatePanel({
   }
 
   if (transitionsQ.loading || defsQ.loading) {
-    return <View style={styles.center}><ActivityIndicator /></View>;
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator />
+      </View>
+    );
   }
   if (transitionsQ.error || defsQ.error) {
     return (
       <View style={styles.panel}>
         <Text style={styles.errorText}>{transitionsQ.error ?? defsQ.error}</Text>
-        <TouchableOpacity onPress={onCancel}><Text style={styles.cancelLink}>Cancel</Text></TouchableOpacity>
+        <TouchableOpacity onPress={onCancel}>
+          <Text style={styles.cancelLink}>Cancel</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -134,7 +147,8 @@ export function StatusUpdatePanel({
       <View style={styles.panel}>
         <Text style={styles.panelTitle}>No transitions available</Text>
         <Text style={styles.panelSub}>
-          From {labelByStatus.get(currentStatus) ?? currentStatus}, there’s nothing you’re allowed to change to.
+          From {labelByStatus.get(currentStatus) ?? currentStatus}, there’s nothing you’re allowed
+          to change to.
           {isAdmin ? '' : ' (Backward transitions require admin.)'}
         </Text>
         <Button title="Close" onPress={onCancel} variant="secondary" />
@@ -146,7 +160,8 @@ export function StatusUpdatePanel({
     <View style={styles.panel}>
       <Text style={styles.panelTitle}>Update status</Text>
       <Text style={styles.panelSub}>
-        Current: <Text style={styles.bold}>{labelByStatus.get(currentStatus) ?? currentStatus}</Text>
+        Current:{' '}
+        <Text style={styles.bold}>{labelByStatus.get(currentStatus) ?? currentStatus}</Text>
       </Text>
 
       <Select
@@ -196,11 +211,19 @@ export function StatusUpdatePanel({
       <Field label="Notes" value={notes} onChangeText={setNotes} multiline />
 
       {error ? (
-        <View style={styles.errorBox}><Text style={styles.errorText}>{error}</Text></View>
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
       ) : null}
 
       <Button title="Apply" onPress={submit} loading={submitting} />
-      <Button title="Cancel" onPress={onCancel} variant="secondary" style={styles.bottom} disabled={submitting} />
+      <Button
+        title="Cancel"
+        onPress={onCancel}
+        variant="secondary"
+        style={styles.bottom}
+        disabled={submitting}
+      />
     </View>
   );
 }

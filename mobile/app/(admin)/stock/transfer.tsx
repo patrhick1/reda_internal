@@ -27,10 +27,10 @@ import { errorMessage } from '@/lib/errors';
 // warehouse) — Uzo's flow is "one agent finishes collecting all their packages
 // before the next agent comes". Per-row (client, product, qty) is what changes.
 type BulkRow = {
-  id:         string;
-  clientId:   string | null;
-  productId:  string | null;
-  quantity:   string;
+  id: string;
+  clientId: string | null;
+  productId: string | null;
+  quantity: string;
 };
 
 const newRow = (): BulkRow => ({
@@ -69,7 +69,13 @@ export default function NewTransfer() {
   // One agent per submission. Drops the per-row picker friction Uzo flagged:
   // "select Nnenna once, then keep adding products she's collecting".
   const [bulkAgentId, setBulkAgentId] = useState<string | null>(null);
-  const { rows, addRow, removeRow, updateRow: updateBulkRow, resetRows } = useBulkRows<BulkRow>(makeNewBulkRow);
+  const {
+    rows,
+    addRow,
+    removeRow,
+    updateRow: updateBulkRow,
+    resetRows,
+  } = useBulkRows<BulkRow>(makeNewBulkRow);
   // Cache products by clientId so multiple bulk rows on the same client share a fetch.
   const [productsByClient, setProductsByClient] = useState<Map<string, Product[]>>(new Map());
 
@@ -78,26 +84,33 @@ export default function NewTransfer() {
   // Reset when reason changes; prompt confirm if user has filled anything.
   function changeReason(next: PairedReason | null) {
     const hadSingleData = !!(fromUserId || toUserId || singleProductId || singleQty);
-    const hadBulkData = rows.some((r) => r.productId || r.quantity) || rows.length > 1 || !!warehouseId || !!bulkAgentId;
+    const hadBulkData =
+      rows.some((r) => r.productId || r.quantity) ||
+      rows.length > 1 ||
+      !!warehouseId ||
+      !!bulkAgentId;
     const anyDirty = hadSingleData || hadBulkData;
     const apply = () => {
       setReason(next);
       setError(null);
-      setFromUserId(null); setToUserId(null);
-      setSingleClientId(null); setSingleProductId(null); setSingleProducts([]); setSingleQty('');
+      setFromUserId(null);
+      setToUserId(null);
+      setSingleClientId(null);
+      setSingleProductId(null);
+      setSingleProducts([]);
+      setSingleQty('');
       setWarehouseId(null);
       setBulkAgentId(null);
       resetRows();
     };
-    if (!anyDirty) { apply(); return; }
-    Alert.alert(
-      'Switch transfer type?',
-      'Your current entries will be cleared.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Switch', style: 'destructive', onPress: apply },
-      ],
-    );
+    if (!anyDirty) {
+      apply();
+      return;
+    }
+    Alert.alert('Switch transfer type?', 'Your current entries will be cleared.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Switch', style: 'destructive', onPress: apply },
+    ]);
   }
 
   // Load single-mode products when the single client changes.
@@ -107,24 +120,31 @@ export default function NewTransfer() {
     setSingleProducts([]);
     if (!singleClientId) return;
     listActiveProductsByClient(singleClientId)
-      .then((p) => { if (!cancelled) setSingleProducts(p.map((x) => ({ id: x.id, product_name: x.product_name }))); })
-      .catch((e) => { if (!cancelled) setError(errorMessage(e)); });
-    return () => { cancelled = true; };
+      .then((p) => {
+        if (!cancelled)
+          setSingleProducts(p.map((x) => ({ id: x.id, product_name: x.product_name })));
+      })
+      .catch((e) => {
+        if (!cancelled) setError(errorMessage(e));
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [singleClientId]);
 
   // Pre-fill warehouseId when bulk and exactly one active warehouse user exists.
   const activeUsers = useMemo(
-    () => (usersQ.data ?? []).filter((u) => u.is_active && (u.role === 'agent' || u.role === 'warehouse')),
+    () =>
+      (usersQ.data ?? []).filter(
+        (u) => u.is_active && (u.role === 'agent' || u.role === 'warehouse'),
+      ),
     [usersQ.data],
   );
   const warehouseUsers = useMemo(
     () => activeUsers.filter((u) => u.role === 'warehouse'),
     [activeUsers],
   );
-  const agentUsers = useMemo(
-    () => activeUsers.filter((u) => u.role === 'agent'),
-    [activeUsers],
-  );
+  const agentUsers = useMemo(() => activeUsers.filter((u) => u.role === 'agent'), [activeUsers]);
   useEffect(() => {
     const only = warehouseUsers[0];
     if (isBulk && warehouseUsers.length === 1 && only && !warehouseId) {
@@ -133,15 +153,21 @@ export default function NewTransfer() {
   }, [isBulk, warehouseUsers, warehouseId]);
 
   // Fetch + cache products for a client (used by bulk row pickers).
-  const ensureProductsFor = useCallback(async (clientId: string) => {
-    if (productsByClient.has(clientId)) return;
-    const list = await listActiveProductsByClient(clientId);
-    setProductsByClient((m) => {
-      const next = new Map(m);
-      next.set(clientId, list.map((x) => ({ id: x.id, product_name: x.product_name })));
-      return next;
-    });
-  }, [productsByClient]);
+  const ensureProductsFor = useCallback(
+    async (clientId: string) => {
+      if (productsByClient.has(clientId)) return;
+      const list = await listActiveProductsByClient(clientId);
+      setProductsByClient((m) => {
+        const next = new Map(m);
+        next.set(
+          clientId,
+          list.map((x) => ({ id: x.id, product_name: x.product_name })),
+        );
+        return next;
+      });
+    },
+    [productsByClient],
+  );
 
   // Wrap updateBulkRow so changing the clientId also resets the productId
   // (you can't keep a product selection when the client changes underneath).
@@ -161,25 +187,47 @@ export default function NewTransfer() {
   // --------------------------------------------------------------------------
   async function handleSubmitSingle() {
     setError(null);
-    if (!reason)      { setError('Pick a transfer reason'); return; }
-    if (!fromUserId)  { setError('Pick the source user'); return; }
-    if (!toUserId)    { setError('Pick the destination user'); return; }
-    if (fromUserId === toUserId) { setError('Source and destination must differ'); return; }
-    if (!singleProductId) { setError('Pick a product'); return; }
+    if (!reason) {
+      setError('Pick a transfer reason');
+      return;
+    }
+    if (!fromUserId) {
+      setError('Pick the source user');
+      return;
+    }
+    if (!toUserId) {
+      setError('Pick the destination user');
+      return;
+    }
+    if (fromUserId === toUserId) {
+      setError('Source and destination must differ');
+      return;
+    }
+    if (!singleProductId) {
+      setError('Pick a product');
+      return;
+    }
     const q = Number(singleQty);
-    if (!Number.isInteger(q) || q <= 0) { setError('Quantity must be a positive whole number'); return; }
+    if (!Number.isInteger(q) || q <= 0) {
+      setError('Quantity must be a positive whole number');
+      return;
+    }
     setSubmitting(true);
     try {
       const reasonLabel = PAIRED_REASONS.find((r) => r.value === reason)?.label ?? reason;
-      const productName = singleProducts.find((p) => p.id === singleProductId)?.product_name ?? 'product';
-      await enqueueTransfer({
-        fromUserId,
-        toUserId,
-        productCatalogId: singleProductId,
-        quantity: q,
-        reason,
-        notes: notes.trim() || null,
-      }, `${reasonLabel} · ${q} ${productName}`);
+      const productName =
+        singleProducts.find((p) => p.id === singleProductId)?.product_name ?? 'product';
+      await enqueueTransfer(
+        {
+          fromUserId,
+          toUserId,
+          productCatalogId: singleProductId,
+          quantity: q,
+          reason,
+          notes: notes.trim() || null,
+        },
+        `${reasonLabel} · ${q} ${productName}`,
+      );
       router.back();
     } catch (e) {
       setError(errorMessage(e));
@@ -193,16 +241,28 @@ export default function NewTransfer() {
   // --------------------------------------------------------------------------
   async function handleSubmitBulk() {
     setError(null);
-    if (!reason || !isBulk) { setError('Pick a transfer reason'); return; }
-    if (!warehouseId) { setError('Pick the warehouse'); return; }
-    if (!bulkAgentId) { setError('Pick the agent'); return; }
+    if (!reason || !isBulk) {
+      setError('Pick a transfer reason');
+      return;
+    }
+    if (!warehouseId) {
+      setError('Pick the warehouse');
+      return;
+    }
+    if (!bulkAgentId) {
+      setError('Pick the agent');
+      return;
+    }
 
     const validRows: { productId: string; qty: number }[] = [];
     for (const r of rows) {
       // Skip rows that are completely empty (admin added then ignored).
       const completelyEmpty = !r.productId && !r.quantity;
       if (completelyEmpty) continue;
-      if (!r.productId) { setError('Each row needs a product'); return; }
+      if (!r.productId) {
+        setError('Each row needs a product');
+        return;
+      }
       const q = Number(r.quantity);
       if (!Number.isInteger(q) || q <= 0) {
         setError('Each row needs a positive whole-number quantity');
@@ -210,26 +270,33 @@ export default function NewTransfer() {
       }
       validRows.push({ productId: r.productId, qty: q });
     }
-    if (validRows.length === 0) { setError('Add at least one product'); return; }
+    if (validRows.length === 0) {
+      setError('Add at least one product');
+      return;
+    }
 
     setSubmitting(true);
     try {
       const reasonLabel = PAIRED_REASONS.find((r) => r.value === reason)?.label ?? reason;
-      const agent       = agentUsers.find((u) => u.id === bulkAgentId);
+      const agent = agentUsers.find((u) => u.id === bulkAgentId);
       const fromId = reason === 'warehouse_issue' ? warehouseId : bulkAgentId;
-      const toId   = reason === 'warehouse_issue' ? bulkAgentId  : warehouseId;
+      const toId = reason === 'warehouse_issue' ? bulkAgentId : warehouseId;
       for (const row of validRows) {
-        const product = productsByClient.get(rows.find((r) => r.productId === row.productId)?.clientId ?? '')
+        const product = productsByClient
+          .get(rows.find((r) => r.productId === row.productId)?.clientId ?? '')
           ?.find((p) => p.id === row.productId);
-        const label  = `${reasonLabel} · ${row.qty} ${product?.product_name ?? 'product'} · ${agent?.display_name ?? 'agent'}`;
-        await enqueueTransfer({
-          fromUserId: fromId,
-          toUserId:   toId,
-          productCatalogId: row.productId,
-          quantity:   row.qty,
-          reason,
-          notes:      notes.trim() || null,
-        }, label);
+        const label = `${reasonLabel} · ${row.qty} ${product?.product_name ?? 'product'} · ${agent?.display_name ?? 'agent'}`;
+        await enqueueTransfer(
+          {
+            fromUserId: fromId,
+            toUserId: toId,
+            productCatalogId: row.productId,
+            quantity: row.qty,
+            reason,
+            notes: notes.trim() || null,
+          },
+          label,
+        );
       }
       router.back();
     } catch (e) {
@@ -239,7 +306,11 @@ export default function NewTransfer() {
   }
 
   if (usersQ.loading || clientsQ.loading) {
-    return <View style={styles.center}><ActivityIndicator /></View>;
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator />
+      </View>
+    );
   }
 
   const reasonOptions = PAIRED_REASONS.map((r) => ({ value: r.value, label: r.label, sub: r.sub }));
@@ -248,7 +319,11 @@ export default function NewTransfer() {
   const clientOptions = (clientsQ.data ?? []).map((c) => ({ value: c.id, label: c.name }));
 
   return (
-    <ScrollView style={styles.flex} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      style={styles.flex}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+    >
       <Select
         label="Reason"
         required
@@ -281,7 +356,11 @@ export default function NewTransfer() {
             value={warehouseId}
             options={warehouseOptions}
             onChange={setWarehouseId}
-            placeholder={warehouseUsers.length === 0 ? 'No warehouse user — add one in Catalog' : 'Pick warehouse'}
+            placeholder={
+              warehouseUsers.length === 0
+                ? 'No warehouse user — add one in Catalog'
+                : 'Pick warehouse'
+            }
             disabled={warehouseUsers.length === 0}
           />
           <Select
@@ -294,7 +373,7 @@ export default function NewTransfer() {
           />
 
           {rows.map((row, i) => {
-            const rowProducts = row.clientId ? productsByClient.get(row.clientId) ?? [] : [];
+            const rowProducts = row.clientId ? (productsByClient.get(row.clientId) ?? []) : [];
             return (
               <View key={row.id} style={styles.rowCard}>
                 <View style={styles.rowHeader}>
@@ -322,7 +401,13 @@ export default function NewTransfer() {
                   options={rowProducts.map((p) => ({ value: p.id, label: p.product_name }))}
                   onChange={(v) => updateRow(row.id, { productId: v })}
                   disabled={!row.clientId || rowProducts.length === 0}
-                  placeholder={!row.clientId ? 'Pick a client first' : rowProducts.length === 0 ? 'No products for this client' : 'Choose'}
+                  placeholder={
+                    !row.clientId
+                      ? 'Pick a client first'
+                      : rowProducts.length === 0
+                        ? 'No products for this client'
+                        : 'Choose'
+                  }
                 />
                 <Field
                   label="Quantity"
@@ -336,7 +421,12 @@ export default function NewTransfer() {
             );
           })}
 
-          <Button title="+ Add another product" onPress={addRow} variant="secondary" style={styles.addRow} />
+          <Button
+            title="+ Add another product"
+            onPress={addRow}
+            variant="secondary"
+            style={styles.addRow}
+          />
         </>
       ) : null}
 
@@ -351,19 +441,30 @@ export default function NewTransfer() {
       ) : null}
 
       {error ? (
-        <View style={styles.errorBox}><Text style={styles.errorText}>{error}</Text></View>
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
       ) : null}
 
       {reason === 'transfer' ? (
         <Button title="Move stock" onPress={handleSubmitSingle} loading={submitting} />
       ) : isBulk ? (
         <Button
-          title={bulkSubmitLabel(reason, countFilled(rows), agentUsers.find((u) => u.id === bulkAgentId)?.display_name)}
+          title={bulkSubmitLabel(
+            reason,
+            countFilled(rows),
+            agentUsers.find((u) => u.id === bulkAgentId)?.display_name,
+          )}
           onPress={handleSubmitBulk}
           loading={submitting}
         />
       ) : null}
-      <Button title="Cancel" onPress={() => router.back()} variant="secondary" style={styles.cancel} />
+      <Button
+        title="Cancel"
+        onPress={() => router.back()}
+        variant="secondary"
+        style={styles.cancel}
+      />
     </ScrollView>
   );
 }
@@ -387,33 +488,59 @@ function bulkSubmitLabel(reason: PairedReason, n: number, agentName: string | un
 // --- Sub-component for the existing single-row UI -----------------------------
 function SingleForm(props: {
   activeUsers: AppUser[];
-  fromUserId: string | null;  setFromUserId: (v: string | null) => void;
-  toUserId: string | null;    setToUserId: (v: string | null) => void;
+  fromUserId: string | null;
+  setFromUserId: (v: string | null) => void;
+  toUserId: string | null;
+  setToUserId: (v: string | null) => void;
   clientOptions: { value: string; label: string }[];
-  singleClientId: string | null;  setSingleClientId: (v: string | null) => void;
+  singleClientId: string | null;
+  setSingleClientId: (v: string | null) => void;
   singleProducts: Product[];
-  singleProductId: string | null; setSingleProductId: (v: string | null) => void;
-  singleQty: string;          setSingleQty: (v: string) => void;
+  singleProductId: string | null;
+  setSingleProductId: (v: string | null) => void;
+  singleQty: string;
+  setSingleQty: (v: string) => void;
 }) {
   const agentOptions = useMemo(
-    () => props.activeUsers
-      .filter((u) => u.role === 'agent' && u.id !== props.fromUserId)
-      .map((u) => ({ value: u.id, label: u.display_name })),
+    () =>
+      props.activeUsers
+        .filter((u) => u.role === 'agent' && u.id !== props.fromUserId)
+        .map((u) => ({ value: u.id, label: u.display_name })),
     [props.activeUsers, props.fromUserId],
   );
   const sourceOptions = useMemo(
-    () => props.activeUsers
-      .filter((u) => u.role === 'agent')
-      .map((u) => ({ value: u.id, label: u.display_name })),
+    () =>
+      props.activeUsers
+        .filter((u) => u.role === 'agent')
+        .map((u) => ({ value: u.id, label: u.display_name })),
     [props.activeUsers],
   );
   const productOptions = props.singleProducts.map((p) => ({ value: p.id, label: p.product_name }));
 
   return (
     <>
-      <Select label="From" required value={props.fromUserId} options={sourceOptions} onChange={props.setFromUserId} />
-      <Select label="To"   required value={props.toUserId}   options={agentOptions}  onChange={props.setToUserId} disabled={!props.fromUserId} />
-      <Select label="Client" required value={props.singleClientId} options={props.clientOptions} onChange={props.setSingleClientId} />
+      <Select
+        label="From"
+        required
+        value={props.fromUserId}
+        options={sourceOptions}
+        onChange={props.setFromUserId}
+      />
+      <Select
+        label="To"
+        required
+        value={props.toUserId}
+        options={agentOptions}
+        onChange={props.setToUserId}
+        disabled={!props.fromUserId}
+      />
+      <Select
+        label="Client"
+        required
+        value={props.singleClientId}
+        options={props.clientOptions}
+        onChange={props.setSingleClientId}
+      />
       <Select
         label="Product"
         required
@@ -422,9 +549,11 @@ function SingleForm(props: {
         onChange={props.setSingleProductId}
         disabled={!props.singleClientId || props.singleProducts.length === 0}
         placeholder={
-          !props.singleClientId ? 'Pick a client first'
-            : props.singleProducts.length === 0 ? 'No products for this client'
-            : 'Choose'
+          !props.singleClientId
+            ? 'Pick a client first'
+            : props.singleProducts.length === 0
+              ? 'No products for this client'
+              : 'Choose'
         }
       />
       <Field
@@ -442,17 +571,42 @@ function SingleForm(props: {
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: '#fff' },
   content: { padding: 16, paddingBottom: 48 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#fff' },
-  errorBox: { backgroundColor: '#fdecea', padding: 12, borderRadius: 8, marginBottom: 12, marginTop: 4 },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    backgroundColor: '#fff',
+  },
+  errorBox: {
+    backgroundColor: '#fdecea',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 12,
+    marginTop: 4,
+  },
   errorText: { color: '#a02d1b', fontSize: 14 },
   cancel: { marginTop: 12 },
   rowCard: {
     marginTop: 10,
     padding: 12,
-    borderWidth: 1, borderColor: '#eee', borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#eee',
+    borderRadius: 8,
     backgroundColor: '#fafafa',
   },
-  rowHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
-  rowTitle:  { fontSize: 12, fontWeight: '700', color: '#666', letterSpacing: 0.6, textTransform: 'uppercase' },
-  addRow:    { marginTop: 12 },
+  rowHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  rowTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#666',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  addRow: { marginTop: 12 },
 });

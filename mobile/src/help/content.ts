@@ -17,8 +17,7 @@ const ADMIN = [
     id: 'sign-in',
     title: 'Sign in & manage your account',
     icon: 'user',
-    body:
-`- App icon → enter your email and password. Tap the eye icon on the password field to peek at what you typed.
+    body: `- App icon → enter your email and password. Tap the eye icon on the password field to peek at what you typed.
 - If you forget the password, tap *Forgot password* on the login screen, type your own email, and a reset link is mailed to **you** (not the shared inbox). Click the link and set a new password.
 - After signing in once, the app pre-fills your email on next launch.
 - (Optional) Profile → *Unlock with Face ID / Fingerprint* — turn this on and the app asks for your face or finger every time you open it. You stay signed in either way; the face check is just an extra lock on the door.
@@ -33,8 +32,7 @@ const ADMIN = [
     id: 'new-delivery',
     title: 'Add a delivery manually',
     icon: 'plus',
-    body:
-`When an agent or customer messages you a delivery that the bot can't handle:
+    body: `When an agent or customer messages you a delivery that the bot can't handle:
 
 1. Tap **Home → New delivery** (the red square in Quick Actions), or **Deliveries → +** (the floating red button).
 2. Fill in the customer name, phone, address.
@@ -61,8 +59,7 @@ You don't need to remember to cancel anything yourself. If the agents have **dif
     id: 'reconcile',
     title: 'Reconcile — end of day money check',
     icon: 'wallet',
-    body:
-`Open the app any time after 7pm.
+    body: `Open the app any time after 7pm.
 
 ### Check by-client
 
@@ -87,8 +84,7 @@ You don't need to remember to cancel anything yourself. If the agents have **dif
     id: 'eod',
     title: 'End of day — auto-rollover at 9pm',
     icon: 'calendar',
-    body:
-`At **9pm Lagos every night**, the app rolls every still-pending delivery forward to the next working day automatically. You don't have to remember. You'll get a push that says either:
+    body: `At **9pm Lagos every night**, the app rolls every still-pending delivery forward to the next working day automatically. You don't have to remember. You'll get a push that says either:
 
 - **"Rolled N deliveries forward. Tap to review."** — the cron found stuck rows and rolled them.
 - **"All clear — nothing to roll."** — your team finished everything for the day.
@@ -110,8 +106,7 @@ If you want to see what got rolled (or any other past date), go to **Deliveries*
     id: 'fix-delivery',
     title: 'Fix a wrong delivery',
     icon: 'edit',
-    body:
-`If a delivery has the wrong status / quantity / payment:
+    body: `If a delivery has the wrong status / quantity / payment:
 
 1. **Deliveries** tab → tap the delivery.
 2. Tap **Update status** (or **Mark delivered** if it should be delivered).
@@ -151,8 +146,7 @@ The list shows non-completed deliveries first, sorted by **most recent status ch
     id: 'review',
     title: `Review the bot's parses`,
     icon: 'bot',
-    body:
-`If the bot is turned on (Paschal controls this):
+    body: `If the bot is turned on (Paschal controls this):
 
 - **Review** tab in the bottom bar shows what the bot has done with the WhatsApp messages.
 - *Needs Review* — the bot couldn't figure out the address or the product. **Tap any row** to open the fix screen: everything the bot already read is pre-filled, you just pick the missing piece (usually a location, sometimes the right client when two carry the same product). Tap **Create delivery** and the order is in. Tap **Discard** instead with a reason (Spam / Duplicate / Not a real order) if it shouldn't become a delivery.
@@ -165,8 +159,7 @@ If someone else is already fixing the same row, you'll see *"<Name> is fixing th
     id: 'stock',
     title: 'Stock — receive, transfer, adjust',
     icon: 'warehouse',
-    body:
-`- **Stock** (warehouse icon, under Home → Quick Actions).
+    body: `- **Stock** (warehouse icon, under Home → Quick Actions).
 - Top of the screen has three buttons: **Receive stock** (the big red one), **New transfer**, **Adjustment**.
 - The list below has two tabs:
   - **By holder** (default) — the warehouse is always shown at the top (even when empty), then each agent. Red number = below zero (problem). Yellow number = 3 or fewer left, running low.
@@ -208,8 +201,7 @@ If someone else is already fixing the same row, you'll see *"<Name> is fixing th
     id: 'troubleshooting',
     title: 'When something seems broken',
     icon: 'alert',
-    body:
-`Pause. Open WhatsApp. Tell Paschal:
+    body: `Pause. Open WhatsApp. Tell Paschal:
 
 > "Reda app, [thing you tried], [what happened]"
 
@@ -232,8 +224,7 @@ const AGENT = [
     id: 'sign-in',
     title: 'Sign in & unlock',
     icon: 'user',
-    body:
-`- Open the app, enter your email and password. Tap the eye to peek at the password.
+    body: `- Open the app, enter your email and password. Tap the eye to peek at the password.
 - Forgot it? Tap **Forgot password** on the login screen — a reset link is mailed to you. Click the link, set a new password.
 - After signing in once, the app remembers your email so you only type the password next time.
 - (Optional) **Profile → Unlock with Face ID / Fingerprint** — turn this on and the app asks for your face or finger every time you open it. Extra lock on the door so a borrowed phone can't peek at your deliveries.`,
@@ -242,8 +233,7 @@ const AGENT = [
     id: 'today',
     title: 'Today — your stops for the day',
     icon: 'truck',
-    body:
-`- The home screen lists every delivery assigned to you today, most urgent first.
+    body: `- The home screen lists every delivery assigned to you today, most urgent first.
 - The two boxes at the top show **Earned today** (your share of what's been delivered) and the **delivered / total** count. The price for each stop is on its card — that's what you ask the customer for.
 - Tap any card to open the delivery: customer name, phone, address, product, quantity, agreed price.
 - Tap the phone icon on the detail screen to call the customer. Tap the map pin to open the address in your maps app.
@@ -261,8 +251,7 @@ Treat both as "stand down" signals. You'll still see the row in your Today, just
     id: 'mark-delivered',
     title: 'Mark a delivery delivered',
     icon: 'check',
-    body:
-`Open the delivery → tap **Mark delivered**:
+    body: `Open the delivery → tap **Mark delivered**:
 
 1. Enter the **quantity** you actually dropped off (defaults to the ordered qty).
 2. Enter the **amount collected** in naira.
@@ -275,8 +264,7 @@ The delivery turns green and your **Earned today** ticks up. You can't change a 
     id: 'report-issue',
     title: `Report an issue (couldn't deliver)`,
     icon: 'alert',
-    body:
-`If the delivery didn't go through, tap **Update status** instead of Mark delivered:
+    body: `If the delivery didn't go through, tap **Update status** instead of Mark delivered:
 
 - **Not answering / Number busy / Switched off** — phone problems. Try again later in the day; the delivery stays open.
 - **Tomorrow / Postponed / Follow up** — customer rescheduled. The delivery stays open but moves down your list.
@@ -300,8 +288,7 @@ Uzo and the dispatchers get a push, see the issue at the top of their list, and 
     id: 'end-of-day-return',
     title: 'End of day — return unsold stock',
     icon: 'arrowDown',
-    body:
-`When you're done for the day:
+    body: `When you're done for the day:
 
 - If you have unsold stock from the warehouse, drop it back at Shomolu and tell Uzo so he can record the **Warehouse return** in the app.
 - Open deliveries you couldn't finish stay on your list for tomorrow (Uzo will roll them forward).
@@ -314,8 +301,7 @@ const DISPATCHER = [
     id: 'sign-in',
     title: 'Sign in',
     icon: 'user',
-    body:
-`- App icon → enter your email and password. Tap the eye icon to peek at the password.
+    body: `- App icon → enter your email and password. Tap the eye icon to peek at the password.
 - Forgot password? Tap **Forgot password** on the login screen and follow the email link.
 - (Optional) **Profile → Unlock with Face ID / Fingerprint** — extra check so the app asks for your face or finger every time you open it.`,
   },
@@ -323,8 +309,7 @@ const DISPATCHER = [
     id: 'review',
     title: `Review what the bot couldn't parse`,
     icon: 'bot',
-    body:
-`- Tap **Review** in the bottom bar.
+    body: `- Tap **Review** in the bottom bar.
 - *Needs Review* — the bot couldn't figure out the address or the product. **Tap any row** to open the fix screen with the original message at the top and a pre-filled form below. Usually you just need to pick a location, or (when two clients carry the same product) pick the right client from the chips at the top. Tap **Create delivery** and the order is in. Tap **Discard** if it's spam, a duplicate, or not a real order.
 - *Shadow* — what the bot would have created. A good place to check that it's reading messages correctly before we let it create deliveries on its own.
 - *Errors* — the bot couldn't read the message, or the phone lost signal. Usually a one-off; ignore unless the same row fails twice.
@@ -335,8 +320,7 @@ If someone else is already fixing the same row, you'll see *"<Name> is fixing th
     id: 'new-delivery',
     title: 'Create a delivery manually',
     icon: 'plus',
-    body:
-`From **Deliveries → +** or from a Review item:
+    body: `From **Deliveries → +** or from a Review item:
 
 1. Customer name, phone, address.
 2. Pick the client chip → pick the product.
@@ -349,8 +333,7 @@ If someone else is already fixing the same row, you'll see *"<Name> is fixing th
     id: 'assign',
     title: 'Assign or re-assign a delivery',
     icon: 'users',
-    body:
-`- Open any delivery from the **Deliveries** tab.
+    body: `- Open any delivery from the **Deliveries** tab.
 - Tap **Re-assign** → pick the new agent → confirm.
 - If the new agent doesn't have the product on them, the app does **not** block you. Instead it tells the agent to pick up from the warehouse, and tells the admin so we can make sure that happens.
 - Agents only see deliveries assigned to them. Admins, dispatchers, and reps see everything.
@@ -366,8 +349,7 @@ const WAREHOUSE = [
     id: 'sign-in',
     title: 'Sign in',
     icon: 'user',
-    body:
-`- App icon → enter your email and password. Tap the eye to peek at what you typed.
+    body: `- App icon → enter your email and password. Tap the eye to peek at what you typed.
 - Forgot password? Use **Forgot password** on the login screen.
 - (Optional) **Profile → Unlock with Face ID / Fingerprint** — extra check so the app asks for your face or finger every time you open it.`,
   },
@@ -375,8 +357,7 @@ const WAREHOUSE = [
     id: 'receive-stock',
     title: 'Receive stock from a vendor',
     icon: 'arrowDown',
-    body:
-`When a vendor drops off product at the warehouse:
+    body: `When a vendor drops off product at the warehouse:
 
 1. **Stock → Receive stock**.
 2. Where it's going is set to **Shomolu warehouse** by default — leave it.
@@ -391,8 +372,7 @@ The warehouse total in the **By holder** tab goes up straight away.`,
     id: 'issue-stock',
     title: 'Issue stock to agents',
     icon: 'arrowRight',
-    body:
-`When an agent comes to pick up stock for the day:
+    body: `When an agent comes to pick up stock for the day:
 
 1. **Stock → New transfer**.
 2. Pick reason **Warehouse issue** (Warehouse → Agent).
@@ -415,11 +395,11 @@ For an agent bringing unused stock back at end of day, use **Warehouse return** 
 const REP = DISPATCHER;
 
 export const HELP_BY_ROLE = {
-  admin:      ADMIN,
-  agent:      AGENT,
+  admin: ADMIN,
+  agent: AGENT,
   dispatcher: DISPATCHER,
-  rep:        REP,
-  warehouse:  WAREHOUSE,
+  rep: REP,
+  warehouse: WAREHOUSE,
 } as const satisfies Record<Role, readonly HelpSection[]>;
 
 /**

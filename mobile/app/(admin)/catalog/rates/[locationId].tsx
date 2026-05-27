@@ -50,7 +50,11 @@ export default function RateDetail() {
   }
 
   if (location.loading || history.loading) {
-    return <View style={styles.center}><ActivityIndicator /></View>;
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator />
+      </View>
+    );
   }
   if (location.error || !location.data) {
     return (
@@ -61,7 +65,11 @@ export default function RateDetail() {
   }
 
   return (
-    <ScrollView style={styles.flex} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      style={styles.flex}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+    >
       <Text style={styles.locName}>{location.data.name}</Text>
 
       <Section title="Current rate">
@@ -74,7 +82,11 @@ export default function RateDetail() {
               value={formatNaira(Number(current.charged) - Number(current.agent_payment))}
               accent
             />
-            <CurrentLine label="Effective since" value={formatDateTime(current.effective_from)} muted />
+            <CurrentLine
+              label="Effective since"
+              value={formatDateTime(current.effective_from)}
+              muted
+            />
           </View>
         ) : (
           <Text style={styles.noRate}>No rate set for this location yet.</Text>
@@ -106,18 +118,23 @@ export default function RateDetail() {
         />
 
         {error ? (
-          <View style={styles.errorBox}><Text style={styles.errorText}>{error}</Text></View>
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
         ) : null}
 
         <Button title="Save rate" onPress={handleSubmit} loading={submitting} />
         <Text style={styles.helper}>
-          Saving creates a new version. The previous rate is preserved so historical deliveries retain context.
+          Saving creates a new version. The previous rate is preserved so historical deliveries
+          retain context.
         </Text>
       </Section>
 
       {past.length > 0 ? (
         <Section title="History">
-          {past.map((row) => <HistoryRow key={row.id} row={row} />)}
+          {past.map((row) => (
+            <HistoryRow key={row.id} row={row} />
+          ))}
         </Section>
       ) : null}
     </ScrollView>
@@ -133,11 +150,23 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function CurrentLine({ label, value, accent, muted }: { label: string; value: string; accent?: boolean; muted?: boolean }) {
+function CurrentLine({
+  label,
+  value,
+  accent,
+  muted,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+  muted?: boolean;
+}) {
   return (
     <View style={styles.currentLine}>
       <Text style={[styles.currentLabel, muted && styles.muted]}>{label}</Text>
-      <Text style={[styles.currentValue, accent && styles.accent, muted && styles.mutedValue]}>{value}</Text>
+      <Text style={[styles.currentValue, accent && styles.accent, muted && styles.mutedValue]}>
+        {value}
+      </Text>
     </View>
   );
 }
@@ -146,15 +175,20 @@ function HistoryRow({ row }: { row: RateHistory }) {
   return (
     <View style={styles.historyRow}>
       <View style={styles.historyTop}>
-        <Text style={styles.histValue}>{formatNaira(row.charged)} / {formatNaira(row.agent_payment)}</Text>
+        <Text style={styles.histValue}>
+          {formatNaira(row.charged)} / {formatNaira(row.agent_payment)}
+        </Text>
         <Text style={styles.histMargin}>
           margin {formatNaira(Number(row.charged) - Number(row.agent_payment))}
         </Text>
       </View>
       <Text style={styles.histRange}>
-        {formatDateTime(row.effective_from)}  →  {row.effective_until ? formatDateTime(row.effective_until) : 'now'}
+        {formatDateTime(row.effective_from)} →{' '}
+        {row.effective_until ? formatDateTime(row.effective_until) : 'now'}
       </Text>
-      {row.created_by_name ? <Text style={styles.histAuthor}>set by {row.created_by_name}</Text> : null}
+      {row.created_by_name ? (
+        <Text style={styles.histAuthor}>set by {row.created_by_name}</Text>
+      ) : null}
     </View>
   );
 }
@@ -162,13 +196,30 @@ function HistoryRow({ row }: { row: RateHistory }) {
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: '#fff' },
   content: { padding: 16, paddingBottom: 48 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#fff' },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    backgroundColor: '#fff',
+  },
   locName: { fontSize: 22, fontWeight: '700', color: '#111', marginBottom: 16 },
   section: { marginBottom: 24 },
-  sectionTitle: { fontSize: 12, fontWeight: '700', color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 10 },
+  sectionTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#888',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 10,
+  },
   currentBox: {
-    borderWidth: 1, borderColor: '#e5e5e5', borderRadius: 8,
-    backgroundColor: '#fafafa', paddingHorizontal: 14, paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#e5e5e5',
+    borderRadius: 8,
+    backgroundColor: '#fafafa',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
   },
   currentLine: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8 },
   currentLabel: { fontSize: 14, color: '#444' },
@@ -182,7 +233,8 @@ const styles = StyleSheet.create({
   errorText: { color: '#a02d1b', fontSize: 14 },
   historyRow: {
     paddingVertical: 12,
-    borderTopWidth: 1, borderTopColor: '#f0f0f0',
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
   },
   historyTop: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
   histValue: { fontSize: 14, fontWeight: '600', color: '#111' },

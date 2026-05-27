@@ -62,11 +62,18 @@ export default function NewClient() {
       />
 
       {error ? (
-        <View style={styles.errorBox}><Text style={styles.errorText}>{error}</Text></View>
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
       ) : null}
 
       <Button title="Create client" onPress={handleSubmit} loading={submitting} />
-      <Button title="Cancel" onPress={() => router.back()} variant="secondary" style={styles.cancel} />
+      <Button
+        title="Cancel"
+        onPress={() => router.back()}
+        variant="secondary"
+        style={styles.cancel}
+      />
     </Screen>
   );
 }

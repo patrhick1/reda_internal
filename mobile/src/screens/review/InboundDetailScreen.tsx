@@ -1,5 +1,13 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
@@ -10,17 +18,20 @@ import { createDelivery } from '@/services/deliveries';
 import { canResolveReview } from '@/lib/permissions';
 import { newClientUuid } from '@/lib/uuid';
 import { AppBar, Banner, Button, Card, Empty, Sheet } from '@/components/ui';
-import { DeliveryFieldsForm, type DeliveryFormState } from '@/screens/deliveries/DeliveryFieldsForm';
+import {
+  DeliveryFieldsForm,
+  type DeliveryFormState,
+} from '@/screens/deliveries/DeliveryFieldsForm';
 import { colors, fonts } from '@/lib/theme';
 import { formatDateTime } from '@/lib/format';
 import { errorMessage } from '@/lib/errors';
 import { reviewReason, splitPhone, type ParseResultShape } from './reviewReason';
 
 const DISCARD_REASONS = [
-  { value: 'spam',             label: 'Spam' },
-  { value: 'duplicate',        label: 'Duplicate' },
+  { value: 'spam', label: 'Spam' },
+  { value: 'duplicate', label: 'Duplicate' },
   { value: 'not a real order', label: 'Not a real order' },
-  { value: 'other',            label: 'Other' },
+  { value: 'other', label: 'Other' },
 ] as const;
 
 function minutesAgo(iso: string): number {
@@ -47,21 +58,27 @@ export default function InboundDetailScreen() {
   const row = inboundQ.data;
   const parse = (row?.parse_result ?? {}) as ParseResultShape;
   const extracted = parse.extracted ?? {};
-  const phoneSplit = useMemo(() => splitPhone(extracted.customer_phone ?? null), [extracted.customer_phone]);
+  const phoneSplit = useMemo(
+    () => splitPhone(extracted.customer_phone ?? null),
+    [extracted.customer_phone],
+  );
 
-  const initial = useMemo<Partial<DeliveryFormState>>(() => ({
-    clientId:         parse.product?.client_id ?? null,
-    productCatalogId: parse.product?.id ?? null,
-    customerName:     extracted.customer_name ?? '',
-    customerPhone:    phoneSplit.primary,
-    rawAddress:       extracted.raw_address ?? '',
-    locationId:       parse.address?.matched_location_id ?? null,
-    assignedAgentId:  parse.agent_resolution?.agent_id ?? null,
-    quantityOrdered:  typeof extracted.quantity === 'number' ? extracted.quantity : null,
-    customerPrice:    typeof extracted.customer_price === 'number' ? extracted.customer_price : null,
-    scheduledDate:    todayLagos(),
+  const initial = useMemo<Partial<DeliveryFormState>>(
+    () => ({
+      clientId: parse.product?.client_id ?? null,
+      productCatalogId: parse.product?.id ?? null,
+      customerName: extracted.customer_name ?? '',
+      customerPhone: phoneSplit.primary,
+      rawAddress: extracted.raw_address ?? '',
+      locationId: parse.address?.matched_location_id ?? null,
+      assignedAgentId: parse.agent_resolution?.agent_id ?? null,
+      quantityOrdered: typeof extracted.quantity === 'number' ? extracted.quantity : null,
+      customerPrice: typeof extracted.customer_price === 'number' ? extracted.customer_price : null,
+      scheduledDate: todayLagos(),
+    }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [row?.id]);
+    [row?.id],
+  );
 
   const [state, setState] = useState<DeliveryFormState | null>(null);
   const [isValid, setIsValid] = useState(false);
@@ -83,7 +100,11 @@ export default function InboundDetailScreen() {
     return (
       <View style={{ flex: 1, backgroundColor: colors.surface }}>
         <AppBar title="Fix review" onBack={() => router.back()} />
-        <Empty icon="alert" title="Not allowed" sub="Only admins and dispatchers can fix review items." />
+        <Empty
+          icon="alert"
+          title="Not allowed"
+          sub="Only admins and dispatchers can fix review items."
+        />
       </View>
     );
   }
@@ -102,7 +123,11 @@ export default function InboundDetailScreen() {
     return (
       <View style={{ flex: 1, backgroundColor: colors.surface }}>
         <AppBar title="Fix review" onBack={() => router.back()} />
-        <Empty icon="alert" title="Not found" sub={inboundQ.error || 'This review item is not available.'} />
+        <Empty
+          icon="alert"
+          title="Not found"
+          sub={inboundQ.error || 'This review item is not available.'}
+        />
       </View>
     );
   }
@@ -149,13 +174,30 @@ export default function InboundDetailScreen() {
             <Text style={{ fontFamily: fonts.bold, fontSize: 16, color: colors.black }}>
               {lockState.holderName} is fixing this
             </Text>
-            <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary, marginTop: 6 }}>
-              They started {minutesAgo(lockState.acquiredAt)} min ago. They might still be on it — opening it now means anything they had unsaved will be lost.
+            <Text
+              style={{
+                fontFamily: fonts.medium,
+                fontSize: 13,
+                color: colors.textSecondary,
+                marginTop: 6,
+              }}
+            >
+              They started {minutesAgo(lockState.acquiredAt)} min ago. They might still be on it —
+              opening it now means anything they had unsaved will be lost.
             </Text>
           </Card>
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            <Button variant="secondary" onPress={() => router.back()}>Back</Button>
-            <Button variant="emphasis" full icon="lock" onPress={() => { void lock.takeOver(); }}>
+            <Button variant="secondary" onPress={() => router.back()}>
+              Back
+            </Button>
+            <Button
+              variant="emphasis"
+              full
+              icon="lock"
+              onPress={() => {
+                void lock.takeOver();
+              }}
+            >
               Take over
             </Button>
           </View>
@@ -169,25 +211,30 @@ export default function InboundDetailScreen() {
   async function handleCreate() {
     setError(null);
     if (!state) return;
-    if (!isValid) { setError('Fill in the required fields'); return; }
+    if (!isValid) {
+      setError('Fill in the required fields');
+      return;
+    }
     setSubmitting(true);
     try {
       const newId = await createDelivery({
-        clientUuid:           clientUuidRef.current,
-        clientId:             state.clientId!,
-        productCatalogId:     state.productCatalogId!,
-        customerName:         state.customerName.trim(),
-        customerPhone:        state.customerPhone.trim(),
-        rawAddress:           state.rawAddress.trim(),
-        quantityOrdered:      state.quantityOrdered!,
-        customerPrice:        state.customerPrice!,
-        locationId:           state.locationId,
-        scheduledDate:        state.scheduledDate || todayLagos(),
-        assignedAgentId:      state.assignedAgentId,
+        clientUuid: clientUuidRef.current,
+        clientId: state.clientId!,
+        productCatalogId: state.productCatalogId!,
+        customerName: state.customerName.trim(),
+        customerPhone: state.customerPhone.trim(),
+        rawAddress: state.rawAddress.trim(),
+        quantityOrdered: state.quantityOrdered!,
+        customerPrice: state.customerPrice!,
+        locationId: state.locationId,
+        scheduledDate: state.scheduledDate || todayLagos(),
+        assignedAgentId: state.assignedAgentId,
       });
       await resolveInboundToDelivery(row!.id, newId);
       // Server also drops the lock; release defensively in case of net hiccup.
-      await lock.release().catch(() => { /* swallow */ });
+      await lock.release().catch(() => {
+        /* swallow */
+      });
       router.back();
     } catch (e) {
       setError(errorMessage(e));
@@ -200,7 +247,9 @@ export default function InboundDetailScreen() {
     setDiscarding(true);
     try {
       await discardInbound(row!.id, reason);
-      await lock.release().catch(() => { /* swallow */ });
+      await lock.release().catch(() => {
+        /* swallow */
+      });
       router.back();
     } catch (e) {
       setError(errorMessage(e));
@@ -229,7 +278,14 @@ export default function InboundDetailScreen() {
       >
         {/* Why it's in review */}
         <Banner tone="warn" icon="alert" title="Why this needs review">
-          <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.warningDark, lineHeight: 19 }}>
+          <Text
+            style={{
+              fontFamily: fonts.medium,
+              fontSize: 13,
+              color: colors.warningDark,
+              lineHeight: 19,
+            }}
+          >
             {reviewReason(row)}
           </Text>
         </Banner>
@@ -237,18 +293,38 @@ export default function InboundDetailScreen() {
         {/* Original WhatsApp text */}
         {rawText ? (
           <Card>
-            <Text style={{
-              fontFamily: fonts.bold, fontSize: 11, color: colors.textSecondary,
-              letterSpacing: 0.8, textTransform: 'uppercase',
-            }}>
+            <Text
+              style={{
+                fontFamily: fonts.bold,
+                fontSize: 11,
+                color: colors.textSecondary,
+                letterSpacing: 0.8,
+                textTransform: 'uppercase',
+              }}
+            >
               Original message
             </Text>
-            <Text style={{ fontFamily: fonts.regular, fontSize: 13, color: colors.textPrimary, marginTop: 8, lineHeight: 19 }}>
+            <Text
+              style={{
+                fontFamily: fonts.regular,
+                fontSize: 13,
+                color: colors.textPrimary,
+                marginTop: 8,
+                lineHeight: 19,
+              }}
+            >
               {showFullText || !truncated ? rawText : rawText.slice(0, 220) + '…'}
             </Text>
             {truncated ? (
               <Pressable onPress={() => setShowFullText((v) => !v)}>
-                <Text style={{ fontFamily: fonts.semibold, fontSize: 12, color: colors.red, marginTop: 8 }}>
+                <Text
+                  style={{
+                    fontFamily: fonts.semibold,
+                    fontSize: 12,
+                    color: colors.red,
+                    marginTop: 8,
+                  }}
+                >
                   {showFullText ? 'Show less' : 'Show full message'}
                 </Text>
               </Pressable>
@@ -265,18 +341,30 @@ export default function InboundDetailScreen() {
           onChange={handleFormChange}
         />
 
-        {error ? <Banner tone="error" icon="alert">{error}</Banner> : null}
+        {error ? (
+          <Banner tone="error" icon="alert">
+            {error}
+          </Banner>
+        ) : null}
       </ScrollView>
 
       {/* Footer buttons */}
-      <View style={{
-        position: 'absolute', left: 0, right: 0, bottom: 0,
-        paddingHorizontal: 16, paddingTop: 12,
-        paddingBottom: 16 + insets.bottom,
-        backgroundColor: colors.white,
-        borderTopWidth: 1, borderTopColor: colors.border,
-        flexDirection: 'row', gap: 8,
-      }}>
+      <View
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          paddingHorizontal: 16,
+          paddingTop: 12,
+          paddingBottom: 16 + insets.bottom,
+          backgroundColor: colors.white,
+          borderTopWidth: 1,
+          borderTopColor: colors.border,
+          flexDirection: 'row',
+          gap: 8,
+        }}
+      >
         <Button
           variant="secondary"
           icon="x"
@@ -297,12 +385,19 @@ export default function InboundDetailScreen() {
       </View>
 
       {/* Discard reason sheet */}
-      <Sheet open={discardOpen} onClose={() => !discarding && setDiscardOpen(false)} title="Discard this message?" subtitle="Move it out of Needs Review with a reason.">
+      <Sheet
+        open={discardOpen}
+        onClose={() => !discarding && setDiscardOpen(false)}
+        title="Discard this message?"
+        subtitle="Move it out of Needs Review with a reason."
+      >
         <View style={{ gap: 8 }}>
           {DISCARD_REASONS.map((r) => (
             <Pressable
               key={r.value}
-              onPress={() => { void handleDiscard(r.value); }}
+              onPress={() => {
+                void handleDiscard(r.value);
+              }}
               disabled={discarding}
               style={({ pressed }) => ({
                 padding: 14,

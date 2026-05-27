@@ -1,5 +1,14 @@
 import { useEffect, useState } from 'react';
-import { Modal, View, Text, TouchableOpacity, Vibration, Platform, Alert, Linking } from 'react-native';
+import {
+  Modal,
+  View,
+  Text,
+  TouchableOpacity,
+  Vibration,
+  Platform,
+  Alert,
+  Linking,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar, Icon } from '@/components/ui';
 import { colors, fonts, radii, spacing } from '@/lib/theme';
@@ -39,7 +48,9 @@ export function IncomingCallOverlay() {
       return;
     }
     Vibration.vibrate(VIBRATION_PATTERN, true);
-    return () => { Vibration.cancel(); };
+    return () => {
+      Vibration.cancel();
+    };
   }, [isOpen, busy]);
 
   // Reset busy state when the call goes away (accept/decline succeeded or
@@ -65,8 +76,20 @@ export function IncomingCallOverlay() {
         'Microphone needed',
         'Reda needs microphone permission to take this call. Tap "Open settings" → Permissions → Microphone → Allow, then ask them to call again.',
         [
-          { text: 'Decline call', style: 'destructive', onPress: () => coord.declineFromOverlay(callId) },
-          { text: 'Open settings', onPress: () => { Linking.openSettings().catch(() => { /* noop */ }); coord.declineFromOverlay(callId); } },
+          {
+            text: 'Decline call',
+            style: 'destructive',
+            onPress: () => coord.declineFromOverlay(callId),
+          },
+          {
+            text: 'Open settings',
+            onPress: () => {
+              Linking.openSettings().catch(() => {
+                /* noop */
+              });
+              coord.declineFromOverlay(callId);
+            },
+          },
         ],
       );
       return;
@@ -96,43 +119,65 @@ export function IncomingCallOverlay() {
       statusBarTranslucent
       onRequestClose={onDecline}
     >
-      <View style={{
-        flex: 1,
-        backgroundColor: colors.black,
-        paddingTop:    insets.top    + spacing['3xl'],
-        paddingBottom: insets.bottom + spacing['3xl'] + 16,
-        paddingHorizontal: spacing['3xl'],
-      }}>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: colors.black,
+          paddingTop: insets.top + spacing['3xl'],
+          paddingBottom: insets.bottom + spacing['3xl'] + 16,
+          paddingHorizontal: spacing['3xl'],
+        }}
+      >
         {/* Caller block — centered vertically */}
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing['2xl'] }}>
-          <Text style={{
-            fontFamily: fonts.semibold, fontSize: 14,
-            color: colors.textTertiary, letterSpacing: 1,
-            textTransform: 'uppercase',
-          }}>
+        <View
+          style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing['2xl'] }}
+        >
+          <Text
+            style={{
+              fontFamily: fonts.semibold,
+              fontSize: 14,
+              color: colors.textTertiary,
+              letterSpacing: 1,
+              textTransform: 'uppercase',
+            }}
+          >
             Incoming Reda call
           </Text>
           <Avatar user={{ display_name: snap.callerName }} size={140} />
-          <Text style={{
-            fontFamily: fonts.bold, fontSize: 32, color: colors.white,
-            textAlign: 'center',
-          }}>
+          <Text
+            style={{
+              fontFamily: fonts.bold,
+              fontSize: 32,
+              color: colors.white,
+              textAlign: 'center',
+            }}
+          >
             {snap.callerName || 'Reda team'}
           </Text>
-          <Text style={{
-            fontFamily: fonts.regular, fontSize: 16, color: colors.textTertiary,
-          }}>
-            {busy === 'accept' ? 'Connecting…'
-             : busy === 'decline' ? 'Declining…'
-             : 'is calling you'}
+          <Text
+            style={{
+              fontFamily: fonts.regular,
+              fontSize: 16,
+              color: colors.textTertiary,
+            }}
+          >
+            {busy === 'accept'
+              ? 'Connecting…'
+              : busy === 'decline'
+                ? 'Declining…'
+                : 'is calling you'}
           </Text>
         </View>
 
         {/* Action row */}
-        <View style={{
-          flexDirection: 'row', justifyContent: 'space-evenly',
-          alignItems: 'center', gap: spacing['3xl'],
-        }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            justifyContent: 'space-evenly',
+            alignItems: 'center',
+            gap: spacing['3xl'],
+          }}
+        >
           <ActionButton
             icon="phoneOff"
             label="Decline"
@@ -156,7 +201,12 @@ export function IncomingCallOverlay() {
 }
 
 function ActionButton({
-  icon, label, color, onPress, disabled, spinning,
+  icon,
+  label,
+  color,
+  onPress,
+  disabled,
+  spinning,
 }: {
   icon: 'phone' | 'phoneOff';
   label: string;
@@ -172,18 +222,19 @@ function ActionButton({
         disabled={disabled}
         activeOpacity={0.7}
         style={{
-          width: 80, height: 80, borderRadius: 40,
+          width: 80,
+          height: 80,
+          borderRadius: 40,
           backgroundColor: color,
-          alignItems: 'center', justifyContent: 'center',
+          alignItems: 'center',
+          justifyContent: 'center',
           opacity: disabled && !spinning ? 0.5 : 1,
-          transform: [{ rotate: spinning ? '0deg' : (Platform.OS === 'ios' ? '0deg' : '0deg') }],
+          transform: [{ rotate: spinning ? '0deg' : Platform.OS === 'ios' ? '0deg' : '0deg' }],
         }}
       >
         <Icon name={icon} size={36} color={colors.white} />
       </TouchableOpacity>
-      <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.white }}>
-        {label}
-      </Text>
+      <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.white }}>{label}</Text>
     </View>
   );
 }

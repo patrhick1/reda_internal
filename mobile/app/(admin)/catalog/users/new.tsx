@@ -10,11 +10,15 @@ import type { Role } from '@/lib/permissions';
 import { errorMessage } from '@/lib/errors';
 
 const ROLE_OPTIONS: { value: Role; label: string; sub: string }[] = [
-  { value: 'admin',      label: 'Admin',      sub: 'Full access. Sees margin. Manages everything.' },
-  { value: 'dispatcher', label: 'Dispatcher', sub: 'Operational coordinator. No catalog or margin.' },
-  { value: 'rep',        label: 'Rep',        sub: 'Same as dispatcher, with no stock access at all.' },
-  { value: 'agent',      label: 'Agent',      sub: 'Rider. Own deliveries only.' },
-  { value: 'warehouse',  label: 'Warehouse',  sub: 'Stock holder. Used in transfers.' },
+  { value: 'admin', label: 'Admin', sub: 'Full access. Sees margin. Manages everything.' },
+  {
+    value: 'dispatcher',
+    label: 'Dispatcher',
+    sub: 'Operational coordinator. No catalog or margin.',
+  },
+  { value: 'rep', label: 'Rep', sub: 'Same as dispatcher, with no stock access at all.' },
+  { value: 'agent', label: 'Agent', sub: 'Rider. Own deliveries only.' },
+  { value: 'warehouse', label: 'Warehouse', sub: 'Stock holder. Used in transfers.' },
 ];
 
 export default function NewUser() {
@@ -28,11 +32,26 @@ export default function NewUser() {
 
   async function handleSubmit() {
     setError(null);
-    if (!email.trim()) { setError('Email is required'); return; }
-    if (!password) { setError('Password is required'); return; }
-    if (password.length < 8) { setError('Password must be at least 8 characters'); return; }
-    if (!role) { setError('Role is required'); return; }
-    if (!displayName.trim()) { setError('Display name is required'); return; }
+    if (!email.trim()) {
+      setError('Email is required');
+      return;
+    }
+    if (!password) {
+      setError('Password is required');
+      return;
+    }
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters');
+      return;
+    }
+    if (!role) {
+      setError('Role is required');
+      return;
+    }
+    if (!displayName.trim()) {
+      setError('Display name is required');
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -75,7 +94,13 @@ export default function NewUser() {
         onChange={setRole}
         required
       />
-      <Field label="Display name" value={displayName} onChangeText={setDisplayName} required autoCapitalize="words" />
+      <Field
+        label="Display name"
+        value={displayName}
+        onChangeText={setDisplayName}
+        required
+        autoCapitalize="words"
+      />
       <Field
         label="Phone"
         value={phone}
@@ -86,11 +111,18 @@ export default function NewUser() {
       />
 
       {error ? (
-        <View style={styles.errorBox}><Text style={styles.errorText}>{error}</Text></View>
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
       ) : null}
 
       <Button title="Create user" onPress={handleSubmit} loading={submitting} />
-      <Button title="Cancel" onPress={() => router.back()} variant="secondary" style={styles.cancel} />
+      <Button
+        title="Cancel"
+        onPress={() => router.back()}
+        variant="secondary"
+        style={styles.cancel}
+      />
     </Screen>
   );
 }

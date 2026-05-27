@@ -48,16 +48,18 @@ export function Collapsible({
   }
 
   return (
-    <View style={{
-      backgroundColor: colors.white,
-      borderRadius: radii.card,
-      shadowColor: colors.black,
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.06,
-      shadowRadius: 3,
-      elevation: 1,
-      overflow: 'hidden',
-    }}>
+    <View
+      style={{
+        backgroundColor: colors.white,
+        borderRadius: radii.card,
+        shadowColor: colors.black,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.06,
+        shadowRadius: 3,
+        elevation: 1,
+        overflow: 'hidden',
+      }}
+    >
       <Pressable
         onPress={toggle}
         style={({ pressed }) => ({
@@ -70,13 +72,15 @@ export function Collapsible({
         })}
       >
         {icon ? <Icon name={icon} size={20} color={colors.textSecondary} /> : null}
-        <Text style={{
-          flex: 1,
-          fontFamily: fonts.semibold,
-          fontSize: 14,
-          color: colors.black,
-          letterSpacing: -0.1,
-        }}>
+        <Text
+          style={{
+            flex: 1,
+            fontFamily: fonts.semibold,
+            fontSize: 14,
+            color: colors.black,
+            letterSpacing: -0.1,
+          }}
+        >
           {title}
         </Text>
         <View style={{ transform: [{ rotate: open ? '180deg' : '0deg' }] }}>
@@ -84,13 +88,15 @@ export function Collapsible({
         </View>
       </Pressable>
       {open ? (
-        <View style={{
-          paddingHorizontal: 16,
-          paddingTop: 4,
-          paddingBottom: 14,
-          borderTopWidth: 1,
-          borderTopColor: colors.border,
-        }}>
+        <View
+          style={{
+            paddingHorizontal: 16,
+            paddingTop: 4,
+            paddingBottom: 14,
+            borderTopWidth: 1,
+            borderTopColor: colors.border,
+          }}
+        >
           {children}
         </View>
       ) : null}

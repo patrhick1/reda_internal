@@ -17,13 +17,15 @@ export default function EndOfDay() {
   const router = useRouter();
   const [rolling, setRolling] = useState(false);
   const todayQ = useAsync(() => listDeliveries(user.role), [user.role]);
-  useFocusEffect(useCallback(() => {
-    todayQ.reload();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []));
+  useFocusEffect(
+    useCallback(() => {
+      todayQ.reload();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []),
+  );
 
   const unfinished = useMemo(
-    () => (todayQ.data ?? []).filter(d => !TERMINAL_STATUSES.has(d.current_status ?? 'pending')),
+    () => (todayQ.data ?? []).filter((d) => !TERMINAL_STATUSES.has(d.current_status ?? 'pending')),
     [todayQ.data],
   );
 
@@ -36,7 +38,8 @@ export default function EndOfDay() {
       try {
         const n = await runEodRollover(today);
         if (Platform.OS === 'web') {
-          if (typeof window !== 'undefined') window.alert(`Rolled ${n} ${n === 1 ? 'delivery' : 'deliveries'} forward.`);
+          if (typeof window !== 'undefined')
+            window.alert(`Rolled ${n} ${n === 1 ? 'delivery' : 'deliveries'} forward.`);
         } else {
           Alert.alert('Done', `Rolled ${n} ${n === 1 ? 'delivery' : 'deliveries'} forward.`);
         }
@@ -79,7 +82,11 @@ export default function EndOfDay() {
           <ActivityIndicator color={colors.black} />
         </View>
       ) : unfinished.length === 0 ? (
-        <Empty icon="check" title="No deliveries to roll" sub="Everything closed out cleanly. Rest up." />
+        <Empty
+          icon="check"
+          title="No deliveries to roll"
+          sub="Everything closed out cleanly. Rest up."
+        />
       ) : (
         <>
           <View style={{ padding: 16 }}>
@@ -87,19 +94,23 @@ export default function EndOfDay() {
               {`${unfinished.length} ${unfinished.length === 1 ? 'delivery' : 'deliveries'} still open. Rolling forward will mark each as rolled_over and create a new pending row for tomorrow.`}
             </Banner>
           </View>
-          <ScrollView contentContainerStyle={{ padding: 16, paddingTop: 0, paddingBottom: 100, gap: 12 }}>
-            {unfinished.map(d => <DeliveryRowEOD key={d.id} delivery={d} />)}
+          <ScrollView
+            contentContainerStyle={{ padding: 16, paddingTop: 0, paddingBottom: 100, gap: 12 }}
+          >
+            {unfinished.map((d) => (
+              <DeliveryRowEOD key={d.id} delivery={d} />
+            ))}
           </ScrollView>
-          <View style={{
-            paddingHorizontal: 16, paddingVertical: 12,
-            borderTopWidth: 1, borderTopColor: colors.border,
-            backgroundColor: colors.white,
-          }}>
-            <Button
-              variant="emphasis" full icon="check"
-              disabled={rolling}
-              onPress={onRunAll}
-            >
+          <View
+            style={{
+              paddingHorizontal: 16,
+              paddingVertical: 12,
+              borderTopWidth: 1,
+              borderTopColor: colors.border,
+              backgroundColor: colors.white,
+            }}
+          >
+            <Button variant="emphasis" full icon="check" disabled={rolling} onPress={onRunAll}>
               {rolling ? 'Rolling…' : `Roll ${unfinished.length} forward`}
             </Button>
           </View>
@@ -114,15 +125,30 @@ function DeliveryRowEOD({ delivery }: { delivery: DeliveryRow }) {
   const expected = Number(delivery.customer_price ?? 0);
   return (
     <Card>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          gap: 12,
+        }}
+      >
         <View style={{ flex: 1 }}>
           <Text style={{ fontFamily: fonts.bold, fontSize: 15, color: colors.black }}>
             {delivery.customer_name}
           </Text>
-          <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
+          <Text
+            style={{
+              fontFamily: fonts.medium,
+              fontSize: 12,
+              color: colors.textSecondary,
+              marginTop: 2,
+            }}
+          >
             {delivery.product_name ?? '—'}
             {delivery.quantity_ordered ? ` × ${delivery.quantity_ordered}` : ''}
-            {' · '}{formatNaira(expected)}
+            {' · '}
+            {formatNaira(expected)}
           </Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
             <StatusPill status={delivery.current_status ?? 'pending'} variant="subtle" size="sm" />
@@ -131,7 +157,15 @@ function DeliveryRowEOD({ delivery }: { delivery: DeliveryRow }) {
                 · {delivery.assigned_agent_name.split(/\s+/)[0]}
               </Text>
             ) : (
-              <Text style={{ fontFamily: fonts.bold, fontSize: 11, color: colors.red, letterSpacing: 0.6, textTransform: 'uppercase' }}>
+              <Text
+                style={{
+                  fontFamily: fonts.bold,
+                  fontSize: 11,
+                  color: colors.red,
+                  letterSpacing: 0.6,
+                  textTransform: 'uppercase',
+                }}
+              >
                 Unassigned
               </Text>
             )}

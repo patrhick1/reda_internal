@@ -10,7 +10,10 @@ import { errorMessage } from '@/lib/errors';
 type PaymentMethod = 'cash' | 'transfer';
 
 export function MarkDeliveredSheet({
-  open, delivery, onClose, onConfirmed,
+  open,
+  delivery,
+  onClose,
+  onConfirmed,
 }: {
   open: boolean;
   delivery: DeliveryRow | null;
@@ -68,7 +71,10 @@ export function MarkDeliveredSheet({
 
   async function submit() {
     setError(null);
-    if (!Number.isInteger(qtyNum) || qtyNum <= 0) { setError('Quantity must be a positive whole number'); return; }
+    if (!Number.isInteger(qtyNum) || qtyNum <= 0) {
+      setError('Quantity must be a positive whole number');
+      return;
+    }
     if (delivery!.quantity_ordered != null && qtyNum > delivery!.quantity_ordered) {
       setError(`Cannot deliver more than ${delivery!.quantity_ordered}`);
       return;
@@ -77,19 +83,25 @@ export function MarkDeliveredSheet({
       setError(`You only have ${onHand} on hand for this product`);
       return;
     }
-    if (!Number.isFinite(paidNum) || paidNum < 0) { setError('Paid must be ≥ 0'); return; }
+    if (!Number.isFinite(paidNum) || paidNum < 0) {
+      setError('Paid must be ≥ 0');
+      return;
+    }
     setSubmitting(true);
     try {
-      const jobId = await enqueueStatus({
-        deliveryId: delivery!.id ?? '',
-        toStatus: 'delivered',
-        reason: null,
-        notes: null,
-        quantityDelivered: qtyNum,
-        paid: paidNum,
-        paymentMethod: method,
-        newScheduledDate: null,
-      }, `Mark delivered · ${delivery!.customer_name ?? ''}`);
+      const jobId = await enqueueStatus(
+        {
+          deliveryId: delivery!.id ?? '',
+          toStatus: 'delivered',
+          reason: null,
+          notes: null,
+          quantityDelivered: qtyNum,
+          paid: paidNum,
+          paymentMethod: method,
+          newScheduledDate: null,
+        },
+        `Mark delivered · ${delivery!.customer_name ?? ''}`,
+      );
       onConfirmed('delivered', jobId);
     } catch (e) {
       setError(errorMessage(e));
@@ -99,7 +111,9 @@ export function MarkDeliveredSheet({
   }
 
   return (
-    <Sheet open={open} onClose={submitting ? () => undefined : onClose}
+    <Sheet
+      open={open}
+      onClose={submitting ? () => undefined : onClose}
       title="Mark delivered"
       subtitle={`${delivery.customer_name} · ${delivery.product_name ?? '—'}`}
     >
@@ -127,35 +141,52 @@ export function MarkDeliveredSheet({
         />
 
         <View>
-          <Text style={{ fontFamily: fonts.semibold, fontSize: 12, color: colors.textSecondary, marginBottom: 8 }}>
+          <Text
+            style={{
+              fontFamily: fonts.semibold,
+              fontSize: 12,
+              color: colors.textSecondary,
+              marginBottom: 8,
+            }}
+          >
             Payment method
           </Text>
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            {(['cash', 'transfer'] as const).map(m => {
+            {(['cash', 'transfer'] as const).map((m) => {
               const active = method === m;
               return (
                 <Pressable
                   key={m}
                   onPress={() => setMethod(m)}
-                  style={({ pressed }) => ([{
-                    flex: 1,
-                    minHeight: 56,
-                    paddingVertical: 12,
-                    borderRadius: 12,
-                    borderWidth: 2,
-                    borderColor: active ? colors.black : colors.border,
-                    backgroundColor: active ? colors.black : colors.white,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexDirection: 'row',
-                    gap: 8,
-                  }, pressed && { opacity: 0.85 }])}
+                  style={({ pressed }) => [
+                    {
+                      flex: 1,
+                      minHeight: 56,
+                      paddingVertical: 12,
+                      borderRadius: 12,
+                      borderWidth: 2,
+                      borderColor: active ? colors.black : colors.border,
+                      backgroundColor: active ? colors.black : colors.white,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexDirection: 'row',
+                      gap: 8,
+                    },
+                    pressed && { opacity: 0.85 },
+                  ]}
                 >
-                  <Icon name={m === 'cash' ? 'cash' : 'bank'} size={18} color={active ? colors.white : colors.black} />
-                  <Text style={{
-                    fontFamily: fonts.bold, fontSize: 14,
-                    color: active ? colors.white : colors.black,
-                  }}>
+                  <Icon
+                    name={m === 'cash' ? 'cash' : 'bank'}
+                    size={18}
+                    color={active ? colors.white : colors.black}
+                  />
+                  <Text
+                    style={{
+                      fontFamily: fonts.bold,
+                      fontSize: 14,
+                      color: active ? colors.white : colors.black,
+                    }}
+                  >
                     {m === 'cash' ? 'Cash' : 'Transfer'}
                   </Text>
                 </Pressable>
@@ -176,11 +207,15 @@ export function MarkDeliveredSheet({
         </View>
 
         {error ? (
-          <Banner tone="error" icon="alert">{error}</Banner>
+          <Banner tone="error" icon="alert">
+            {error}
+          </Banner>
         ) : null}
 
         <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Button variant="secondary" onPress={onClose} disabled={submitting}>Cancel</Button>
+          <Button variant="secondary" onPress={onClose} disabled={submitting}>
+            Cancel
+          </Button>
           <Button variant="emphasis" full icon="check" onPress={submit} disabled={submitting}>
             {submitting ? 'Saving…' : 'Confirm delivery'}
           </Button>
@@ -193,7 +228,9 @@ export function MarkDeliveredSheet({
 function SummaryRow({ label, value }: { label: string; value: string }) {
   return (
     <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-      <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary }}>{label}</Text>
+      <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary }}>
+        {label}
+      </Text>
       <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.black }}>{value}</Text>
     </View>
   );

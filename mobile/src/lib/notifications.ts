@@ -21,9 +21,9 @@ export async function configureNotifications(): Promise<void> {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
       shouldShowBanner: true,
-      shouldShowList:   true,
-      shouldPlaySound:  true,
-      shouldSetBadge:   false,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
     }),
   });
 
@@ -93,9 +93,9 @@ function pathForRoute(role: Role, data: Record<string, unknown>): `/${string}` |
   switch (r) {
     case 'review':
       // Admins use /(admin)/needs-review; dispatchers and reps have their own list.
-      if (role === 'admin')      return '/(admin)/needs-review';
+      if (role === 'admin') return '/(admin)/needs-review';
       if (role === 'dispatcher') return '/(dispatcher)/review';
-      if (role === 'rep')        return '/(rep)/review';
+      if (role === 'rep') return '/(rep)/review';
       return null;
     case 'stock':
       return role === 'admin' ? '/(admin)/stock' : null;
@@ -127,10 +127,7 @@ export function useCallInvitePushHandler(): void {
 
     let cancelled = false;
 
-    async function handle(
-      data: Record<string, unknown> | undefined,
-      source: 'receive' | 'tap',
-    ) {
+    async function handle(data: Record<string, unknown> | undefined, source: 'receive' | 'tap') {
       if (cancelled || !data) return;
       if (data.route !== 'call_invite') return;
       const callId = data.call_id;
@@ -161,7 +158,11 @@ export function useCallInvitePushHandler(): void {
     }
 
     Notifications.getLastNotificationResponseAsync().then((resp) => {
-      if (resp) handle(resp.notification.request.content.data as Record<string, unknown> | undefined, 'tap');
+      if (resp)
+        handle(
+          resp.notification.request.content.data as Record<string, unknown> | undefined,
+          'tap',
+        );
     });
 
     const recvSub = Notifications.addNotificationReceivedListener((notif) => {
@@ -183,10 +184,15 @@ function pathForDelivery(role: Role, data: Record<string, unknown>): `/${string}
   const id = data.delivery_id;
   if (typeof id !== 'string' || id.length === 0) return null;
   switch (role) {
-    case 'agent':      return `/(agent)/today/${id}`;
-    case 'dispatcher': return `/(dispatcher)/deliveries/${id}`;
-    case 'rep':        return `/(rep)/deliveries/${id}`;
-    case 'admin':      return `/(admin)/deliveries/${id}`;
-    case 'warehouse':  return null;
+    case 'agent':
+      return `/(agent)/today/${id}`;
+    case 'dispatcher':
+      return `/(dispatcher)/deliveries/${id}`;
+    case 'rep':
+      return `/(rep)/deliveries/${id}`;
+    case 'admin':
+      return `/(admin)/deliveries/${id}`;
+    case 'warehouse':
+      return null;
   }
 }

@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, Switch, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Linking,
+  Pressable,
+  ScrollView,
+  Switch,
+  Text,
+  View,
+} from 'react-native';
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
 import { useRouter } from 'expo-router';
@@ -24,15 +33,15 @@ export function ProfileScreen() {
   const signOut = useGuardedSignOut();
   const { snapshot } = useQueue();
   const pending = snapshot.jobs.filter(
-    j => j.status === 'pending' || j.status === 'in_flight' || j.status === 'failed_retrying',
+    (j) => j.status === 'pending' || j.status === 'in_flight' || j.status === 'failed_retrying',
   ).length;
-  const dead = snapshot.jobs.filter(j => j.status === 'dead_letter').length;
+  const dead = snapshot.jobs.filter((j) => j.status === 'dead_letter').length;
 
   // Biometric capability + state.
   const [bioSupported, setBioSupported] = useState(false);
   const [bioEnabled, setBioEnabledState] = useState(false);
-  const [bioBusy, setBioBusy]            = useState(false);
-  const [bioLabelText, setBioLabelText]  = useState('Biometric');
+  const [bioBusy, setBioBusy] = useState(false);
+  const [bioLabelText, setBioLabelText] = useState('Biometric');
 
   useEffect(() => {
     (async () => {
@@ -47,24 +56,30 @@ export function ProfileScreen() {
     })();
   }, []);
 
-  const toggleBiometric = useCallback(async (next: boolean) => {
-    if (bioBusy) return;
-    setBioBusy(true);
-    try {
-      if (next) {
-        // Confirm with a live biometric prompt before persisting the flag.
-        const ok = await promptBiometric(`Enable ${bioLabelText} for Reda`);
-        if (!ok) { setBioBusy(false); return; }
-        await setBiometricEnabled(true);
-        setBioEnabledState(true);
-      } else {
-        await setBiometricEnabled(false);
-        setBioEnabledState(false);
+  const toggleBiometric = useCallback(
+    async (next: boolean) => {
+      if (bioBusy) return;
+      setBioBusy(true);
+      try {
+        if (next) {
+          // Confirm with a live biometric prompt before persisting the flag.
+          const ok = await promptBiometric(`Enable ${bioLabelText} for Reda`);
+          if (!ok) {
+            setBioBusy(false);
+            return;
+          }
+          await setBiometricEnabled(true);
+          setBioEnabledState(true);
+        } else {
+          await setBiometricEnabled(false);
+          setBioEnabledState(false);
+        }
+      } finally {
+        setBioBusy(false);
       }
-    } finally {
-      setBioBusy(false);
-    }
-  }, [bioBusy, bioLabelText]);
+    },
+    [bioBusy, bioLabelText],
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -74,13 +89,35 @@ export function ProfileScreen() {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
             <Avatar user={{ display_name: user.displayName }} size={60} />
             <View style={{ flex: 1 }}>
-              <Text style={{ fontFamily: fonts.extrabold, fontSize: 18, color: colors.black, letterSpacing: -0.3 }}>
+              <Text
+                style={{
+                  fontFamily: fonts.extrabold,
+                  fontSize: 18,
+                  color: colors.black,
+                  letterSpacing: -0.3,
+                }}
+              >
                 {user.displayName}
               </Text>
-              <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary, marginTop: 2, textTransform: 'capitalize' }}>
+              <Text
+                style={{
+                  fontFamily: fonts.medium,
+                  fontSize: 13,
+                  color: colors.textSecondary,
+                  marginTop: 2,
+                  textTransform: 'capitalize',
+                }}
+              >
                 {user.role}
               </Text>
-              <Text style={{ fontFamily: fonts.mono, fontSize: 12, color: colors.textTertiary, marginTop: 2 }}>
+              <Text
+                style={{
+                  fontFamily: fonts.mono,
+                  fontSize: 12,
+                  color: colors.textTertiary,
+                  marginTop: 2,
+                }}
+              >
                 {user.email}
               </Text>
             </View>
@@ -111,16 +148,23 @@ export function ProfileScreen() {
               Alert.alert(
                 'Reda call permissions',
                 'For your phone to ring on incoming calls, Reda needs:\n\n' +
-                '• Microphone — Allow\n' +
-                '• Phone — Allow\n' +
-                '• Notifications — Allow (with sound)\n' +
-                '• Display over other apps — Allow\n' +
-                '• Battery — set to "No restriction" / "Unrestricted"\n\n' +
-                'If your phone is a Gionee, Tecno, Xiaomi, Oppo, or similar, also enable "Autostart" or "Allow background activity" so the app stays awake.\n\n' +
-                'Tap "Open settings" to go there now.',
+                  '• Microphone — Allow\n' +
+                  '• Phone — Allow\n' +
+                  '• Notifications — Allow (with sound)\n' +
+                  '• Display over other apps — Allow\n' +
+                  '• Battery — set to "No restriction" / "Unrestricted"\n\n' +
+                  'If your phone is a Gionee, Tecno, Xiaomi, Oppo, or similar, also enable "Autostart" or "Allow background activity" so the app stays awake.\n\n' +
+                  'Tap "Open settings" to go there now.',
                 [
                   { text: 'Later', style: 'cancel' },
-                  { text: 'Open settings', onPress: () => { Linking.openSettings().catch(() => { /* noop */ }); } },
+                  {
+                    text: 'Open settings',
+                    onPress: () => {
+                      Linking.openSettings().catch(() => {
+                        /* noop */
+                      });
+                    },
+                  },
                 ],
               );
             }}
@@ -176,16 +220,12 @@ export function ProfileScreen() {
                 : 'Offline'
             }
             onPress={
-              pending > 0 || dead > 0
-                ? () => router.push('/(queue)/dead-letter')
-                : undefined
+              pending > 0 || dead > 0 ? () => router.push('/(queue)/dead-letter') : undefined
             }
             divider
-            valueTone={
-              dead > 0 ? 'error' : !snapshot.online ? 'warn' : 'default'
-            }
+            valueTone={dead > 0 ? 'error' : !snapshot.online ? 'warn' : 'default'}
           />
-          <ProfileRow icon="bell"   label="Notifications" value="On"          divider />
+          <ProfileRow icon="bell" label="Notifications" value="On" divider />
           <ProfileRow
             icon="helpCircle"
             label="Help & support"
@@ -215,7 +255,12 @@ export function ProfileScreen() {
 }
 
 function ProfileRow({
-  icon, label, value, divider, onPress, valueTone = 'default',
+  icon,
+  label,
+  value,
+  divider,
+  onPress,
+  valueTone = 'default',
 }: {
   icon: IconName;
   label: string;
@@ -224,9 +269,12 @@ function ProfileRow({
   onPress?: () => void;
   valueTone?: 'default' | 'warn' | 'error';
 }) {
-  const valueColor = valueTone === 'error' ? colors.red
-    : valueTone === 'warn' ? colors.warningDark
-    : colors.textSecondary;
+  const valueColor =
+    valueTone === 'error'
+      ? colors.red
+      : valueTone === 'warn'
+        ? colors.warningDark
+        : colors.textSecondary;
   return (
     <Pressable
       onPress={onPress}
@@ -243,7 +291,9 @@ function ProfileRow({
       })}
     >
       <Icon name={icon} size={20} color={colors.textSecondary} />
-      <Text style={{ flex: 1, fontFamily: fonts.semibold, fontSize: 14, color: colors.black }}>{label}</Text>
+      <Text style={{ flex: 1, fontFamily: fonts.semibold, fontSize: 14, color: colors.black }}>
+        {label}
+      </Text>
       {value ? (
         <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: valueColor }}>{value}</Text>
       ) : null}
@@ -253,7 +303,11 @@ function ProfileRow({
 }
 
 function ToggleRow({
-  icon, label, value, onChange, busy,
+  icon,
+  label,
+  value,
+  onChange,
+  busy,
 }: {
   icon: IconName;
   label: string;
@@ -262,16 +316,20 @@ function ToggleRow({
   busy?: boolean;
 }) {
   return (
-    <View style={{
-      paddingHorizontal: 16,
-      paddingVertical: 10,
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 12,
-      backgroundColor: colors.white,
-    }}>
+    <View
+      style={{
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        backgroundColor: colors.white,
+      }}
+    >
       <Icon name={icon} size={20} color={colors.textSecondary} />
-      <Text style={{ flex: 1, fontFamily: fonts.semibold, fontSize: 14, color: colors.black }}>{label}</Text>
+      <Text style={{ flex: 1, fontFamily: fonts.semibold, fontSize: 14, color: colors.black }}>
+        {label}
+      </Text>
       {busy ? <ActivityIndicator /> : null}
       <Switch value={value} onValueChange={onChange} disabled={busy} />
     </View>
@@ -293,11 +351,9 @@ function AboutRow() {
         return;
       }
       await Updates.fetchUpdateAsync();
-      Alert.alert(
-        'Update ready',
-        'Reda will restart now to apply the update.',
-        [{ text: 'Restart', onPress: () => Updates.reloadAsync() }],
-      );
+      Alert.alert('Update ready', 'Reda will restart now to apply the update.', [
+        { text: 'Restart', onPress: () => Updates.reloadAsync() },
+      ]);
     } catch (e) {
       Alert.alert('Could not check', e instanceof Error ? e.message : 'Try again later.');
     } finally {
@@ -321,12 +377,22 @@ function AboutRow() {
     >
       <Icon name="file" size={20} color={colors.textSecondary} />
       <View style={{ flex: 1 }}>
-        <Text style={{ fontFamily: fonts.semibold, fontSize: 14, color: colors.black }}>About Reda</Text>
-        <Text style={{ fontFamily: fonts.mono, fontSize: 11, color: colors.textTertiary, marginTop: 2 }}>{detail}</Text>
+        <Text style={{ fontFamily: fonts.semibold, fontSize: 14, color: colors.black }}>
+          About Reda
+        </Text>
+        <Text
+          style={{ fontFamily: fonts.mono, fontSize: 11, color: colors.textTertiary, marginTop: 2 }}
+        >
+          {detail}
+        </Text>
       </View>
-      {checking
-        ? <ActivityIndicator />
-        : <Text style={{ fontFamily: fonts.semibold, fontSize: 12, color: colors.red }}>Check for updates</Text>}
+      {checking ? (
+        <ActivityIndicator />
+      ) : (
+        <Text style={{ fontFamily: fonts.semibold, fontSize: 12, color: colors.red }}>
+          Check for updates
+        </Text>
+      )}
     </Pressable>
   );
 }

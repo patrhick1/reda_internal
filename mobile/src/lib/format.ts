@@ -12,11 +12,16 @@ export function formatNgPhone(raw: string): string {
   const digits = raw.replace(/\D/g, '');
   if (digits.startsWith('0') && digits.length <= 11) {
     return digits.replace(/(\d{4})(\d{0,3})(\d{0,4}).*/, (_, a, b, c) =>
-      [a, b, c].filter(Boolean).join(' '));
+      [a, b, c].filter(Boolean).join(' '),
+    );
   }
   if (digits.startsWith('234') && digits.length <= 13) {
-    return '+' + digits.replace(/(\d{3})(\d{3})(\d{0,3})(\d{0,4}).*/, (_, a, b, c, d) =>
-      [a, b, c, d].filter(Boolean).join(' '));
+    return (
+      '+' +
+      digits.replace(/(\d{3})(\d{3})(\d{0,3})(\d{0,4}).*/, (_, a, b, c, d) =>
+        [a, b, c, d].filter(Boolean).join(' '),
+      )
+    );
   }
   return raw;
 }

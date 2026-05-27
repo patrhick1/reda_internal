@@ -26,28 +26,36 @@ export default function AgentLayout() {
         name="today"
         options={{
           title: 'Today',
-          tabBarIcon: ({ color, focused }) => <Icon name="home" size={22} color={color} stroke={focused ? 2.2 : 1.75} />,
+          tabBarIcon: ({ color, focused }) => (
+            <Icon name="home" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
+          ),
         }}
       />
       <Tabs.Screen
         name="stock"
         options={{
           title: 'My stock',
-          tabBarIcon: ({ color, focused }) => <Icon name="package" size={22} color={color} stroke={focused ? 2.2 : 1.75} />,
+          tabBarIcon: ({ color, focused }) => (
+            <Icon name="package" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
+          ),
         }}
       />
       <Tabs.Screen
         name="earnings"
         options={{
           title: 'Earnings',
-          tabBarIcon: ({ color, focused }) => <Icon name="wallet" size={22} color={color} stroke={focused ? 2.2 : 1.75} />,
+          tabBarIcon: ({ color, focused }) => (
+            <Icon name="wallet" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
+          ),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color, focused }) => <Icon name="user" size={22} color={color} stroke={focused ? 2.2 : 1.75} />,
+          tabBarIcon: ({ color, focused }) => (
+            <Icon name="user" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
+          ),
         }}
       />
     </Tabs>

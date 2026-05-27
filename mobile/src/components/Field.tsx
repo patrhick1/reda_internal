@@ -36,11 +36,7 @@ export function Field({
         {required ? <Text style={styles.required}> *</Text> : null}
       </Text>
       <TextInput
-        style={[
-          styles.input,
-          multiline && styles.multiline,
-          focused && styles.inputFocused,
-        ]}
+        style={[styles.input, multiline && styles.multiline, focused && styles.inputFocused]}
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}

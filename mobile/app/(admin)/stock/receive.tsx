@@ -1,13 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { router } from 'expo-router';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Field } from '@/components/Field';
 import { Button } from '@/components/Button';
 import { Select } from '@/components/Select';
@@ -24,10 +17,10 @@ import { errorMessage } from '@/lib/errors';
 // `create_stock_adjustment` job with reason='bulk_intake' against the chosen
 // destination user (warehouse by default, agent for direct field intakes).
 type ReceiveRow = {
-  id:        string;
-  clientId:  string | null;
+  id: string;
+  clientId: string | null;
   productId: string | null;
-  quantity:  string;
+  quantity: string;
 };
 
 const makeRow = (): ReceiveRow => ({
@@ -44,7 +37,10 @@ export default function ReceiveStock() {
   const clientsQ = useAsync(() => listClients(), []);
 
   const activeUsers = useMemo(
-    () => (usersQ.data ?? []).filter((u) => u.is_active && (u.role === 'agent' || u.role === 'warehouse')),
+    () =>
+      (usersQ.data ?? []).filter(
+        (u) => u.is_active && (u.role === 'agent' || u.role === 'warehouse'),
+      ),
     [usersQ.data],
   );
   const warehouseUsers = useMemo(
@@ -71,19 +67,25 @@ export default function ReceiveStock() {
 
   // Cache products per client across rows so we don't re-fetch the same list.
   const [productsByClient, setProductsByClient] = useState<Map<string, Product[]>>(new Map());
-  const ensureProductsFor = useCallback(async (clientId: string) => {
-    if (productsByClient.has(clientId)) return;
-    try {
-      const list = await listActiveProductsByClient(clientId);
-      setProductsByClient((m) => {
-        const next = new Map(m);
-        next.set(clientId, list.map((x) => ({ id: x.id, product_name: x.product_name })));
-        return next;
-      });
-    } catch (e) {
-      setError(errorMessage(e));
-    }
-  }, [productsByClient]);
+  const ensureProductsFor = useCallback(
+    async (clientId: string) => {
+      if (productsByClient.has(clientId)) return;
+      try {
+        const list = await listActiveProductsByClient(clientId);
+        setProductsByClient((m) => {
+          const next = new Map(m);
+          next.set(
+            clientId,
+            list.map((x) => ({ id: x.id, product_name: x.product_name })),
+          );
+          return next;
+        });
+      } catch (e) {
+        setError(errorMessage(e));
+      }
+    },
+    [productsByClient],
+  );
 
   function patchRow(id: string, patch: Partial<ReceiveRow>) {
     if (patch.clientId !== undefined) {
@@ -98,14 +100,23 @@ export default function ReceiveStock() {
 
   async function handleSubmit() {
     setError(null);
-    if (!destinationId) { setError('Pick where this stock is going'); return; }
+    if (!destinationId) {
+      setError('Pick where this stock is going');
+      return;
+    }
 
     const validRows: { clientId: string; productId: string; qty: number }[] = [];
     for (const r of rows) {
       const empty = !r.clientId && !r.productId && !r.quantity;
       if (empty) continue;
-      if (!r.clientId)  { setError('Each row needs a client'); return; }
-      if (!r.productId) { setError('Each row needs a product'); return; }
+      if (!r.clientId) {
+        setError('Each row needs a client');
+        return;
+      }
+      if (!r.productId) {
+        setError('Each row needs a product');
+        return;
+      }
       const q = Number(r.quantity);
       if (!Number.isInteger(q) || q <= 0) {
         setError('Each row needs a positive whole-number quantity');
@@ -113,7 +124,10 @@ export default function ReceiveStock() {
       }
       validRows.push({ clientId: r.clientId, productId: r.productId, qty: q });
     }
-    if (validRows.length === 0) { setError('Add at least one row'); return; }
+    if (validRows.length === 0) {
+      setError('Add at least one row');
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -122,13 +136,16 @@ export default function ReceiveStock() {
       for (const row of validRows) {
         const product = productsByClient.get(row.clientId)?.find((p) => p.id === row.productId);
         const label = `Bulk intake · +${row.qty} ${product?.product_name ?? 'product'} · ${destLabel}`;
-        await enqueueAdj({
-          agentId: destinationId,
-          productCatalogId: row.productId,
-          quantityDelta: row.qty,
-          reason: 'bulk_intake',
-          notes: notes.trim() || null,
-        }, label);
+        await enqueueAdj(
+          {
+            agentId: destinationId,
+            productCatalogId: row.productId,
+            quantityDelta: row.qty,
+            reason: 'bulk_intake',
+            notes: notes.trim() || null,
+          },
+          label,
+        );
       }
       router.back();
     } catch (e) {
@@ -138,7 +155,11 @@ export default function ReceiveStock() {
   }
 
   if (usersQ.loading || clientsQ.loading) {
-    return <View style={styles.center}><ActivityIndicator /></View>;
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator />
+      </View>
+    );
   }
 
   const destinationOptions = activeUsers.map((u) => ({
@@ -150,21 +171,27 @@ export default function ReceiveStock() {
   const filledCount = countFilled(rows);
 
   return (
-    <ScrollView style={styles.flex} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      style={styles.flex}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+    >
       <Select
         label="Destination"
         required
         value={destinationId}
         options={destinationOptions}
         onChange={setDestinationId}
-        placeholder={warehouseUsers.length === 0 ? 'Add a warehouse user in Catalog first' : 'Pick destination'}
+        placeholder={
+          warehouseUsers.length === 0 ? 'Add a warehouse user in Catalog first' : 'Pick destination'
+        }
       />
       <Text style={styles.hint}>
         Stock arrived at warehouse, or directly with an agent in the field.
       </Text>
 
       {rows.map((row, i) => {
-        const rowProducts = row.clientId ? productsByClient.get(row.clientId) ?? [] : [];
+        const rowProducts = row.clientId ? (productsByClient.get(row.clientId) ?? []) : [];
         return (
           <View key={row.id} style={styles.rowCard}>
             <View style={styles.rowHeader}>
@@ -192,7 +219,13 @@ export default function ReceiveStock() {
               options={rowProducts.map((p) => ({ value: p.id, label: p.product_name }))}
               onChange={(v) => patchRow(row.id, { productId: v })}
               disabled={!row.clientId || rowProducts.length === 0}
-              placeholder={!row.clientId ? 'Pick a client first' : rowProducts.length === 0 ? 'No products for this client' : 'Choose'}
+              placeholder={
+                !row.clientId
+                  ? 'Pick a client first'
+                  : rowProducts.length === 0
+                    ? 'No products for this client'
+                    : 'Choose'
+              }
             />
             <Field
               label="Quantity"
@@ -206,7 +239,12 @@ export default function ReceiveStock() {
         );
       })}
 
-      <Button title="+ Add another item" onPress={addRow} variant="secondary" style={styles.addRow} />
+      <Button
+        title="+ Add another item"
+        onPress={addRow}
+        variant="secondary"
+        style={styles.addRow}
+      />
 
       <Field
         label="Notes"
@@ -217,7 +255,9 @@ export default function ReceiveStock() {
       />
 
       {error ? (
-        <View style={styles.errorBox}><Text style={styles.errorText}>{error}</Text></View>
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
       ) : null}
 
       <Button
@@ -225,7 +265,12 @@ export default function ReceiveStock() {
         onPress={handleSubmit}
         loading={submitting}
       />
-      <Button title="Cancel" onPress={() => router.back()} variant="secondary" style={styles.cancel} />
+      <Button
+        title="Cancel"
+        onPress={() => router.back()}
+        variant="secondary"
+        style={styles.cancel}
+      />
     </ScrollView>
   );
 }
@@ -237,18 +282,43 @@ function countFilled(rows: ReceiveRow[]): number {
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: '#fff' },
   content: { padding: 16, paddingBottom: 48 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#fff' },
-  errorBox: { backgroundColor: '#fdecea', padding: 12, borderRadius: 8, marginBottom: 12, marginTop: 4 },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    backgroundColor: '#fff',
+  },
+  errorBox: {
+    backgroundColor: '#fdecea',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 12,
+    marginTop: 4,
+  },
   errorText: { color: '#a02d1b', fontSize: 14 },
   hint: { fontSize: 12, color: '#666', marginTop: -8, marginBottom: 4, fontStyle: 'italic' },
   rowCard: {
     marginTop: 10,
     padding: 12,
-    borderWidth: 1, borderColor: '#eee', borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#eee',
+    borderRadius: 8,
     backgroundColor: '#fafafa',
   },
-  rowHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
-  rowTitle:  { fontSize: 12, fontWeight: '700', color: '#666', letterSpacing: 0.6, textTransform: 'uppercase' },
-  addRow:    { marginTop: 12 },
-  cancel:    { marginTop: 12 },
+  rowHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  rowTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#666',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  addRow: { marginTop: 12 },
+  cancel: { marginTop: 12 },
 });

@@ -1,5 +1,15 @@
 import React, { useEffect, useRef } from 'react';
-import { Modal, Pressable, View, Text, Animated, Easing, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import {
+  Modal,
+  Pressable,
+  View,
+  Text,
+  Animated,
+  Easing,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, fonts, radii } from '@/lib/theme';
 
@@ -35,21 +45,34 @@ export function Sheet({ open, onClose, title, subtitle, children }: SheetProps) 
       >
         <Animated.View style={{ flex: 1, backgroundColor: 'rgba(10,10,10,0.42)', opacity }}>
           <Pressable style={{ flex: 1 }} onPress={onClose} />
-          <Animated.View style={{
-            backgroundColor: colors.white,
-            borderTopLeftRadius: radii.sheet,
-            borderTopRightRadius: radii.sheet,
-            maxHeight: '88%',
-            transform: [{ translateY }],
-          }}>
+          <Animated.View
+            style={{
+              backgroundColor: colors.white,
+              borderTopLeftRadius: radii.sheet,
+              borderTopRightRadius: radii.sheet,
+              maxHeight: '88%',
+              transform: [{ translateY }],
+            }}
+          >
             <View style={{ alignItems: 'center', paddingTop: 8, paddingBottom: 4 }}>
-              <View style={{ width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2 }} />
+              <View
+                style={{ width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2 }}
+              />
             </View>
             {title ? (
               <View style={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4 }}>
-                <Text style={{ fontFamily: fonts.bold, fontSize: 18, color: colors.black }}>{title}</Text>
+                <Text style={{ fontFamily: fonts.bold, fontSize: 18, color: colors.black }}>
+                  {title}
+                </Text>
                 {subtitle ? (
-                  <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
+                  <Text
+                    style={{
+                      fontFamily: fonts.medium,
+                      fontSize: 13,
+                      color: colors.textSecondary,
+                      marginTop: 2,
+                    }}
+                  >
                     {subtitle}
                   </Text>
                 ) : null}

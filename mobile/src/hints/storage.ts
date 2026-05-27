@@ -19,7 +19,11 @@ export async function isHintDismissed(id: HintId, userId: string): Promise<boole
 }
 
 export async function dismissHint(id: HintId, userId: string): Promise<void> {
-  try { await AsyncStorage.setItem(key(id, userId), '1'); } catch { /* swallow */ }
+  try {
+    await AsyncStorage.setItem(key(id, userId), '1');
+  } catch {
+    /* swallow */
+  }
 }
 
 /** Clears every dismissed-hint flag for this user across the full HINTS
@@ -27,5 +31,9 @@ export async function dismissHint(id: HintId, userId: string): Promise<void> {
  *  on the same device are untouched. */
 export async function resetAllHints(userId: string): Promise<void> {
   const keys = Object.values(HINTS).map((id) => key(id, userId));
-  try { await AsyncStorage.multiRemove(keys); } catch { /* swallow */ }
+  try {
+    await AsyncStorage.multiRemove(keys);
+  } catch {
+    /* swallow */
+  }
 }

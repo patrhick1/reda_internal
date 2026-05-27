@@ -28,12 +28,14 @@ export function useOutgoingCallSubscription(callId: string | null): Call | null 
 
     // Initial fetch — Realtime only emits CHANGES; without this the consumer
     // would have to wait for a status flip to see anything.
-    getCall(callId).then((row) => {
-      if (cancelled) return;
-      if (row) setCall(row);
-    }).catch((err) => {
-      console.warn('[outgoing-call] initial fetch failed', err);
-    });
+    getCall(callId)
+      .then((row) => {
+        if (cancelled) return;
+        if (row) setCall(row);
+      })
+      .catch((err) => {
+        console.warn('[outgoing-call] initial fetch failed', err);
+      });
 
     const channel = supabase
       .channel(`outgoing-call:${callId}`)

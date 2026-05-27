@@ -15,28 +15,34 @@ export function StatusPill({ status, variant = 'filled', size = 'md' }: StatusPi
   const sm = size === 'sm';
 
   return (
-    <View style={{
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 4,
-      backgroundColor: subtle ? tone.soft : tone.bg,
-      paddingHorizontal: sm ? 8 : 10,
-      paddingVertical: sm ? 2 : 4,
-      borderRadius: 999,
-      alignSelf: 'flex-start',
-    }}>
-      <View style={{
-        width: sm ? 5 : 6,
-        height: sm ? 5 : 6,
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        backgroundColor: subtle ? tone.soft : tone.bg,
+        paddingHorizontal: sm ? 8 : 10,
+        paddingVertical: sm ? 2 : 4,
         borderRadius: 999,
-        backgroundColor: subtle ? tone.bg : colors.white,
-      }} />
-      <Text style={{
-        color: subtle ? tone.softText : colors.white,
-        fontFamily: fonts.semibold,
-        fontSize: sm ? 10 : 11,
-        lineHeight: sm ? 14 : 16,
-      }}>
+        alignSelf: 'flex-start',
+      }}
+    >
+      <View
+        style={{
+          width: sm ? 5 : 6,
+          height: sm ? 5 : 6,
+          borderRadius: 999,
+          backgroundColor: subtle ? tone.bg : colors.white,
+        }}
+      />
+      <Text
+        style={{
+          color: subtle ? tone.softText : colors.white,
+          fontFamily: fonts.semibold,
+          fontSize: sm ? 10 : 11,
+          lineHeight: sm ? 14 : 16,
+        }}
+      >
         {meta.label}
       </Text>
     </View>

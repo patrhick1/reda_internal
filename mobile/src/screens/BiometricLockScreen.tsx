@@ -8,7 +8,7 @@ import { colors, fonts } from '@/lib/theme';
 export function BiometricLockScreen({ onUnlock }: { onUnlock: () => void }) {
   const { signOut } = useAuth();
   const [label, setLabel] = useState('Biometric');
-  const [busy, setBusy]   = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -31,17 +31,49 @@ export function BiometricLockScreen({ onUnlock }: { onUnlock: () => void }) {
   }, []);
 
   return (
-    <View style={{ flex: 1, backgroundColor: colors.black, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: colors.black,
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 24,
+      }}
+    >
       <RedaMark size={72} inverted />
-      <Text style={{ marginTop: 28, color: colors.white, fontFamily: fonts.extrabold, fontSize: 22, letterSpacing: -0.4 }}>
+      <Text
+        style={{
+          marginTop: 28,
+          color: colors.white,
+          fontFamily: fonts.extrabold,
+          fontSize: 22,
+          letterSpacing: -0.4,
+        }}
+      >
         Locked
       </Text>
-      <Text style={{ marginTop: 8, color: colors.textTertiary, fontFamily: fonts.medium, fontSize: 14, textAlign: 'center' }}>
+      <Text
+        style={{
+          marginTop: 8,
+          color: colors.textTertiary,
+          fontFamily: fonts.medium,
+          fontSize: 14,
+          textAlign: 'center',
+        }}
+      >
         Unlock with {label} to continue.
       </Text>
 
       {error ? (
-        <Text style={{ marginTop: 16, color: colors.red, fontFamily: fonts.medium, fontSize: 13, textAlign: 'center' }}>
+        <Text
+          style={{
+            marginTop: 16,
+            color: colors.red,
+            fontFamily: fonts.medium,
+            fontSize: 13,
+            textAlign: 'center',
+          }}
+        >
           {error}
         </Text>
       ) : null}

@@ -1,5 +1,14 @@
 import { useState, useCallback } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, SectionList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  FlatList,
+  RefreshControl,
+  SectionList,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { Link, useFocusEffect } from 'expo-router';
 import { Button } from '@/components/Button';
 import { useAsync } from '@/hooks/useAsync';
@@ -14,7 +23,11 @@ export default function ProductsList() {
     [includeInactive],
   );
 
-  useFocusEffect(useCallback(() => { reload(); }, [reload]));
+  useFocusEffect(
+    useCallback(() => {
+      reload();
+    }, [reload]),
+  );
 
   const sections: Section[] = groupByClient(data ?? []);
 
@@ -35,7 +48,9 @@ export default function ProductsList() {
           <Button title="Retry" onPress={reload} variant="secondary" />
         </View>
       ) : loading && !data ? (
-        <View style={styles.center}><ActivityIndicator /></View>
+        <View style={styles.center}>
+          <ActivityIndicator />
+        </View>
       ) : sections.length === 0 ? (
         <View style={styles.center}>
           <Text style={styles.empty}>No products yet.</Text>
@@ -64,7 +79,9 @@ function ProductRow({ product }: { product: ProductWithClient }) {
     <Link href={{ pathname: '/(admin)/catalog/products/[id]', params: { id: product.id } }} asChild>
       <TouchableOpacity style={styles.row}>
         <View style={styles.rowLeft}>
-          <Text style={[styles.name, !product.is_active && styles.nameInactive]}>{product.product_name}</Text>
+          <Text style={[styles.name, !product.is_active && styles.nameInactive]}>
+            {product.product_name}
+          </Text>
           {product.description ? <Text style={styles.meta}>{product.description}</Text> : null}
         </View>
         {!product.is_active ? <Text style={styles.badge}>inactive</Text> : null}
@@ -92,17 +109,26 @@ void FlatList;
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 16, paddingVertical: 12,
-    borderBottomWidth: 1, borderBottomColor: '#eee',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
   },
   toggle: { fontSize: 14, color: '#333', fontWeight: '500' },
   newBtn: { paddingHorizontal: 14, minHeight: 36 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   list: { paddingHorizontal: 16, paddingVertical: 12 },
   sectionHeader: {
-    fontSize: 12, fontWeight: '700', color: '#888', letterSpacing: 1, textTransform: 'uppercase',
-    marginTop: 12, marginBottom: 4,
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#888',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginTop: 12,
+    marginBottom: 4,
   },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14 },
   rowLeft: { flex: 1 },
@@ -110,8 +136,14 @@ const styles = StyleSheet.create({
   nameInactive: { color: '#888', textDecorationLine: 'line-through' },
   meta: { fontSize: 13, color: '#666', marginTop: 2 },
   badge: {
-    fontSize: 11, color: '#a04000', backgroundColor: '#fde9d8',
-    paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, marginRight: 8, overflow: 'hidden',
+    fontSize: 11,
+    color: '#a04000',
+    backgroundColor: '#fde9d8',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginRight: 8,
+    overflow: 'hidden',
   },
   chev: { fontSize: 24, color: '#bbb' },
   sep: { height: 1, backgroundColor: '#f0f0f0' },

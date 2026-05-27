@@ -21,8 +21,24 @@ export default function WarehouseLayout() {
         tabBarLabelStyle: { fontFamily: fonts.semibold, fontSize: 11 },
       }}
     >
-      <Tabs.Screen name="index"   options={{ title: 'Stock',   tabBarIcon: ({ color, focused }) => <Icon name="warehouse" size={22} color={color} stroke={focused ? 2.2 : 1.75} /> }} />
-      <Tabs.Screen name="profile" options={{ title: 'Profile', tabBarIcon: ({ color, focused }) => <Icon name="user"      size={22} color={color} stroke={focused ? 2.2 : 1.75} /> }} />
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: 'Stock',
+          tabBarIcon: ({ color, focused }) => (
+            <Icon name="warehouse" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Profile',
+          tabBarIcon: ({ color, focused }) => (
+            <Icon name="user" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
+          ),
+        }}
+      />
     </Tabs>
   );
 }

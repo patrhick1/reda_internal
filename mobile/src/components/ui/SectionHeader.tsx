@@ -10,21 +10,25 @@ export function SectionHeader({
   right?: React.ReactNode;
 }) {
   return (
-    <View style={{
-      paddingHorizontal: 16,
-      paddingTop: 14,
-      paddingBottom: 8,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-    }}>
-      <Text style={{
-        fontFamily: fonts.bold,
-        fontSize: 12,
-        color: colors.textSecondary,
-        letterSpacing: 0.6,
-        textTransform: 'uppercase',
-      }}>
+    <View
+      style={{
+        paddingHorizontal: 16,
+        paddingTop: 14,
+        paddingBottom: 8,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+      }}
+    >
+      <Text
+        style={{
+          fontFamily: fonts.bold,
+          fontSize: 12,
+          color: colors.textSecondary,
+          letterSpacing: 0.6,
+          textTransform: 'uppercase',
+        }}
+      >
         {children}
       </Text>
       {right}

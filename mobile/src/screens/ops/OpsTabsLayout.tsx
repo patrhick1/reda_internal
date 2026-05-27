@@ -24,10 +24,42 @@ export function OpsTabsLayout() {
         tabBarLabelStyle: { fontFamily: fonts.semibold, fontSize: 11 },
       }}
     >
-      <Tabs.Screen name="index"      options={{ title: 'Dashboard',  tabBarIcon: ({ color, focused }) => <Icon name="home"  size={22} color={color} stroke={focused ? 2.2 : 1.75} /> }} />
-      <Tabs.Screen name="deliveries" options={{ title: 'Deliveries', tabBarIcon: ({ color, focused }) => <Icon name="truck" size={22} color={color} stroke={focused ? 2.2 : 1.75} /> }} />
-      <Tabs.Screen name="review"     options={{ title: 'Review',     tabBarIcon: ({ color, focused }) => <Icon name="alert" size={22} color={color} stroke={focused ? 2.2 : 1.75} /> }} />
-      <Tabs.Screen name="profile"    options={{ title: 'Profile',    tabBarIcon: ({ color, focused }) => <Icon name="user"  size={22} color={color} stroke={focused ? 2.2 : 1.75} /> }} />
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: 'Dashboard',
+          tabBarIcon: ({ color, focused }) => (
+            <Icon name="home" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="deliveries"
+        options={{
+          title: 'Deliveries',
+          tabBarIcon: ({ color, focused }) => (
+            <Icon name="truck" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="review"
+        options={{
+          title: 'Review',
+          tabBarIcon: ({ color, focused }) => (
+            <Icon name="alert" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Profile',
+          tabBarIcon: ({ color, focused }) => (
+            <Icon name="user" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
+          ),
+        }}
+      />
     </Tabs>
   );
 }

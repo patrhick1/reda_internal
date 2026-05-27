@@ -16,34 +16,45 @@ export function QueueBanner() {
   const { jobs, online, draining } = snapshot;
 
   const tone = useMemo(() => {
-    const dead = jobs.filter(j => j.status === 'dead_letter').length;
-    const pending = jobs.filter(j => j.status === 'pending' || j.status === 'in_flight').length;
-    const retrying = jobs.filter(j => j.status === 'failed_retrying').length;
+    const dead = jobs.filter((j) => j.status === 'dead_letter').length;
+    const pending = jobs.filter((j) => j.status === 'pending' || j.status === 'in_flight').length;
+    const retrying = jobs.filter((j) => j.status === 'failed_retrying').length;
 
     if (dead > 0) {
       return {
-        bg: colors.redSoft, fg: colors.red, icon: 'alert' as const,
+        bg: colors.redSoft,
+        fg: colors.red,
+        icon: 'alert' as const,
         text: `${dead} ${dead === 1 ? 'change' : 'changes'} failed — tap to review`,
         onPress: () => router.push('/(queue)/dead-letter'),
       };
     }
     if (!online) {
       return {
-        bg: colors.warningSoft, fg: colors.warningDark, icon: 'alert' as const,
-        text: pending > 0 ? `Offline · ${pending} queued` : 'Offline · changes will sync when reconnected',
+        bg: colors.warningSoft,
+        fg: colors.warningDark,
+        icon: 'alert' as const,
+        text:
+          pending > 0
+            ? `Offline · ${pending} queued`
+            : 'Offline · changes will sync when reconnected',
         onPress: null,
       };
     }
     if (retrying > 0) {
       return {
-        bg: colors.warningSoft, fg: colors.warningDark, icon: 'refresh' as const,
+        bg: colors.warningSoft,
+        fg: colors.warningDark,
+        icon: 'refresh' as const,
         text: `Reconnecting · ${retrying} ${retrying === 1 ? 'retry' : 'retries'} pending`,
         onPress: () => router.push('/(queue)/dead-letter'),
       };
     }
     if (draining || pending > 0) {
       return {
-        bg: colors.infoSoft, fg: colors.infoDark, icon: 'refresh' as const,
+        bg: colors.infoSoft,
+        fg: colors.infoDark,
+        icon: 'refresh' as const,
         text: pending > 0 ? `Syncing ${pending}…` : 'Syncing…',
         onPress: null,
       };
@@ -57,21 +68,29 @@ export function QueueBanner() {
     <Pressable
       onPress={tone.onPress ?? (() => undefined)}
       disabled={!tone.onPress}
-      style={({ pressed }) => ([{
-        backgroundColor: tone.bg,
-        paddingHorizontal: 16,
-        paddingVertical: 10,
-        flexDirection: 'row', alignItems: 'center', gap: 8,
-        borderTopWidth: 1, borderTopColor: 'rgba(0,0,0,0.06)',
-      }, pressed && tone.onPress ? { opacity: 0.85 } : null])}
+      style={({ pressed }) => [
+        {
+          backgroundColor: tone.bg,
+          paddingHorizontal: 16,
+          paddingVertical: 10,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 8,
+          borderTopWidth: 1,
+          borderTopColor: 'rgba(0,0,0,0.06)',
+        },
+        pressed && tone.onPress ? { opacity: 0.85 } : null,
+      ]}
     >
       <Icon name={tone.icon} size={16} color={tone.fg} />
-      <Text style={{
-        flex: 1,
-        fontFamily: fonts.semibold,
-        fontSize: 12,
-        color: tone.fg,
-      }}>
+      <Text
+        style={{
+          flex: 1,
+          fontFamily: fonts.semibold,
+          fontSize: 12,
+          color: tone.fg,
+        }}
+      >
         {tone.text}
       </Text>
       {tone.onPress ? <Icon name="chevronRight" size={14} color={tone.fg} /> : null}

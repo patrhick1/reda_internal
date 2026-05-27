@@ -37,8 +37,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setBootstrapped(true);
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
-      setAuthUserId((prev) => (prev === (s?.user.id ?? null) ? prev : s?.user.id ?? null));
-      setAuthEmail((prev) => (prev === (s?.user.email ?? null) ? prev : s?.user.email ?? null));
+      setAuthUserId((prev) => (prev === (s?.user.id ?? null) ? prev : (s?.user.id ?? null)));
+      setAuthEmail((prev) => (prev === (s?.user.email ?? null) ? prev : (s?.user.email ?? null)));
     });
     return () => sub.subscription.unsubscribe();
   }, []);

@@ -29,22 +29,35 @@ export class ErrorBoundary extends Component<Props, State> {
   override render() {
     if (!this.state.error) return this.props.children;
     return (
-      <View style={{ flex: 1, backgroundColor: colors.surface, paddingHorizontal: 24, justifyContent: 'center' }}>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: colors.surface,
+          paddingHorizontal: 24,
+          justifyContent: 'center',
+        }}
+      >
         <Empty
           icon="alert"
           title="Something went wrong"
-          sub={this.state.error.message || 'The screen hit an unexpected error. Tap Try again to retry — your saved changes are safe in the sync queue.'}
+          sub={
+            this.state.error.message ||
+            'The screen hit an unexpected error. Tap Try again to retry — your saved changes are safe in the sync queue.'
+          }
         />
         <Pressable
           onPress={this.reset}
-          style={({ pressed }) => ([{
-            marginTop: 16,
-            alignSelf: 'center',
-            paddingVertical: 12,
-            paddingHorizontal: 24,
-            backgroundColor: colors.black,
-            borderRadius: 999,
-          }, pressed && { opacity: 0.85 }])}
+          style={({ pressed }) => [
+            {
+              marginTop: 16,
+              alignSelf: 'center',
+              paddingVertical: 12,
+              paddingHorizontal: 24,
+              backgroundColor: colors.black,
+              borderRadius: 999,
+            },
+            pressed && { opacity: 0.85 },
+          ]}
           accessibilityRole="button"
           accessibilityLabel="Try again"
         >

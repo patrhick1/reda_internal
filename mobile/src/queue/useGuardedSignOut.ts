@@ -21,29 +21,32 @@ export function useGuardedSignOut(): () => void {
   return useCallback(() => {
     if (!hasUnsynced) {
       if (Platform.OS === 'web') {
-        if (typeof window !== 'undefined' && window.confirm('Sign out? You will need to sign in again to use the app.')) {
+        if (
+          typeof window !== 'undefined' &&
+          window.confirm('Sign out? You will need to sign in again to use the app.')
+        ) {
           signOut();
         }
         return;
       }
-      Alert.alert(
-        'Sign out?',
-        'You will need to sign in again to use the app.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Sign out', style: 'destructive', onPress: () => signOut() },
-        ],
-      );
+      Alert.alert('Sign out?', 'You will need to sign in again to use the app.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign out', style: 'destructive', onPress: () => signOut() },
+      ]);
       return;
     }
     const pending = snapshot.jobs.filter(
-      j => j.status === 'pending' || j.status === 'in_flight' || j.status === 'failed_retrying',
+      (j) => j.status === 'pending' || j.status === 'in_flight' || j.status === 'failed_retrying',
     ).length;
     if (Platform.OS === 'web') {
       if (typeof window === 'undefined') return;
       const msg = `You have ${pending} ${pending === 1 ? 'change' : 'changes'} that haven't synced. Signing out now will lose them.\n\nOK = sign out & discard.\nCancel = stay (review pending in the queue screen).`;
       if (window.confirm(msg)) {
-        if (window.confirm(`Are you sure? This will discard ${pending} unsynced ${pending === 1 ? 'change' : 'changes'} permanently.`)) {
+        if (
+          window.confirm(
+            `Are you sure? This will discard ${pending} unsynced ${pending === 1 ? 'change' : 'changes'} permanently.`,
+          )
+        ) {
           signOut();
         }
       } else {

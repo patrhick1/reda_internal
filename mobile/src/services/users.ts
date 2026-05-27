@@ -107,7 +107,11 @@ export type UpdateUserInput = {
   phone: string | null;
 };
 
-export async function updateUser(id: string, input: UpdateUserInput, reason: string | null): Promise<void> {
+export async function updateUser(
+  id: string,
+  input: UpdateUserInput,
+  reason: string | null,
+): Promise<void> {
   const { error } = await supabase.rpc('update_user', {
     p_id: id,
     p_display_name: input.displayName,
@@ -151,10 +155,10 @@ export async function listAgentLocations(agentId: string): Promise<AgentZonePref
     .eq('agent_id', agentId);
   if (error) throw error;
   const preferred: string[] = [];
-  const avoided:   string[] = [];
+  const avoided: string[] = [];
   for (const r of data ?? []) {
     if (r.kind === 'avoid') avoided.push(r.location_id);
-    else                    preferred.push(r.location_id);
+    else preferred.push(r.location_id);
   }
   return { preferred, avoided };
 }
@@ -165,9 +169,9 @@ export async function setAgentLocations(
   avoidedIds: string[],
 ): Promise<void> {
   const { error } = await supabase.rpc('set_agent_locations', {
-    p_agent_id:      agentId,
+    p_agent_id: agentId,
     p_preferred_ids: preferredIds,
-    p_avoided_ids:   avoidedIds,
+    p_avoided_ids: avoidedIds,
   });
   if (error) throw error;
 }
@@ -181,14 +185,17 @@ export type SelfProfileInput = { displayName: string; phone: string | null };
 export async function updateSelfProfile(input: SelfProfileInput): Promise<void> {
   const { error } = await supabase.rpc('update_self_profile', {
     p_display_name: input.displayName,
-    p_phone:        input.phone ?? '',
+    p_phone: input.phone ?? '',
   });
   if (error) throw error;
 }
 
 /** Re-authenticates with the current password (since Supabase doesn't expose
  *  a "verify password" call), then updates to the new password. */
-export async function changeMyPassword(currentPassword: string, newPassword: string): Promise<void> {
+export async function changeMyPassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
   const { data: u } = await supabase.auth.getUser();
   const email = u.user?.email;
   if (!email) throw new Error('Not signed in');

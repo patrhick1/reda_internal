@@ -37,7 +37,11 @@ export async function createLocation(input: LocationInput): Promise<string> {
   return data as string;
 }
 
-export async function updateLocation(id: string, input: LocationInput, reason: string | null): Promise<void> {
+export async function updateLocation(
+  id: string,
+  input: LocationInput,
+  reason: string | null,
+): Promise<void> {
   const { error } = await supabase.rpc('update_location', {
     p_id: id,
     p_name: input.name,

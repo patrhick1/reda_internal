@@ -33,7 +33,10 @@ export function formatDateLagos(iso: string): string {
   if (!y || !m || !d) return iso;
   const date = new Date(Date.UTC(y, m - 1, d));
   return date.toLocaleDateString('en-GB', {
-    day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
   });
 }
 

@@ -4,7 +4,5 @@
   "outputDirectory": "dist",
   "installCommand": "npm install",
   "framework": null,
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/" }
-  ]
+  "rewrites": [{ "source": "/(.*)", "destination": "/" }]
 }

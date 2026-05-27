@@ -16,27 +16,51 @@ export type InputProps = Omit<TextInputProps, 'onChange' | 'onChangeText'> & {
   rightAdornment?: React.ReactNode;
 };
 
-export function Input({ label, value, onChange, placeholder, secureTextEntry, icon, error, helper, focused, rightAdornment, keyboardType, autoCapitalize, autoCorrect, ...rest }: InputProps) {
+export function Input({
+  label,
+  value,
+  onChange,
+  placeholder,
+  secureTextEntry,
+  icon,
+  error,
+  helper,
+  focused,
+  rightAdornment,
+  keyboardType,
+  autoCapitalize,
+  autoCorrect,
+  ...rest
+}: InputProps) {
   const [isFocused, setIsFocused] = useState(false);
   const showAccent = focused ?? isFocused;
-  const borderColor = error ? colors.red : (showAccent ? colors.red : colors.border);
+  const borderColor = error ? colors.red : showAccent ? colors.red : colors.border;
   const borderWidth = error || showAccent ? 2 : 1;
 
   return (
     <View>
       {label ? (
-        <Text style={{ fontFamily: fonts.semibold, fontSize: 12, color: colors.textSecondary, marginBottom: 6 }}>
+        <Text
+          style={{
+            fontFamily: fonts.semibold,
+            fontSize: 12,
+            color: colors.textSecondary,
+            marginBottom: 6,
+          }}
+        >
           {label}
         </Text>
       ) : null}
-      <View style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-        borderBottomWidth: borderWidth,
-        borderBottomColor: borderColor,
-        paddingBottom: 8 - (borderWidth - 1),
-      }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 8,
+          borderBottomWidth: borderWidth,
+          borderBottomColor: borderColor,
+          paddingBottom: 8 - (borderWidth - 1),
+        }}
+      >
         {icon ? <Icon name={icon} size={18} color={colors.textSecondary} /> : null}
         <TextInput
           {...rest}
@@ -60,8 +84,15 @@ export function Input({ label, value, onChange, placeholder, secureTextEntry, ic
         />
         {rightAdornment}
       </View>
-      {(error || helper) ? (
-        <Text style={{ marginTop: 6, fontFamily: fonts.medium, fontSize: 12, color: error ? colors.red : colors.textSecondary }}>
+      {error || helper ? (
+        <Text
+          style={{
+            marginTop: 6,
+            fontFamily: fonts.medium,
+            fontSize: 12,
+            color: error ? colors.red : colors.textSecondary,
+          }}
+        >
           {error ?? helper}
         </Text>
       ) : null}

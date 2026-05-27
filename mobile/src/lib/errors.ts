@@ -13,7 +13,7 @@ export function errorMessage(e: unknown): string {
     const obj = e as Record<string, unknown>;
     if (typeof obj.message === 'string' && obj.message.trim()) return obj.message;
     if (typeof obj.details === 'string' && obj.details.trim()) return obj.details;
-    if (typeof obj.hint    === 'string' && obj.hint.trim())    return obj.hint;
+    if (typeof obj.hint === 'string' && obj.hint.trim()) return obj.hint;
   }
   const s = String(e);
   return s === '[object Object]' ? 'Unknown error' : s;

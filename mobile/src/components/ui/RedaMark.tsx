@@ -17,14 +17,16 @@ export function RedaMark({ size = 32, inverted = false }: { size?: number; inver
   const tint = inverted ? colors.black : colors.white;
   const padding = Math.max(2, Math.round(size * 0.12));
   return (
-    <View style={{
-      width: size,
-      height: size,
-      backgroundColor: bg,
-      borderRadius: Math.min(radii.md, Math.round(size * 0.22)),
-      alignItems: 'center',
-      justifyContent: 'center',
-    }}>
+    <View
+      style={{
+        width: size,
+        height: size,
+        backgroundColor: bg,
+        borderRadius: Math.min(radii.md, Math.round(size * 0.22)),
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
       <Image
         source={MARK}
         style={{
@@ -38,16 +40,24 @@ export function RedaMark({ size = 32, inverted = false }: { size?: number; inver
   );
 }
 
-export function RedaWordmark({ size = 22, inverted = false }: { size?: number; inverted?: boolean }) {
+export function RedaWordmark({
+  size = 22,
+  inverted = false,
+}: {
+  size?: number;
+  inverted?: boolean;
+}) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
       <RedaMark size={size + 6} inverted={inverted} />
-      <Text style={{
-        fontFamily: fonts.extrabold,
-        fontSize: size,
-        letterSpacing: -0.4,
-        color: inverted ? colors.white : colors.black,
-      }}>
+      <Text
+        style={{
+          fontFamily: fonts.extrabold,
+          fontSize: size,
+          letterSpacing: -0.4,
+          color: inverted ? colors.white : colors.black,
+        }}
+      >
         Reda
       </Text>
     </View>

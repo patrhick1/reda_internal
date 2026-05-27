@@ -22,9 +22,9 @@ const styles = {
     marginTop: 0,
     marginBottom: 10,
   },
-  strong:    { fontFamily: fonts.bold },
-  em:        { fontFamily: fonts.medium, fontStyle: 'italic' as const },
-  heading2:  {
+  strong: { fontFamily: fonts.bold },
+  em: { fontFamily: fonts.medium, fontStyle: 'italic' as const },
+  heading2: {
     fontFamily: fonts.bold,
     fontSize: 15,
     color: colors.black,
@@ -32,7 +32,7 @@ const styles = {
     marginTop: 8,
     marginBottom: 6,
   },
-  heading3:  {
+  heading3: {
     fontFamily: fonts.semibold,
     fontSize: 13,
     color: colors.black,
@@ -42,7 +42,7 @@ const styles = {
   },
   bullet_list: { marginBottom: 8 },
   ordered_list: { marginBottom: 8 },
-  list_item:  { marginBottom: 4 },
+  list_item: { marginBottom: 4 },
   bullet_list_icon: {
     fontFamily: fonts.regular,
     color: colors.textSecondary,
@@ -75,7 +75,7 @@ const styles = {
     marginBottom: 8,
   },
   link: { color: colors.red, fontFamily: fonts.medium },
-  hr:   {
+  hr: {
     backgroundColor: colors.border,
     height: 1,
     marginVertical: 10,

@@ -2,9 +2,7 @@ import { router } from 'expo-router';
 import * as agora from './agora';
 import * as callkeep from './callkeep';
 import { ensureMicPermission } from './permissions';
-import {
-  acceptCall, declineCall, endCall, fetchAgoraToken, type Call,
-} from '@/services/calls';
+import { acceptCall, declineCall, endCall, fetchAgoraToken, type Call } from '@/services/calls';
 
 // Callee-side coordinator. Owns the CallKeep system UI lifecycle for incoming
 // calls (display → answer/decline → handoff or dismiss). Once a call is
@@ -21,7 +19,7 @@ import {
 type Phase = 'idle' | 'incoming';
 
 type Snapshot = {
-  callId:     string | null;
+  callId: string | null;
   callerName: string;
 };
 
@@ -32,21 +30,33 @@ const listeners = new Set<(s: Snapshot) => void>();
 
 function snapshot(): Snapshot {
   return {
-    callId:     phase === 'incoming' ? activeCallId : null,
+    callId: phase === 'incoming' ? activeCallId : null,
     callerName: activeCallerName,
   };
 }
 
 function notify() {
   const s = snapshot();
-  listeners.forEach((l) => { try { l(s); } catch { /* noop */ } });
+  listeners.forEach((l) => {
+    try {
+      l(s);
+    } catch {
+      /* noop */
+    }
+  });
 }
 
 export function subscribe(cb: (s: Snapshot) => void): () => void {
   listeners.add(cb);
   // Fire once with current state so subscribers don't wait for a transition.
-  try { cb(snapshot()); } catch { /* noop */ }
-  return () => { listeners.delete(cb); };
+  try {
+    cb(snapshot());
+  } catch {
+    /* noop */
+  }
+  return () => {
+    listeners.delete(cb);
+  };
 }
 
 export function getIncomingCallId(): string | null {
@@ -61,7 +71,9 @@ export function getSnapshot(): Snapshot {
 export function presentIncoming(call: Call, callerName: string): void {
   if (phase === 'incoming' && activeCallId === call.id) return;
   if (phase === 'incoming') {
-    declineCall(call.id, 'busy').catch(() => { /* noop */ });
+    declineCall(call.id, 'busy').catch(() => {
+      /* noop */
+    });
     return;
   }
   activeCallId = call.id;
@@ -84,7 +96,9 @@ export async function answer(callId: string): Promise<void> {
   // sees a clean 'declined' status with reason 'mic_denied'.
   const micOk = await ensureMicPermission();
   if (!micOk) {
-    declineCall(callId, 'mic_denied').catch(() => { /* noop */ });
+    declineCall(callId, 'mic_denied').catch(() => {
+      /* noop */
+    });
     callkeep.dismissCall(callId);
     reset();
     return;
@@ -111,9 +125,7 @@ export async function answer(callId: string): Promise<void> {
     // forever on "Connected" with no audio. Best-effort — if it fails the
     // row is stuck, but at least we tried.
     if (accepted) {
-      endCall(callId).catch((e) =>
-        console.warn('[coord] rollback end_call failed', e),
-      );
+      endCall(callId).catch((e) => console.warn('[coord] rollback end_call failed', e));
     }
     throw err;
   }
@@ -122,7 +134,9 @@ export async function answer(callId: string): Promise<void> {
 /** CallKeep 'endCall' event during ringing → decline. */
 export async function declineFromSystemUI(callId: string): Promise<void> {
   if (activeCallId !== callId || phase !== 'incoming') return;
-  declineCall(callId, 'declined from system UI').catch(() => { /* noop */ });
+  declineCall(callId, 'declined from system UI').catch(() => {
+    /* noop */
+  });
   callkeep.dismissCall(callId);
   reset();
 }

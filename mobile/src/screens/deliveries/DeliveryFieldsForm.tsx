@@ -13,47 +13,52 @@ import { errorMessage } from '@/lib/errors';
 
 /** Form values emitted by `<DeliveryFieldsForm>` on every change. */
 export type DeliveryFormState = {
-  clientId:         string | null;
+  clientId: string | null;
   productCatalogId: string | null;
-  customerName:     string;
-  customerPhone:    string;
-  rawAddress:       string;
-  quantityOrdered:  number | null;   // null when blank or NaN
-  customerPrice:    number | null;
-  locationId:       string | null;
-  assignedAgentId:  string | null;
-  scheduledDate:    string;          // YYYY-MM-DD (empty allowed; parent validates)
+  customerName: string;
+  customerPhone: string;
+  rawAddress: string;
+  quantityOrdered: number | null; // null when blank or NaN
+  customerPrice: number | null;
+  locationId: string | null;
+  assignedAgentId: string | null;
+  scheduledDate: string; // YYYY-MM-DD (empty allowed; parent validates)
 };
 
 export type DeliveryFormInitial = Partial<DeliveryFormState>;
 
 export type ProductCandidate = {
-  id:            string;
-  client_id:     string;
-  client_name:   string;
-  product_name:  string;
-  score:         number;
+  id: string;
+  client_id: string;
+  client_name: string;
+  product_name: string;
+  score: number;
 };
 
 export type DeliveryFieldsFormProps = {
-  initial?:         DeliveryFormInitial;
+  initial?: DeliveryFormInitial;
   /** Hide fields not relevant to this flow. */
-  hideFields?:      readonly ('scheduledDate' | 'assignedAgent')[];
+  hideFields?: readonly ('scheduledDate' | 'assignedAgent')[];
   /** Product candidates from the bot's parse_result; rendered as tappable
    *  chips above the product picker. Tapping a chip selects both client +
    *  product. Pass null when there's no ambiguity to surface. */
   productCandidates?: ProductCandidate[] | null;
   /** When the contractor sent "x or y" as the phone, pass the *other* number
    *  here. We render a one-tap "Use 080... instead" link under the phone. */
-  alternatePhone?:  string | null;
+  alternatePhone?: string | null;
   /** Fired on every field change with the latest state + a validity flag.
    *  `isValid` is true iff required fields are filled with sane shapes. */
-  onChange:         (state: DeliveryFormState, isValid: boolean) => void;
+  onChange: (state: DeliveryFormState, isValid: boolean) => void;
 };
 
 const REQUIRED_KEYS: (keyof DeliveryFormState)[] = [
-  'clientId', 'productCatalogId', 'customerName', 'customerPhone', 'rawAddress',
-  'quantityOrdered', 'customerPrice',
+  'clientId',
+  'productCatalogId',
+  'customerName',
+  'customerPhone',
+  'rawAddress',
+  'quantityOrdered',
+  'customerPrice',
 ];
 
 function isValidState(s: DeliveryFormState): boolean {
@@ -62,16 +67,17 @@ function isValidState(s: DeliveryFormState): boolean {
     if (v === null || v === undefined || v === '') return false;
   }
   if (!Number.isInteger(s.quantityOrdered) || (s.quantityOrdered ?? 0) <= 0) return false;
-  if (s.customerPrice === null || !Number.isFinite(s.customerPrice) || s.customerPrice < 0) return false;
+  if (s.customerPrice === null || !Number.isFinite(s.customerPrice) || s.customerPrice < 0)
+    return false;
   return true;
 }
 
 const kicker = {
-  fontFamily:     fonts.bold,
-  fontSize:       11,
-  color:          colors.textSecondary,
-  letterSpacing:  0.8,
-  textTransform:  'uppercase' as const,
+  fontFamily: fonts.bold,
+  fontSize: 11,
+  color: colors.textSecondary,
+  letterSpacing: 0.8,
+  textTransform: 'uppercase' as const,
 };
 
 export function DeliveryFieldsForm({
@@ -91,16 +97,16 @@ export function DeliveryFieldsForm({
   );
 
   const [state, setState] = useState<DeliveryFormState>({
-    clientId:         initial?.clientId ?? null,
+    clientId: initial?.clientId ?? null,
     productCatalogId: initial?.productCatalogId ?? null,
-    customerName:     initial?.customerName ?? '',
-    customerPhone:    initial?.customerPhone ?? '',
-    rawAddress:       initial?.rawAddress ?? '',
-    quantityOrdered:  initial?.quantityOrdered ?? null,
-    customerPrice:    initial?.customerPrice ?? null,
-    locationId:       initial?.locationId ?? null,
-    assignedAgentId:  initial?.assignedAgentId ?? null,
-    scheduledDate:    initial?.scheduledDate ?? '',
+    customerName: initial?.customerName ?? '',
+    customerPhone: initial?.customerPhone ?? '',
+    rawAddress: initial?.rawAddress ?? '',
+    quantityOrdered: initial?.quantityOrdered ?? null,
+    customerPrice: initial?.customerPrice ?? null,
+    locationId: initial?.locationId ?? null,
+    assignedAgentId: initial?.assignedAgentId ?? null,
+    scheduledDate: initial?.scheduledDate ?? '',
   });
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -126,10 +132,16 @@ export function DeliveryFieldsForm({
           patch({ productCatalogId: null });
         }
       })
-      .catch((e) => { if (!cancelled) setProductsError(errorMessage(e)); })
-      .finally(() => { if (!cancelled) setLoadingProducts(false); });
-    return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+      .catch((e) => {
+        if (!cancelled) setProductsError(errorMessage(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingProducts(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.clientId]);
 
   // Per-agent stock for the selected product, so the picker can show "X in
@@ -149,14 +161,18 @@ export function DeliveryFieldsForm({
           .then((qty) => [a.id, qty] as const)
           .catch(() => [a.id, 0] as const),
       ),
-    ).then((pairs) => { if (!cancelled) setStockByAgent(new Map(pairs)); });
-    return () => { cancelled = true; };
+    ).then((pairs) => {
+      if (!cancelled) setStockByAgent(new Map(pairs));
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [state.productCatalogId, agentsQ.data]);
 
   // Emit the latest state on every change.
   useEffect(() => {
     onChange(state, isValidState(state));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
 
   function patch(p: Partial<DeliveryFormState>) {
@@ -168,13 +184,13 @@ export function DeliveryFieldsForm({
     [locationsQ.data],
   );
   const agentOptions = useMemo(
-    () => (agentsQ.data ?? []).map((a) => {
-      const stock = stockByAgent?.get(a.id);
-      const label = stockByAgent == null
-        ? a.display_name
-        : `${a.display_name} · ${stock ?? 0} in stock`;
-      return { value: a.id, label, sub: a.email ?? undefined };
-    }),
+    () =>
+      (agentsQ.data ?? []).map((a) => {
+        const stock = stockByAgent?.get(a.id);
+        const label =
+          stockByAgent == null ? a.display_name : `${a.display_name} · ${stock ?? 0} in stock`;
+        return { value: a.id, label, sub: a.email ?? undefined };
+      }),
     [agentsQ.data, stockByAgent],
   );
 
@@ -265,7 +281,14 @@ export function DeliveryFieldsForm({
       {productCandidates && productCandidates.length > 1 ? (
         <Card>
           <Text style={kicker}>The bot saw more than one match</Text>
-          <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary, marginTop: 6 }}>
+          <Text
+            style={{
+              fontFamily: fonts.medium,
+              fontSize: 12,
+              color: colors.textSecondary,
+              marginTop: 6,
+            }}
+          >
             Tap the right one — it will fill in the client and product below.
           </Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
@@ -275,16 +298,25 @@ export function DeliveryFieldsForm({
                 <Pressable
                   key={c.id}
                   onPress={() => patch({ clientId: c.client_id, productCatalogId: c.id })}
-                  style={({ pressed }) => ([{
-                    paddingHorizontal: 12,
-                    paddingVertical: 8,
-                    borderRadius: 999,
-                    backgroundColor: active ? colors.black : colors.white,
-                    borderWidth: 1.5,
-                    borderColor: active ? colors.black : colors.border,
-                  }, pressed && { opacity: 0.85 }])}
+                  style={({ pressed }) => [
+                    {
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      borderRadius: 999,
+                      backgroundColor: active ? colors.black : colors.white,
+                      borderWidth: 1.5,
+                      borderColor: active ? colors.black : colors.border,
+                    },
+                    pressed && { opacity: 0.85 },
+                  ]}
                 >
-                  <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: active ? colors.white : colors.black }}>
+                  <Text
+                    style={{
+                      fontFamily: fonts.semibold,
+                      fontSize: 13,
+                      color: active ? colors.white : colors.black,
+                    }}
+                  >
                     {c.product_name} · {c.client_name}
                   </Text>
                 </Pressable>
@@ -304,16 +336,25 @@ export function DeliveryFieldsForm({
               <Pressable
                 key={c.id}
                 onPress={() => patch({ clientId: c.id, productCatalogId: null })}
-                style={({ pressed }) => ([{
-                  paddingHorizontal: 12,
-                  paddingVertical: 8,
-                  borderRadius: 999,
-                  backgroundColor: active ? colors.black : colors.white,
-                  borderWidth: 1.5,
-                  borderColor: active ? colors.black : colors.border,
-                }, pressed && { opacity: 0.85 }])}
+                style={({ pressed }) => [
+                  {
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                    borderRadius: 999,
+                    backgroundColor: active ? colors.black : colors.white,
+                    borderWidth: 1.5,
+                    borderColor: active ? colors.black : colors.border,
+                  },
+                  pressed && { opacity: 0.85 },
+                ]}
               >
-                <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: active ? colors.white : colors.black }}>
+                <Text
+                  style={{
+                    fontFamily: fonts.semibold,
+                    fontSize: 13,
+                    color: active ? colors.white : colors.black,
+                  }}
+                >
                   {c.name}
                 </Text>
               </Pressable>
@@ -330,7 +371,9 @@ export function DeliveryFieldsForm({
             {loadingProducts ? (
               <ActivityIndicator color={colors.black} />
             ) : productsError ? (
-              <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.red }}>{productsError}</Text>
+              <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.red }}>
+                {productsError}
+              </Text>
             ) : products.length === 0 ? (
               <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary }}>
                 This client has no active products yet.
@@ -342,23 +385,40 @@ export function DeliveryFieldsForm({
                   <Pressable
                     key={p.id}
                     onPress={() => patch({ productCatalogId: p.id })}
-                    style={({ pressed }) => ([{
-                      flexDirection: 'row',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      paddingHorizontal: 14,
-                      paddingVertical: 12,
-                      borderRadius: 12,
-                      backgroundColor: active ? colors.surface : 'transparent',
-                      borderWidth: 1.5,
-                      borderColor: active ? colors.black : colors.border,
-                    }, pressed && { opacity: 0.85 }])}
+                    style={({ pressed }) => [
+                      {
+                        flexDirection: 'row',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        paddingHorizontal: 14,
+                        paddingVertical: 12,
+                        borderRadius: 12,
+                        backgroundColor: active ? colors.surface : 'transparent',
+                        borderWidth: 1.5,
+                        borderColor: active ? colors.black : colors.border,
+                      },
+                      pressed && { opacity: 0.85 },
+                    ]}
                   >
-                    <Text style={{ flex: 1, fontFamily: fonts.semibold, fontSize: 14, color: colors.black }}>
+                    <Text
+                      style={{
+                        flex: 1,
+                        fontFamily: fonts.semibold,
+                        fontSize: 14,
+                        color: colors.black,
+                      }}
+                    >
                       {p.product_name}
                     </Text>
                     {p.description ? (
-                      <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary, marginLeft: 8 }}>
+                      <Text
+                        style={{
+                          fontFamily: fonts.medium,
+                          fontSize: 12,
+                          color: colors.textSecondary,
+                          marginLeft: 8,
+                        }}
+                      >
                         {p.description}
                       </Text>
                     ) : null}
@@ -432,7 +492,9 @@ export function DeliveryFieldsForm({
               <Banner tone="info" icon="user">
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <Avatar user={selectedAgent} size={24} />
-                  <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.infoDark }}>
+                  <Text
+                    style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.infoDark }}
+                  >
                     Assigned to {selectedAgent.display_name}
                   </Text>
                 </View>
@@ -440,10 +502,18 @@ export function DeliveryFieldsForm({
             ) : null}
             {stockShortfall ? (
               <Banner tone="warn" icon="alert" title="Stock pickup needed">
-                <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.warningDark, lineHeight: 19 }}>
+                <Text
+                  style={{
+                    fontFamily: fonts.medium,
+                    fontSize: 13,
+                    color: colors.warningDark,
+                    lineHeight: 19,
+                  }}
+                >
                   {selectedAgent?.display_name ?? 'Selected agent'} has {stockShortfall.onHand}
-                  {selectedProductName ? ` ${selectedProductName}` : ''} but the delivery is for {stockShortfall.needed}.
-                  We&apos;ll prompt them to pick up from the warehouse and ping dispatch to issue a transfer.
+                  {selectedProductName ? ` ${selectedProductName}` : ''} but the delivery is for{' '}
+                  {stockShortfall.needed}. We&apos;ll prompt them to pick up from the warehouse and
+                  ping dispatch to issue a transfer.
                 </Text>
               </Banner>
             ) : null}

@@ -8,7 +8,11 @@ import { usePushTokenRegistration } from '@/hooks/usePushTokenRegistration';
 import { useRedaFonts } from '@/hooks/useRedaFonts';
 import { initSentry } from '@/lib/sentry';
 import { isBiometricEnabled } from '@/lib/biometric';
-import { configureNotifications, useCallInvitePushHandler, useNotificationTapRouting } from '@/lib/notifications';
+import {
+  configureNotifications,
+  useCallInvitePushHandler,
+  useNotificationTapRouting,
+} from '@/lib/notifications';
 import { BiometricLockScreen } from '@/screens/BiometricLockScreen';
 import { colors } from '@/lib/theme';
 import { QueueProvider } from '@/queue/QueueProvider';
@@ -27,12 +31,20 @@ configureNotifications();
 // works via Agora directly; only the system ring UI is affected. Wrap each
 // native bridge call in its own try so a partial failure doesn't cascade.
 if (Platform.OS !== 'web') {
-  try { setupCallKeep(); } catch (err) {
+  try {
+    setupCallKeep();
+  } catch (err) {
     console.warn('[layout] CallKeep setup failed; calls will degrade gracefully', err);
   }
   try {
-    addAnswerListener(({ callUUID }) => { callCoord.answer(callUUID).catch(() => { /* logged */ }); });
-    addEndListener(({ callUUID }) => { callCoord.declineFromSystemUI(callUUID); });
+    addAnswerListener(({ callUUID }) => {
+      callCoord.answer(callUUID).catch(() => {
+        /* logged */
+      });
+    });
+    addEndListener(({ callUUID }) => {
+      callCoord.declineFromSystemUI(callUUID);
+    });
   } catch (err) {
     console.warn('[layout] CallKeep listener registration failed', err);
   }
@@ -44,7 +56,14 @@ export default function RootLayout() {
     return (
       <SafeAreaProvider>
         <StatusBar style="auto" />
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.black }}>
+        <View
+          style={{
+            flex: 1,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: colors.black,
+          }}
+        >
           <ActivityIndicator color={colors.white} />
         </View>
       </SafeAreaProvider>
@@ -86,25 +105,34 @@ function AuthGate() {
   const [lockState, setLockState] = useState<'checking' | 'needs' | 'unlocked'>('checking');
 
   useEffect(() => {
-    if (!userId) { setLockState('checking'); return; }
+    if (!userId) {
+      setLockState('checking');
+      return;
+    }
     // Web has no biometric API. Even if an enabled flag drifted into
     // localStorage from a previous session, we can't prompt for Face/Touch
     // ID in a browser — short-circuit straight to unlocked.
-    if (Platform.OS === 'web') { setLockState('unlocked'); return; }
+    if (Platform.OS === 'web') {
+      setLockState('unlocked');
+      return;
+    }
     let cancelled = false;
     setLockState('checking');
     isBiometricEnabled().then((on) => {
       if (cancelled) return;
       setLockState(on ? 'needs' : 'unlocked');
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [userId]);
 
   const currentGroup = segments[0] as string | undefined;
   const expectedRoute = expectedRouteFor(account);
   const expectedGroup = expectedRoute?.split('/')[1]; // e.g. "/(admin)" → "(admin)"
   const inExpectedGroup = expectedGroup !== undefined && currentGroup === expectedGroup;
-  const inPassthrough = account.kind === 'active' && currentGroup !== undefined && PASSTHROUGH_GROUPS.has(currentGroup);
+  const inPassthrough =
+    account.kind === 'active' && currentGroup !== undefined && PASSTHROUGH_GROUPS.has(currentGroup);
 
   useEffect(() => {
     if (!expectedRoute) return; // account still loading

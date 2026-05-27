@@ -1,5 +1,13 @@
 import { useState } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  FlatList,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { Link, useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
 import { Button } from '@/components/Button';
@@ -14,15 +22,17 @@ export default function ClientsList() {
   );
 
   // Re-fetch when this screen comes back into focus (e.g., after creating a client)
-  useFocusEffect(useCallback(() => { reload(); }, [reload]));
+  useFocusEffect(
+    useCallback(() => {
+      reload();
+    }, [reload]),
+  );
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => setIncludeInactive((v) => !v)}>
-          <Text style={styles.toggle}>
-            {includeInactive ? 'Hide inactive' : 'Show inactive'}
-          </Text>
+          <Text style={styles.toggle}>{includeInactive ? 'Hide inactive' : 'Show inactive'}</Text>
         </TouchableOpacity>
         <Link href="/(admin)/catalog/clients/new" asChild>
           <Button title="New client" onPress={() => undefined} style={styles.newBtn} />
@@ -35,7 +45,9 @@ export default function ClientsList() {
           <Button title="Retry" onPress={reload} variant="secondary" />
         </View>
       ) : loading && !data ? (
-        <View style={styles.center}><ActivityIndicator /></View>
+        <View style={styles.center}>
+          <ActivityIndicator />
+        </View>
       ) : data && data.length === 0 ? (
         <View style={styles.center}>
           <Text style={styles.empty}>No clients yet.</Text>

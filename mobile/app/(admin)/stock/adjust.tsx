@@ -56,9 +56,11 @@ export default function NewAdjustment() {
     value: r.value,
     label: r.label,
     sub:
-      r.sign === 'negative' ? 'Negative quantity'
-      : r.sign === 'positive' ? 'Positive quantity'
-      : 'Either sign',
+      r.sign === 'negative'
+        ? 'Negative quantity'
+        : r.sign === 'positive'
+          ? 'Positive quantity'
+          : 'Either sign',
   }));
 
   const signedHint = (() => {
@@ -71,9 +73,18 @@ export default function NewAdjustment() {
 
   async function handleSubmit() {
     setError(null);
-    if (!agentId)   { setError('Pick the user whose stock is being adjusted'); return; }
-    if (!productId) { setError('Pick a product'); return; }
-    if (!reason)    { setError('Pick a reason'); return; }
+    if (!agentId) {
+      setError('Pick the user whose stock is being adjusted');
+      return;
+    }
+    if (!productId) {
+      setError('Pick a product');
+      return;
+    }
+    if (!reason) {
+      setError('Pick a reason');
+      return;
+    }
     const q = Number(quantity);
     if (!Number.isInteger(q) || q === 0) {
       setError('Quantity must be a non-zero integer');
@@ -81,15 +92,18 @@ export default function NewAdjustment() {
     }
     setSubmitting(true);
     try {
-      const reasonLabel = ADJUSTMENT_REASONS.find(r => r.value === reason)?.label ?? reason;
-      const productName = products.find(p => p.id === productId)?.product_name ?? 'product';
-      await enqueueAdj({
-        agentId,
-        productCatalogId: productId,
-        quantityDelta: q,
-        reason,
-        notes: notes.trim() || null,
-      }, `${reasonLabel} · ${q > 0 ? '+' : ''}${q} ${productName}`);
+      const reasonLabel = ADJUSTMENT_REASONS.find((r) => r.value === reason)?.label ?? reason;
+      const productName = products.find((p) => p.id === productId)?.product_name ?? 'product';
+      await enqueueAdj(
+        {
+          agentId,
+          productCatalogId: productId,
+          quantityDelta: q,
+          reason,
+          notes: notes.trim() || null,
+        },
+        `${reasonLabel} · ${q > 0 ? '+' : ''}${q} ${productName}`,
+      );
       router.back();
     } catch (e) {
       setError(errorMessage(e));
@@ -98,13 +112,33 @@ export default function NewAdjustment() {
   }
 
   if (usersQ.loading || clientsQ.loading) {
-    return <View style={styles.center}><ActivityIndicator /></View>;
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator />
+      </View>
+    );
   }
 
   return (
-    <ScrollView style={styles.flex} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-      <Select label="User (agent / warehouse)" required value={agentId} options={userOptions} onChange={setAgentId} />
-      <Select label="Client" required value={clientId} options={clientOptions} onChange={setClientId} />
+    <ScrollView
+      style={styles.flex}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+    >
+      <Select
+        label="User (agent / warehouse)"
+        required
+        value={agentId}
+        options={userOptions}
+        onChange={setAgentId}
+      />
+      <Select
+        label="Client"
+        required
+        value={clientId}
+        options={clientOptions}
+        onChange={setClientId}
+      />
       <Select
         label="Product"
         required
@@ -112,7 +146,13 @@ export default function NewAdjustment() {
         options={productOptions}
         onChange={setProductId}
         disabled={!clientId || products.length === 0}
-        placeholder={!clientId ? 'Pick a client first' : products.length === 0 ? 'No products for this client' : 'Choose'}
+        placeholder={
+          !clientId
+            ? 'Pick a client first'
+            : products.length === 0
+              ? 'No products for this client'
+              : 'Choose'
+        }
       />
       <Select label="Reason" required value={reason} options={reasonOptions} onChange={setReason} />
       <Field
@@ -125,14 +165,27 @@ export default function NewAdjustment() {
         placeholder={signedHint ?? '0'}
       />
       {signedHint ? <Text style={styles.hint}>{signedHint}</Text> : null}
-      <Field label="Notes" value={notes} onChangeText={setNotes} multiline placeholder="Optional context" />
+      <Field
+        label="Notes"
+        value={notes}
+        onChangeText={setNotes}
+        multiline
+        placeholder="Optional context"
+      />
 
       {error ? (
-        <View style={styles.errorBox}><Text style={styles.errorText}>{error}</Text></View>
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
       ) : null}
 
       <Button title="Create adjustment" onPress={handleSubmit} loading={submitting} />
-      <Button title="Cancel" onPress={() => router.back()} variant="secondary" style={styles.cancel} />
+      <Button
+        title="Cancel"
+        onPress={() => router.back()}
+        variant="secondary"
+        style={styles.cancel}
+      />
     </ScrollView>
   );
 }
@@ -140,7 +193,13 @@ export default function NewAdjustment() {
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: '#fff' },
   content: { padding: 16, paddingBottom: 48 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#fff' },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    backgroundColor: '#fff',
+  },
   errorBox: { backgroundColor: '#fdecea', padding: 12, borderRadius: 8, marginBottom: 12 },
   errorText: { color: '#a02d1b', fontSize: 14 },
   hint: { fontSize: 12, color: '#666', marginTop: -8, marginBottom: 12, fontStyle: 'italic' },

@@ -7,10 +7,10 @@ import { useDismissibleHint } from '@/hints/useDismissibleHint';
 import type { HintId } from '@/hints/registry';
 
 const TONE_TEXT: Record<BannerTone, string> = {
-  info:  colors.infoDark,
-  warn:  colors.warningDark,
+  info: colors.infoDark,
+  warn: colors.warningDark,
   error: colors.red,
-  ok:    colors.successDark,
+  ok: colors.successDark,
 };
 
 export type HintProps = {
@@ -39,13 +39,7 @@ export type HintProps = {
  *  </Hint>
  *  ```
  */
-export function Hint({
-  id,
-  tone = 'info',
-  icon = 'helpCircle',
-  title,
-  children,
-}: HintProps) {
+export function Hint({ id, tone = 'info', icon = 'helpCircle', title, children }: HintProps) {
   const { visible, dismiss } = useDismissibleHint(id);
   if (!visible) return null;
   return (
@@ -69,12 +63,14 @@ export function Hint({
        *  nested <Text> elements for emphasis without tripping RN's
        *  "text strings must be rendered within a <Text>" rule. Banner only
        *  auto-wraps when children is exactly a single string. */}
-      <Text style={{
-        fontFamily: fonts.medium,
-        fontSize:   13,
-        color:      TONE_TEXT[tone],
-        lineHeight: 19,
-      }}>
+      <Text
+        style={{
+          fontFamily: fonts.medium,
+          fontSize: 13,
+          color: TONE_TEXT[tone],
+          lineHeight: 19,
+        }}
+      >
         {children}
       </Text>
     </Banner>

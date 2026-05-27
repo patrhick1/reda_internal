@@ -5,7 +5,12 @@ import { Screen } from '@/components/Screen';
 import { Field } from '@/components/Field';
 import { Button } from '@/components/Button';
 import { useAsync } from '@/hooks/useAsync';
-import { deactivateLocation, getLocation, reactivateLocation, updateLocation } from '@/services/locations';
+import {
+  deactivateLocation,
+  getLocation,
+  reactivateLocation,
+  updateLocation,
+} from '@/services/locations';
 import { parseAliases, parseCoord } from '@/lib/parse';
 import { errorMessage } from '@/lib/errors';
 
@@ -30,7 +35,12 @@ export default function EditLocation() {
     }
   }, [location]);
 
-  if (loading) return <View style={styles.center}><ActivityIndicator /></View>;
+  if (loading)
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator />
+      </View>
+    );
   if (error || !location) {
     return (
       <View style={styles.center}>
@@ -87,7 +97,8 @@ export default function EditLocation() {
 
   function handleDeactivate() {
     if (Platform.OS === 'web') {
-      const why = (typeof window !== 'undefined' ? window.prompt('Reason for deactivation:') : null) ?? '';
+      const why =
+        (typeof window !== 'undefined' ? window.prompt('Reason for deactivation:') : null) ?? '';
       if (why.trim()) performDeactivate(why.trim());
       else setActionError('Reason required');
       return;
@@ -137,8 +148,20 @@ export default function EditLocation() {
         onChangeText={setAliases}
         autoCapitalize="none"
       />
-      <Field label="Latitude" value={latitude} onChangeText={setLatitude} keyboardType="numeric" autoCapitalize="none" />
-      <Field label="Longitude" value={longitude} onChangeText={setLongitude} keyboardType="numeric" autoCapitalize="none" />
+      <Field
+        label="Latitude"
+        value={latitude}
+        onChangeText={setLatitude}
+        keyboardType="numeric"
+        autoCapitalize="none"
+      />
+      <Field
+        label="Longitude"
+        value={longitude}
+        onChangeText={setLongitude}
+        keyboardType="numeric"
+        autoCapitalize="none"
+      />
 
       {dirty ? (
         <Field
@@ -150,22 +173,42 @@ export default function EditLocation() {
       ) : null}
 
       {actionError ? (
-        <View style={styles.errorBox}><Text style={styles.errorText}>{actionError}</Text></View>
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{actionError}</Text>
+        </View>
       ) : null}
 
       <Button title="Save changes" onPress={handleSave} loading={submitting} disabled={!dirty} />
 
       {location.is_active ? (
-        <Button title="Deactivate" onPress={handleDeactivate} variant="danger" style={styles.bottom} disabled={submitting} />
+        <Button
+          title="Deactivate"
+          onPress={handleDeactivate}
+          variant="danger"
+          style={styles.bottom}
+          disabled={submitting}
+        />
       ) : (
-        <Button title="Reactivate" onPress={handleReactivate} variant="secondary" style={styles.bottom} disabled={submitting} />
+        <Button
+          title="Reactivate"
+          onPress={handleReactivate}
+          variant="secondary"
+          style={styles.bottom}
+          disabled={submitting}
+        />
       )}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#fff' },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    backgroundColor: '#fff',
+  },
   error: { color: '#c0392b', textAlign: 'center', marginBottom: 12 },
   errorBox: { backgroundColor: '#fdecea', padding: 12, borderRadius: 8, marginBottom: 12 },
   errorText: { color: '#a02d1b', fontSize: 14 },

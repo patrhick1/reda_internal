@@ -20,28 +20,25 @@ export async function acquireEditLock(
 ): Promise<AcquireLockResult> {
   const { data, error } = await supabase.rpc('acquire_edit_lock', {
     p_entity_type: entityType,
-    p_entity_id:   entityId,
-    p_takeover:    takeover,
+    p_entity_id: entityId,
+    p_takeover: takeover,
   });
   if (error) throw error;
   const row = Array.isArray(data) ? data[0] : null;
   if (!row) throw new Error('acquire_edit_lock returned no row');
   return {
-    heldBy:      row.held_by as string,
-    holderName:  row.holder_name as string,
-    acquiredAt:  row.acquired_at as string,
-    isSelf:      row.is_self as boolean,
+    heldBy: row.held_by as string,
+    holderName: row.holder_name as string,
+    acquiredAt: row.acquired_at as string,
+    isSelf: row.is_self as boolean,
   };
 }
 
 /** Releases the lock if this caller holds it. Safe no-op otherwise. */
-export async function releaseEditLock(
-  entityType: EditLockEntity,
-  entityId: string,
-): Promise<void> {
+export async function releaseEditLock(entityType: EditLockEntity, entityId: string): Promise<void> {
   const { error } = await supabase.rpc('release_edit_lock', {
     p_entity_type: entityType,
-    p_entity_id:   entityId,
+    p_entity_id: entityId,
   });
   if (error) throw error;
 }
@@ -54,7 +51,7 @@ export async function heartbeatEditLock(
 ): Promise<void> {
   const { error } = await supabase.rpc('heartbeat_edit_lock', {
     p_entity_type: entityType,
-    p_entity_id:   entityId,
+    p_entity_id: entityId,
   });
   if (error) throw error;
 }

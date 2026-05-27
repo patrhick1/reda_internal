@@ -6,8 +6,12 @@ import { Card, Input } from '@/components/ui';
 import { colors, fonts, STATUS_META, TERMINAL_STATUSES } from '@/lib/theme';
 import { formatDateTime } from '@/lib/format';
 import {
-  ISSUE_LABELS, listMessages, markRead, postReply,
-  type AuthorRole, type DeliveryMessage,
+  ISSUE_LABELS,
+  listMessages,
+  markRead,
+  postReply,
+  type AuthorRole,
+  type DeliveryMessage,
 } from '@/services/delivery-messages';
 import { newClientUuid } from '@/lib/uuid';
 import { errorMessage } from '@/lib/errors';
@@ -15,7 +19,9 @@ import { errorMessage } from '@/lib/errors';
 /** Per-delivery message thread. Stays hidden until the agent has flagged
  *  something — keeps the screen quiet during the common no-issue case. */
 export function MessageThread({
-  deliveryId, deliveryStatus, canReply,
+  deliveryId,
+  deliveryStatus,
+  canReply,
 }: {
   deliveryId: string;
   /** Parent passes this so we don't re-fetch the delivery just to know if
@@ -26,12 +32,14 @@ export function MessageThread({
 }) {
   const messagesQ = useAsync(() => listMessages(deliveryId), [deliveryId]);
 
-  useFocusEffect(useCallback(() => {
-    messagesQ.reload();
-    // Mark-read can fail silently — it's not user-visible.
-    markRead(deliveryId).catch(() => undefined);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deliveryId]));
+  useFocusEffect(
+    useCallback(() => {
+      messagesQ.reload();
+      // Mark-read can fail silently — it's not user-visible.
+      markRead(deliveryId).catch(() => undefined);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [deliveryId]),
+  );
 
   const isOpen = !TERMINAL_STATUSES.has(deliveryStatus ?? '');
   const messages = messagesQ.data ?? [];
@@ -62,12 +70,17 @@ export function MessageThread({
       {isOpen && canReply ? (
         <ReplyComposer deliveryId={deliveryId} onSent={() => messagesQ.reload()} />
       ) : !isOpen ? (
-        <View style={{
-          marginTop: 14, padding: 10,
-          backgroundColor: colors.surface, borderRadius: 10,
-        }}>
+        <View
+          style={{
+            marginTop: 14,
+            padding: 10,
+            backgroundColor: colors.surface,
+            borderRadius: 10,
+          }}
+        >
           <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary }}>
-            Thread closed — delivery is {STATUS_META[deliveryStatus ?? '']?.label ?? deliveryStatus}.
+            Thread closed — delivery is {STATUS_META[deliveryStatus ?? '']?.label ?? deliveryStatus}
+            .
           </Text>
         </View>
       ) : null}
@@ -77,38 +90,44 @@ export function MessageThread({
 
 function Bubble({ message }: { message: DeliveryMessage }) {
   const align = message.fromOps ? 'flex-end' : 'flex-start';
-  const bg    = message.fromOps ? colors.black : colors.surface;
-  const fg    = message.fromOps ? colors.white : colors.black;
-  const subFg = message.fromOps ? '#bbb'        : colors.textSecondary;
+  const bg = message.fromOps ? colors.black : colors.surface;
+  const fg = message.fromOps ? colors.white : colors.black;
+  const subFg = message.fromOps ? '#bbb' : colors.textSecondary;
 
   return (
     <View style={{ alignItems: align }}>
-      <View style={{
-        maxWidth: '85%',
-        backgroundColor: bg,
-        borderRadius: 12,
-        paddingVertical: 10,
-        paddingHorizontal: 12,
-        gap: 4,
-      }}>
+      <View
+        style={{
+          maxWidth: '85%',
+          backgroundColor: bg,
+          borderRadius: 12,
+          paddingVertical: 10,
+          paddingHorizontal: 12,
+          gap: 4,
+        }}
+      >
         {message.issue_type ? (
-          <View style={{
-            alignSelf: 'flex-start',
-            backgroundColor: message.fromOps ? '#333' : colors.white,
-            borderWidth: message.fromOps ? 0 : 1,
-            borderColor: colors.border,
-            borderRadius: 999,
-            paddingVertical: 2,
-            paddingHorizontal: 8,
-            marginBottom: 4,
-          }}>
-            <Text style={{
-              fontFamily: fonts.bold,
-              fontSize: 10,
-              color: message.fromOps ? colors.white : colors.black,
-              letterSpacing: 0.4,
-              textTransform: 'uppercase',
-            }}>
+          <View
+            style={{
+              alignSelf: 'flex-start',
+              backgroundColor: message.fromOps ? '#333' : colors.white,
+              borderWidth: message.fromOps ? 0 : 1,
+              borderColor: colors.border,
+              borderRadius: 999,
+              paddingVertical: 2,
+              paddingHorizontal: 8,
+              marginBottom: 4,
+            }}
+          >
+            <Text
+              style={{
+                fontFamily: fonts.bold,
+                fontSize: 10,
+                color: message.fromOps ? colors.white : colors.black,
+                letterSpacing: 0.4,
+                textTransform: 'uppercase',
+              }}
+            >
               {ISSUE_LABELS[message.issue_type]}
             </Text>
           </View>
@@ -128,12 +147,7 @@ function Bubble({ message }: { message: DeliveryMessage }) {
   );
 }
 
-function ReplyComposer({
-  deliveryId, onSent,
-}: {
-  deliveryId: string;
-  onSent: () => void;
-}) {
+function ReplyComposer({ deliveryId, onSent }: { deliveryId: string; onSent: () => void }) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -174,11 +188,16 @@ function ReplyComposer({
         <Pressable
           onPress={send}
           disabled={!text.trim() || sending}
-          style={({ pressed }) => ([{
-            paddingVertical: 10, paddingHorizontal: 18, borderRadius: 999,
-            backgroundColor: colors.black,
-            opacity: !text.trim() || sending ? 0.5 : 1,
-          }, pressed && text.trim() && !sending && { opacity: 0.9 }])}
+          style={({ pressed }) => [
+            {
+              paddingVertical: 10,
+              paddingHorizontal: 18,
+              borderRadius: 999,
+              backgroundColor: colors.black,
+              opacity: !text.trim() || sending ? 0.5 : 1,
+            },
+            pressed && text.trim() && !sending && { opacity: 0.9 },
+          ]}
         >
           <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.white }}>
             {sending ? 'Sending…' : 'Send'}

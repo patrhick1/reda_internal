@@ -30,33 +30,33 @@ export type UseEditLock = {
  *
  *  Pass `null` for entityId to skip the lock lifecycle entirely (useful while
  *  a parent screen is still loading the id). */
-export function useEditLock(
-  entityType: EditLockEntity,
-  entityId: string | null,
-): UseEditLock {
+export function useEditLock(entityType: EditLockEntity, entityId: string | null): UseEditLock {
   const [state, setState] = useState<EditLockState>({ kind: 'loading' });
   const mountedRef = useRef(true);
 
-  const tryAcquire = useCallback(async (takeover: boolean) => {
-    if (!entityId) return;
-    try {
-      const r = await acquireEditLock(entityType, entityId, takeover);
-      if (!mountedRef.current) return;
-      if (r.isSelf) {
-        setState({ kind: 'held' });
-      } else {
-        setState({
-          kind:        'held_by_other',
-          userId:      r.heldBy,
-          holderName:  r.holderName,
-          acquiredAt:  r.acquiredAt,
-        });
+  const tryAcquire = useCallback(
+    async (takeover: boolean) => {
+      if (!entityId) return;
+      try {
+        const r = await acquireEditLock(entityType, entityId, takeover);
+        if (!mountedRef.current) return;
+        if (r.isSelf) {
+          setState({ kind: 'held' });
+        } else {
+          setState({
+            kind: 'held_by_other',
+            userId: r.heldBy,
+            holderName: r.holderName,
+            acquiredAt: r.acquiredAt,
+          });
+        }
+      } catch (e) {
+        if (!mountedRef.current) return;
+        setState({ kind: 'error', message: e instanceof Error ? e.message : String(e) });
       }
-    } catch (e) {
-      if (!mountedRef.current) return;
-      setState({ kind: 'error', message: e instanceof Error ? e.message : String(e) });
-    }
-  }, [entityType, entityId]);
+    },
+    [entityType, entityId],
+  );
 
   // Acquire on mount / when id changes.
   useEffect(() => {
@@ -72,7 +72,9 @@ export function useEditLock(
       // Fire-and-forget; the next acquire after the 5-min TTL doesn't need
       // this release, but it makes the queue feel responsive.
       if (entityId) {
-        releaseEditLock(entityType, entityId).catch(() => { /* swallow */ });
+        releaseEditLock(entityType, entityId).catch(() => {
+          /* swallow */
+        });
       }
     };
   }, [entityType, entityId, tryAcquire]);

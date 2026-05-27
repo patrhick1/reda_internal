@@ -1,5 +1,13 @@
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  FlatList,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { Link, useFocusEffect } from 'expo-router';
 import { Button } from '@/components/Button';
 import { useAsync } from '@/hooks/useAsync';
@@ -11,7 +19,11 @@ export default function UsersList() {
     () => listUsers({ includeInactive }),
     [includeInactive],
   );
-  useFocusEffect(useCallback(() => { reload(); }, [reload]));
+  useFocusEffect(
+    useCallback(() => {
+      reload();
+    }, [reload]),
+  );
 
   return (
     <View style={styles.container}>
@@ -30,7 +42,9 @@ export default function UsersList() {
           <Button title="Retry" onPress={reload} variant="secondary" />
         </View>
       ) : loading && !data ? (
-        <View style={styles.center}><ActivityIndicator /></View>
+        <View style={styles.center}>
+          <ActivityIndicator />
+        </View>
       ) : (data ?? []).length === 0 ? (
         <View style={styles.center}>
           <Text style={styles.empty}>No users yet.</Text>
@@ -54,8 +68,13 @@ function UserRow({ user }: { user: AppUser }) {
     <Link href={{ pathname: '/(admin)/catalog/users/[id]', params: { id: user.id } }} asChild>
       <TouchableOpacity style={styles.row}>
         <View style={styles.rowLeft}>
-          <Text style={[styles.name, !user.is_active && styles.nameInactive]}>{user.display_name}</Text>
-          <Text style={styles.meta}>{user.email}{user.phone ? `  •  ${user.phone}` : ''}</Text>
+          <Text style={[styles.name, !user.is_active && styles.nameInactive]}>
+            {user.display_name}
+          </Text>
+          <Text style={styles.meta}>
+            {user.email}
+            {user.phone ? `  •  ${user.phone}` : ''}
+          </Text>
         </View>
         <Text style={[styles.roleBadge, roleStyles[user.role]]}>{user.role}</Text>
         {!user.is_active ? <Text style={styles.inactive}>inactive</Text> : null}
@@ -66,19 +85,23 @@ function UserRow({ user }: { user: AppUser }) {
 }
 
 const roleStyles: Record<AppUser['role'], { backgroundColor: string; color: string }> = {
-  admin:      { backgroundColor: '#fde9d8', color: '#a04000' },
+  admin: { backgroundColor: '#fde9d8', color: '#a04000' },
   dispatcher: { backgroundColor: '#e2efff', color: '#1a4b8c' },
-  rep:        { backgroundColor: '#e6ebff', color: '#2a3a7a' },
-  agent:      { backgroundColor: '#e0f3e7', color: '#0a7a3a' },
-  warehouse:  { backgroundColor: '#f0e6f7', color: '#5a3380' },
+  rep: { backgroundColor: '#e6ebff', color: '#2a3a7a' },
+  agent: { backgroundColor: '#e0f3e7', color: '#0a7a3a' },
+  warehouse: { backgroundColor: '#f0e6f7', color: '#5a3380' },
 };
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 16, paddingVertical: 12,
-    borderBottomWidth: 1, borderBottomColor: '#eee',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
   },
   toggle: { fontSize: 14, color: '#333', fontWeight: '500' },
   newBtn: { paddingHorizontal: 14, minHeight: 36 },
@@ -90,13 +113,25 @@ const styles = StyleSheet.create({
   nameInactive: { color: '#888', textDecorationLine: 'line-through' },
   meta: { fontSize: 13, color: '#666', marginTop: 2 },
   roleBadge: {
-    fontSize: 11, fontWeight: '600',
-    paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, marginRight: 8, overflow: 'hidden',
-    textTransform: 'uppercase', letterSpacing: 0.5,
+    fontSize: 11,
+    fontWeight: '600',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginRight: 8,
+    overflow: 'hidden',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   inactive: {
-    fontSize: 11, color: '#a04000', backgroundColor: '#fde9d8',
-    paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, marginRight: 8, overflow: 'hidden',
+    fontSize: 11,
+    color: '#a04000',
+    backgroundColor: '#fde9d8',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginRight: 8,
+    overflow: 'hidden',
   },
   chev: { fontSize: 24, color: '#bbb' },
   sep: { height: 1, backgroundColor: '#f0f0f0' },

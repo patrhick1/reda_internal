@@ -1,5 +1,14 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '@/hooks/useAuth';
 import { sendPasswordReset } from '@/services/users';
@@ -40,7 +49,9 @@ export default function LoginScreen() {
       setSubmitting(false);
       return;
     }
-    AsyncStorage.setItem(REMEMBER_EMAIL_KEY, normalizedEmail).catch(() => { /* non-fatal */ });
+    AsyncStorage.setItem(REMEMBER_EMAIL_KEY, normalizedEmail).catch(() => {
+      /* non-fatal */
+    });
     // success: AuthGate routes us away from this screen.
   }
 
@@ -71,53 +82,66 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={{ flex: 1, backgroundColor: colors.black }}
     >
-      <ScrollView
-        contentContainerStyle={{ flexGrow: 1 }}
-        keyboardShouldPersistTaps="handled"
-      >
+      <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
         {/* Brand block */}
-        <View style={{ paddingHorizontal: 24, paddingTop: 80, paddingBottom: 32, flex: 1, justifyContent: 'flex-end' }}>
+        <View
+          style={{
+            paddingHorizontal: 24,
+            paddingTop: 80,
+            paddingBottom: 32,
+            flex: 1,
+            justifyContent: 'flex-end',
+          }}
+        >
           <RedaMark size={64} inverted />
-          <Text style={{
-            color: colors.white,
-            fontFamily: fonts.extrabold,
-            fontSize: 32,
-            letterSpacing: -0.8,
-            lineHeight: 36,
-            marginTop: 24,
-          }}>
+          <Text
+            style={{
+              color: colors.white,
+              fontFamily: fonts.extrabold,
+              fontSize: 32,
+              letterSpacing: -0.8,
+              lineHeight: 36,
+              marginTop: 24,
+            }}
+          >
             Fast. Reliable.{'\n'}
             <Text style={{ color: colors.red }}>Last mile, done right.</Text>
           </Text>
-          <Text style={{
-            color: colors.textTertiary,
-            fontFamily: fonts.medium,
-            fontSize: 14,
-            lineHeight: 21,
-            marginTop: 12,
-            maxWidth: 280,
-          }}>
+          <Text
+            style={{
+              color: colors.textTertiary,
+              fontFamily: fonts.medium,
+              fontSize: 14,
+              lineHeight: 21,
+              marginTop: 12,
+              maxWidth: 280,
+            }}
+          >
             Reda internal team app — log in to manage today&apos;s deliveries.
           </Text>
         </View>
 
         {/* Sign-in card */}
-        <View style={{
-          backgroundColor: colors.white,
-          borderTopLeftRadius: 24,
-          borderTopRightRadius: 24,
-          paddingHorizontal: 20,
-          paddingTop: 24,
-          paddingBottom: 28,
-        }}>
-          <Text style={{
-            fontFamily: fonts.bold,
-            fontSize: 13,
-            color: colors.textSecondary,
-            letterSpacing: 0.8,
-            textTransform: 'uppercase',
-            marginBottom: 16,
-          }}>
+        <View
+          style={{
+            backgroundColor: colors.white,
+            borderTopLeftRadius: 24,
+            borderTopRightRadius: 24,
+            paddingHorizontal: 20,
+            paddingTop: 24,
+            paddingBottom: 28,
+          }}
+        >
+          <Text
+            style={{
+              fontFamily: fonts.bold,
+              fontSize: 13,
+              color: colors.textSecondary,
+              letterSpacing: 0.8,
+              textTransform: 'uppercase',
+              marginBottom: 16,
+            }}
+          >
             Sign in
           </Text>
 
@@ -149,34 +173,52 @@ export default function LoginScreen() {
                   hitSlop={8}
                   accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
                 >
-                  <Icon name={showPassword ? 'eyeOff' : 'eye'} size={18} color={colors.textSecondary} />
+                  <Icon
+                    name={showPassword ? 'eyeOff' : 'eye'}
+                    size={18}
+                    color={colors.textSecondary}
+                  />
                 </Pressable>
               }
             />
 
             <Pressable
-              onPress={() => { setForgotOpen((v) => !v); setForgotEmail(email); }}
+              onPress={() => {
+                setForgotOpen((v) => !v);
+                setForgotEmail(email);
+              }}
               hitSlop={6}
             >
-              <Text style={{
-                fontFamily: fonts.semibold,
-                fontSize: 13,
-                color: colors.red,
-                alignSelf: 'flex-end',
-                marginTop: -4,
-              }}>
+              <Text
+                style={{
+                  fontFamily: fonts.semibold,
+                  fontSize: 13,
+                  color: colors.red,
+                  alignSelf: 'flex-end',
+                  marginTop: -4,
+                }}
+              >
                 Forgot password?
               </Text>
             </Pressable>
 
             {forgotOpen ? (
-              <View style={{
-                backgroundColor: colors.surface,
-                padding: 12,
-                borderRadius: 10,
-                gap: 10,
-              }}>
-                <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary, lineHeight: 17 }}>
+              <View
+                style={{
+                  backgroundColor: colors.surface,
+                  padding: 12,
+                  borderRadius: 10,
+                  gap: 10,
+                }}
+              >
+                <Text
+                  style={{
+                    fontFamily: fonts.medium,
+                    fontSize: 12,
+                    color: colors.textSecondary,
+                    lineHeight: 17,
+                  }}
+                >
                   Enter your email and we&apos;ll send a reset link.
                 </Text>
                 <Input
@@ -192,12 +234,22 @@ export default function LoginScreen() {
                 />
                 <View style={{ flexDirection: 'row', gap: 8 }}>
                   <View style={{ flex: 1 }}>
-                    <Button variant="secondary" full onPress={() => setForgotOpen(false)} disabled={forgotSubmitting}>
+                    <Button
+                      variant="secondary"
+                      full
+                      onPress={() => setForgotOpen(false)}
+                      disabled={forgotSubmitting}
+                    >
                       Cancel
                     </Button>
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Button variant="emphasis" full onPress={handleForgot} disabled={forgotSubmitting}>
+                    <Button
+                      variant="emphasis"
+                      full
+                      onPress={handleForgot}
+                      disabled={forgotSubmitting}
+                    >
                       {forgotSubmitting ? <ActivityIndicator color={colors.white} /> : 'Send link'}
                     </Button>
                   </View>

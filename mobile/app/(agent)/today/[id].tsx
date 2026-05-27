@@ -1,11 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Linking, Platform, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Linking,
+  Platform,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
-  getDelivery, listDeliveryHistory, listStatusDefs,
+  getDelivery,
+  listDeliveryHistory,
+  listStatusDefs,
   type DeliveryStatusHistoryRow,
 } from '@/services/deliveries';
 import { AppBar, Button, Card, Empty, Icon, StatusPill } from '@/components/ui';
@@ -24,8 +34,8 @@ export default function AgentDeliveryDetail() {
   const user = useCurrentUser();
 
   const deliveryQ = useAsync(() => getDelivery(user.role, id), [user.role, id]);
-  const historyQ  = useAsync(() => listDeliveryHistory(id), [id]);
-  const defsQ     = useAsync(() => listStatusDefs(), []);
+  const historyQ = useAsync(() => listDeliveryHistory(id), [id]);
+  const defsQ = useAsync(() => listStatusDefs(), []);
 
   const [markOpen, setMarkOpen] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
@@ -35,15 +45,19 @@ export default function AgentDeliveryDetail() {
   // the tracked queue job ends — succeeded (removed) or dead-lettered.
   // Prevents the "marked delivered but server rejected → buttons gone
   // forever" scenario.
-  const [optimistic, setOptimistic] = useState<{ status: string; jobId: string | null } | null>(null);
+  const [optimistic, setOptimistic] = useState<{ status: string; jobId: string | null } | null>(
+    null,
+  );
   const optimisticStatus = optimistic?.status ?? null;
   const { snapshot: queueSnapshot } = useQueue();
 
-  useFocusEffect(useCallback(() => {
-    deliveryQ.reload();
-    historyQ.reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []));
+  useFocusEffect(
+    useCallback(() => {
+      deliveryQ.reload();
+      historyQ.reload();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []),
+  );
 
   useEffect(() => {
     if (!optimistic) return;
@@ -53,7 +67,7 @@ export default function AgentDeliveryDetail() {
       return;
     }
     if (optimistic.jobId) {
-      const job = queueSnapshot.jobs.find(j => j.id === optimistic.jobId);
+      const job = queueSnapshot.jobs.find((j) => j.id === optimistic.jobId);
       if (!job || job.status === 'dead_letter') {
         setOptimistic(null);
         deliveryQ.reload();
@@ -118,7 +132,11 @@ export default function AgentDeliveryDetail() {
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <AppBar
         title={d.customer_name ?? 'Delivery'}
-        subtitle={d.created_at ? `Created ${formatDateTime(d.created_at)} · via ${d.created_via ?? 'manual'}` : undefined}
+        subtitle={
+          d.created_at
+            ? `Created ${formatDateTime(d.created_at)} · via ${d.created_via ?? 'manual'}`
+            : undefined
+        }
         onBack={() => router.back()}
         right={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
@@ -134,7 +152,9 @@ export default function AgentDeliveryDetail() {
               </TouchableOpacity>
             ) : null}
             <TouchableOpacity
-              onPress={() => router.push({ pathname: '/(profile)/help', params: { topic: 'mark-delivered' } })}
+              onPress={() =>
+                router.push({ pathname: '/(profile)/help', params: { topic: 'mark-delivered' } })
+              }
               hitSlop={8}
               style={{ padding: 4 }}
               accessibilityLabel="Help"
@@ -145,13 +165,34 @@ export default function AgentDeliveryDetail() {
           </View>
         }
       />
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: (isTerminal ? 32 : 130) + insets.bottom, gap: 12 }}>
+      <ScrollView
+        contentContainerStyle={{
+          padding: 16,
+          paddingBottom: (isTerminal ? 32 : 130) + insets.bottom,
+          gap: 12,
+        }}
+      >
         {/* Hero: customer + status + call */}
         <Card>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+              gap: 12,
+            }}
+          >
             <View style={{ flex: 1 }}>
               <Text style={kicker}>Customer</Text>
-              <Text style={{ fontFamily: fonts.extrabold, fontSize: 22, color: colors.black, letterSpacing: -0.4, marginTop: 2 }}>
+              <Text
+                style={{
+                  fontFamily: fonts.extrabold,
+                  fontSize: 22,
+                  color: colors.black,
+                  letterSpacing: -0.4,
+                  marginTop: 2,
+                }}
+              >
                 {d.customer_name}
               </Text>
             </View>
@@ -159,14 +200,25 @@ export default function AgentDeliveryDetail() {
           </View>
           <View style={{ marginTop: 14 }}>
             <Button
-              variant="primary" full icon="phone"
-              onPress={() => d.customer_phone && Linking.openURL(`tel:${d.customer_phone.replace(/\s+/g, '')}`)}
+              variant="primary"
+              full
+              icon="phone"
+              onPress={() =>
+                d.customer_phone && Linking.openURL(`tel:${d.customer_phone.replace(/\s+/g, '')}`)
+              }
             >
               {`Call ${firstName}`}
             </Button>
           </View>
           {d.customer_phone ? (
-            <Text style={{ fontFamily: fonts.mono, fontSize: 12, color: colors.textSecondary, marginTop: 10 }}>
+            <Text
+              style={{
+                fontFamily: fonts.mono,
+                fontSize: 12,
+                color: colors.textSecondary,
+                marginTop: 10,
+              }}
+            >
               {d.customer_phone}
             </Text>
           ) : null}
@@ -175,7 +227,15 @@ export default function AgentDeliveryDetail() {
         {/* Address */}
         <Card>
           <Text style={kicker}>Address</Text>
-          <Text style={{ fontFamily: fonts.semibold, fontSize: 15, color: colors.black, lineHeight: 22, marginTop: 6 }}>
+          <Text
+            style={{
+              fontFamily: fonts.semibold,
+              fontSize: 15,
+              color: colors.black,
+              lineHeight: 22,
+              marginTop: 6,
+            }}
+          >
             {d.raw_address}
           </Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 }}>
@@ -185,7 +245,12 @@ export default function AgentDeliveryDetail() {
             </Text>
           </View>
           <View style={{ marginTop: 12, alignSelf: 'flex-start' }}>
-            <Button variant="secondary" size="sm" icon="mapPin" onPress={() => openMaps(d.raw_address)}>
+            <Button
+              variant="secondary"
+              size="sm"
+              icon="mapPin"
+              onPress={() => openMaps(d.raw_address)}
+            >
               Open in maps
             </Button>
           </View>
@@ -193,30 +258,65 @@ export default function AgentDeliveryDetail() {
 
         {/* Product + money */}
         <Card>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+            }}
+          >
             <View style={{ flex: 1 }}>
               <Text style={kicker}>Product</Text>
-              <Text style={{ fontFamily: fonts.bold, fontSize: 16, color: colors.black, marginTop: 4 }}>
+              <Text
+                style={{ fontFamily: fonts.bold, fontSize: 16, color: colors.black, marginTop: 4 }}
+              >
                 {d.product_name}
               </Text>
-              <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
+              <Text
+                style={{
+                  fontFamily: fonts.medium,
+                  fontSize: 13,
+                  color: colors.textSecondary,
+                  marginTop: 2,
+                }}
+              >
                 Quantity: {d.quantity_ordered}
               </Text>
             </View>
             <View style={{ alignItems: 'flex-end' }}>
               <Text style={kicker}>To collect</Text>
-              <Text style={{ fontFamily: fonts.extrabold, fontSize: 22, color: colors.black, letterSpacing: -0.4, marginTop: 2 }}>
+              <Text
+                style={{
+                  fontFamily: fonts.extrabold,
+                  fontSize: 22,
+                  color: colors.black,
+                  letterSpacing: -0.4,
+                  marginTop: 2,
+                }}
+              >
                 {formatNaira(expectedTotal)}
               </Text>
             </View>
           </View>
           {isDelivered ? (
-            <View style={{
-              marginTop: 12, padding: 10, backgroundColor: colors.successSoft, borderRadius: 10,
-              flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-            }}>
+            <View
+              style={{
+                marginTop: 12,
+                padding: 10,
+                backgroundColor: colors.successSoft,
+                borderRadius: 10,
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
               <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.successDark }}>
-                Delivered · {d.payment_method === 'cash' ? 'Cash' : d.payment_method === 'transfer' ? 'Transfer' : 'Paid'}
+                Delivered ·{' '}
+                {d.payment_method === 'cash'
+                  ? 'Cash'
+                  : d.payment_method === 'transfer'
+                    ? 'Transfer'
+                    : 'Paid'}
               </Text>
               <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.successDark }}>
                 You earned {formatNaira(Number(d.agent_payment_snapshot ?? 0))}
@@ -229,7 +329,9 @@ export default function AgentDeliveryDetail() {
             Team directory with related_delivery_id so the call is linked
             to this row for audit. */}
         <Card onPress={() => router.push(`/(call)/team?related_delivery_id=${d.id}`)}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <View
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+          >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Icon name="phone" size={16} color={colors.success} />
               <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.textPrimary }}>
@@ -241,11 +343,7 @@ export default function AgentDeliveryDetail() {
         </Card>
 
         {/* Messages (only renders when there's a flag thread) */}
-        <MessageThread
-          deliveryId={d.id!}
-          deliveryStatus={status}
-          canReply={false}
-        />
+        <MessageThread deliveryId={d.id!} deliveryStatus={status} canReply={false} />
 
         {/* History */}
         <Card>
@@ -253,11 +351,19 @@ export default function AgentDeliveryDetail() {
           {historyQ.loading && !historyQ.data ? (
             <ActivityIndicator color={colors.black} />
           ) : (historyQ.data ?? []).length === 0 ? (
-            <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary }}>No history yet.</Text>
+            <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary }}>
+              No history yet.
+            </Text>
           ) : (
             <View>
               {[...historyQ.data!].reverse().map((h, i, arr) => (
-                <HistoryRow key={h.id} row={h} first={i === 0} last={i === arr.length - 1} labelByStatus={labelByStatus} />
+                <HistoryRow
+                  key={h.id}
+                  row={h}
+                  first={i === 0}
+                  last={i === arr.length - 1}
+                  labelByStatus={labelByStatus}
+                />
               ))}
             </View>
           )}
@@ -266,19 +372,31 @@ export default function AgentDeliveryDetail() {
 
       {/* Sticky bottom action */}
       {!isTerminal ? (
-        <View style={{
-          position: 'absolute', left: 0, right: 0, bottom: 0,
-          paddingHorizontal: 16, paddingTop: 16,
-          paddingBottom: 16 + insets.bottom,
-          backgroundColor: colors.surface,
-          borderTopWidth: 1, borderTopColor: colors.border,
-          flexDirection: 'row', gap: 8,
-        }}>
+        <View
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            paddingHorizontal: 16,
+            paddingTop: 16,
+            paddingBottom: 16 + insets.bottom,
+            backgroundColor: colors.surface,
+            borderTopWidth: 1,
+            borderTopColor: colors.border,
+            flexDirection: 'row',
+            gap: 8,
+          }}
+        >
           <View style={{ flex: 1 }}>
-            <Button variant="secondary" full onPress={() => setUpdateOpen(true)}>Update status</Button>
+            <Button variant="secondary" full onPress={() => setUpdateOpen(true)}>
+              Update status
+            </Button>
           </View>
           <View style={{ flex: 1 }}>
-            <Button variant="emphasis" full onPress={() => setMarkOpen(true)}>Mark delivered</Button>
+            <Button variant="emphasis" full onPress={() => setMarkOpen(true)}>
+              Mark delivered
+            </Button>
           </View>
         </View>
       ) : null}
@@ -307,7 +425,10 @@ export default function AgentDeliveryDetail() {
 }
 
 function HistoryRow({
-  row, first, last, labelByStatus: _labelByStatus,
+  row,
+  first,
+  last,
+  labelByStatus: _labelByStatus,
 }: {
   row: DeliveryStatusHistoryRow;
   first: boolean;
@@ -317,11 +438,17 @@ function HistoryRow({
   return (
     <View style={{ flexDirection: 'row', gap: 12 }}>
       <View style={{ alignItems: 'center', paddingTop: 4 }}>
-        <View style={{
-          width: 10, height: 10, borderRadius: 5,
-          backgroundColor: first ? colors.black : colors.borderStrong,
-        }} />
-        {!last ? <View style={{ width: 2, flex: 1, backgroundColor: colors.border, marginTop: 2 }} /> : null}
+        <View
+          style={{
+            width: 10,
+            height: 10,
+            borderRadius: 5,
+            backgroundColor: first ? colors.black : colors.borderStrong,
+          }}
+        />
+        {!last ? (
+          <View style={{ width: 2, flex: 1, backgroundColor: colors.border, marginTop: 2 }} />
+        ) : null}
       </View>
       <View style={{ flex: 1, paddingBottom: last ? 0 : 16 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -331,17 +458,34 @@ function HistoryRow({
           </Text>
         </View>
         {row.changed_by_name ? (
-          <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.black, marginTop: 4 }}>
+          <Text
+            style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.black, marginTop: 4 }}
+          >
             {row.changed_by_name}
           </Text>
         ) : null}
         {row.reason ? (
-          <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
+          <Text
+            style={{
+              fontFamily: fonts.medium,
+              fontSize: 13,
+              color: colors.textSecondary,
+              marginTop: 2,
+            }}
+          >
             {row.reason}
           </Text>
         ) : null}
         {row.notes ? (
-          <Text style={{ fontFamily: fonts.regular, fontSize: 13, color: colors.textSecondary, marginTop: 2, fontStyle: 'italic' }}>
+          <Text
+            style={{
+              fontFamily: fonts.regular,
+              fontSize: 13,
+              color: colors.textSecondary,
+              marginTop: 2,
+              fontStyle: 'italic',
+            }}
+          >
             {row.notes}
           </Text>
         ) : null}
@@ -362,8 +506,10 @@ function openMaps(addr: string | null | undefined) {
   if (!addr) return;
   const q = encodeURIComponent(addr);
   const url =
-    Platform.OS === 'android' ? `geo:0,0?q=${q}`
-    : Platform.OS === 'ios'   ? `maps:?q=${q}`
-    : `https://maps.google.com/?q=${q}`;
+    Platform.OS === 'android'
+      ? `geo:0,0?q=${q}`
+      : Platform.OS === 'ios'
+        ? `maps:?q=${q}`
+        : `https://maps.google.com/?q=${q}`;
   Linking.openURL(url).catch(() => undefined);
 }

@@ -28,11 +28,11 @@ type Disposition =
   | { kind: 'loss' };
 
 const ROLE_OPTIONS: { value: Role; label: string }[] = [
-  { value: 'admin',      label: 'Admin' },
+  { value: 'admin', label: 'Admin' },
   { value: 'dispatcher', label: 'Dispatcher' },
-  { value: 'rep',        label: 'Rep' },
-  { value: 'agent',      label: 'Agent' },
-  { value: 'warehouse',  label: 'Warehouse' },
+  { value: 'rep', label: 'Rep' },
+  { value: 'agent', label: 'Agent' },
+  { value: 'warehouse', label: 'Warehouse' },
 ];
 
 export default function EditUser() {
@@ -56,7 +56,12 @@ export default function EditUser() {
     }
   }, [userQ.data]);
 
-  if (userQ.loading) return <View style={styles.center}><ActivityIndicator /></View>;
+  if (userQ.loading)
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator />
+      </View>
+    );
   if (userQ.error || !userQ.data) {
     return (
       <View style={styles.center}>
@@ -69,17 +74,25 @@ export default function EditUser() {
   const user = userQ.data;
   const isSelf = account.kind === 'active' && account.userId === user.id;
   const dirty =
-    displayName !== user.display_name ||
-    role !== user.role ||
-    (phone || null) !== user.phone;
+    displayName !== user.display_name || role !== user.role || (phone || null) !== user.phone;
 
   async function handleSave() {
-    if (!displayName.trim()) { setError('Display name is required'); return; }
-    if (!role) { setError('Role is required'); return; }
+    if (!displayName.trim()) {
+      setError('Display name is required');
+      return;
+    }
+    if (!role) {
+      setError('Role is required');
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
-      await updateUser(user.id, { displayName: displayName.trim(), role, phone: phone.trim() || null }, reason.trim() || null);
+      await updateUser(
+        user.id,
+        { displayName: displayName.trim(), role, phone: phone.trim() || null },
+        reason.trim() || null,
+      );
       router.back();
     } catch (e) {
       setError(errorMessage(e));
@@ -100,7 +113,11 @@ export default function EditUser() {
   }
 
   return (
-    <ScrollView style={styles.flex} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      style={styles.flex}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+    >
       {!user.is_active ? (
         <View style={styles.inactiveBanner}>
           <Text style={styles.inactiveText}>This user is inactive.</Text>
@@ -112,7 +129,13 @@ export default function EditUser() {
         <Text style={styles.emailValue}>{user.email}</Text>
       </View>
 
-      <Field label="Display name" value={displayName} onChangeText={setDisplayName} required autoCapitalize="words" />
+      <Field
+        label="Display name"
+        value={displayName}
+        onChangeText={setDisplayName}
+        required
+        autoCapitalize="words"
+      />
       <Select label="Role" value={role} options={ROLE_OPTIONS} onChange={setRole} required />
       <Field
         label="Phone"
@@ -132,13 +155,18 @@ export default function EditUser() {
       ) : null}
 
       {error ? (
-        <View style={styles.errorBox}><Text style={styles.errorText}>{error}</Text></View>
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
       ) : null}
 
       <Button title="Save changes" onPress={handleSave} loading={submitting} disabled={!dirty} />
 
       {user.role === 'agent' && user.is_active ? (
-        <PreferredZones agentId={user.id} agentName={user.display_name.split(' ')[0] ?? user.display_name} />
+        <PreferredZones
+          agentId={user.id}
+          agentName={user.display_name.split(' ')[0] ?? user.display_name}
+        />
       ) : null}
 
       {user.is_active ? (
@@ -155,14 +183,16 @@ export default function EditUser() {
             disabled={submitting}
           />
         ) : (
-          <DeactivatePanel
-            user={user}
-            onCancel={() => setDeactivating(false)}
-            onError={setError}
-          />
+          <DeactivatePanel user={user} onCancel={() => setDeactivating(false)} onError={setError} />
         )
       ) : (
-        <Button title="Reactivate" onPress={handleReactivate} variant="secondary" style={styles.bottom} disabled={submitting} />
+        <Button
+          title="Reactivate"
+          onPress={handleReactivate}
+          variant="secondary"
+          style={styles.bottom}
+          disabled={submitting}
+        />
       )}
     </ScrollView>
   );
@@ -171,18 +201,18 @@ export default function EditUser() {
 type ZoneKind = 'preferred' | 'avoid';
 
 function PreferredZones({ agentId, agentName }: { agentId: string; agentName: string }) {
-  const locsQ    = useAsync<Location[]>(() => listLocations(), []);
+  const locsQ = useAsync<Location[]>(() => listLocations(), []);
   const currentQ = useAsync(() => listAgentLocations(agentId), [agentId]);
 
-  const [picks, setPicks]   = useState<Map<string, ZoneKind>>(new Map());
+  const [picks, setPicks] = useState<Map<string, ZoneKind>>(new Map());
   const [saving, setSaving] = useState(false);
-  const [error, setError]   = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!currentQ.data) return;
     const next = new Map<string, ZoneKind>();
     for (const id of currentQ.data.preferred) next.set(id, 'preferred');
-    for (const id of currentQ.data.avoided)   next.set(id, 'avoid');
+    for (const id of currentQ.data.avoided) next.set(id, 'avoid');
     setPicks(next);
   }, [currentQ.data]);
 
@@ -190,7 +220,7 @@ function PreferredZones({ agentId, agentName }: { agentId: string; agentName: st
     const m = new Map<string, ZoneKind>();
     if (currentQ.data) {
       for (const id of currentQ.data.preferred) m.set(id, 'preferred');
-      for (const id of currentQ.data.avoided)   m.set(id, 'avoid');
+      for (const id of currentQ.data.avoided) m.set(id, 'avoid');
     }
     return m;
   }, [currentQ.data]);
@@ -202,8 +232,12 @@ function PreferredZones({ agentId, agentName }: { agentId: string; agentName: st
   }, [picks, initial]);
 
   const counts = useMemo(() => {
-    let p = 0, a = 0;
-    for (const k of picks.values()) { if (k === 'preferred') p++; else a++; }
+    let p = 0,
+      a = 0;
+    for (const k of picks.values()) {
+      if (k === 'preferred') p++;
+      else a++;
+    }
     return { preferred: p, avoid: a };
   }, [picks]);
 
@@ -211,9 +245,9 @@ function PreferredZones({ agentId, agentName }: { agentId: string; agentName: st
     setPicks((m) => {
       const next = new Map(m);
       const cur = next.get(id);
-      if (cur === undefined)        next.set(id, 'preferred');
+      if (cur === undefined) next.set(id, 'preferred');
       else if (cur === 'preferred') next.set(id, 'avoid');
-      else                          next.delete(id);
+      else next.delete(id);
       return next;
     });
   }
@@ -223,10 +257,10 @@ function PreferredZones({ agentId, agentName }: { agentId: string; agentName: st
     setError(null);
     try {
       const preferredIds: string[] = [];
-      const avoidedIds:   string[] = [];
+      const avoidedIds: string[] = [];
       for (const [id, k] of picks) {
         if (k === 'preferred') preferredIds.push(id);
-        else                   avoidedIds.push(id);
+        else avoidedIds.push(id);
       }
       await setAgentLocations(agentId, preferredIds, avoidedIds);
       currentQ.reload();
@@ -263,9 +297,9 @@ function PreferredZones({ agentId, agentName }: { agentId: string; agentName: st
     <View style={zoneStyles.section}>
       <Text style={zoneStyles.heading}>Zone preferences</Text>
       <Text style={zoneStyles.helper}>
-        Tap a zone to mark <Text style={zoneStyles.helperPref}>preferred</Text> (priority).
-        Tap again for <Text style={zoneStyles.helperAvoid}>avoid</Text> (last-resort).
-        Tap a third time to clear.
+        Tap a zone to mark <Text style={zoneStyles.helperPref}>preferred</Text> (priority). Tap
+        again for <Text style={zoneStyles.helperAvoid}>avoid</Text> (last-resort). Tap a third time
+        to clear.
       </Text>
       <Text style={zoneStyles.summary}>{summary}</Text>
 
@@ -275,12 +309,12 @@ function PreferredZones({ agentId, agentName }: { agentId: string; agentName: st
           const chipStyle = [
             zoneStyles.chip,
             kind === 'preferred' && zoneStyles.chipPreferred,
-            kind === 'avoid'     && zoneStyles.chipAvoid,
+            kind === 'avoid' && zoneStyles.chipAvoid,
           ];
           const labelStyle = [
             zoneStyles.chipLabel,
             kind === 'preferred' && zoneStyles.chipLabelPreferred,
-            kind === 'avoid'     && zoneStyles.chipLabelAvoid,
+            kind === 'avoid' && zoneStyles.chipLabelAvoid,
           ];
           const prefix = kind === 'preferred' ? '✓ ' : kind === 'avoid' ? '✕ ' : '';
           return (
@@ -289,14 +323,19 @@ function PreferredZones({ agentId, agentName }: { agentId: string; agentName: st
               onPress={() => cycle(loc.id)}
               style={({ pressed }) => [chipStyle, pressed && { opacity: 0.85 }]}
             >
-              <Text style={labelStyle}>{prefix}{loc.name}</Text>
+              <Text style={labelStyle}>
+                {prefix}
+                {loc.name}
+              </Text>
             </Pressable>
           );
         })}
       </View>
 
       {error ? (
-        <View style={styles.errorBox}><Text style={styles.errorText}>{error}</Text></View>
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
       ) : null}
 
       <Button
@@ -318,8 +357,8 @@ const zoneStyles = StyleSheet.create({
     borderTopColor: '#eee',
   },
   heading: { fontSize: 16, fontWeight: '700', color: '#111', marginBottom: 6 },
-  helper:  { fontSize: 12, color: '#666', lineHeight: 17, marginBottom: 4 },
-  helperPref:  { color: '#16704a', fontWeight: '600' },
+  helper: { fontSize: 12, color: '#666', lineHeight: 17, marginBottom: 4 },
+  helperPref: { color: '#16704a', fontWeight: '600' },
   helperAvoid: { color: '#a02d1b', fontWeight: '600' },
   summary: { fontSize: 12, color: '#444', marginBottom: 12, fontStyle: 'italic' },
   chipWrap: {
@@ -344,9 +383,9 @@ const zoneStyles = StyleSheet.create({
     borderColor: '#a02d1b',
     backgroundColor: '#fdecea',
   },
-  chipLabel:          { fontSize: 13, color: '#222' },
+  chipLabel: { fontSize: 13, color: '#222' },
   chipLabelPreferred: { color: '#16704a', fontWeight: '600' },
-  chipLabelAvoid:     { color: '#a02d1b', fontWeight: '600' },
+  chipLabelAvoid: { color: '#a02d1b', fontWeight: '600' },
 });
 
 function DeactivatePanel({
@@ -407,7 +446,11 @@ function DeactivatePanel({
   }
 
   if (stockQ.loading) {
-    return <View style={styles.panelCenter}><ActivityIndicator /></View>;
+    return (
+      <View style={styles.panelCenter}>
+        <ActivityIndicator />
+      </View>
+    );
   }
 
   return (
@@ -420,20 +463,26 @@ function DeactivatePanel({
             This agent is currently holding stock. Choose what happens to it.
           </Text>
           <View style={styles.stockBox}>
-            {(stockQ.data ?? []).map((s) => <StockLine key={s.product_catalog_id} item={s} />)}
+            {(stockQ.data ?? []).map((s) => (
+              <StockLine key={s.product_catalog_id} item={s} />
+            ))}
           </View>
 
           <DispositionRow
             label="Transfer to another agent"
             selected={disposition?.kind === 'transfer'}
-            onPress={() => setDisposition({ kind: 'transfer', targetAgentId: transferAgentId ?? '' })}
+            onPress={() =>
+              setDisposition({ kind: 'transfer', targetAgentId: transferAgentId ?? '' })
+            }
           />
           {disposition?.kind === 'transfer' ? (
             <View style={styles.indent}>
               <Select
                 label="Recipient agent"
                 value={transferAgentId}
-                options={(agentsQ.data ?? []).filter((a) => a.is_active).map((a) => ({ value: a.id, label: a.display_name }))}
+                options={(agentsQ.data ?? [])
+                  .filter((a) => a.is_active)
+                  .map((a) => ({ value: a.id, label: a.display_name }))}
                 onChange={setTransferAgentId}
               />
             </View>
@@ -451,17 +500,35 @@ function DeactivatePanel({
           />
 
           <Text style={styles.panelHelper}>
-            Stock movement is recorded now and the actual adjustments are applied in Phase 4 (Stock).
+            Stock movement is recorded now and the actual adjustments are applied in Phase 4
+            (Stock).
           </Text>
         </>
       ) : user.role === 'agent' ? (
         <Text style={styles.panelSub}>Agent has no stock on hand — clean deactivation.</Text>
       ) : null}
 
-      <Field label="Reason" value={reason} onChangeText={setReason} required placeholder="e.g. resigned, performance" />
+      <Field
+        label="Reason"
+        value={reason}
+        onChangeText={setReason}
+        required
+        placeholder="e.g. resigned, performance"
+      />
 
-      <Button title="Confirm deactivation" variant="danger" onPress={confirm} loading={submitting} />
-      <Button title="Cancel" variant="secondary" onPress={onCancel} style={styles.bottom} disabled={submitting} />
+      <Button
+        title="Confirm deactivation"
+        variant="danger"
+        onPress={confirm}
+        loading={submitting}
+      />
+      <Button
+        title="Cancel"
+        variant="secondary"
+        onPress={onCancel}
+        style={styles.bottom}
+        disabled={submitting}
+      />
     </View>
   );
 }
@@ -478,7 +545,15 @@ function StockLine({ item }: { item: AgentStockRow }) {
   );
 }
 
-function DispositionRow({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+function DispositionRow({
+  label,
+  selected,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
   return (
     <View style={[styles.dispoRow, selected && styles.dispoRowActive]} onTouchEnd={onPress}>
       <View style={[styles.radio, selected && styles.radioActive]}>
@@ -492,16 +567,27 @@ function DispositionRow({ label, selected, onPress }: { label: string; selected:
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: '#fff' },
   content: { padding: 16, paddingBottom: 48 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#fff' },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    backgroundColor: '#fff',
+  },
   errorBox: { backgroundColor: '#fdecea', padding: 12, borderRadius: 8, marginBottom: 12 },
   errorText: { color: '#a02d1b', fontSize: 14, textAlign: 'center' },
   inactiveBanner: { backgroundColor: '#fff4e0', padding: 12, borderRadius: 8, marginBottom: 16 },
   inactiveText: { color: '#a04000', fontWeight: '600' },
   emailRow: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    paddingVertical: 12, paddingHorizontal: 14,
-    borderWidth: 1, borderColor: '#eee', borderRadius: 8,
-    backgroundColor: '#f6f6f6', marginBottom: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#eee',
+    borderRadius: 8,
+    backgroundColor: '#f6f6f6',
+    marginBottom: 16,
   },
   emailLabel: { fontSize: 13, color: '#666', fontWeight: '600' },
   emailValue: { fontSize: 14, color: '#111' },
@@ -511,7 +597,9 @@ const styles = StyleSheet.create({
   panel: {
     marginTop: 24,
     padding: 16,
-    borderWidth: 1, borderColor: '#e9c8c2', borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e9c8c2',
+    borderRadius: 8,
     backgroundColor: '#fff8f6',
   },
   panelCenter: { padding: 16, alignItems: 'center' },
@@ -520,8 +608,12 @@ const styles = StyleSheet.create({
   panelHelper: { fontSize: 11, color: '#888', marginBottom: 12, fontStyle: 'italic' },
 
   stockBox: {
-    backgroundColor: '#fff', borderRadius: 6, borderWidth: 1, borderColor: '#eee',
-    padding: 10, marginBottom: 14,
+    backgroundColor: '#fff',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#eee',
+    padding: 10,
+    marginBottom: 14,
   },
   stockLine: { flexDirection: 'row', paddingVertical: 6, alignItems: 'center' },
   stockName: { fontSize: 14, color: '#111', fontWeight: '500' },
@@ -529,19 +621,28 @@ const styles = StyleSheet.create({
   stockQty: { fontSize: 16, color: '#111', fontWeight: '600' },
 
   dispoRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 12, paddingVertical: 12,
-    borderRadius: 6, marginBottom: 6,
-    borderWidth: 1, borderColor: '#eee', backgroundColor: '#fff',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 6,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: '#eee',
+    backgroundColor: '#fff',
   },
   dispoRowActive: { borderColor: '#a02d1b', backgroundColor: '#fff' },
   dispoLabel: { fontSize: 14, color: '#222', flex: 1 },
   indent: { paddingLeft: 28, marginBottom: 6 },
   radio: {
-    width: 18, height: 18, borderRadius: 9,
-    borderWidth: 1.5, borderColor: '#bbb',
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 1.5,
+    borderColor: '#bbb',
     marginRight: 10,
-    alignItems: 'center', justifyContent: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   radioActive: { borderColor: '#a02d1b' },
   radioInner: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#a02d1b' },

@@ -9,15 +9,12 @@ export async function ensureMicPermission(): Promise<boolean> {
   try {
     const status = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
     if (status) return true;
-    const result = await PermissionsAndroid.request(
-      PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-      {
-        title: 'Microphone for calls',
-        message: 'Reda needs the microphone so you can talk to your teammates during a call.',
-        buttonPositive: 'Allow',
-        buttonNegative: 'Not now',
-      },
-    );
+    const result = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO, {
+      title: 'Microphone for calls',
+      message: 'Reda needs the microphone so you can talk to your teammates during a call.',
+      buttonPositive: 'Allow',
+      buttonNegative: 'Not now',
+    });
     return result === PermissionsAndroid.RESULTS.GRANTED;
   } catch (err) {
     console.warn('[perms] mic check failed', err);

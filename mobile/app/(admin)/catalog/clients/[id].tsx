@@ -45,7 +45,11 @@ export default function EditClient() {
   }, [client]);
 
   if (loading) {
-    return <View style={styles.center}><ActivityIndicator /></View>;
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator />
+      </View>
+    );
   }
   if (error || !client) {
     return (
@@ -76,7 +80,9 @@ export default function EditClient() {
     if (maxChargeDirty) {
       const raw = maxCharge.trim();
       if (raw === '') {
-        setActionError('To remove the cap, use "Remove cap" — leaving the field blank does not clear it.');
+        setActionError(
+          'To remove the cap, use "Remove cap" — leaving the field blank does not clear it.',
+        );
         return;
       }
       const parsed = Number(raw);
@@ -124,7 +130,9 @@ export default function EditClient() {
 
   function handleRemoveCap() {
     if (Platform.OS === 'web') {
-      const why = (typeof window !== 'undefined' ? window.prompt('Reason for removing the cap:') : null) ?? '';
+      const why =
+        (typeof window !== 'undefined' ? window.prompt('Reason for removing the cap:') : null) ??
+        '';
       if (why.trim()) performClearCeiling(why.trim());
       return;
     }
@@ -160,7 +168,8 @@ export default function EditClient() {
 
   function handleDeactivate() {
     if (Platform.OS === 'web') {
-      const why = (typeof window !== 'undefined' ? window.prompt('Reason for deactivation:') : null) ?? '';
+      const why =
+        (typeof window !== 'undefined' ? window.prompt('Reason for deactivation:') : null) ?? '';
       if (why.trim()) performDeactivate(why.trim());
       return;
     }
@@ -237,11 +246,10 @@ export default function EditClient() {
         <View style={styles.toggleText}>
           <Text style={styles.toggleLabel}>Cancel soft-failed orders at EOD</Text>
           <Text style={styles.toggleHelper}>
-            When the customer doesn&apos;t engage and the day ends, mark the
-            delivery as failed instead of rolling it to tomorrow. Applies only
-            to customer-unreachable statuses (didn&apos;t answer, line busy,
-            phone off, couldn&apos;t find them). Customer deferrals (tomorrow /
-            postponed) and in-transit orders (picked up / waybilled) still roll.
+            When the customer doesn&apos;t engage and the day ends, mark the delivery as failed
+            instead of rolling it to tomorrow. Applies only to customer-unreachable statuses
+            (didn&apos;t answer, line busy, phone off, couldn&apos;t find them). Customer deferrals
+            (tomorrow / postponed) and in-transit orders (picked up / waybilled) still roll.
           </Text>
         </View>
         <Switch
@@ -261,15 +269,12 @@ export default function EditClient() {
       ) : null}
 
       {actionError ? (
-        <View style={styles.errorBox}><Text style={styles.errorText}>{actionError}</Text></View>
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{actionError}</Text>
+        </View>
       ) : null}
 
-      <Button
-        title="Save changes"
-        onPress={handleSave}
-        loading={submitting}
-        disabled={!dirty}
-      />
+      <Button title="Save changes" onPress={handleSave} loading={submitting} disabled={!dirty} />
 
       {client.is_active ? (
         <Button
@@ -313,7 +318,13 @@ export default function EditClient() {
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#fff' },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    backgroundColor: '#fff',
+  },
   error: { color: '#c0392b', textAlign: 'center', marginBottom: 12 },
   errorBox: { backgroundColor: '#fdecea', padding: 12, borderRadius: 8, marginBottom: 12 },
   errorText: { color: '#a02d1b', fontSize: 14 },

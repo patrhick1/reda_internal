@@ -13,7 +13,11 @@ import { errorMessage } from '@/lib/errors';
  *  the existing assignment-push trigger fires server-side and notifies the
  *  new assignee. */
 export function HandoffToSubAgentSheet({
-  open, delivery, leadId, onClose, onCommitted,
+  open,
+  delivery,
+  leadId,
+  onClose,
+  onCommitted,
 }: {
   open: boolean;
   delivery: DeliveryRow | null;
@@ -57,7 +61,9 @@ export function HandoffToSubAgentSheet({
   return (
     <Sheet
       open={open}
-      onClose={() => { if (!submitting) onClose(); }}
+      onClose={() => {
+        if (!submitting) onClose();
+      }}
       title="Hand off to your team"
       subtitle={delivery.customer_name ?? undefined}
     >
@@ -67,7 +73,9 @@ export function HandoffToSubAgentSheet({
         </View>
       ) : subAgentsQ.error ? (
         <View style={{ padding: 20 }}>
-          <Banner tone="error" icon="alert">{subAgentsQ.error}</Banner>
+          <Banner tone="error" icon="alert">
+            {subAgentsQ.error}
+          </Banner>
         </View>
       ) : subAgents.length === 0 ? (
         <View style={{ padding: 20 }}>
@@ -79,7 +87,9 @@ export function HandoffToSubAgentSheet({
         <View style={{ paddingHorizontal: 12, paddingBottom: 24, paddingTop: 4 }}>
           {error ? (
             <View style={{ paddingHorizontal: 8, paddingBottom: 8 }}>
-              <Banner tone="error" icon="alert">{error}</Banner>
+              <Banner tone="error" icon="alert">
+                {error}
+              </Banner>
             </View>
           ) : null}
           {subAgents.map((u) => {
@@ -89,15 +99,18 @@ export function HandoffToSubAgentSheet({
                 key={u.id}
                 onPress={() => handoff(u)}
                 disabled={submitting}
-                style={({ pressed }) => ([{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 12,
-                  paddingVertical: 14,
-                  paddingHorizontal: 12,
-                  borderRadius: 12,
-                  opacity: submitting && !isThisOne ? 0.5 : 1,
-                }, pressed && !submitting && { backgroundColor: colors.surface }])}
+                style={({ pressed }) => [
+                  {
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 12,
+                    paddingVertical: 14,
+                    paddingHorizontal: 12,
+                    borderRadius: 12,
+                    opacity: submitting && !isThisOne ? 0.5 : 1,
+                  },
+                  pressed && !submitting && { backgroundColor: colors.surface },
+                ]}
               >
                 <Avatar user={{ display_name: u.display_name }} size={32} />
                 <View style={{ flex: 1 }}>

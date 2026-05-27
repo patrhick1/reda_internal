@@ -8,10 +8,10 @@ import { Icon } from './Icon';
 export type BannerTone = 'info' | 'warn' | 'error' | 'ok';
 
 const PALETTE: Record<BannerTone, { bg: string; border: string; text: string }> = {
-  info:  { bg: colors.infoSoft,    border: colors.infoBorder, text: colors.infoDark },
-  warn:  { bg: colors.warningSoft, border: '#FCD34D',         text: colors.warningDark },
-  error: { bg: colors.redSoft,     border: '#FCA5A5',         text: colors.red },
-  ok:    { bg: colors.successSoft, border: '#86EFAC',         text: colors.successDark },
+  info: { bg: colors.infoSoft, border: colors.infoBorder, text: colors.infoDark },
+  warn: { bg: colors.warningSoft, border: '#FCD34D', text: colors.warningDark },
+  error: { bg: colors.redSoft, border: '#FCA5A5', text: colors.red },
+  ok: { bg: colors.successSoft, border: '#86EFAC', text: colors.successDark },
 };
 
 export type BannerProps = {
@@ -23,20 +23,29 @@ export type BannerProps = {
   style?: ViewStyle;
 };
 
-export function Banner({ tone = 'info', icon = 'alert', title, children, right, style }: BannerProps) {
+export function Banner({
+  tone = 'info',
+  icon = 'alert',
+  title,
+  children,
+  right,
+  style,
+}: BannerProps) {
   const p = PALETTE[tone];
   return (
-    <View style={{
-      backgroundColor: p.bg,
-      borderColor: p.border,
-      borderWidth: 1,
-      borderRadius: 12,
-      padding: 12,
-      flexDirection: 'row',
-      gap: 10,
-      alignItems: 'flex-start',
-      ...(style as object),
-    }}>
+    <View
+      style={{
+        backgroundColor: p.bg,
+        borderColor: p.border,
+        borderWidth: 1,
+        borderRadius: 12,
+        padding: 12,
+        flexDirection: 'row',
+        gap: 10,
+        alignItems: 'flex-start',
+        ...(style as object),
+      }}
+    >
       <Icon name={icon} size={18} color={p.text} />
       <View style={{ flex: 1 }}>
         {title ? (

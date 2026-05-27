@@ -54,7 +54,10 @@ export async function listClientRemit(from: string, to: string): Promise<ClientR
   return (data ?? []) as ClientRemitRow[];
 }
 
-export async function listAgentEarningsSummary(from: string, to: string): Promise<AgentEarningsRow[]> {
+export async function listAgentEarningsSummary(
+  from: string,
+  to: string,
+): Promise<AgentEarningsRow[]> {
   const { data, error } = await supabase.rpc('agent_earnings_summary', { p_from: from, p_to: to });
   if (error) throw error;
   return (data ?? []) as AgentEarningsRow[];

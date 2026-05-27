@@ -35,19 +35,17 @@ export function usePushTokenRegistration() {
         if (!granted || cancelled) return;
 
         const projectId =
-          Constants.expoConfig?.extra?.eas?.projectId ??
-          Constants.easConfig?.projectId;
+          Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
 
         const token = await Notifications.getExpoPushTokenAsync(
           projectId ? { projectId } : undefined,
         );
         if (cancelled || !token?.data) return;
 
-        const deviceLabel =
-          Device.modelName ?? Device.deviceName ?? null;
+        const deviceLabel = Device.modelName ?? Device.deviceName ?? null;
         await supabase.rpc('set_my_expo_push_token', {
-          p_token:        token.data,
-          p_platform:     Platform.OS,
+          p_token: token.data,
+          p_platform: Platform.OS,
           p_device_label: deviceLabel ?? undefined,
         });
         await AsyncStorage.setItem(PUSH_TOKEN_STORAGE_KEY, token.data);

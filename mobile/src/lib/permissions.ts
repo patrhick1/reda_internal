@@ -137,10 +137,7 @@ export function canDeleteDelivery(role: Role): boolean {
  *  only needs a single edit in theme.ts. The server-side `update_delivery_fields`
  *  RPC inlines the same list — keep them in sync.
  *  (scripts/review-reconcile-and-edit.sql, mirrors STATUS_GROUPS.active + .soft) */
-const PRE_DELIVERY_STATUSES = new Set<string>([
-  ...STATUS_GROUPS.active,
-  ...STATUS_GROUPS.soft,
-]);
+const PRE_DELIVERY_STATUSES = new Set<string>([...STATUS_GROUPS.active, ...STATUS_GROUPS.soft]);
 
 /** Edit customer-facing fields on an existing delivery (name, phone, address,
  *  product, quantity, customer price, location, assigned agent). Operational

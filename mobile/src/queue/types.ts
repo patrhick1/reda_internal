@@ -44,15 +44,15 @@ export type CreateStockTransferArgs = {
 export type JobArgs =
   | { kind: 'change_delivery_status'; args: ChangeDeliveryStatusArgs }
   | { kind: 'create_stock_adjustment'; args: CreateStockAdjustmentArgs }
-  | { kind: 'create_stock_transfer';   args: CreateStockTransferArgs };
+  | { kind: 'create_stock_transfer'; args: CreateStockTransferArgs };
 
 export type JobStatus = 'pending' | 'in_flight' | 'failed_retrying' | 'dead_letter';
 
 /** A single queued mutation. `clientUuid` makes server-side retries safe;
  *  re-enqueuing the same job with the same uuid is a no-op on the server. */
 export type Job = {
-  id: string;                 // local UUID — distinct from clientUuid for dedup logs
-  clientUuid: string;         // sent to the RPC for idempotency
+  id: string; // local UUID — distinct from clientUuid for dedup logs
+  clientUuid: string; // sent to the RPC for idempotency
   kind: JobKind;
   args: JobArgs['args'];
   status: JobStatus;
@@ -70,14 +70,14 @@ export type Job = {
  *  Numbers chosen so a transient outage is invisible (<30s) but a real
  *  problem stops hammering the server within ~5 minutes. */
 export const BACKOFF_MS = [
-  1_000,    // attempt 1 → wait 1s
-  3_000,    // attempt 2 → 3s
-  8_000,    // attempt 3 → 8s
-  20_000,   // attempt 4 → 20s
-  60_000,   // attempt 5 → 1m
-  120_000,  // attempt 6 → 2m
-  300_000,  // attempt 7 → 5m
-  600_000,  // attempt 8 → 10m
+  1_000, // attempt 1 → wait 1s
+  3_000, // attempt 2 → 3s
+  8_000, // attempt 3 → 8s
+  20_000, // attempt 4 → 20s
+  60_000, // attempt 5 → 1m
+  120_000, // attempt 6 → 2m
+  300_000, // attempt 7 → 5m
+  600_000, // attempt 8 → 10m
 ];
 export const MAX_ATTEMPTS = BACKOFF_MS.length;
 

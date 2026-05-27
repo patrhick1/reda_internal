@@ -6,13 +6,17 @@ export type CurrentStockRow = Database['public']['Views']['current_stock']['Row'
 export type SingleReason = 'loss' | 'theft' | 'damaged' | 'found' | 'correction' | 'bulk_intake';
 export type PairedReason = 'transfer' | 'warehouse_return' | 'warehouse_issue';
 
-export const SINGLE_REASONS: { value: SingleReason; label: string; sign: 'negative' | 'positive' | 'either' }[] = [
-  { value: 'loss',        label: 'Loss',        sign: 'negative' },
-  { value: 'theft',       label: 'Theft',       sign: 'negative' },
-  { value: 'damaged',     label: 'Damaged',     sign: 'negative' },
-  { value: 'found',       label: 'Found',       sign: 'positive' },
+export const SINGLE_REASONS: {
+  value: SingleReason;
+  label: string;
+  sign: 'negative' | 'positive' | 'either';
+}[] = [
+  { value: 'loss', label: 'Loss', sign: 'negative' },
+  { value: 'theft', label: 'Theft', sign: 'negative' },
+  { value: 'damaged', label: 'Damaged', sign: 'negative' },
+  { value: 'found', label: 'Found', sign: 'positive' },
   { value: 'bulk_intake', label: 'Bulk intake', sign: 'positive' },
-  { value: 'correction',  label: 'Correction',  sign: 'either'   },
+  { value: 'correction', label: 'Correction', sign: 'either' },
 ];
 
 /** Reasons admissible from the generic "Adjustment" screen — every single
@@ -20,9 +24,9 @@ export const SINGLE_REASONS: { value: SingleReason; label: string; sign: 'negati
 export const ADJUSTMENT_REASONS = SINGLE_REASONS.filter((r) => r.value !== 'bulk_intake');
 
 export const PAIRED_REASONS: { value: PairedReason; label: string; sub: string }[] = [
-  { value: 'transfer',         label: 'Transfer (agent → agent)', sub: 'Move stock between two agents' },
-  { value: 'warehouse_issue',  label: 'Warehouse issue',           sub: 'Warehouse → agent' },
-  { value: 'warehouse_return', label: 'Warehouse return',          sub: 'Agent → warehouse' },
+  { value: 'transfer', label: 'Transfer (agent → agent)', sub: 'Move stock between two agents' },
+  { value: 'warehouse_issue', label: 'Warehouse issue', sub: 'Warehouse → agent' },
+  { value: 'warehouse_return', label: 'Warehouse return', sub: 'Agent → warehouse' },
 ];
 
 /** A flat list of (user, product, qty) — non-zero only. */
@@ -52,7 +56,10 @@ export async function listCurrentStock(): Promise<StockMatrixRow[]> {
 
   const [usersRes, prodsRes] = await Promise.all([
     supabase.from('users').select('id, email, display_name, role').in('id', userIds),
-    supabase.from('product_catalog').select('id, product_name, client_id, clients!inner(name)').in('id', prodIds),
+    supabase
+      .from('product_catalog')
+      .select('id, product_name, client_id, clients!inner(name)')
+      .in('id', prodIds),
   ]);
   if (usersRes.error) throw usersRes.error;
   if (prodsRes.error) throw prodsRes.error;
@@ -60,8 +67,16 @@ export async function listCurrentStock(): Promise<StockMatrixRow[]> {
   const userById = new Map((usersRes.data ?? []).map((u) => [u.id, u]));
   const prodById = new Map(
     (prodsRes.data ?? []).map((p) => {
-      const row = p as { id: string; product_name: string; client_id: string; clients: { name: string } };
-      return [row.id, { product_name: row.product_name, client_id: row.client_id, client_name: row.clients.name }];
+      const row = p as {
+        id: string;
+        product_name: string;
+        client_id: string;
+        clients: { name: string };
+      };
+      return [
+        row.id,
+        { product_name: row.product_name, client_id: row.client_id, client_name: row.clients.name },
+      ];
     }),
   );
 
@@ -123,11 +138,14 @@ export type ClientStockGroup = {
  *  Sorted by client name asc, products by name asc within each client. */
 export function groupByClient(rows: StockMatrixRow[]): ClientStockGroup[] {
   type ProductAccum = Omit<ClientProductTotal, never>;
-  const clients = new Map<string, {
-    client_id: string;
-    client_name: string;
-    products: Map<string, ProductAccum>;
-  }>();
+  const clients = new Map<
+    string,
+    {
+      client_id: string;
+      client_name: string;
+      products: Map<string, ProductAccum>;
+    }
+  >();
 
   for (const r of rows) {
     if (!r.client_id) continue;
@@ -149,16 +167,17 @@ export function groupByClient(rows: StockMatrixRow[]): ClientStockGroup[] {
     }
     p.total_qty += r.quantity_on_hand;
     if (r.user_role === 'warehouse') p.warehouse_qty += r.quantity_on_hand;
-    else                              p.agents_qty    += r.quantity_on_hand;
+    else p.agents_qty += r.quantity_on_hand;
   }
 
   return Array.from(clients.values())
     .map((c) => {
-      const products = Array.from(c.products.values())
-        .sort((a, b) => a.product_name.localeCompare(b.product_name));
-      const total_qty     = products.reduce((s, p) => s + p.total_qty, 0);
+      const products = Array.from(c.products.values()).sort((a, b) =>
+        a.product_name.localeCompare(b.product_name),
+      );
+      const total_qty = products.reduce((s, p) => s + p.total_qty, 0);
       const warehouse_qty = products.reduce((s, p) => s + p.warehouse_qty, 0);
-      const agents_qty    = products.reduce((s, p) => s + p.agents_qty, 0);
+      const agents_qty = products.reduce((s, p) => s + p.agents_qty, 0);
       return {
         client_id: c.client_id,
         client_name: c.client_name,

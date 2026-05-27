@@ -1,12 +1,21 @@
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  Text,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { useEditLock } from '@/hooks/useEditLock';
 import {
-  getDelivery, updateDeliveryFields, type UpdateDeliveryFieldsPatch,
+  getDelivery,
+  updateDeliveryFields,
+  type UpdateDeliveryFieldsPatch,
 } from '@/services/deliveries';
 import { canEditDelivery } from '@/lib/permissions';
 import { AppBar, Banner, Button, Card, Empty } from '@/components/ui';
@@ -30,9 +39,8 @@ export default function EditDeliveryScreen() {
   // editable. Acquiring on, say, a delivered delivery wastes an RPC and
   // creates a brief `edit_locks` row before the screen pivots to the
   // "Can't edit" empty state.
-  const lockableId = id && deliveryQ.data && canEditDelivery(user.role, deliveryQ.data.current_status)
-    ? id
-    : null;
+  const lockableId =
+    id && deliveryQ.data && canEditDelivery(user.role, deliveryQ.data.current_status) ? id : null;
   const lock = useEditLock('delivery', lockableId);
 
   const [state, setState] = useState<DeliveryFormState | null>(null);
@@ -49,16 +57,16 @@ export default function EditDeliveryScreen() {
     const d = deliveryQ.data;
     if (!d) return {};
     return {
-      clientId:         d.client_id ?? null,
+      clientId: d.client_id ?? null,
       productCatalogId: d.product_catalog_id ?? null,
-      customerName:     d.customer_name ?? '',
-      customerPhone:    d.customer_phone ?? '',
-      rawAddress:       d.raw_address ?? '',
-      locationId:       d.location_id ?? null,
-      assignedAgentId:  d.assigned_agent_id ?? null,
-      quantityOrdered:  d.quantity_ordered ?? null,
-      customerPrice:    d.customer_price ?? null,
-      scheduledDate:    d.scheduled_date ?? '',
+      customerName: d.customer_name ?? '',
+      customerPhone: d.customer_phone ?? '',
+      rawAddress: d.raw_address ?? '',
+      locationId: d.location_id ?? null,
+      assignedAgentId: d.assigned_agent_id ?? null,
+      quantityOrdered: d.quantity_ordered ?? null,
+      customerPrice: d.customer_price ?? null,
+      scheduledDate: d.scheduled_date ?? '',
     };
   }, [deliveryQ.data]);
 
@@ -127,13 +135,30 @@ export default function EditDeliveryScreen() {
             <Text style={{ fontFamily: fonts.bold, fontSize: 16, color: colors.black }}>
               {ls.holderName} is editing this
             </Text>
-            <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary, marginTop: 6 }}>
-              They started {minutesAgo(ls.acquiredAt)} min ago. They might still be on it — opening it now means anything they had unsaved will be lost.
+            <Text
+              style={{
+                fontFamily: fonts.medium,
+                fontSize: 13,
+                color: colors.textSecondary,
+                marginTop: 6,
+              }}
+            >
+              They started {minutesAgo(ls.acquiredAt)} min ago. They might still be on it — opening
+              it now means anything they had unsaved will be lost.
             </Text>
           </Card>
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            <Button variant="secondary" onPress={() => router.back()}>Back</Button>
-            <Button variant="emphasis" full icon="lock" onPress={() => { void lock.takeOver(); }}>
+            <Button variant="secondary" onPress={() => router.back()}>
+              Back
+            </Button>
+            <Button
+              variant="emphasis"
+              full
+              icon="lock"
+              onPress={() => {
+                void lock.takeOver();
+              }}
+            >
               Take over
             </Button>
           </View>
@@ -147,17 +172,27 @@ export default function EditDeliveryScreen() {
   async function handleSave() {
     setError(null);
     if (!state) return;
-    if (!isValid) { setError('Fill in the required fields'); return; }
+    if (!isValid) {
+      setError('Fill in the required fields');
+      return;
+    }
     const patch: UpdateDeliveryFieldsPatch = {};
-    if (state.customerName.trim()  !== (d.customer_name ?? ''))    patch.customerName     = state.customerName.trim();
-    if (state.customerPhone.trim() !== (d.customer_phone ?? ''))   patch.customerPhone    = state.customerPhone.trim();
-    if (state.rawAddress.trim()    !== (d.raw_address ?? ''))      patch.rawAddress       = state.rawAddress.trim();
-    if (state.locationId           !== (d.location_id ?? null))    patch.locationId       = state.locationId;
-    if (state.clientId             !== (d.client_id ?? null))      patch.clientId         = state.clientId ?? undefined;
-    if (state.productCatalogId     !== (d.product_catalog_id ?? null)) patch.productCatalogId = state.productCatalogId ?? undefined;
-    if (state.quantityOrdered      !== (d.quantity_ordered ?? null))   patch.quantityOrdered  = state.quantityOrdered ?? undefined;
-    if (state.customerPrice        !== (d.customer_price ?? null))     patch.customerPrice    = state.customerPrice ?? undefined;
-    if (state.assignedAgentId      !== (d.assigned_agent_id ?? null))  patch.assignedAgentId  = state.assignedAgentId;
+    if (state.customerName.trim() !== (d.customer_name ?? ''))
+      patch.customerName = state.customerName.trim();
+    if (state.customerPhone.trim() !== (d.customer_phone ?? ''))
+      patch.customerPhone = state.customerPhone.trim();
+    if (state.rawAddress.trim() !== (d.raw_address ?? ''))
+      patch.rawAddress = state.rawAddress.trim();
+    if (state.locationId !== (d.location_id ?? null)) patch.locationId = state.locationId;
+    if (state.clientId !== (d.client_id ?? null)) patch.clientId = state.clientId ?? undefined;
+    if (state.productCatalogId !== (d.product_catalog_id ?? null))
+      patch.productCatalogId = state.productCatalogId ?? undefined;
+    if (state.quantityOrdered !== (d.quantity_ordered ?? null))
+      patch.quantityOrdered = state.quantityOrdered ?? undefined;
+    if (state.customerPrice !== (d.customer_price ?? null))
+      patch.customerPrice = state.customerPrice ?? undefined;
+    if (state.assignedAgentId !== (d.assigned_agent_id ?? null))
+      patch.assignedAgentId = state.assignedAgentId;
 
     if (Object.keys(patch).length === 0) {
       // Nothing changed; treat as cancel.
@@ -168,7 +203,9 @@ export default function EditDeliveryScreen() {
     setSubmitting(true);
     try {
       await updateDeliveryFields(d.id!, patch);
-      await lock.release().catch(() => { /* swallow */ });
+      await lock.release().catch(() => {
+        /* swallow */
+      });
       router.back();
     } catch (e) {
       setError(errorMessage(e));
@@ -190,25 +227,40 @@ export default function EditDeliveryScreen() {
         contentContainerStyle={{ padding: 16, paddingBottom: 140 + insets.bottom, gap: 16 }}
         keyboardShouldPersistTaps="handled"
       >
-        <DeliveryFieldsForm
-          initial={initial}
-          onChange={handleFormChange}
-        />
-        {error ? <Banner tone="error" icon="alert">{error}</Banner> : null}
+        <DeliveryFieldsForm initial={initial} onChange={handleFormChange} />
+        {error ? (
+          <Banner tone="error" icon="alert">
+            {error}
+          </Banner>
+        ) : null}
       </ScrollView>
 
-      <View style={{
-        position: 'absolute', left: 0, right: 0, bottom: 0,
-        paddingHorizontal: 16, paddingTop: 12,
-        paddingBottom: 16 + insets.bottom,
-        backgroundColor: colors.white,
-        borderTopWidth: 1, borderTopColor: colors.border,
-        flexDirection: 'row', gap: 8,
-      }}>
+      <View
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          paddingHorizontal: 16,
+          paddingTop: 12,
+          paddingBottom: 16 + insets.bottom,
+          backgroundColor: colors.white,
+          borderTopWidth: 1,
+          borderTopColor: colors.border,
+          flexDirection: 'row',
+          gap: 8,
+        }}
+      >
         <Button variant="secondary" onPress={() => router.back()} disabled={submitting}>
           Cancel
         </Button>
-        <Button variant="emphasis" full icon="check" onPress={handleSave} disabled={!isValid || submitting}>
+        <Button
+          variant="emphasis"
+          full
+          icon="check"
+          onPress={handleSave}
+          disabled={!isValid || submitting}
+        >
           {submitting ? 'Saving…' : 'Save changes'}
         </Button>
       </View>

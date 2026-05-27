@@ -1,8 +1,20 @@
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View, type ViewStyle } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  View,
+  type ViewStyle,
+} from 'react-native';
 import type { ReactNode } from 'react';
 import { colors } from '@/lib/theme';
 
-export function Screen({ children, scroll = true, padded = true, style }: {
+export function Screen({
+  children,
+  scroll = true,
+  padded = true,
+  style,
+}: {
   children: ReactNode;
   scroll?: boolean;
   padded?: boolean;
@@ -10,7 +22,10 @@ export function Screen({ children, scroll = true, padded = true, style }: {
 }) {
   const Wrapper = scroll ? ScrollView : View;
   const wrapperProps = scroll
-    ? { contentContainerStyle: [padded && styles.padded, style], keyboardShouldPersistTaps: 'handled' as const }
+    ? {
+        contentContainerStyle: [padded && styles.padded, style],
+        keyboardShouldPersistTaps: 'handled' as const,
+      }
     : { style: [styles.flex, padded && styles.padded, style] };
   return (
     <KeyboardAvoidingView

@@ -16,12 +16,15 @@ export function useBulkRows<T extends { id: string }>(makeNew: () => T) {
     setRows((rs) => [...rs, makeNew()]);
   }, [makeNew]);
 
-  const removeRow = useCallback((id: string) => {
-    setRows((rs) => {
-      const next = rs.filter((r) => r.id !== id);
-      return next.length === 0 ? [makeNew()] : next;
-    });
-  }, [makeNew]);
+  const removeRow = useCallback(
+    (id: string) => {
+      setRows((rs) => {
+        const next = rs.filter((r) => r.id !== id);
+        return next.length === 0 ? [makeNew()] : next;
+      });
+    },
+    [makeNew],
+  );
 
   const updateRow = useCallback((id: string, patch: Partial<T>) => {
     setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));

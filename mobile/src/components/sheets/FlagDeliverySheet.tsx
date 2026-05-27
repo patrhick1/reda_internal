@@ -4,7 +4,10 @@ import { Banner, Input, Sheet, StatusPill } from '@/components/ui';
 import { colors, fonts, STATUS_META } from '@/lib/theme';
 import { type DeliveryRow } from '@/services/deliveries';
 import {
-  flagDelivery, ISSUE_DEFAULT_STATUS, ISSUE_LABELS, ISSUE_STATUS_OVERRIDES,
+  flagDelivery,
+  ISSUE_DEFAULT_STATUS,
+  ISSUE_LABELS,
+  ISSUE_STATUS_OVERRIDES,
   type IssueType,
 } from '@/services/delivery-messages';
 import { newClientUuid } from '@/lib/uuid';
@@ -22,7 +25,10 @@ const ISSUE_ORDER: IssueType[] = [
  *  drives a default status transition (see ISSUE_DEFAULT_STATUS) so the
  *  deliveries list status pill reflects the open issue. */
 export function FlagDeliverySheet({
-  open, delivery, onClose, onCommitted,
+  open,
+  delivery,
+  onClose,
+  onCommitted,
 }: {
   open: boolean;
   delivery: DeliveryRow | null;
@@ -66,9 +72,9 @@ export function FlagDeliverySheet({
     try {
       await flagDelivery({
         deliveryId: delivery.id,
-        issueType:  picked,
-        note:       note.trim() ? note.trim() : null,
-        newStatus:  derivedStatus,
+        issueType: picked,
+        note: note.trim() ? note.trim() : null,
+        newStatus: derivedStatus,
         clientUuid,
       });
       onCommitted(derivedStatus);
@@ -84,7 +90,9 @@ export function FlagDeliverySheet({
   return (
     <Sheet
       open={open}
-      onClose={() => { if (!submitting) onClose(); }}
+      onClose={() => {
+        if (!submitting) onClose();
+      }}
       title="Flag this delivery"
       subtitle={delivery.customer_name ?? undefined}
     >
@@ -102,20 +110,25 @@ export function FlagDeliverySheet({
                     setStatusOverride(null);
                     setOtherOptIn(false);
                   }}
-                  style={({ pressed }) => ([{
-                    paddingVertical: 8,
-                    paddingHorizontal: 14,
-                    borderRadius: 999,
-                    borderWidth: 1,
-                    backgroundColor: active ? colors.black : colors.white,
-                    borderColor:     active ? colors.black : colors.border,
-                  }, pressed && { opacity: 0.85 }])}
+                  style={({ pressed }) => [
+                    {
+                      paddingVertical: 8,
+                      paddingHorizontal: 14,
+                      borderRadius: 999,
+                      borderWidth: 1,
+                      backgroundColor: active ? colors.black : colors.white,
+                      borderColor: active ? colors.black : colors.border,
+                    },
+                    pressed && { opacity: 0.85 },
+                  ]}
                 >
-                  <Text style={{
-                    fontFamily: fonts.bold,
-                    fontSize: 13,
-                    color: active ? colors.white : colors.black,
-                  }}>
+                  <Text
+                    style={{
+                      fontFamily: fonts.bold,
+                      fontSize: 13,
+                      color: active ? colors.white : colors.black,
+                    }}
+                  >
                     {ISSUE_LABELS[id]}
                   </Text>
                 </Pressable>
@@ -144,24 +157,47 @@ export function FlagDeliverySheet({
           multiline
         />
 
-        {error ? <Banner tone="error" icon="alert">{error}</Banner> : null}
+        {error ? (
+          <Banner tone="error" icon="alert">
+            {error}
+          </Banner>
+        ) : null}
 
         <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Pressable onPress={onClose} disabled={submitting}
-            style={({ pressed }) => ([{
-              paddingVertical: 14, paddingHorizontal: 20, borderRadius: 999,
-              borderWidth: 1.5, borderColor: colors.black, backgroundColor: colors.white,
-            }, pressed && { opacity: 0.85 }])}
+          <Pressable
+            onPress={onClose}
+            disabled={submitting}
+            style={({ pressed }) => [
+              {
+                paddingVertical: 14,
+                paddingHorizontal: 20,
+                borderRadius: 999,
+                borderWidth: 1.5,
+                borderColor: colors.black,
+                backgroundColor: colors.white,
+              },
+              pressed && { opacity: 0.85 },
+            ]}
           >
-            <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>Cancel</Text>
+            <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>
+              Cancel
+            </Text>
           </Pressable>
-          <Pressable onPress={submit} disabled={!picked || submitting}
-            style={({ pressed }) => ([{
-              flex: 1,
-              paddingVertical: 14, paddingHorizontal: 20, borderRadius: 999,
-              backgroundColor: colors.black, alignItems: 'center',
-              opacity: !picked || submitting ? 0.6 : 1,
-            }, pressed && picked && !submitting && { opacity: 0.92 }])}
+          <Pressable
+            onPress={submit}
+            disabled={!picked || submitting}
+            style={({ pressed }) => [
+              {
+                flex: 1,
+                paddingVertical: 14,
+                paddingHorizontal: 20,
+                borderRadius: 999,
+                backgroundColor: colors.black,
+                alignItems: 'center',
+                opacity: !picked || submitting ? 0.6 : 1,
+              },
+              pressed && picked && !submitting && { opacity: 0.92 },
+            ]}
           >
             <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.white }}>
               {submitting ? 'Sending…' : 'Send to ops'}
@@ -174,7 +210,12 @@ export function FlagDeliverySheet({
 }
 
 function StatusSection({
-  picked, derivedStatus, statusOverride, setStatusOverride, otherOptIn, setOtherOptIn,
+  picked,
+  derivedStatus,
+  statusOverride,
+  setStatusOverride,
+  otherOptIn,
+  setOtherOptIn,
 }: {
   picked: IssueType;
   derivedStatus: string | null;
@@ -191,22 +232,45 @@ function StatusSection({
         <Text style={kicker}>Status</Text>
         <Pressable
           onPress={() => setOtherOptIn(!otherOptIn)}
-          style={({ pressed }) => ([{
-            marginTop: 8,
-            flexDirection: 'row', alignItems: 'center', gap: 10,
-            paddingVertical: 12, paddingHorizontal: 12,
-            borderRadius: 12, borderWidth: 1, borderColor: colors.border,
-            backgroundColor: otherOptIn ? colors.surface : colors.white,
-          }, pressed && { opacity: 0.85 }])}
+          style={({ pressed }) => [
+            {
+              marginTop: 8,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 10,
+              paddingVertical: 12,
+              paddingHorizontal: 12,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: colors.border,
+              backgroundColor: otherOptIn ? colors.surface : colors.white,
+            },
+            pressed && { opacity: 0.85 },
+          ]}
         >
-          <View style={{
-            width: 18, height: 18, borderRadius: 4,
-            borderWidth: 1.5, borderColor: colors.black,
-            backgroundColor: otherOptIn ? colors.black : colors.white,
-            alignItems: 'center', justifyContent: 'center',
-          }}>
+          <View
+            style={{
+              width: 18,
+              height: 18,
+              borderRadius: 4,
+              borderWidth: 1.5,
+              borderColor: colors.black,
+              backgroundColor: otherOptIn ? colors.black : colors.white,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
             {otherOptIn ? (
-              <Text style={{ color: colors.white, fontSize: 12, fontFamily: fonts.bold, lineHeight: 14 }}>✓</Text>
+              <Text
+                style={{
+                  color: colors.white,
+                  fontSize: 12,
+                  fontFamily: fonts.bold,
+                  lineHeight: 14,
+                }}
+              >
+                ✓
+              </Text>
             ) : null}
           </View>
           <Text style={{ flex: 1, fontFamily: fonts.medium, fontSize: 13, color: colors.black }}>
@@ -220,7 +284,15 @@ function StatusSection({
   return (
     <View>
       <Text style={kicker}>Status will change to</Text>
-      <View style={{ marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      <View
+        style={{
+          marginTop: 8,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 8,
+          flexWrap: 'wrap',
+        }}
+      >
         <StatusPill status={derivedStatus ?? ''} />
         <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary }}>
           {STATUS_META[derivedStatus ?? '']?.desc ?? ''}
@@ -234,17 +306,25 @@ function StatusSection({
               <Pressable
                 key={s}
                 onPress={() => setStatusOverride(s)}
-                style={({ pressed }) => ([{
-                  paddingVertical: 6, paddingHorizontal: 10,
-                  borderRadius: 999, borderWidth: 1,
-                  backgroundColor: active ? colors.black : colors.white,
-                  borderColor:     active ? colors.black : colors.border,
-                }, pressed && { opacity: 0.85 }])}
+                style={({ pressed }) => [
+                  {
+                    paddingVertical: 6,
+                    paddingHorizontal: 10,
+                    borderRadius: 999,
+                    borderWidth: 1,
+                    backgroundColor: active ? colors.black : colors.white,
+                    borderColor: active ? colors.black : colors.border,
+                  },
+                  pressed && { opacity: 0.85 },
+                ]}
               >
-                <Text style={{
-                  fontFamily: fonts.bold, fontSize: 11,
-                  color: active ? colors.white : colors.black,
-                }}>
+                <Text
+                  style={{
+                    fontFamily: fonts.bold,
+                    fontSize: 11,
+                    color: active ? colors.white : colors.black,
+                  }}
+                >
                   {STATUS_META[s]?.label ?? s}
                 </Text>
               </Pressable>

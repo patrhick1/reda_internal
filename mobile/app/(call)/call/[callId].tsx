@@ -1,25 +1,37 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, ActivityIndicator, Alert, StatusBar as RNStatusBar,
+  View,
+  Text,
+  TouchableOpacity,
+  ActivityIndicator,
+  Alert,
+  StatusBar as RNStatusBar,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Icon, Avatar } from '@/components/ui';
 import { colors, fonts, radii, spacing } from '@/lib/theme';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
+import { cancelCall, endCall, fetchAgoraToken, type Call } from '@/services/calls';
 import {
-  cancelCall, endCall, fetchAgoraToken, type Call,
-} from '@/services/calls';
-import {
-  joinChannel, leaveChannel, setMuted as agoraSetMuted, setSpeakerOn as agoraSetSpeakerOn,
-  registerEventHandler, unregisterEventHandler, renewToken,
+  joinChannel,
+  leaveChannel,
+  setMuted as agoraSetMuted,
+  setSpeakerOn as agoraSetSpeakerOn,
+  registerEventHandler,
+  unregisterEventHandler,
+  renewToken,
 } from '@/lib/calls/agora';
 import { dismissCall as callkeepDismiss } from '@/lib/calls/callkeep';
 import { useOutgoingCallSubscription } from '@/hooks/useOutgoingCallSubscription';
 import { canPlaceCall } from '@/lib/calls/availability';
 
 const TERMINAL_STATES = new Set<Call['status']>([
-  'declined', 'cancelled', 'missed', 'completed', 'failed',
+  'declined',
+  'cancelled',
+  'missed',
+  'completed',
+  'failed',
 ]);
 
 // Wrapper component does ONLY a platform check (no hooks). The inner
@@ -37,7 +49,9 @@ export default function CallScreenRoute() {
 
 function WebUnsupportedRedirect() {
   const router = useRouter();
-  useEffect(() => { router.replace('/'); }, [router]);
+  useEffect(() => {
+    router.replace('/');
+  }, [router]);
   return null;
 }
 
@@ -70,7 +84,8 @@ function CallScreen() {
       .eq('id', peerId)
       .maybeSingle()
       .then(({ data }) => {
-        if (data) setPeer({ id: data.id as string, display_name: (data.display_name as string) ?? '' });
+        if (data)
+          setPeer({ id: data.id as string, display_name: (data.display_name as string) ?? '' });
       });
   }, [call, userId, peer?.id]);
 
@@ -95,9 +110,9 @@ function CallScreen() {
       try {
         const t = await fetchAgoraToken(call.id);
         joinChannel(t.app_id, t.token, t.channel, t.uid);
-      } catch (err: any) {
+      } catch (err) {
         console.error('[call] joinChannel failed', err);
-        Alert.alert('Could not connect call', err?.message ?? String(err));
+        Alert.alert('Could not connect call', err instanceof Error ? err.message : String(err));
         await cancelCallSafe(call.id);
         router.back();
       }
@@ -130,7 +145,9 @@ function CallScreen() {
       },
     };
     registerEventHandler(handler);
-    return () => { unregisterEventHandler(handler); };
+    return () => {
+      unregisterEventHandler(handler);
+    };
   }, [callId]);
 
   // Terminal state: leave Agora, dismiss CallKeep (no-op for caller side),
@@ -140,7 +157,9 @@ function CallScreen() {
     if (!TERMINAL_STATES.has(call.status)) return;
     leaveChannel();
     callkeepDismiss(call.id);
-    const t = setTimeout(() => { router.back(); }, 1500);
+    const t = setTimeout(() => {
+      router.back();
+    }, 1500);
     return () => clearTimeout(t);
   }, [call?.status, router, call]);
 
@@ -161,10 +180,14 @@ function CallScreen() {
   }, [call?.started_at, now]);
 
   const onToggleMute = useCallback(() => {
-    const next = !muted; setMuted(next); agoraSetMuted(next);
+    const next = !muted;
+    setMuted(next);
+    agoraSetMuted(next);
   }, [muted]);
   const onToggleSpeaker = useCallback(() => {
-    const next = !speaker; setSpeaker(next); agoraSetSpeakerOn(next);
+    const next = !speaker;
+    setSpeaker(next);
+    agoraSetSpeakerOn(next);
   }, [speaker]);
 
   const onEnd = useCallback(async () => {
@@ -176,7 +199,7 @@ function CallScreen() {
       } else if (call.status === 'accepted') {
         await endCall(call.id);
       }
-    } catch (err: any) {
+    } catch (err) {
       console.warn('[call] end failed', err);
     } finally {
       leaveChannel();
@@ -193,36 +216,57 @@ function CallScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.black }}>
       <RNStatusBar barStyle="light-content" />
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: spacing['3xl'] }}>
+      <View
+        style={{
+          flex: 1,
+          alignItems: 'center',
+          justifyContent: 'center',
+          paddingHorizontal: spacing['3xl'],
+        }}
+      >
         <Avatar user={{ display_name: peerName }} size={120} />
-        <Text style={{
-          fontFamily: fonts.bold, fontSize: 28, color: colors.white,
-          marginTop: spacing['2xl'], textAlign: 'center',
-        }}>
+        <Text
+          style={{
+            fontFamily: fonts.bold,
+            fontSize: 28,
+            color: colors.white,
+            marginTop: spacing['2xl'],
+            textAlign: 'center',
+          }}
+        >
           {peerName}
         </Text>
-        <Text style={{
-          fontFamily: fonts.regular, fontSize: 16,
-          color: reconnecting ? colors.warning : colors.textTertiary,
-          marginTop: spacing.md,
-        }}>
+        <Text
+          style={{
+            fontFamily: fonts.regular,
+            fontSize: 16,
+            color: reconnecting ? colors.warning : colors.textTertiary,
+            marginTop: spacing.md,
+          }}
+        >
           {reconnecting ? 'Reconnecting…' : statusLabel(status, remoteJoined, agoraConnected)}
         </Text>
         {status === 'accepted' && (
-          <Text style={{
-            fontFamily: fonts.monoMedium, fontSize: 18, color: colors.white,
-            marginTop: spacing.lg,
-          }}>
+          <Text
+            style={{
+              fontFamily: fonts.monoMedium,
+              fontSize: 18,
+              color: colors.white,
+              marginTop: spacing.lg,
+            }}
+          >
             {durationLabel}
           </Text>
         )}
       </View>
 
-      <View style={{
-        paddingHorizontal: spacing['3xl'],
-        paddingBottom: spacing['3xl'] + 16,
-        gap: spacing['2xl'],
-      }}>
+      <View
+        style={{
+          paddingHorizontal: spacing['3xl'],
+          paddingBottom: spacing['3xl'] + 16,
+          gap: spacing['2xl'],
+        }}
+      >
         {status === 'accepted' && (
           <View style={{ flexDirection: 'row', justifyContent: 'space-around' }}>
             <ControlButton
@@ -248,14 +292,18 @@ function CallScreen() {
             height: 64,
             borderRadius: radii.pill,
             backgroundColor: colors.red,
-            alignItems: 'center', justifyContent: 'center',
-            flexDirection: 'row', gap: spacing.md,
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexDirection: 'row',
+            gap: spacing.md,
             opacity: ending ? 0.6 : 1,
           }}
         >
-          {ending
-            ? <ActivityIndicator color={colors.white} />
-            : <Icon name="phoneOff" size={24} color={colors.white} />}
+          {ending ? (
+            <ActivityIndicator color={colors.white} />
+          ) : (
+            <Icon name="phoneOff" size={24} color={colors.white} />
+          )}
           <Text style={{ fontFamily: fonts.semibold, color: colors.white, fontSize: 16 }}>
             {status === 'ringing' ? 'Cancel' : status === 'accepted' ? 'End call' : 'Close'}
           </Text>
@@ -266,7 +314,10 @@ function CallScreen() {
 }
 
 function ControlButton({
-  icon, label, active, onPress,
+  icon,
+  label,
+  active,
+  onPress,
 }: {
   icon: 'mic' | 'micOff' | 'volume2';
   label: string;
@@ -279,9 +330,12 @@ function ControlButton({
         onPress={onPress}
         activeOpacity={0.7}
         style={{
-          width: 64, height: 64, borderRadius: 32,
+          width: 64,
+          height: 64,
+          borderRadius: 32,
           backgroundColor: active ? colors.white : 'rgba(255,255,255,0.15)',
-          alignItems: 'center', justifyContent: 'center',
+          alignItems: 'center',
+          justifyContent: 'center',
         }}
       >
         <Icon name={icon} size={28} color={active ? colors.black : colors.white} />
@@ -295,13 +349,20 @@ function ControlButton({
 
 function statusLabel(status: Call['status'], remoteJoined: boolean, connected: boolean): string {
   switch (status) {
-    case 'ringing':   return connected ? 'Ringing…' : 'Connecting…';
-    case 'accepted':  return remoteJoined ? 'Connected' : 'Connecting…';
-    case 'declined':  return 'Call declined';
-    case 'cancelled': return 'Call cancelled';
-    case 'missed':    return 'No answer';
-    case 'completed': return 'Call ended';
-    case 'failed':    return 'Call failed';
+    case 'ringing':
+      return connected ? 'Ringing…' : 'Connecting…';
+    case 'accepted':
+      return remoteJoined ? 'Connected' : 'Connecting…';
+    case 'declined':
+      return 'Call declined';
+    case 'cancelled':
+      return 'Call cancelled';
+    case 'missed':
+      return 'No answer';
+    case 'completed':
+      return 'Call ended';
+    case 'failed':
+      return 'Call failed';
   }
 }
 
@@ -309,5 +370,9 @@ function statusLabel(status: Call['status'], remoteJoined: boolean, connected: b
 // we want to bail out (e.g. token fetch failed). The row may already be in a
 // terminal state, in which case cancel_call returns 40001; that's fine.
 async function cancelCallSafe(id: string) {
-  try { await cancelCall(id); } catch { /* noop */ }
+  try {
+    await cancelCall(id);
+  } catch {
+    /* noop */
+  }
 }

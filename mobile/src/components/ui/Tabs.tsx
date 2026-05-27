@@ -17,14 +17,16 @@ export type TabsProps<T extends string> = {
  */
 export function Tabs<T extends string>({ value, tabs, onChange }: TabsProps<T>) {
   return (
-    <View style={{
-      flexDirection: 'row',
-      gap: 24,
-      paddingHorizontal: 16,
-      backgroundColor: colors.white,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-    }}>
+    <View
+      style={{
+        flexDirection: 'row',
+        gap: 24,
+        paddingHorizontal: 16,
+        backgroundColor: colors.white,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
+      }}
+    >
       {tabs.map((t) => {
         const active = value === t.id;
         return (
@@ -38,11 +40,13 @@ export function Tabs<T extends string>({ value, tabs, onChange }: TabsProps<T>) 
               marginBottom: -1,
             }}
           >
-            <Text style={{
-              fontFamily: fonts.bold,
-              fontSize: 14,
-              color: active ? colors.black : colors.textSecondary,
-            }}>
+            <Text
+              style={{
+                fontFamily: fonts.bold,
+                fontSize: 14,
+                color: active ? colors.black : colors.textSecondary,
+              }}
+            >
               {t.label}
             </Text>
           </Pressable>

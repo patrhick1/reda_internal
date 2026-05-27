@@ -10,7 +10,7 @@ export async function isBiometricEnabled(): Promise<boolean> {
 
 export async function setBiometricEnabled(on: boolean): Promise<void> {
   if (on) await AsyncStorage.setItem(KEY, 'true');
-  else    await AsyncStorage.removeItem(KEY);
+  else await AsyncStorage.removeItem(KEY);
 }
 
 /** True when the device has biometric hardware AND the user has enrolled
@@ -33,8 +33,8 @@ export async function biometricLabel(): Promise<string> {
   try {
     const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
     if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) return 'Face ID';
-    if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT))        return 'Fingerprint';
-    if (types.includes(LocalAuthentication.AuthenticationType.IRIS))               return 'Iris';
+    if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) return 'Fingerprint';
+    if (types.includes(LocalAuthentication.AuthenticationType.IRIS)) return 'Iris';
     return 'Biometric';
   } catch {
     return 'Biometric';

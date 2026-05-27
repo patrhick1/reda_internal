@@ -1,5 +1,13 @@
 import { useState, useCallback } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  FlatList,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { Link, useFocusEffect } from 'expo-router';
 import { Button } from '@/components/Button';
 import { useAsync } from '@/hooks/useAsync';
@@ -12,7 +20,11 @@ export default function LocationsList() {
     [includeInactive],
   );
 
-  useFocusEffect(useCallback(() => { reload(); }, [reload]));
+  useFocusEffect(
+    useCallback(() => {
+      reload();
+    }, [reload]),
+  );
 
   return (
     <View style={styles.container}>
@@ -31,7 +43,9 @@ export default function LocationsList() {
           <Button title="Retry" onPress={reload} variant="secondary" />
         </View>
       ) : loading && !data ? (
-        <View style={styles.center}><ActivityIndicator /></View>
+        <View style={styles.center}>
+          <ActivityIndicator />
+        </View>
       ) : data && data.length === 0 ? (
         <View style={styles.center}>
           <Text style={styles.empty}>No locations yet.</Text>
@@ -54,10 +68,15 @@ export default function LocationsList() {
 function LocationRow({ location }: { location: Location }) {
   const aliasCount = location.aliases?.length ?? 0;
   return (
-    <Link href={{ pathname: '/(admin)/catalog/locations/[id]', params: { id: location.id } }} asChild>
+    <Link
+      href={{ pathname: '/(admin)/catalog/locations/[id]', params: { id: location.id } }}
+      asChild
+    >
       <TouchableOpacity style={styles.row}>
         <View style={styles.rowLeft}>
-          <Text style={[styles.name, !location.is_active && styles.nameInactive]}>{location.name}</Text>
+          <Text style={[styles.name, !location.is_active && styles.nameInactive]}>
+            {location.name}
+          </Text>
           <Text style={styles.meta}>
             {aliasCount === 0 ? 'no aliases' : `${aliasCount} alias${aliasCount === 1 ? '' : 'es'}`}
             {location.latitude !== null && location.longitude !== null
@@ -75,9 +94,13 @@ function LocationRow({ location }: { location: Location }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   header: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingHorizontal: 16, paddingVertical: 12,
-    borderBottomWidth: 1, borderBottomColor: '#eee',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
   },
   toggle: { fontSize: 14, color: '#333', fontWeight: '500' },
   newBtn: { paddingHorizontal: 14, minHeight: 36 },
@@ -89,8 +112,14 @@ const styles = StyleSheet.create({
   nameInactive: { color: '#888', textDecorationLine: 'line-through' },
   meta: { fontSize: 13, color: '#666', marginTop: 2 },
   badge: {
-    fontSize: 11, color: '#a04000', backgroundColor: '#fde9d8',
-    paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4, marginRight: 8, overflow: 'hidden',
+    fontSize: 11,
+    color: '#a04000',
+    backgroundColor: '#fde9d8',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginRight: 8,
+    overflow: 'hidden',
   },
   chev: { fontSize: 24, color: '#bbb' },
   sep: { height: 1, backgroundColor: '#f0f0f0' },

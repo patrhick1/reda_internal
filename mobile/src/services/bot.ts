@@ -22,10 +22,15 @@ export type BotInboundRow = {
   error_text: string | null;
 };
 
-export async function listBotInbound(status: InboundStatus | 'all', limit = 100): Promise<BotInboundRow[]> {
+export async function listBotInbound(
+  status: InboundStatus | 'all',
+  limit = 100,
+): Promise<BotInboundRow[]> {
   let q = supabase
     .from('bot_inbound_messages')
-    .select('id, wasender_message_id, remote_jid, raw_text, received_at, processed_at, status, parse_result, delivery_id, error_text')
+    .select(
+      'id, wasender_message_id, remote_jid, raw_text, received_at, processed_at, status, parse_result, delivery_id, error_text',
+    )
     .order('received_at', { ascending: false })
     .limit(limit);
   if (status !== 'all') q = q.eq('status', status);
@@ -43,7 +48,9 @@ export type BotInboundDetailRow = BotInboundRow & {
 export async function getBotInbound(id: string): Promise<BotInboundDetailRow | null> {
   const { data, error } = await supabase
     .from('bot_inbound_messages')
-    .select('id, wasender_message_id, remote_jid, raw_text, raw_payload, received_at, processed_at, status, parse_result, delivery_id, error_text')
+    .select(
+      'id, wasender_message_id, remote_jid, raw_text, raw_payload, received_at, processed_at, status, parse_result, delivery_id, error_text',
+    )
     .eq('id', id)
     .maybeSingle();
   if (error) throw error;
@@ -53,9 +60,12 @@ export async function getBotInbound(id: string): Promise<BotInboundDetailRow | n
 /** Marks a needs_review row as resolved into a freshly-created delivery.
  *  Call after createDelivery succeeds. Server enforces admin/dispatcher and
  *  the caller's edit lock; also drops the lock row. */
-export async function resolveInboundToDelivery(inboundId: string, deliveryId: string): Promise<void> {
+export async function resolveInboundToDelivery(
+  inboundId: string,
+  deliveryId: string,
+): Promise<void> {
   const { error } = await supabase.rpc('resolve_inbound_to_delivery', {
-    p_inbound_id:  inboundId,
+    p_inbound_id: inboundId,
     p_delivery_id: deliveryId,
   });
   if (error) throw error;
@@ -67,7 +77,7 @@ export async function resolveInboundToDelivery(inboundId: string, deliveryId: st
 export async function discardInbound(inboundId: string, reason: string): Promise<void> {
   const { error } = await supabase.rpc('discard_inbound', {
     p_inbound_id: inboundId,
-    p_reason:     reason,
+    p_reason: reason,
   });
   if (error) throw error;
 }

@@ -23,8 +23,14 @@ export default function EditProfileScreen() {
   const phoneValid = phoneDigits === '' || /^(0\d{10}|234\d{10})$/.test(phoneDigits);
 
   async function save() {
-    if (!nameValid) { setError('Display name must be at least 2 characters'); return; }
-    if (!phoneValid) { setError('Phone should look like 0803 123 4567 or +234 803 123 4567'); return; }
+    if (!nameValid) {
+      setError('Display name must be at least 2 characters');
+      return;
+    }
+    if (!phoneValid) {
+      setError('Phone should look like 0803 123 4567 or +234 803 123 4567');
+      return;
+    }
     setError(null);
     setSubmitting(true);
     try {
@@ -68,7 +74,14 @@ export default function EditProfileScreen() {
 
             <View>
               <Text style={kicker}>Email</Text>
-              <Text style={{ fontFamily: fonts.mono, fontSize: 14, color: colors.textSecondary, marginTop: 6 }}>
+              <Text
+                style={{
+                  fontFamily: fonts.mono,
+                  fontSize: 14,
+                  color: colors.textSecondary,
+                  marginTop: 6,
+                }}
+              >
                 {user.email}
               </Text>
               <Pressable
@@ -76,10 +89,10 @@ export default function EditProfileScreen() {
                 hitSlop={8}
                 accessibilityRole="button"
                 accessibilityLabel="Change email"
-                style={({ pressed }) => ([
+                style={({ pressed }) => [
                   { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 },
                   pressed && { opacity: 0.7 },
-                ])}
+                ]}
               >
                 <Text style={{ fontFamily: fonts.semibold, fontSize: 12, color: colors.black }}>
                   Change email
@@ -92,7 +105,9 @@ export default function EditProfileScreen() {
 
         {error ? (
           <Card>
-            <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.red }}>{error}</Text>
+            <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.red }}>
+              {error}
+            </Text>
           </Card>
         ) : null}
 

@@ -9,15 +9,20 @@ import { Platform } from 'react-native';
 // time — and because this file is transitively imported by app/_layout.tsx,
 // that would crash the entire app on startup. Using require + try lets the
 // rest of the app boot; calling falls back to "ring via notification" if
-// CallKeep isn't available.
+// CallKeep isn't available. `any` is intentional — importing the typed SDK
+// would defeat the defensive require.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let RNCallKeep: any;
 let callKeepLoaded = false;
 try {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
   RNCallKeep = require('react-native-callkeep').default ?? require('react-native-callkeep');
   callKeepLoaded = typeof RNCallKeep?.setup === 'function';
 } catch (err) {
-  console.warn('[callkeep] native module unavailable; calls will degrade to notification-only', err);
+  console.warn(
+    '[callkeep] native module unavailable; calls will degrade to notification-only',
+    err,
+  );
   callKeepLoaded = false;
 }
 
@@ -74,36 +79,70 @@ export function displayIncomingCall(callId: string, callerName: string): void {
 
 export function dismissCall(callId: string): void {
   if (!callKeepLoaded) return;
-  try { RNCallKeep.endCall(callId); } catch { /* noop */ }
+  try {
+    RNCallKeep.endCall(callId);
+  } catch {
+    /* noop */
+  }
 }
 
 export function reportConnected(callId: string): void {
   if (!callKeepLoaded) return;
-  try { RNCallKeep.reportConnectedOutgoingCallWithUUID?.(callId); } catch { /* noop */ }
-  try { RNCallKeep.setCurrentCallActive(callId); } catch { /* noop */ }
+  try {
+    RNCallKeep.reportConnectedOutgoingCallWithUUID?.(callId);
+  } catch {
+    /* noop */
+  }
+  try {
+    RNCallKeep.setCurrentCallActive(callId);
+  } catch {
+    /* noop */
+  }
 }
 
 type AnswerListener = (data: { callUUID: string }) => void;
-type EndListener    = (data: { callUUID: string }) => void;
+type EndListener = (data: { callUUID: string }) => void;
 
 export function addAnswerListener(cb: AnswerListener): () => void {
-  if (!callKeepLoaded) return () => { /* noop */ };
+  if (!callKeepLoaded)
+    return () => {
+      /* noop */
+    };
   try {
     RNCallKeep.addEventListener('answerCall', cb);
-    return () => { try { RNCallKeep.removeEventListener('answerCall'); } catch { /* noop */ } };
+    return () => {
+      try {
+        RNCallKeep.removeEventListener('answerCall');
+      } catch {
+        /* noop */
+      }
+    };
   } catch (err) {
     console.warn('[callkeep] addAnswerListener failed', err);
-    return () => { /* noop */ };
+    return () => {
+      /* noop */
+    };
   }
 }
 
 export function addEndListener(cb: EndListener): () => void {
-  if (!callKeepLoaded) return () => { /* noop */ };
+  if (!callKeepLoaded)
+    return () => {
+      /* noop */
+    };
   try {
     RNCallKeep.addEventListener('endCall', cb);
-    return () => { try { RNCallKeep.removeEventListener('endCall'); } catch { /* noop */ } };
+    return () => {
+      try {
+        RNCallKeep.removeEventListener('endCall');
+      } catch {
+        /* noop */
+      }
+    };
   } catch (err) {
     console.warn('[callkeep] addEndListener failed', err);
-    return () => { /* noop */ };
+    return () => {
+      /* noop */
+    };
   }
 }

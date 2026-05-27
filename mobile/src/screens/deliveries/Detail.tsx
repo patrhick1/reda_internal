@@ -1,25 +1,41 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Linking, Platform, ScrollView, Text, TouchableOpacity, View,
+  ActivityIndicator,
+  Alert,
+  Linking,
+  Platform,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
-  getDelivery, listDeliveryHistory, listStatusDefs,
+  getDelivery,
+  listDeliveryHistory,
+  listStatusDefs,
   type DeliveryStatusHistoryRow,
 } from '@/services/deliveries';
 import { initiateCall } from '@/services/calls';
 import { ensureMicPermission } from '@/lib/calls/permissions';
 import { canPlaceCall } from '@/lib/calls/availability';
-import {
-  AppBar, Avatar, Button, Card, Empty, Hint, Icon, StatusPill,
-} from '@/components/ui';
+import { AppBar, Avatar, Button, Card, Empty, Hint, Icon, StatusPill } from '@/components/ui';
 import { colors, fonts, TERMINAL_STATUSES } from '@/lib/theme';
-import { canClaimFollowup, canEditDelivery, canHandoffToSubAgent, canMarkClientNotified, canSeeCharged, canSeeMargin, canUpdateStatus } from '@/lib/permissions';
 import {
-  listClientNotificationsForDelivery, markClientNotified,
+  canClaimFollowup,
+  canEditDelivery,
+  canHandoffToSubAgent,
+  canMarkClientNotified,
+  canSeeCharged,
+  canSeeMargin,
+  canUpdateStatus,
+} from '@/lib/permissions';
+import {
+  listClientNotificationsForDelivery,
+  markClientNotified,
   type ClientNotificationRow,
 } from '@/services/clientNotifications';
 import { FollowupClaimBanner } from '@/components/delivery/FollowupClaimBanner';
@@ -39,9 +55,9 @@ export function DeliveryDetail() {
   const insets = useSafeAreaInsets();
 
   const deliveryQ = useAsync(() => getDelivery(user.role, id), [user.role, id]);
-  const historyQ  = useAsync(() => listDeliveryHistory(id), [id]);
-  const defsQ     = useAsync(() => listStatusDefs(), []);
-  const notifQ    = useAsync(() => listClientNotificationsForDelivery(id), [id]);
+  const historyQ = useAsync(() => listDeliveryHistory(id), [id]);
+  const defsQ = useAsync(() => listStatusDefs(), []);
+  const notifQ = useAsync(() => listClientNotificationsForDelivery(id), [id]);
   const canMarkNotified = canMarkClientNotified(user.role);
 
   const [markOpen, setMarkOpen] = useState(false);
@@ -54,24 +70,28 @@ export function DeliveryDetail() {
   // Without this the veil could stay set forever on a permanently-failing
   // mutation, leaving the screen showing a fake status with no way out
   // except force-closing the app.
-  const [optimistic, setOptimistic] = useState<{ status: string; jobId: string | null } | null>(null);
+  const [optimistic, setOptimistic] = useState<{ status: string; jobId: string | null } | null>(
+    null,
+  );
   const optimisticStatus = optimistic?.status ?? null;
   const { snapshot: queueSnapshot } = useQueue();
 
   // Team-lead handoff: load this agent's sub-agents once on mount so we know
   // whether to render the "Hand off to team" button. Cached for screen lifetime.
   const subAgentsQ = useAsync(
-    () => user.role === 'agent' ? listSubAgents(user.userId) : Promise.resolve([]),
+    () => (user.role === 'agent' ? listSubAgents(user.userId) : Promise.resolve([])),
     [user.role, user.userId],
   );
   const hasSubAgents = (subAgentsQ.data ?? []).length > 0;
 
-  useFocusEffect(useCallback(() => {
-    deliveryQ.reload();
-    historyQ.reload();
-    notifQ.reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []));
+  useFocusEffect(
+    useCallback(() => {
+      deliveryQ.reload();
+      historyQ.reload();
+      notifQ.reload();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []),
+  );
 
   const onMarkNotified = useCallback(async (historyId: string) => {
     try {
@@ -99,7 +119,7 @@ export function DeliveryDetail() {
       return;
     }
     if (optimistic.jobId) {
-      const job = queueSnapshot.jobs.find(j => j.id === optimistic.jobId);
+      const job = queueSnapshot.jobs.find((j) => j.id === optimistic.jobId);
       if (!job || job.status === 'dead_letter') {
         setOptimistic(null);
         deliveryQ.reload();
@@ -121,35 +141,45 @@ export function DeliveryDetail() {
   // `deliveryQ.data?.id` instead of capturing the post-guard `d.id` so the
   // dep array works whether or not the data has loaded yet.
   const deliveryId = deliveryQ.data?.id;
-  const callTeammate = useCallback(async (calleeId: string) => {
-    if (callBusy) return;
-    setCallBusy(true);
-    try {
-      const micOk = await ensureMicPermission();
-      if (!micOk) {
-        Alert.alert(
-          'Microphone needed',
-          'Reda needs microphone access to make calls. Tap "Open settings" → Permissions → Microphone → Allow.',
-          [
-            { text: 'Not now', style: 'cancel' },
-            { text: 'Open settings', onPress: () => { Linking.openSettings().catch(() => { /* noop */ }); } },
-          ],
-        );
-        return;
+  const callTeammate = useCallback(
+    async (calleeId: string) => {
+      if (callBusy) return;
+      setCallBusy(true);
+      try {
+        const micOk = await ensureMicPermission();
+        if (!micOk) {
+          Alert.alert(
+            'Microphone needed',
+            'Reda needs microphone access to make calls. Tap "Open settings" → Permissions → Microphone → Allow.',
+            [
+              { text: 'Not now', style: 'cancel' },
+              {
+                text: 'Open settings',
+                onPress: () => {
+                  Linking.openSettings().catch(() => {
+                    /* noop */
+                  });
+                },
+              },
+            ],
+          );
+          return;
+        }
+        const call = await initiateCall({ calleeId, relatedDeliveryId: deliveryId });
+        router.push(`/call/${call.id}`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('ringing call')) {
+          Alert.alert('Already on a call', 'You or that person already has a call ringing.');
+        } else {
+          Alert.alert('Could not start call', msg);
+        }
+      } finally {
+        setCallBusy(false);
       }
-      const call = await initiateCall({ calleeId, relatedDeliveryId: deliveryId });
-      router.push(`/call/${call.id}`);
-    } catch (err: any) {
-      const msg = err?.message ?? String(err);
-      if (typeof msg === 'string' && msg.includes('ringing call')) {
-        Alert.alert('Already on a call', 'You or that person already has a call ringing.');
-      } else {
-        Alert.alert('Could not start call', msg);
-      }
-    } finally {
-      setCallBusy(false);
-    }
-  }, [callBusy, deliveryId, router]);
+    },
+    [callBusy, deliveryId, router],
+  );
 
   if (deliveryQ.loading && !deliveryQ.data) {
     return (
@@ -177,8 +207,9 @@ export function DeliveryDetail() {
   // customer_price is per-delivery, not per-unit. Do NOT multiply by quantity.
   const expectedTotal = Number(d.customer_price ?? 0);
   const showCharged = canSeeCharged(user.role);
-  const showMargin  = canSeeMargin(user.role);
-  const showAgentPayment = user.role === 'admin' || (user.role === 'agent' && d.assigned_agent_id === user.userId);
+  const showMargin = canSeeMargin(user.role);
+  const showAgentPayment =
+    user.role === 'admin' || (user.role === 'agent' && d.assigned_agent_id === user.userId);
 
   const charged = 'charged_snapshot' in d ? (d.charged_snapshot ?? null) : null;
   const canEdit = canUpdateStatus(user.role, d.assigned_agent_id === user.userId);
@@ -206,45 +237,85 @@ export function DeliveryDetail() {
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <AppBar
         title={d.customer_name ?? 'Delivery'}
-        subtitle={d.created_at ? `Created ${formatDateTime(d.created_at)} · via ${d.created_via ?? 'manual'}` : undefined}
+        subtitle={
+          d.created_at
+            ? `Created ${formatDateTime(d.created_at)} · via ${d.created_via ?? 'manual'}`
+            : undefined
+        }
         // Always land on the deliveries list, regardless of entry point —
         // router.back() would pop to Home when the user arrived via the
         // Home "Recent activity" or "Open issues" cards.
         onBack={() => {
-          const base = user.role === 'dispatcher' ? '/(dispatcher)/deliveries'
-                     : user.role === 'rep'        ? '/(rep)/deliveries'
-                     :                              '/(admin)/deliveries';
+          const base =
+            user.role === 'dispatcher'
+              ? '/(dispatcher)/deliveries'
+              : user.role === 'rep'
+                ? '/(rep)/deliveries'
+                : '/(admin)/deliveries';
           router.replace(base as `/${string}`);
         }}
-        right={canEditDelivery(user.role, status) ? (
-          <TouchableOpacity
-            onPress={() => {
-              const base = user.role === 'dispatcher' ? '/(dispatcher)/deliveries'
-                     : user.role === 'rep'        ? '/(rep)/deliveries'
-                     :                              '/(admin)/deliveries';
-              router.push(`${base}/${d.id}/edit` as `/${string}`);
-            }}
-            hitSlop={8}
-            style={{ padding: 4 }}
-            accessibilityLabel="Edit delivery"
-            accessibilityRole="button"
-          >
-            <Icon name="edit" size={22} color={colors.black} />
-          </TouchableOpacity>
-        ) : undefined}
+        right={
+          canEditDelivery(user.role, status) ? (
+            <TouchableOpacity
+              onPress={() => {
+                const base =
+                  user.role === 'dispatcher'
+                    ? '/(dispatcher)/deliveries'
+                    : user.role === 'rep'
+                      ? '/(rep)/deliveries'
+                      : '/(admin)/deliveries';
+                router.push(`${base}/${d.id}/edit` as `/${string}`);
+              }}
+              hitSlop={8}
+              style={{ padding: 4 }}
+              accessibilityLabel="Edit delivery"
+              accessibilityRole="button"
+            >
+              <Icon name="edit" size={22} color={colors.black} />
+            </TouchableOpacity>
+          ) : undefined
+        }
       />
 
-      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: (canEdit && !isTerminal ? 130 : 32) + insets.bottom, gap: 12 }}>
+      <ScrollView
+        contentContainerStyle={{
+          padding: 16,
+          paddingBottom: (canEdit && !isTerminal ? 130 : 32) + insets.bottom,
+          gap: 12,
+        }}
+      >
         {/* Hero */}
         <Card>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+              gap: 12,
+            }}
+          >
             <View style={{ flex: 1 }}>
               <Text style={kicker}>Customer</Text>
-              <Text style={{ fontFamily: fonts.extrabold, fontSize: 22, color: colors.black, letterSpacing: -0.4, marginTop: 2 }}>
+              <Text
+                style={{
+                  fontFamily: fonts.extrabold,
+                  fontSize: 22,
+                  color: colors.black,
+                  letterSpacing: -0.4,
+                  marginTop: 2,
+                }}
+              >
                 {d.customer_name}
               </Text>
               {d.customer_phone ? (
-                <Text style={{ fontFamily: fonts.mono, fontSize: 12, color: colors.textSecondary, marginTop: 6 }}>
+                <Text
+                  style={{
+                    fontFamily: fonts.mono,
+                    fontSize: 12,
+                    color: colors.textSecondary,
+                    marginTop: 6,
+                  }}
+                >
                   {d.customer_phone}
                 </Text>
               ) : null}
@@ -253,13 +324,23 @@ export function DeliveryDetail() {
           </View>
           <View style={{ marginTop: 14, flexDirection: 'row', gap: 8 }}>
             <Button
-              variant="primary" size="sm" icon="phone"
-              onPress={() => d.customer_phone && Linking.openURL(`tel:${d.customer_phone.replace(/\s+/g, '')}`)}
+              variant="primary"
+              size="sm"
+              icon="phone"
+              onPress={() =>
+                d.customer_phone && Linking.openURL(`tel:${d.customer_phone.replace(/\s+/g, '')}`)
+              }
               disabled={!d.customer_phone}
             >
               Call
             </Button>
-            <Button variant="secondary" size="sm" icon="mapPin" onPress={() => openMaps(d.raw_address)} disabled={!d.raw_address}>
+            <Button
+              variant="secondary"
+              size="sm"
+              icon="mapPin"
+              onPress={() => openMaps(d.raw_address)}
+              disabled={!d.raw_address}
+            >
               Map
             </Button>
           </View>
@@ -270,7 +351,9 @@ export function DeliveryDetail() {
             below so we never stack two on the same screen. */}
         {canClaimFollowup(user.role, status) ? (
           <Hint id={HINTS.FOLLOWUP_CLAIM} title="Tip — Calling the customer?">
-            Tap <Text style={{ fontFamily: fonts.bold }}>I&apos;ll handle this</Text> on the banner below so other dispatchers know you&apos;re on it. The claim drops automatically the moment the status changes.
+            Tap <Text style={{ fontFamily: fonts.bold }}>I&apos;ll handle this</Text> on the banner
+            below so other dispatchers know you&apos;re on it. The claim drops automatically the
+            moment the status changes.
           </Hint>
         ) : null}
 
@@ -283,14 +366,23 @@ export function DeliveryDetail() {
             when the follow-up hint is in play (per-screen cap). */}
         {canEditDelivery(user.role, status) && !canClaimFollowup(user.role, status) ? (
           <Hint id={HINTS.EDIT_DELIVERY_ICON} title="Tip — Spotted a typo?">
-            Tap the pencil icon in the top-right to fix the customer name, phone, or address before delivery. Only works while the delivery is still open.
+            Tap the pencil icon in the top-right to fix the customer name, phone, or address before
+            delivery. Only works while the delivery is still open.
           </Hint>
         ) : null}
 
         {/* Address */}
         <Card>
           <Text style={kicker}>Address</Text>
-          <Text style={{ fontFamily: fonts.semibold, fontSize: 15, color: colors.black, lineHeight: 22, marginTop: 6 }}>
+          <Text
+            style={{
+              fontFamily: fonts.semibold,
+              fontSize: 15,
+              color: colors.black,
+              lineHeight: 22,
+              marginTop: 6,
+            }}
+          >
             {d.raw_address}
           </Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 }}>
@@ -303,31 +395,72 @@ export function DeliveryDetail() {
 
         {/* Product + Money */}
         <Card>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'flex-start',
+            }}
+          >
             <View style={{ flex: 1 }}>
               <Text style={kicker}>Product</Text>
-              <Text style={{ fontFamily: fonts.bold, fontSize: 16, color: colors.black, marginTop: 4 }}>
+              <Text
+                style={{ fontFamily: fonts.bold, fontSize: 16, color: colors.black, marginTop: 4 }}
+              >
                 {d.product_name}
               </Text>
-              <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
+              <Text
+                style={{
+                  fontFamily: fonts.medium,
+                  fontSize: 13,
+                  color: colors.textSecondary,
+                  marginTop: 2,
+                }}
+              >
                 Quantity: {d.quantity_ordered}
                 {d.quantity_delivered != null ? ` · delivered ${d.quantity_delivered}` : ''}
               </Text>
             </View>
             <View style={{ alignItems: 'flex-end' }}>
               <Text style={kicker}>To collect</Text>
-              <Text style={{ fontFamily: fonts.extrabold, fontSize: 22, color: colors.black, letterSpacing: -0.4, marginTop: 2 }}>
+              <Text
+                style={{
+                  fontFamily: fonts.extrabold,
+                  fontSize: 22,
+                  color: colors.black,
+                  letterSpacing: -0.4,
+                  marginTop: 2,
+                }}
+              >
                 {formatNaira(expectedTotal)}
               </Text>
             </View>
           </View>
           {isDelivered ? (
-            <View style={{
-              marginTop: 12, padding: 10, backgroundColor: colors.successSoft, borderRadius: 10,
-            }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.successDark }}>
-                  Delivered · {d.payment_method === 'cash' ? 'Cash' : d.payment_method === 'transfer' ? 'Transfer' : 'Paid'}
+            <View
+              style={{
+                marginTop: 12,
+                padding: 10,
+                backgroundColor: colors.successSoft,
+                borderRadius: 10,
+              }}
+            >
+              <View
+                style={{
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <Text
+                  style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.successDark }}
+                >
+                  Delivered ·{' '}
+                  {d.payment_method === 'cash'
+                    ? 'Cash'
+                    : d.payment_method === 'transfer'
+                      ? 'Transfer'
+                      : 'Paid'}
                 </Text>
                 <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.successDark }}>
                   {formatNaira(d.paid)}
@@ -336,9 +469,23 @@ export function DeliveryDetail() {
             </View>
           ) : null}
           <View style={{ marginTop: 12, gap: 4 }}>
-            {showCharged ? <MoneyRow label="Reda charge"   value={formatNaira(charged != null ? Number(charged) : null)} /> : null}
-            {showAgentPayment ? <MoneyRow label="Agent earns" value={formatNaira(d.agent_payment_snapshot != null ? Number(d.agent_payment_snapshot) : null)} /> : null}
-            {showMargin && d.margin != null ? <MoneyRow label="Margin" value={formatNaira(Number(d.margin))} accent /> : null}
+            {showCharged ? (
+              <MoneyRow
+                label="Reda charge"
+                value={formatNaira(charged != null ? Number(charged) : null)}
+              />
+            ) : null}
+            {showAgentPayment ? (
+              <MoneyRow
+                label="Agent earns"
+                value={formatNaira(
+                  d.agent_payment_snapshot != null ? Number(d.agent_payment_snapshot) : null,
+                )}
+              />
+            ) : null}
+            {showMargin && d.margin != null ? (
+              <MoneyRow label="Margin" value={formatNaira(Number(d.margin))} accent />
+            ) : null}
           </View>
         </Card>
 
@@ -349,8 +496,16 @@ export function DeliveryDetail() {
             {d.client_name ?? '—'}
           </Text>
           <View style={{ marginTop: 12, gap: 4 }}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary }}>Assigned agent</Text>
+            <View
+              style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary }}>
+                Assigned agent
+              </Text>
               {d.assigned_agent_name ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <Avatar user={{ display_name: d.assigned_agent_name }} size={22} />
@@ -368,22 +523,35 @@ export function DeliveryDetail() {
                       hitSlop={8}
                       style={{
                         marginLeft: 4,
-                        width: 28, height: 28, borderRadius: 14,
+                        width: 28,
+                        height: 28,
+                        borderRadius: 14,
                         backgroundColor: colors.success,
-                        alignItems: 'center', justifyContent: 'center',
+                        alignItems: 'center',
+                        justifyContent: 'center',
                         opacity: callBusy ? 0.5 : 1,
                       }}
                       accessibilityLabel={`Call ${d.assigned_agent_name}`}
                       accessibilityRole="button"
                     >
-                      {callBusy
-                        ? <ActivityIndicator color={colors.white} size="small" />
-                        : <Icon name="phone" size={14} color={colors.white} />}
+                      {callBusy ? (
+                        <ActivityIndicator color={colors.white} size="small" />
+                      ) : (
+                        <Icon name="phone" size={14} color={colors.white} />
+                      )}
                     </TouchableOpacity>
                   ) : null}
                 </View>
               ) : (
-                <Text style={{ fontFamily: fonts.bold, fontSize: 11, color: colors.red, letterSpacing: 0.6, textTransform: 'uppercase' }}>
+                <Text
+                  style={{
+                    fontFamily: fonts.bold,
+                    fontSize: 11,
+                    color: colors.red,
+                    letterSpacing: 0.6,
+                    textTransform: 'uppercase',
+                  }}
+                >
                   Unassigned
                 </Text>
               )}
@@ -400,16 +568,22 @@ export function DeliveryDetail() {
             <TouchableOpacity
               onPress={() => router.push(`/(call)/team?related_delivery_id=${d.id}`)}
               style={{
-                marginTop: 12, paddingTop: 12,
-                borderTopWidth: 1, borderTopColor: colors.border,
-                flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+                marginTop: 12,
+                paddingTop: 12,
+                borderTopWidth: 1,
+                borderTopColor: colors.border,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
               }}
               accessibilityLabel="Call a teammate about this delivery"
               accessibilityRole="button"
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <Icon name="phone" size={16} color={colors.success} />
-                <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.textPrimary }}>
+                <Text
+                  style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.textPrimary }}
+                >
                   {user.role === 'agent' ? 'Call admin / dispatch' : 'Call a teammate'}
                 </Text>
               </View>
@@ -433,7 +607,9 @@ export function DeliveryDetail() {
           {historyQ.loading && !historyQ.data ? (
             <ActivityIndicator color={colors.black} />
           ) : (historyQ.data ?? []).length === 0 ? (
-            <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary }}>No history yet.</Text>
+            <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary }}>
+              No history yet.
+            </Text>
           ) : (
             <View>
               {[...historyQ.data!].reverse().map((h, i, arr) => (
@@ -454,19 +630,33 @@ export function DeliveryDetail() {
       </ScrollView>
 
       {canEdit && !isTerminal ? (
-        <View style={{
-          position: 'absolute', left: 0, right: 0, bottom: 0,
-          paddingHorizontal: 16, paddingTop: 16,
-          paddingBottom: 16 + insets.bottom,
-          backgroundColor: colors.surface,
-          borderTopWidth: 1, borderTopColor: colors.border,
-          flexDirection: 'row', gap: 8,
-        }}>
+        <View
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            paddingHorizontal: 16,
+            paddingTop: 16,
+            paddingBottom: 16 + insets.bottom,
+            backgroundColor: colors.surface,
+            borderTopWidth: 1,
+            borderTopColor: colors.border,
+            flexDirection: 'row',
+            gap: 8,
+          }}
+        >
           {canHandoff ? (
-            <Button variant="secondary" icon="user" onPress={() => setHandoffOpen(true)}>Hand off</Button>
+            <Button variant="secondary" icon="user" onPress={() => setHandoffOpen(true)}>
+              Hand off
+            </Button>
           ) : null}
-          <Button variant="secondary" onPress={() => setUpdateOpen(true)}>Update status</Button>
-          <Button variant="emphasis" full icon="check" onPress={() => setMarkOpen(true)}>Mark delivered</Button>
+          <Button variant="secondary" onPress={() => setUpdateOpen(true)}>
+            Update status
+          </Button>
+          <Button variant="emphasis" full icon="check" onPress={() => setMarkOpen(true)}>
+            Mark delivered
+          </Button>
         </View>
       ) : null}
 
@@ -497,14 +687,30 @@ export function DeliveryDetail() {
 function MoneyRow({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-      <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary }}>{label}</Text>
-      <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: accent ? colors.success : colors.black }}>{value}</Text>
+      <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary }}>
+        {label}
+      </Text>
+      <Text
+        style={{
+          fontFamily: fonts.bold,
+          fontSize: 13,
+          color: accent ? colors.success : colors.black,
+        }}
+      >
+        {value}
+      </Text>
     </View>
   );
 }
 
 function HistoryRow({
-  row, first, last, labelByStatus, notification, canMark, onMark,
+  row,
+  first,
+  last,
+  labelByStatus,
+  notification,
+  canMark,
+  onMark,
 }: {
   row: DeliveryStatusHistoryRow;
   first: boolean;
@@ -517,11 +723,17 @@ function HistoryRow({
   return (
     <View style={{ flexDirection: 'row', gap: 12 }}>
       <View style={{ alignItems: 'center', paddingTop: 4 }}>
-        <View style={{
-          width: 10, height: 10, borderRadius: 5,
-          backgroundColor: first ? colors.black : colors.borderStrong,
-        }} />
-        {!last ? <View style={{ width: 2, flex: 1, backgroundColor: colors.border, marginTop: 2 }} /> : null}
+        <View
+          style={{
+            width: 10,
+            height: 10,
+            borderRadius: 5,
+            backgroundColor: first ? colors.black : colors.borderStrong,
+          }}
+        />
+        {!last ? (
+          <View style={{ width: 2, flex: 1, backgroundColor: colors.border, marginTop: 2 }} />
+        ) : null}
       </View>
       <View style={{ flex: 1, paddingBottom: last ? 0 : 16 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -531,23 +743,47 @@ function HistoryRow({
           </Text>
         </View>
         {row.changed_by_name ? (
-          <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.black, marginTop: 4 }}>
+          <Text
+            style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.black, marginTop: 4 }}
+          >
             {row.changed_by_name}
           </Text>
         ) : null}
         {row.reason ? (
-          <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
+          <Text
+            style={{
+              fontFamily: fonts.medium,
+              fontSize: 13,
+              color: colors.textSecondary,
+              marginTop: 2,
+            }}
+          >
             {row.reason}
           </Text>
         ) : null}
         {row.notes ? (
-          <Text style={{ fontFamily: fonts.regular, fontSize: 13, color: colors.textSecondary, marginTop: 2, fontStyle: 'italic' }}>
+          <Text
+            style={{
+              fontFamily: fonts.regular,
+              fontSize: 13,
+              color: colors.textSecondary,
+              marginTop: 2,
+              fontStyle: 'italic',
+            }}
+          >
             {row.notes}
           </Text>
         ) : null}
         {/* show transition labels for terminal context */}
         {row.from_status ? (
-          <Text style={{ fontFamily: fonts.regular, fontSize: 11, color: colors.textTertiary, marginTop: 2 }}>
+          <Text
+            style={{
+              fontFamily: fonts.regular,
+              fontSize: 11,
+              color: colors.textTertiary,
+              marginTop: 2,
+            }}
+          >
             from {labelByStatus.get(row.from_status) ?? row.from_status}
           </Text>
         ) : null}
@@ -557,17 +793,24 @@ function HistoryRow({
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
             <Icon name="check" size={14} color={colors.success} />
             <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.success }}>
-              Client notified · {notification.holderName} · {formatDateTime(notification.notifiedAt)}
+              Client notified · {notification.holderName} ·{' '}
+              {formatDateTime(notification.notifiedAt)}
             </Text>
           </View>
         ) : canMark ? (
           <TouchableOpacity
             onPress={() => onMark(row.id)}
             style={{
-              flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 6,
+              marginTop: 6,
               alignSelf: 'flex-start',
-              paddingVertical: 6, paddingHorizontal: 10,
-              borderRadius: 999, borderWidth: 1, borderColor: colors.borderStrong,
+              paddingVertical: 6,
+              paddingHorizontal: 10,
+              borderRadius: 999,
+              borderWidth: 1,
+              borderColor: colors.borderStrong,
             }}
           >
             <Icon name="check" size={14} color={colors.textSecondary} />
@@ -593,8 +836,10 @@ function openMaps(addr: string | null | undefined) {
   if (!addr) return;
   const q = encodeURIComponent(addr);
   const url =
-    Platform.OS === 'android' ? `geo:0,0?q=${q}`
-    : Platform.OS === 'ios'   ? `maps:?q=${q}`
-    : `https://maps.google.com/?q=${q}`;
+    Platform.OS === 'android'
+      ? `geo:0,0?q=${q}`
+      : Platform.OS === 'ios'
+        ? `maps:?q=${q}`
+        : `https://maps.google.com/?q=${q}`;
   Linking.openURL(url).catch(() => undefined);
 }

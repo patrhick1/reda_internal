@@ -36,16 +36,19 @@ export default function HelpScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const sectionYs = useRef<Record<string, number>>({});
   const scrolledRef = useRef(false);
-  const handleSectionLayout = useCallback((id: string, y: number) => {
-    sectionYs.current[id] = y;
-    if (!scrolledRef.current && topic && id === topic) {
-      scrolledRef.current = true;
-      // Defer one frame so the expanded body has been laid out.
-      requestAnimationFrame(() => {
-        scrollRef.current?.scrollTo({ y: Math.max(0, y - 8), animated: true });
-      });
-    }
-  }, [topic]);
+  const handleSectionLayout = useCallback(
+    (id: string, y: number) => {
+      sectionYs.current[id] = y;
+      if (!scrolledRef.current && topic && id === topic) {
+        scrolledRef.current = true;
+        // Defer one frame so the expanded body has been laid out.
+        requestAnimationFrame(() => {
+          scrollRef.current?.scrollTo({ y: Math.max(0, y - 8), animated: true });
+        });
+      }
+    },
+    [topic],
+  );
 
   if (sections.length === 0) {
     return (
@@ -73,15 +76,13 @@ export default function HelpScreen() {
       >
         <Card>
           <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.textPrimary }}>
-            Tap any topic to expand it. The <Text style={{ fontFamily: fonts.bold }}>?</Text> button in the top bar of any screen jumps straight to that screen&apos;s topic.
+            Tap any topic to expand it. The <Text style={{ fontFamily: fonts.bold }}>?</Text> button
+            in the top bar of any screen jumps straight to that screen&apos;s topic.
           </Text>
         </Card>
 
         {sections.map((s) => (
-          <View
-            key={s.id}
-            onLayout={(e) => handleSectionLayout(s.id, e.nativeEvent.layout.y)}
-          >
+          <View key={s.id} onLayout={(e) => handleSectionLayout(s.id, e.nativeEvent.layout.y)}>
             <Collapsible
               title={s.title}
               icon={s.icon}
@@ -93,13 +94,15 @@ export default function HelpScreen() {
           </View>
         ))}
 
-        <Text style={{
-          fontFamily: fonts.medium,
-          fontSize: 11,
-          color: colors.textTertiary,
-          textAlign: 'center',
-          marginTop: 8,
-        }}>
+        <Text
+          style={{
+            fontFamily: fonts.medium,
+            fontSize: 11,
+            color: colors.textTertiary,
+            textAlign: 'center',
+            marginTop: 8,
+          }}
+        >
           Something missing or wrong? Message Paschal — he&apos;ll fix it the same day.
         </Text>
       </ScrollView>

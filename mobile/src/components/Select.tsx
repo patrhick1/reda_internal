@@ -1,7 +1,5 @@
 import { useState } from 'react';
-import {
-  FlatList, Modal, Pressable, StyleSheet, Text, View,
-} from 'react-native';
+import { FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, fonts } from '@/lib/theme';
 import { Icon } from '@/components/ui/Icon';
 
@@ -41,11 +39,11 @@ export function Select<T extends string>({
         onPress={() => !disabled && setOpen(true)}
         disabled={disabled}
         accessibilityRole="button"
-        style={({ pressed }) => ([
+        style={({ pressed }) => [
           styles.input,
           disabled && styles.inputDisabled,
           pressed && { opacity: 0.92 },
-        ])}
+        ]}
       >
         <Text style={selected ? styles.inputText : styles.placeholder}>
           {selected ? selected.label : placeholder}
@@ -57,7 +55,9 @@ export function Select<T extends string>({
         <Pressable style={styles.backdrop} onPress={() => setOpen(false)}>
           <Pressable style={styles.sheet} onPress={() => undefined}>
             <View style={{ alignItems: 'center', paddingTop: 8 }}>
-              <View style={{ width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2 }} />
+              <View
+                style={{ width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2 }}
+              />
             </View>
             <Text style={styles.sheetTitle}>{label}</Text>
             <FlatList
@@ -65,11 +65,11 @@ export function Select<T extends string>({
               keyExtractor={(o) => o.value}
               renderItem={({ item }) => (
                 <Pressable
-                  style={({ pressed }) => ([
+                  style={({ pressed }) => [
                     styles.option,
                     item.value === value && styles.optionActive,
                     pressed && { opacity: 0.88 },
-                  ])}
+                  ]}
                   onPress={() => {
                     onChange(item.value);
                     setOpen(false);
@@ -79,7 +79,9 @@ export function Select<T extends string>({
                     <Text style={styles.optionLabel}>{item.label}</Text>
                     {item.sub ? <Text style={styles.optionSub}>{item.sub}</Text> : null}
                   </View>
-                  {item.value === value ? <Icon name="check" size={18} color={colors.black} /> : null}
+                  {item.value === value ? (
+                    <Icon name="check" size={18} color={colors.black} />
+                  ) : null}
                 </Pressable>
               )}
               ItemSeparatorComponent={() => <View style={styles.sep} />}

@@ -51,15 +51,15 @@ function firstRow(data: unknown): Call | null {
 }
 
 export async function initiateCall(opts: {
-  calleeId:           string;
+  calleeId: string;
   relatedDeliveryId?: string | null;
 }): Promise<Call> {
   const deviceUuid = await getOrCreateDeviceUuid();
   const { data, error } = await supabase.rpc('initiate_call', {
-    p_callee_id:           opts.calleeId,
-    p_caller_device_uuid:  deviceUuid,
+    p_callee_id: opts.calleeId,
+    p_caller_device_uuid: deviceUuid,
     p_related_delivery_id: (opts.relatedDeliveryId ?? null) as string,
-    p_client_uuid:         newClientUuid(),
+    p_client_uuid: newClientUuid(),
   });
   if (error) throw error;
   const row = firstRow(data);
@@ -70,7 +70,7 @@ export async function initiateCall(opts: {
 export async function acceptCall(callId: string): Promise<Call> {
   const deviceUuid = await getOrCreateDeviceUuid();
   const { data, error } = await supabase.rpc('accept_call', {
-    p_call_id:     callId,
+    p_call_id: callId,
     p_device_uuid: deviceUuid,
   });
   if (error) throw error;
@@ -82,7 +82,7 @@ export async function acceptCall(callId: string): Promise<Call> {
 export async function declineCall(callId: string, reason: string | null = null): Promise<Call> {
   const { data, error } = await supabase.rpc('decline_call', {
     p_call_id: callId,
-    p_reason:  reason as string,
+    p_reason: reason as string,
   });
   if (error) throw error;
   const row = firstRow(data);
@@ -107,11 +107,7 @@ export async function endCall(callId: string): Promise<Call> {
 }
 
 export async function getCall(callId: string): Promise<Call | null> {
-  const { data, error } = await supabase
-    .from('calls')
-    .select('*')
-    .eq('id', callId)
-    .maybeSingle();
+  const { data, error } = await supabase.from('calls').select('*').eq('id', callId).maybeSingle();
   if (error) throw error;
   return (data ?? null) as Call | null;
 }
@@ -127,18 +123,23 @@ export async function fetchAgoraToken(callId: string): Promise<AgoraToken> {
 }
 
 export type CallHistoryRow = Call & {
-  caller_name:  string | null;
-  callee_name:  string | null;
+  caller_name: string | null;
+  callee_name: string | null;
 };
 
-export async function listCallHistory(currentUserId: string, limit = 50): Promise<CallHistoryRow[]> {
+export async function listCallHistory(
+  currentUserId: string,
+  limit = 50,
+): Promise<CallHistoryRow[]> {
   const { data, error } = await supabase
     .from('calls')
-    .select(`
+    .select(
+      `
       *,
       caller:users!calls_caller_id_fkey(display_name),
       callee:users!calls_callee_id_fkey(display_name)
-    `)
+    `,
+    )
     .or(`caller_id.eq.${currentUserId},callee_id.eq.${currentUserId}`)
     .order('created_at', { ascending: false })
     .limit(limit);

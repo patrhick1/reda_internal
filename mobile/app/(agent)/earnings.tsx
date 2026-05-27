@@ -14,7 +14,11 @@ export default function AgentEarnings() {
     () => listAgentEarnings(user.userId),
     [user.userId],
   );
-  useFocusEffect(useCallback(() => { reload(); }, [reload]));
+  useFocusEffect(
+    useCallback(() => {
+      reload();
+    }, [reload]),
+  );
 
   const buckets = useMemo(() => bucketize(data ?? []), [data]);
 
@@ -27,14 +31,36 @@ export default function AgentEarnings() {
         renderItem={({ item }) => <EarningRow row={item} />}
         ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
         contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
-        refreshControl={<RefreshControl refreshing={loading && !!data} onRefresh={reload} tintColor={colors.black} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={loading && !!data}
+            onRefresh={reload}
+            tintColor={colors.black}
+          />
+        }
         ListHeaderComponent={
           <View style={{ gap: 12, marginBottom: 12 }}>
             <Card style={{ backgroundColor: colors.black }}>
-              <Text style={{ fontFamily: fonts.bold, fontSize: 11, color: colors.textTertiary, letterSpacing: 0.8, textTransform: 'uppercase' }}>
+              <Text
+                style={{
+                  fontFamily: fonts.bold,
+                  fontSize: 11,
+                  color: colors.textTertiary,
+                  letterSpacing: 0.8,
+                  textTransform: 'uppercase',
+                }}
+              >
                 This week
               </Text>
-              <Text style={{ fontFamily: fonts.extrabold, fontSize: 40, color: colors.white, letterSpacing: -1.2, marginTop: 4 }}>
+              <Text
+                style={{
+                  fontFamily: fonts.extrabold,
+                  fontSize: 40,
+                  color: colors.white,
+                  letterSpacing: -1.2,
+                  marginTop: 4,
+                }}
+              >
                 {formatNaira(buckets.thisWeek)}
               </Text>
               <View style={{ flexDirection: 'row', gap: 14, marginTop: 10 }}>
@@ -50,9 +76,15 @@ export default function AgentEarnings() {
           error ? (
             <Empty icon="alert" title="Could not load earnings" sub={error} />
           ) : loading ? (
-            <View style={{ padding: 60, alignItems: 'center' }}><ActivityIndicator color={colors.black} /></View>
+            <View style={{ padding: 60, alignItems: 'center' }}>
+              <ActivityIndicator color={colors.black} />
+            </View>
           ) : (
-            <Empty icon="package" title="No earnings yet" sub="They'll show up here once deliveries are marked delivered." />
+            <Empty
+              icon="package"
+              title="No earnings yet"
+              sub="They'll show up here once deliveries are marked delivered."
+            />
           )
         }
       />
@@ -63,8 +95,12 @@ export default function AgentEarnings() {
 function SubStat({ label, value }: { label: string; value: string }) {
   return (
     <View>
-      <Text style={{ fontFamily: fonts.medium, fontSize: 11, color: colors.textTertiary }}>{label}</Text>
-      <Text style={{ fontFamily: fonts.bold, fontSize: 16, color: colors.white, marginTop: 2 }}>{value}</Text>
+      <Text style={{ fontFamily: fonts.medium, fontSize: 11, color: colors.textTertiary }}>
+        {label}
+      </Text>
+      <Text style={{ fontFamily: fonts.bold, fontSize: 16, color: colors.white, marginTop: 2 }}>
+        {value}
+      </Text>
     </View>
   );
 }
@@ -72,13 +108,37 @@ function SubStat({ label, value }: { label: string; value: string }) {
 function EarningRow({ row }: { row: AgentEarningRow }) {
   return (
     <Card dense>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+        }}
+      >
         <View style={{ flex: 1 }}>
-          <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>{row.customer_name}</Text>
-          <Text numberOfLines={1} style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
+          <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>
+            {row.customer_name}
+          </Text>
+          <Text
+            numberOfLines={1}
+            style={{
+              fontFamily: fonts.medium,
+              fontSize: 12,
+              color: colors.textSecondary,
+              marginTop: 2,
+            }}
+          >
             {row.product_name ?? '—'}
           </Text>
-          <Text style={{ fontFamily: fonts.mono, fontSize: 11, color: colors.textTertiary, marginTop: 2 }}>
+          <Text
+            style={{
+              fontFamily: fonts.mono,
+              fontSize: 11,
+              color: colors.textTertiary,
+              marginTop: 2,
+            }}
+          >
             {row.scheduled_date}
           </Text>
         </View>
@@ -102,7 +162,9 @@ function bucketize(rows: AgentEarningRow[]) {
   startOfMonth.setUTCDate(1);
   const startOfMonthStr = startOfMonth.toISOString().slice(0, 10);
 
-  let today = 0, thisWeek = 0, thisMonth = 0;
+  let today = 0,
+    thisWeek = 0,
+    thisMonth = 0;
   for (const r of rows) {
     const amount = Number(r.agent_payment_snapshot);
     if (r.scheduled_date === todayStr) today += amount;

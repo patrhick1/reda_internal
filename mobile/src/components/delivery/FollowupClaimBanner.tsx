@@ -2,7 +2,10 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import {
-  claimFollowup, getFollowup, releaseFollowup, type ActiveFollowup,
+  claimFollowup,
+  getFollowup,
+  releaseFollowup,
+  type ActiveFollowup,
 } from '@/services/followups';
 import { Banner, Button } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
@@ -45,20 +48,27 @@ export function FollowupClaimBanner({ deliveryId, currentUserId }: FollowupClaim
 
   // Refresh on focus so a claim/release made elsewhere (or by a teammate)
   // shows up the moment this screen is foregrounded, not just on mount.
-  useFocusEffect(useCallback(() => { void reload(); }, [reload]));
+  useFocusEffect(
+    useCallback(() => {
+      void reload();
+    }, [reload]),
+  );
 
-  const onClaim = useCallback(async (takeover = false) => {
-    setBusy(true);
-    setError(null);
-    try {
-      await claimFollowup(deliveryId, takeover);
-      await reload();
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  }, [deliveryId, reload]);
+  const onClaim = useCallback(
+    async (takeover = false) => {
+      setBusy(true);
+      setError(null);
+      try {
+        await claimFollowup(deliveryId, takeover);
+        await reload();
+      } catch (e) {
+        setError(errorMessage(e));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [deliveryId, reload],
+  );
 
   const onRelease = useCallback(async () => {
     setBusy(true);
@@ -82,15 +92,28 @@ export function FollowupClaimBanner({ deliveryId, currentUserId }: FollowupClaim
   }
 
   if (error) {
-    return <Banner tone="error" icon="alert">{error}</Banner>;
+    return (
+      <Banner tone="error" icon="alert">
+        {error}
+      </Banner>
+    );
   }
 
   // No one holds it — invite the caller to claim.
   if (claim === null) {
     return (
       <Banner tone="warn" icon="phone" title="Needs follow-up">
-        <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.warningDark, lineHeight: 19 }}>
-          Reaching out to the customer? Tap <Text style={{ fontFamily: fonts.bold }}>I&apos;ll handle this</Text> so the rest of the team knows.
+        <Text
+          style={{
+            fontFamily: fonts.medium,
+            fontSize: 13,
+            color: colors.warningDark,
+            lineHeight: 19,
+          }}
+        >
+          Reaching out to the customer? Tap{' '}
+          <Text style={{ fontFamily: fonts.bold }}>I&apos;ll handle this</Text> so the rest of the
+          team knows.
         </Text>
         <View style={{ marginTop: 10 }}>
           <Button variant="emphasis" icon="check" onPress={() => onClaim(false)} disabled={busy}>
@@ -105,8 +128,17 @@ export function FollowupClaimBanner({ deliveryId, currentUserId }: FollowupClaim
   if (claim.user_id === currentUserId) {
     return (
       <Banner tone="ok" icon="check" title="You're handling this">
-        <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.successDark, lineHeight: 19 }}>
-          Started {ageLabel(claim.claimed_at)}. Tap <Text style={{ fontFamily: fonts.bold }}>Release</Text> when you&apos;re done so the team can pick it back up. Changing the status releases it automatically.
+        <Text
+          style={{
+            fontFamily: fonts.medium,
+            fontSize: 13,
+            color: colors.successDark,
+            lineHeight: 19,
+          }}
+        >
+          Started {ageLabel(claim.claimed_at)}. Tap{' '}
+          <Text style={{ fontFamily: fonts.bold }}>Release</Text> when you&apos;re done so the team
+          can pick it back up. Changing the status releases it automatically.
         </Text>
         <View style={{ marginTop: 10 }}>
           <Button variant="secondary" icon="x" onPress={onRelease} disabled={busy}>
@@ -120,8 +152,11 @@ export function FollowupClaimBanner({ deliveryId, currentUserId }: FollowupClaim
   // Someone else holds it.
   return (
     <Banner tone="info" icon="user" title={`${claim.holder_name} is handling this`}>
-      <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.infoDark, lineHeight: 19 }}>
-        Started {ageLabel(claim.claimed_at)}. Skip this one — only tap <Text style={{ fontFamily: fonts.bold }}>Take over</Text> if they&apos;ve stopped.
+      <Text
+        style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.infoDark, lineHeight: 19 }}
+      >
+        Started {ageLabel(claim.claimed_at)}. Skip this one — only tap{' '}
+        <Text style={{ fontFamily: fonts.bold }}>Take over</Text> if they&apos;ve stopped.
       </Text>
       <View style={{ marginTop: 10 }}>
         <Button variant="secondary" icon="lock" onPress={() => onClaim(true)} disabled={busy}>

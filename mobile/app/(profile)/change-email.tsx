@@ -12,25 +12,34 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export default function ChangeEmailScreen() {
   const router = useRouter();
   const user = useCurrentUser();
-  const [password, setPassword]   = useState('');
-  const [next, setNext]           = useState('');
-  const [confirm, setConfirm]     = useState('');
+  const [password, setPassword] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [submitting, setSubmitting]     = useState(false);
-  const [error, setError]               = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const trimmedNext    = next.trim().toLowerCase();
+  const trimmedNext = next.trim().toLowerCase();
   const trimmedConfirm = confirm.trim().toLowerCase();
-  const validNew  = EMAIL_RE.test(trimmedNext);
-  const matches   = trimmedNext === trimmedConfirm;
-  const notSame   = trimmedNext !== user.email.toLowerCase();
+  const validNew = EMAIL_RE.test(trimmedNext);
+  const matches = trimmedNext === trimmedConfirm;
+  const notSame = trimmedNext !== user.email.toLowerCase();
   const canSubmit = !!password && validNew && matches && notSame && !submitting;
 
   async function save() {
     setError(null);
-    if (!validNew) { setError('Enter a valid email address'); return; }
-    if (!matches)  { setError('New email and confirmation do not match'); return; }
-    if (!notSame)  { setError('That is already your email'); return; }
+    if (!validNew) {
+      setError('Enter a valid email address');
+      return;
+    }
+    if (!matches) {
+      setError('New email and confirmation do not match');
+      return;
+    }
+    if (!notSame) {
+      setError('That is already your email');
+      return;
+    }
     setSubmitting(true);
     try {
       await changeMyEmail(password, trimmedNext);
@@ -54,7 +63,14 @@ export default function ChangeEmailScreen() {
           <View style={{ gap: 16 }}>
             <View>
               <Text style={kicker}>Current email</Text>
-              <Text style={{ fontFamily: fonts.mono, fontSize: 14, color: colors.textSecondary, marginTop: 6 }}>
+              <Text
+                style={{
+                  fontFamily: fonts.mono,
+                  fontSize: 14,
+                  color: colors.textSecondary,
+                  marginTop: 6,
+                }}
+              >
                 {user.email}
               </Text>
             </View>
@@ -67,7 +83,9 @@ export default function ChangeEmailScreen() {
               autoCapitalize="none"
               autoComplete="password"
               editable={!submitting}
-              rightAdornment={<EyeToggle on={showPassword} onPress={() => setShowPassword((v) => !v)} />}
+              rightAdornment={
+                <EyeToggle on={showPassword} onPress={() => setShowPassword((v) => !v)} />
+              }
             />
             <Input
               label="New email"
@@ -107,10 +125,16 @@ export default function ChangeEmailScreen() {
           </Card>
         ) : null}
 
-        <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary, lineHeight: 18 }}>
-          We'll send a confirmation link to the new address. Your login email
-          won't update until you click that link, so make sure you can open
-          that inbox first.
+        <Text
+          style={{
+            fontFamily: fonts.medium,
+            fontSize: 12,
+            color: colors.textSecondary,
+            lineHeight: 18,
+          }}
+        >
+          We&apos;ll send a confirmation link to the new address. Your login email won&apos;t update
+          until you click that link, so make sure you can open that inbox first.
         </Text>
 
         <Button variant="emphasis" full onPress={save} disabled={!canSubmit}>
@@ -123,7 +147,11 @@ export default function ChangeEmailScreen() {
 
 function EyeToggle({ on, onPress }: { on: boolean; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} hitSlop={8} accessibilityLabel={on ? 'Hide password' : 'Show password'}>
+    <Pressable
+      onPress={onPress}
+      hitSlop={8}
+      accessibilityLabel={on ? 'Hide password' : 'Show password'}
+    >
       <Icon name={on ? 'eyeOff' : 'eye'} size={18} color={colors.textSecondary} />
     </Pressable>
   );

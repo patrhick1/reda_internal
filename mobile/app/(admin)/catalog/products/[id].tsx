@@ -5,7 +5,12 @@ import { Screen } from '@/components/Screen';
 import { Field } from '@/components/Field';
 import { Button } from '@/components/Button';
 import { useAsync } from '@/hooks/useAsync';
-import { deactivateProduct, getProduct, reactivateProduct, updateProduct } from '@/services/products';
+import {
+  deactivateProduct,
+  getProduct,
+  reactivateProduct,
+  updateProduct,
+} from '@/services/products';
 import { errorMessage } from '@/lib/errors';
 
 export default function EditProduct() {
@@ -25,7 +30,12 @@ export default function EditProduct() {
     }
   }, [product]);
 
-  if (loading) return <View style={styles.center}><ActivityIndicator /></View>;
+  if (loading)
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator />
+      </View>
+    );
   if (error || !product) {
     return (
       <View style={styles.center}>
@@ -36,8 +46,7 @@ export default function EditProduct() {
   }
 
   const dirty =
-    productName !== product.product_name ||
-    (description || null) !== product.description;
+    productName !== product.product_name || (description || null) !== product.description;
 
   async function handleSave() {
     if (!productName.trim()) {
@@ -73,7 +82,8 @@ export default function EditProduct() {
 
   function handleDeactivate() {
     if (Platform.OS === 'web') {
-      const why = (typeof window !== 'undefined' ? window.prompt('Reason for deactivation:') : null) ?? '';
+      const why =
+        (typeof window !== 'undefined' ? window.prompt('Reason for deactivation:') : null) ?? '';
       if (why.trim()) performDeactivate(why.trim());
       else setActionError('Reason required');
       return;
@@ -121,7 +131,13 @@ export default function EditProduct() {
         <Text style={styles.clientValue}>{product.client_name}</Text>
       </View>
 
-      <Field label="Product name" value={productName} onChangeText={setProductName} required autoCapitalize="words" />
+      <Field
+        label="Product name"
+        value={productName}
+        onChangeText={setProductName}
+        required
+        autoCapitalize="words"
+      />
       <Field label="Description" value={description} onChangeText={setDescription} multiline />
 
       {dirty ? (
@@ -134,31 +150,55 @@ export default function EditProduct() {
       ) : null}
 
       {actionError ? (
-        <View style={styles.errorBox}><Text style={styles.errorText}>{actionError}</Text></View>
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{actionError}</Text>
+        </View>
       ) : null}
 
       <Button title="Save changes" onPress={handleSave} loading={submitting} disabled={!dirty} />
 
       {product.is_active ? (
-        <Button title="Deactivate" onPress={handleDeactivate} variant="danger" style={styles.bottom} disabled={submitting} />
+        <Button
+          title="Deactivate"
+          onPress={handleDeactivate}
+          variant="danger"
+          style={styles.bottom}
+          disabled={submitting}
+        />
       ) : (
-        <Button title="Reactivate" onPress={handleReactivate} variant="secondary" style={styles.bottom} disabled={submitting} />
+        <Button
+          title="Reactivate"
+          onPress={handleReactivate}
+          variant="secondary"
+          style={styles.bottom}
+          disabled={submitting}
+        />
       )}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#fff' },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    backgroundColor: '#fff',
+  },
   error: { color: '#c0392b', textAlign: 'center', marginBottom: 12 },
   errorBox: { backgroundColor: '#fdecea', padding: 12, borderRadius: 8, marginBottom: 12 },
   errorText: { color: '#a02d1b', fontSize: 14 },
   inactiveBanner: { backgroundColor: '#fff4e0', padding: 12, borderRadius: 8, marginBottom: 16 },
   inactiveText: { color: '#a04000', fontWeight: '600' },
   clientRow: {
-    flexDirection: 'row', justifyContent: 'space-between',
-    paddingVertical: 12, paddingHorizontal: 14,
-    borderWidth: 1, borderColor: '#eee', borderRadius: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#eee',
+    borderRadius: 8,
     backgroundColor: '#f6f6f6',
     marginBottom: 16,
   },
