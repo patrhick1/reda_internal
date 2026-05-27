@@ -12,6 +12,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
+import { supabase } from '@/lib/supabase';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
@@ -95,6 +96,34 @@ export function DeliveryDetail() {
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []),
   );
+
+  // Realtime: when a teammate marks a status-history row as "client
+  // notified", every other rep watching the screen sees the green tick
+  // appear without refocusing. Filtered server-side to this delivery_id
+  // so the channel only fires on changes that matter. Pairs with the
+  // supabase_realtime publication entry added in
+  // scripts/client-notified-tag.sql.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`delivery-client-notifications:${id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'delivery_client_notifications',
+          filter: `delivery_id=eq.${id}`,
+        },
+        () => {
+          notifQ.reload();
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
 
   const onMarkNotified = useCallback(async (historyId: string) => {
     try {
