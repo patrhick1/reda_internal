@@ -5,12 +5,11 @@ import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
-import { listDeliveries, type DeliveryRow } from '@/services/deliveries';
+import { listDeliveries, siblingGroupKey, type DeliveryRow } from '@/services/deliveries';
 import { listUsers } from '@/services/users';
 import { listBotInbound } from '@/services/bot';
 import { AppBar, Avatar, Card, FAB, Icon, SectionHeader } from '@/components/ui';
 import { colors, fonts, statusBucket } from '@/lib/theme';
-import { formatNaira } from '@/lib/format';
 
 type OpsBasePath = '/(dispatcher)' | '/(rep)';
 
@@ -39,11 +38,6 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
   );
 
   const stats = useMemo(() => bucketCounts(deliveries), [deliveries]);
-  // customer_price is per-delivery, not per-unit. Do NOT multiply by quantity.
-  const totalVolume = useMemo(
-    () => deliveries.reduce((s, d) => s + Number(d.customer_price ?? 0), 0),
-    [deliveries],
-  );
   const reviewCount = (reviewQ.data ?? []).length;
   const unassignedCount = deliveries.filter(d => !d.assigned_agent_id).length;
 
@@ -55,14 +49,14 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
         right={<Icon name="bell" size={20} color={colors.black} />}
       />
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 96, gap: 12 }}>
-        {/* Big number */}
+        {/* Big number — unique customer orders today, sibling-collapsed */}
         <Card>
-          <Text style={kicker}>Today&apos;s volume</Text>
+          <Text style={kicker}>Today</Text>
           <Text style={{ fontFamily: fonts.extrabold, fontSize: 32, color: colors.black, letterSpacing: -0.8, marginTop: 4 }}>
-            {formatNaira(totalVolume)}
+            {stats.total}
           </Text>
           <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
-            across {deliveries.length} deliveries
+            {stats.total === 1 ? 'order' : 'orders'}
           </Text>
 
           {/* Status bar */}
@@ -182,16 +176,29 @@ function Legend({ label, n, color }: { label: string; n: number; color: string }
   );
 }
 
-function bucketCounts(rows: DeliveryRow[]): { active: number; soft: number; done: number; closed: number } {
-  let active = 0, soft = 0, done = 0, closed = 0;
+/** Sibling-collapsed bucket counts. Race-assigned siblings count as one
+ *  customer order. Per group outcome (priority): done → active → soft → closed.
+ *  total = unique chains scheduled today. */
+function bucketCounts(rows: DeliveryRow[]): {
+  active: number; soft: number; done: number; closed: number; total: number;
+} {
+  const groups = new Map<string, DeliveryRow[]>();
   for (const r of rows) {
-    const b = statusBucket(r.current_status);
-    if (b === 'active') active++;
-    else if (b === 'soft') soft++;
-    else if (b === 'done') done++;
-    else closed++;
+    const key = siblingGroupKey(r);
+    let arr = groups.get(key);
+    if (!arr) { arr = []; groups.set(key, arr); }
+    arr.push(r);
   }
-  return { active, soft, done, closed };
+
+  let active = 0, soft = 0, done = 0, closed = 0;
+  for (const group of groups.values()) {
+    if (group.some(d => d.current_status === 'delivered')) { done++; continue; }
+    const buckets = group.map(d => statusBucket(d.current_status));
+    if (buckets.some(b => b === 'active')) { active++; continue; }
+    if (buckets.some(b => b === 'soft'))   { soft++;   continue; }
+    closed++;
+  }
+  return { active, soft, done, closed, total: groups.size };
 }
 
 const kicker = {
