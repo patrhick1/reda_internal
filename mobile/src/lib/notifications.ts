@@ -98,7 +98,11 @@ function pathForRoute(role: Role, data: Record<string, unknown>): `/${string}` |
       if (role === 'rep') return '/(rep)/review';
       return null;
     case 'stock':
-      return role === 'admin' ? '/(admin)/stock' : null;
+      // Admin gets the full stock dashboard; warehouse gets their own
+      // Stock tab (same dashboard data + the new action buttons).
+      if (role === 'admin') return '/(admin)/stock';
+      if (role === 'warehouse') return '/(warehouse)';
+      return null;
     case 'eod':
       return role === 'admin' ? '/(admin)/eod' : null;
     case 'call_invite':

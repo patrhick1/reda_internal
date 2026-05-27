@@ -212,11 +212,18 @@ Each feature below is a discrete unit of work. Order doesn't imply build order �
 - Network drops during submit → mutation queues locally (see 5.16)
 - Customer phone format → no strict validation, accept whatever Uzo types
 
+**Past-date warning + duplicate confirm (since 2026-05-27).** Two UI-layer guards on the New Delivery form, both soft (admin can always override):
+
+- **Past-date Banner.** Whenever the typed `scheduled_date` is before today (Africa/Lagos), an amber *"Scheduled for a past date"* banner appears under the form noting that the assigned agent won't see this delivery on their Today tab. Doesn't block — backfilling yesterday's manual entries during reconciliation is a legitimate workflow.
+- **Pre-submit duplicate check.** Before calling `create_delivery`, the form runs `findSimilarOpenDeliveries(agentId, customerPhone, productCatalogId, scheduledDate)` and if any open (non-terminal, non-deleted) row matches, prompts *"Possible duplicate"* with a list of the existing rows by status + address and requires explicit *"Create anyway"*. Mirrors the server-side same-agent sibling guard in `create_delivery` but **ignores raw_address** — that branch is too strict for typo'd addresses (e.g. `"f"` vs `"Festac"`) and lets real duplicates through. We surface the suspicion at the UI and let admin decide. Failure of the pre-check is non-fatal — the server-side guard remains the source of truth.
+
 **Acceptance:**
 - Creates delivery row with all required fields
 - Money snapshots populated correctly
 - Initial history row created
 - Auto-assignment runs if agent left blank
+- Past-date warning fires when `scheduled_date` < today (Lagos)
+- Pre-submit duplicate prompt blocks accidental same-agent / same-customer / same-product duplicates even when address text differs from the existing row
 
 ---
 
@@ -377,6 +384,10 @@ Rules:
 
 **Sort (all roles, since 2026-05-16):** non-terminal deliveries first, ordered by **most recent status change DESC** (uses `delivery_status_history.changed_at`). Terminal rows (`delivered`, `cancelled`, `failed_delivery`, `unserious`, `no_product`, `rolled_over`) fall to the bottom, also ordered by last change. Implemented in [listDeliveries](mobile/src/services/deliveries.ts) as a second IN-query against `delivery_status_history` + client-side merge — no schema changes. Supersedes the old per-role rules (admin/dispatcher's `created_at DESC` and agent's 4-bucket `STATUS_PRIORITY`). Same rule applies to the admin home "Recent activity" preview (first 4 of the same fetch).
 
+**"Notified" pill on list rows (since 2026-05-27).** When the most-recent `delivery_status_history` row has been tagged via `mark_client_notified` (see §5.9), a small green *Notified* pill renders next to the StatusPill on the list row. Lets peers see at a glance which deliveries have already been communicated to the customer without opening each one. Implementation: `listDeliveries` records the latest history-id per delivery (same sub-query already used for sort) and fires one cheap lookup against `delivery_client_notifications` keyed on that set; merges `latest_notified: boolean` into each row. Hidden when the latest history row is untagged.
+
+**Review tab badge (since 2026-05-27).** Admin / dispatcher / rep bottom-nav *Review* icon shows a red pill with the count of `bot_inbound_messages.status='needs_review'` rows whenever there's pending review work. Cheap HEAD-count via `countNeedsReview()` polled every 30s plus refresh on AppState foreground; errors are swallowed so a network blip stalls the value at its last good read instead of flickering. Hidden when count is 0.
+
 **Detail view shows:**
 - Customer info: name, phone (tap-to-call), raw address (tap to open in maps app)
 - Product: name, quantity_ordered
@@ -415,6 +426,7 @@ Rules:
 - Each delivery has an optional message thread attached via `delivery_messages`. Agents start the thread by tapping the **alert** icon in the AppBar → picks a tagged issue chip (`wrong_address` | `cant_reach_client` | `payment_dispute` | `product_issue` | `other`) + optional note. Submitting calls [`flag_delivery_issue`](scripts/delivery-messages.sql) which (a) inserts the message row and (b) atomically transitions `current_status` to the default mapped soft status (`cant_reach_client → not_answering`, `wrong_address/payment_dispute/product_issue → follow_up`, `other → no change unless agent opts in`) via the existing `change_delivery_status`. One submission, one transaction — no drift between status pill and open-issue state.
 - Admins and dispatchers see the thread inline on the delivery detail, get a push (`audience='admins+dispatchers'`) on flag, and reply via free-text composer using [`reply_to_delivery`](scripts/delivery-messages.sql). The assigned agent gets a push (`audience='user'`) on each reply.
 - Thread is **open** iff the parent delivery is non-terminal. Terminal status closes it implicitly (no `closed_at` column, no auto-close trigger — derived from `deliveries.current_status`). Replies on terminal deliveries are rejected (`22023`).
+- **Ops can seed an empty thread (since 2026-05-27).** The original "thread must start with the agent's flag" rule was too strict once reps started coordinating proactively. When the thread is empty AND the viewer is admin/dispatcher/rep AND the parent is non-terminal, MessageThread renders a *"Message agent"* composer so ops can open a conversation without waiting for the agent to hit a snag. Permission helpers `canSeedThread` / `canPostOnThread` carry the rule client-side; the agent-flag path remains the dominant case.
 - `mark_messages_read(p_delivery_id)` clears unread state from the counterparty's side on focus. The admin home surfaces an "Open issues from agents" attention block (see [delivery-messages.ts:listOpenIssuesForOps](mobile/src/services/delivery-messages.ts)) that lists every flagged delivery whose parent is still open.
 - Pairs with the existing `delivery_followups` claim lock — because the flag transitions to a soft status, the **I'll handle this** button auto-enables on the same screen. Issue thread = "what's going on"; follow-up claim = "who's handling it."
 
@@ -442,7 +454,12 @@ Where:
 - Tap to change → modal with valid next statuses (state machine filters options)
 - If transition is backward, modal also requires a reason (text field)
 - If new status = 'delivered': prompt for `quantity_delivered` (default = quantity_ordered) and `paid` + `payment_method`
+- If new status = 'postponed' (since 2026-05-27): a YYYY-MM-DD date input is required with `+1 / +2 / +3 / +7` quick chips. Validation: format must match `YYYY-MM-DD` and the date must be **strictly after today** (Lagos). Sundays auto-bump to Monday via the server-side `_ensure_workday` helper. The date threads through `change_delivery_status` as `p_new_scheduled_date`; the server ignores it for every status except `postponed`.
 - If client_rules say "no partial deliveries" and `quantity_delivered < quantity_ordered`: warn but allow (audit will capture)
+
+**Auto-seed message thread on intervention-class status (agent only, since 2026-05-27).** When an agent picks one of the six customer-unreachable statuses (`not_answering`, `not_around`, `not_available`, `not_connecting`, `number_busy`, `switched_off`) from *Update status*, the submit routes through the existing `flag_delivery_issue` RPC instead of plain `change_delivery_status`. Result: status changes AND a `delivery_messages` row gets seeded (issue_type = `cant_reach_client`, note = the reason text) so ops know there's something to handle without the agent having to also tap the caution icon. UI surfaces a *"This will also message ops so they can help."* hint banner; the reason field's label switches from *Reason* to *Note to ops*. Ops users (admin/dispatcher/rep) using the same sheet skip this routing — they may legitimately pick those statuses for their own reasons (e.g. correcting a status post-call) without seeding a thread. Mapping table lives in [delivery-messages.ts → STATUS_AUTO_ISSUE](mobile/src/services/delivery-messages.ts) next to `ISSUE_DEFAULT_STATUS` so the inverse-mapping symmetry is visible. Implementation: new queue job kind `flag_delivery` mirrors the existing `change_delivery_status` executor so agents in spotty coverage keep offline resilience.
+
+**Client-notified tag per status-history row (since 2026-05-27).** Each row in the delivery history timeline now has a *"Mark client notified"* button for admin/dispatcher/rep (gated by `canMarkClientNotified`). One tap inserts a `delivery_client_notifications` row keyed on `status_history_id`; first-tap wins via PK conflict, peers see *"<Name> told the client · <time>"*. Lets multiple reps coordinate so one of them owns the WhatsApp ping to the customer for a given status change. The latest-history tag also surfaces as the *Notified* pill on the deliveries list (see §5.8). Permission: ops-only by `canMarkClientNotified`; the agent assigned to the delivery has SELECT access on `delivery_client_notifications` (informational read — they don't act on it). Anchored by [scripts/client-notified-tag.sql](scripts/client-notified-tag.sql) + [services/clientNotifications.ts](mobile/src/services/clientNotifications.ts).
 
 **Logic:**
 - Insert row in `delivery_status_history`
@@ -469,14 +486,25 @@ Where:
 
 **User story:** As admin, I record vendor intakes, move stock between warehouse/agents, fix bookkeeping errors, and see how much of each client's product Reda holds across the operation. As agent, I see my own current stock.
 
-**Role access**: stock screens and stock RPCs are admin-only. Dispatchers don't get a Stock tab (they coordinate but don't issue transfers). **Reps additionally cannot read `stock_adjustments`** — RLS is tightened so rep accounts see no stock data anywhere, even via the audit log. The stock-pickup-needed push (`tg_notify_pickup_needed`) now targets admins only (the only role with stock UI to action it), since 2026-05-26.
+**Role access** (since 2026-05-27 — was admin-only before):
+
+| Role | Reads | Writes |
+|---|---|---|
+| Admin | All stock everywhere | Every reason on `create_stock_adjustment` + every paired reason on `create_stock_transfer`. Owns the books-override path (`correction`) and agent-to-agent reassignment (`transfer`). |
+| Warehouse | All stock everywhere (read-only dashboard inherits the admin pattern) | Vendor intake into self (`bulk_intake`); paired transfers where they're a participant (`warehouse_issue` from self / `warehouse_return` to self); shrinkage on own holdings (`loss`, `theft`, `damaged`, `found`). **Cannot** run `correction` (admin-only books override) or `transfer` (agent → agent). |
+| Dispatcher | Audit log only — no Stock tab in the dispatcher route group. Coordinates but doesn't issue. | None. |
+| Rep | None — RLS on `stock_adjustments` is tightened so rep accounts see no stock data anywhere. | None. |
+| Agent | Own `current_stock` rows (read-only). | None directly. Stock decrements happen as a side effect of marking deliveries delivered. |
+
+Server-side guard lives in [scripts/warehouse-stock-ops.sql](scripts/warehouse-stock-ops.sql) — `create_stock_adjustment` and `create_stock_transfer` carry an `admin OR warehouse-scoped check, else 42501` permission block at the top. Audit log records the actor (`auth.uid()`) so a warehouse intake shows as the warehouse identity, not as an admin. **Stock-pickup-needed push** (`tg_notify_pickup_needed`) now targets BOTH admins AND warehouse staff (audience `warehouse_pickup`) since warehouse can issue from the warehouse app directly.
 
 **Screens:**
 - Agent: "My stock" list (read-only) showing `current_stock` rows for them.
 - Admin Stock screen with:
   - **Top buttons**: *Receive stock* (primary), *New transfer*, *Adjustment*.
   - **Tab toggle**: *By holder* (default — every active warehouse user is always shown, even when empty) and *By client* (per-client roll-up with warehouse vs agents split + tappable cards).
-- **Receive stock** (new) — bulk vendor intake. Destination defaults to the single active warehouse user; admin can switch to an agent for direct field intakes. Add one or more `(client → product → qty)` rows. Shared notes (e.g. *"Invoice #1234"*). Each row enqueues an independent `create_stock_adjustment` with `reason='bulk_intake'` (positive delta) — per-row failure semantics via the queue.
+- **Warehouse Stock screen (since 2026-05-27)** — same dashboard data as admin (holder list + low/negative chips). Same three action buttons at the top: *Receive stock*, *New transfer*, *Adjustment*. The action screens are the same shared components ([mobile/src/screens/stock/](mobile/src/screens/stock/)) rendered with `scope='warehouse'`, which (a) locks the holder/warehouse side of every write to the caller server-side (matching the SQL guard `p_agent_id = auth.uid()` / `p_from_user_id = auth.uid()`), (b) hides reasons the warehouse role can't run (`correction`, agent-to-agent `transfer`). Admin renders the same screens with `scope='admin'` — byte-identical UI to the prior route — keeping the two surfaces in a single component tree with one branching point.
+- **Receive stock** (new) — bulk vendor intake. Destination defaults to the single active warehouse user; admin can switch to an agent for direct field intakes. Warehouse callers see the destination locked to themselves. Add one or more `(client → product → qty)` rows. Shared notes (e.g. *"Invoice #1234"*). Each row enqueues an independent `create_stock_adjustment` with `reason='bulk_intake'` (positive delta) — per-row failure semantics via the queue.
 - **New transfer** — adapts by reason:
   - `transfer` (agent ↔ agent): single-row picker (existing).
   - `warehouse_issue` / `warehouse_return`: **bulk mode** with shared warehouse + shared agent at the top + multi-row `(client, product, qty)`. Each row fans out as its own `create_stock_transfer` call. One submit = one agent receiving (or returning) a stack of products — mirrors the real workflow ("Nnenna comes, picks up everything she's collecting, leaves"). Switch agents = new submit.
@@ -658,9 +686,12 @@ Where:
 - Filter to current user's deliveries only (RLS)
 - Only count delivered status
 
+**Client (vendor) identity is hidden from agents (since 2026-05-27).** The earnings list shows only product + customer + amount — never the client/vendor name. Same redaction applies on the agent Today list, the agent delivery-detail screen, and *My Stock*. `listAgentEarnings` doesn't even fetch `clients(name)` from the wire. Canonical write-up in [reda_system_design_doc.md §2 Key access rules](reda_system_design_doc.md).
+
 **Acceptance:**
 - Agent sees own earnings only
 - Numbers match admin's per-agent view for same agent + same date range
+- No vendor/client name visible on any agent surface
 
 ---
 

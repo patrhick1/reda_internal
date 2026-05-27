@@ -1,10 +1,12 @@
 import { useCallback, useMemo } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, Text, View } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
+import { useCurrentUser } from '@/hooks/useAuth';
 import { listCurrentStock, type StockMatrixRow } from '@/services/stock';
-import { AppBar, Avatar, Card, Empty, Icon } from '@/components/ui';
+import { AppBar, Avatar, Button, Card, Empty, Icon } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
+import { canAdjustOwnStock, canDoWarehouseTransfer, canReceiveStock } from '@/lib/permissions';
 
 const LOW_THRESHOLD = 3;
 
@@ -19,6 +21,8 @@ type Group = {
 };
 
 export default function WarehouseHome() {
+  const router = useRouter();
+  const user = useCurrentUser();
   const { data, loading, error, reload } = useAsync(() => listCurrentStock(), []);
   useFocusEffect(
     useCallback(() => {
@@ -27,6 +31,9 @@ export default function WarehouseHome() {
   );
 
   const groups = useMemo(() => groupByUser(data ?? []), [data]);
+  const showReceive = canReceiveStock(user.role);
+  const showTransfer = canDoWarehouseTransfer(user.role);
+  const showAdjust = canAdjustOwnStock(user.role);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -35,6 +42,56 @@ export default function WarehouseHome() {
         subtitle={`${groups.length} ${groups.length === 1 ? 'holder' : 'holders'}`}
         helpTopic="receive-stock"
       />
+      {showReceive || showTransfer || showAdjust ? (
+        <View
+          style={{
+            padding: 16,
+            gap: 8,
+            backgroundColor: colors.white,
+            borderBottomWidth: 1,
+            borderBottomColor: colors.border,
+          }}
+        >
+          {showReceive ? (
+            <Button
+              variant="primary"
+              full
+              icon="arrowDown"
+              onPress={() => router.push('/(warehouse)/receive')}
+            >
+              Receive stock
+            </Button>
+          ) : null}
+          {showTransfer || showAdjust ? (
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {showTransfer ? (
+                <View style={{ flex: 1 }}>
+                  <Button
+                    variant="secondary"
+                    full
+                    icon="arrowRight"
+                    onPress={() => router.push('/(warehouse)/transfer')}
+                  >
+                    New transfer
+                  </Button>
+                </View>
+              ) : null}
+              {showAdjust ? (
+                <View style={{ flex: 1 }}>
+                  <Button
+                    variant="secondary"
+                    full
+                    icon="edit"
+                    onPress={() => router.push('/(warehouse)/adjust')}
+                  >
+                    Adjustment
+                  </Button>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+        </View>
+      ) : null}
       <FlatList
         data={groups}
         keyExtractor={(g) => g.user_id}

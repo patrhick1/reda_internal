@@ -39,6 +39,12 @@ export default function WarehouseLayout() {
           ),
         }}
       />
+      {/* Action screens — pushed from the Stock dashboard, never shown in
+          the tab bar. Each re-exports the shared screen with scope='warehouse'
+          which locks the holder side to the caller server-side. */}
+      <Tabs.Screen name="receive" options={{ href: null }} />
+      <Tabs.Screen name="transfer" options={{ href: null }} />
+      <Tabs.Screen name="adjust" options={{ href: null }} />
     </Tabs>
   );
 }

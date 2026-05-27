@@ -20,7 +20,8 @@ export function isRole(value: unknown): value is Role {
 // public.is_admin_or_dispatcher() — admin, dispatcher, and rep all
 // share dispatcher-level operational permissions. `rep` is the
 // stock-less dispatcher variant: same here in the UI, gated to drop
-// stock screens via the (rep) route group + admin-only canAdjustStock.
+// stock screens via the (rep) route group + the canAdjustAnyStock /
+// canAdjustOwnStock helpers below.
 const OPS_ROLES: ReadonlySet<Role> = new Set(['admin', 'dispatcher', 'rep']);
 const isOps = (role: Role): boolean => OPS_ROLES.has(role);
 
@@ -56,6 +57,14 @@ export function canSeeRateCard(role: Role): boolean {
   return isOps(role);
 }
 
+/** Client (vendor) identity on delivery surfaces. Operational set — reps coordinate
+ *  with vendors so they need to see whose order it is at a glance. Agents are
+ *  redacted on their own screens (anti-poaching); this helper documents the
+ *  intent on the shared screens. */
+export function canSeeClientName(role: Role): boolean {
+  return isOps(role);
+}
+
 // --- Write permissions --------------------------------------------------------
 
 /** Manage catalog: clients, products, locations, rate card. Admin-only.
@@ -76,9 +85,51 @@ export function canManageAgentProfiles(role: Role): boolean {
   return role === 'admin';
 }
 
-/** Adjust stock (any of 9 reasons). Admin-only.
- * Server anchor: stock_adj_all_admin policy. */
-export function canAdjustStock(role: Role): boolean {
+// --- Stock permissions --------------------------------------------------------
+// Server anchor: scripts/warehouse-stock-ops.sql — create_stock_adjustment +
+// create_stock_transfer permission branches. The shape is admin OR
+// warehouse-scoped check, never dispatcher/rep/agent for writes.
+
+/** Adjust ANOTHER user's stock for any reason, or use the `correction`
+ *  escape hatch. Admin-only.
+ *  Server anchor: create_stock_adjustment v_role='admin' branch. */
+export function canAdjustAnyStock(role: Role): boolean {
+  return role === 'admin';
+}
+
+/** Adjust the caller's OWN stock with non-correction reasons. Admin + warehouse.
+ *  Warehouse is restricted to their own holdings server-side; admin can
+ *  adjust any holder but this helper covers the screen-level "show the
+ *  Adjust button at all" decision.
+ *  Server anchor: create_stock_adjustment v_role='warehouse' branch. */
+export function canAdjustOwnStock(role: Role): boolean {
+  return role === 'admin' || role === 'warehouse';
+}
+
+/** Vendor intake (`bulk_intake`) into self. Admin + warehouse.
+ *  Server anchor: create_stock_adjustment reason='bulk_intake'. */
+export function canReceiveStock(role: Role): boolean {
+  return role === 'admin' || role === 'warehouse';
+}
+
+/** Paired warehouse_issue / warehouse_return transfer. Admin + warehouse.
+ *  Warehouse must be a participant (from for issue, to for return) — enforced
+ *  server-side; this helper just gates the screen.
+ *  Server anchor: create_stock_transfer warehouse_issue / warehouse_return branches. */
+export function canDoWarehouseTransfer(role: Role): boolean {
+  return role === 'admin' || role === 'warehouse';
+}
+
+/** Agent-to-agent transfer. Admin-only.
+ *  Server anchor: create_stock_transfer reason='transfer' (no warehouse branch). */
+export function canTransferAgentToAgent(role: Role): boolean {
+  return role === 'admin';
+}
+
+/** Correction adjustment (the books-override path). Admin-only — kept as
+ *  the single accountability anchor for "the math was wrong, force the books."
+ *  Server anchor: create_stock_adjustment only admin can pass reason='correction'. */
+export function canCorrectStock(role: Role): boolean {
   return role === 'admin';
 }
 
