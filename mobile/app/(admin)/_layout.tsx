@@ -2,8 +2,10 @@ import { Tabs } from 'expo-router';
 import { Icon } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 import { RedaTabBar } from '@/queue/RedaTabBar';
+import { useNeedsReviewCount } from '@/hooks/useNeedsReviewCount';
 
 export default function AdminLayout() {
+  const needsReviewCount = useNeedsReviewCount();
   return (
     <Tabs
       tabBar={(props) => <RedaTabBar {...props} />}
@@ -55,6 +57,16 @@ export default function AdminLayout() {
           tabBarIcon: ({ color, focused }) => (
             <Icon name="alert" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
           ),
+          tabBarBadge: needsReviewCount > 0 ? needsReviewCount : undefined,
+          tabBarBadgeStyle: {
+            backgroundColor: colors.red,
+            color: colors.white,
+            fontFamily: fonts.bold,
+            fontSize: 11,
+            minWidth: 18,
+            height: 18,
+            lineHeight: 18,
+          },
         }}
       />
       <Tabs.Screen

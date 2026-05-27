@@ -39,6 +39,19 @@ export async function listBotInbound(
   return (data ?? []) as BotInboundRow[];
 }
 
+/** HEAD-count of bot_inbound_messages rows in `needs_review` state. Cheap —
+ *  Supabase returns only the count, no row bodies. Used by the Review tab
+ *  badge in admin + ops layouts. Returns 0 on error so a transient network
+ *  blip doesn't surface as a UI failure. */
+export async function countNeedsReview(): Promise<number> {
+  const { count, error } = await supabase
+    .from('bot_inbound_messages')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'needs_review');
+  if (error) throw error;
+  return count ?? 0;
+}
+
 export type BotInboundDetailRow = BotInboundRow & {
   raw_payload: unknown;
 };
