@@ -133,10 +133,16 @@ export function canCorrectStock(role: Role): boolean {
   return role === 'admin';
 }
 
-/** Create a delivery. Operational set (admin + dispatcher + rep).
- * Server anchor: deliveries_insert_admin_dispatcher policy → is_admin_or_dispatcher(). */
+/** Start a brand-new delivery from scratch. Admin + dispatcher only — reps are
+ *  the coordination/comms layer with vendors and don't author new orders; new
+ *  deliveries enter the system via the bot pipeline or admin/dispatcher.
+ *  Reps still create deliveries indirectly via the bot-review fix flow
+ *  (resolve_inbound_to_delivery), which is anchored by canResolveReview — the
+ *  server keeps is_admin_or_dispatcher() on create_delivery so that path keeps
+ *  working without a second RPC. This helper gates ONLY the manual New-delivery
+ *  entry points (List FAB, dashboard FAB, /deliveries/new route). */
 export function canCreateDelivery(role: Role): boolean {
-  return isOps(role);
+  return role === 'admin' || role === 'dispatcher';
 }
 
 /** Assign/reassign delivery to an agent. Operational set.

@@ -16,7 +16,7 @@ import { useCurrentUser } from '@/hooks/useAuth';
 import { listDeliveries, siblingGroupKey, type DeliveryRow } from '@/services/deliveries';
 import { listUsers } from '@/services/users';
 import { listBotInbound } from '@/services/bot';
-import { AppBar, Avatar, Card, FAB, Icon, SectionHeader } from '@/components/ui';
+import { AppBar, Avatar, Card, Icon, SectionHeader } from '@/components/ui';
 import { RecentActivityCard } from '@/components/delivery/RecentActivityCard';
 import { colors, fonts, statusBucket } from '@/lib/theme';
 
@@ -279,8 +279,6 @@ export function RepDashboard() {
           </View>
         )}
       </ScrollView>
-
-      <FAB icon="plus" label="Create" onPress={() => router.push(`${REP_BASE}/deliveries/new`)} />
     </View>
   );
 }

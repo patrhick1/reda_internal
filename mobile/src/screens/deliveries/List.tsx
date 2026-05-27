@@ -15,7 +15,7 @@ import { listDeliveries, type DeliveryRow } from '@/services/deliveries';
 import { listActiveFollowups, type ActiveFollowup } from '@/services/followups';
 import { useSupabaseChannel } from '@/hooks/useSupabaseChannel';
 import { listUsers, type AppUser } from '@/services/users';
-import { canAssignDelivery, canSeeClientName } from '@/lib/permissions';
+import { canAssignDelivery, canCreateDelivery, canSeeClientName } from '@/lib/permissions';
 import { formatNaira } from '@/lib/format';
 import {
   AppBar,
@@ -285,18 +285,19 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
           )
         }
       />
-      <FAB
-        icon="plus"
-        label="Create"
-        onPress={() =>
-          router.push(
-            `${basePath}/deliveries/new` as
-              | `/(admin)/deliveries/new`
-              | `/(dispatcher)/deliveries/new`
-              | `/(rep)/deliveries/new`,
-          )
-        }
-      />
+      {canCreateDelivery(user.role) ? (
+        <FAB
+          icon="plus"
+          label="Create"
+          onPress={() =>
+            router.push(
+              `${basePath}/deliveries/new` as
+                | `/(admin)/deliveries/new`
+                | `/(dispatcher)/deliveries/new`,
+            )
+          }
+        />
+      ) : null}
     </View>
   );
 }
