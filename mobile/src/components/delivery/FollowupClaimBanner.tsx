@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import {
@@ -7,6 +7,7 @@ import {
   releaseFollowup,
   type ActiveFollowup,
 } from '@/services/followups';
+import { supabase } from '@/lib/supabase';
 import { Banner, Button } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 import { errorMessage } from '@/lib/errors';
@@ -53,6 +54,33 @@ export function FollowupClaimBanner({ deliveryId, currentUserId }: FollowupClaim
       void reload();
     }, [reload]),
   );
+
+  // Realtime: when a teammate claims, takes-over, or releases this delivery's
+  // followup, every other rep watching the screen sees it without refocusing.
+  // Filtered server-side to this delivery_id so the channel only fires on
+  // changes that matter to this screen. Pairs with
+  // scripts/delivery-followups-realtime.sql which adds the table to the
+  // supabase_realtime publication.
+  useEffect(() => {
+    const channel = supabase
+      .channel(`delivery-followup:${deliveryId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'delivery_followups',
+          filter: `delivery_id=eq.${deliveryId}`,
+        },
+        () => {
+          void reload();
+        },
+      )
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [deliveryId, reload]);
 
   const onClaim = useCallback(
     async (takeover = false) => {
