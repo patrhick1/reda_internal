@@ -221,18 +221,21 @@ export function canResolveReview(role: Role): boolean {
   return isOps(role);
 }
 
-/** Soft statuses where one admin/dispatcher can claim the customer follow-up
- *  so peers know to stand down. Derived from STATUS_GROUPS.soft so any future
- *  soft status auto-participates here. Server-side `claim_followup` RPC
- *  inlines the same list (scripts/delivery-followups.sql) — keep them aligned. */
-const FOLLOWUP_STATUSES = new Set<string>(STATUS_GROUPS.soft);
-
 /** Can this user claim the customer follow-up on this delivery? Operational
- *  set (admin + dispatcher + rep), soft statuses only. UI gate; server
- *  `claim_followup` RPC is the security anchor. */
-export function canClaimFollowup(role: Role, currentStatus: string | null): boolean {
+ *  set (admin + dispatcher + rep) AND a status flagged `needs_followup` in
+ *  `delivery_status_defs` (read off the live row, not a hardcoded list — the
+ *  inlined-list approach drifted from SQL twice). Caller passes the set of
+ *  follow-up statuses derived from a `listStatusDefs()` query; the empty set
+ *  (defs not yet loaded) safely returns false so the banner doesn't flash up
+ *  with a button that the RPC would reject. Server anchor:
+ *  `claim_followup` RPC gates on the same column (scripts/needs-followup-flag.sql). */
+export function canClaimFollowup(
+  role: Role,
+  currentStatus: string | null,
+  followupStatuses: ReadonlySet<string>,
+): boolean {
   if (!isOps(role)) return false;
-  return FOLLOWUP_STATUSES.has(currentStatus ?? '');
+  return followupStatuses.has(currentStatus ?? '');
 }
 
 /** Can this user tag a status-history row as "client notified on WhatsApp"?

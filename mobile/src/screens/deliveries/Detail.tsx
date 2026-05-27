@@ -163,6 +163,14 @@ export function DeliveryDetail() {
     return m;
   }, [defsQ.data]);
 
+  // Soft statuses where the "I'll handle this" claim makes sense — driven by
+  // delivery_status_defs.needs_followup so the SQL gate and the UI gate read
+  // the same source. Empty until defs load; canClaimFollowup returns false on
+  // an empty set so the banner doesn't flash.
+  const followupStatuses = useMemo(() => {
+    return new Set<string>((defsQ.data ?? []).filter((d) => d.needs_followup).map((d) => d.status));
+  }, [defsQ.data]);
+
   // In-app call to a specific teammate, linked to this delivery for audit.
   // MUST sit above the loading/error early returns — Rules of Hooks require
   // every hook to be called in the same order every render. Reading
@@ -377,7 +385,7 @@ export function DeliveryDetail() {
         {/* One-time hint: teaches the "I'll handle this" claim button.
             Per-screen cap: this hint suppresses the EDIT_DELIVERY_ICON hint
             below so we never stack two on the same screen. */}
-        {canClaimFollowup(user.role, status) ? (
+        {canClaimFollowup(user.role, status, followupStatuses) ? (
           <Hint id={HINTS.FOLLOWUP_CLAIM} title="Tip — Calling the customer?">
             Tap <Text style={{ fontFamily: fonts.bold }}>I&apos;ll handle this</Text> on the banner
             below so other dispatchers know you&apos;re on it. The claim drops automatically the
@@ -386,13 +394,14 @@ export function DeliveryDetail() {
         ) : null}
 
         {/* Follow-up claim — soft statuses only, admin + dispatcher only. */}
-        {canClaimFollowup(user.role, status) && d.id ? (
+        {canClaimFollowup(user.role, status, followupStatuses) && d.id ? (
           <FollowupClaimBanner deliveryId={d.id} currentUserId={user.userId} />
         ) : null}
 
         {/* One-time hint: teaches the Edit-delivery pencil icon. Suppressed
             when the follow-up hint is in play (per-screen cap). */}
-        {canEditDelivery(user.role, status) && !canClaimFollowup(user.role, status) ? (
+        {canEditDelivery(user.role, status) &&
+        !canClaimFollowup(user.role, status, followupStatuses) ? (
           <Hint id={HINTS.EDIT_DELIVERY_ICON} title="Tip — Spotted a typo?">
             Tap the pencil icon in the top-right to fix the customer name, phone, or address before
             delivery. Only works while the delivery is still open.

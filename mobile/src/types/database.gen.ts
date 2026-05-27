@@ -812,18 +812,21 @@ export type Database = {
         Row: {
           category: string
           label: string
+          needs_followup: boolean
           sort_order: number
           status: string
         }
         Insert: {
           category: string
           label: string
+          needs_followup?: boolean
           sort_order?: number
           status: string
         }
         Update: {
           category?: string
           label?: string
+          needs_followup?: boolean
           sort_order?: number
           status?: string
         }
