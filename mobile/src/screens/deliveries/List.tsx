@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -13,8 +13,9 @@ import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { listDeliveries, type DeliveryRow } from '@/services/deliveries';
 import { listActiveFollowups, type ActiveFollowup } from '@/services/followups';
+import { supabase } from '@/lib/supabase';
 import { listUsers, type AppUser } from '@/services/users';
-import { canAssignDelivery } from '@/lib/permissions';
+import { canAssignDelivery, canSeeClientName } from '@/lib/permissions';
 import { formatNaira } from '@/lib/format';
 import {
   AppBar,
@@ -48,6 +49,11 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   // so the picker stays hidden for them — narrowing has no work to do.
   const [agentId, setAgentId] = useState<string | null>(null);
   const showAgentPicker = canAssignDelivery(user.role);
+  // Reps coordinate with vendors and need the client name on each row so they
+  // can scan and call back without opening the detail. Agents have a separate
+  // screen (`(agent)/today/index.tsx`) — this gate is defensive in case the
+  // shared list is ever wired into an agent route.
+  const showClient = canSeeClientName(user.role);
   // Customer-name substring filter. Ops roles (admin / dispatcher / rep) —
   // agents have at most a handful of rows on screen and don't need it. Plain
   // client-side narrow over the already-fetched list; no extra round-trip.
@@ -103,6 +109,25 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [reload, canSeeClaims]),
   );
+
+  // Realtime: keep the per-row claimer avatar pill live for the ops set.
+  // Mirrors FollowupClaimBanner's per-delivery sub but unfiltered at the
+  // screen level — one channel covers every row. Pairs with
+  // scripts/delivery-followups-realtime.sql which adds the table to the
+  // supabase_realtime publication.
+  useEffect(() => {
+    if (!canSeeClaims) return;
+    const channel = supabase
+      .channel('deliveries-list-followups')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'delivery_followups' }, () => {
+        followupsQ.reload();
+      })
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canSeeClaims]);
 
   const followupByDelivery = useMemo(() => {
     const m = new Map<string, ActiveFollowup>();
@@ -214,6 +239,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
             <DeliveryListRow
               delivery={item}
               followup={claim}
+              showClient={showClient}
               onPress={() =>
                 router.push({
                   pathname: `${basePath}/deliveries/[id]` as
@@ -282,10 +308,12 @@ const DeliveryListRow = memo(function DeliveryListRow({
   delivery,
   onPress,
   followup,
+  showClient,
 }: {
   delivery: DeliveryRow;
   onPress: () => void;
   followup?: ActiveFollowup;
+  showClient: boolean;
 }) {
   const status = delivery.current_status ?? 'pending';
   const showFollowup = followup && SOFT_STATUSES.has(status);
@@ -293,6 +321,21 @@ const DeliveryListRow = memo(function DeliveryListRow({
     <Card dense onPress={onPress}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
         <View style={{ flex: 1 }}>
+          {showClient && delivery.client_name ? (
+            <Text
+              style={{
+                fontFamily: fonts.bold,
+                fontSize: 10,
+                letterSpacing: 0.8,
+                textTransform: 'uppercase',
+                color: colors.textSecondary,
+                marginBottom: 2,
+              }}
+              numberOfLines={1}
+            >
+              {delivery.client_name}
+            </Text>
+          ) : null}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Text
               style={{ flex: 1, fontFamily: fonts.bold, fontSize: 14, color: colors.black }}
