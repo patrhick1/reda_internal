@@ -282,6 +282,8 @@ export function UpdateStatusSheet({
                   : ''
             }
             autoCapitalize="sentences"
+            multiline
+            numberOfLines={4}
           />
           {error ? (
             <Banner tone="error" icon="alert">
