@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import type { Database } from '@/types/database.gen';
 import type { Role } from '@/lib/permissions';
-import { TERMINAL_STATUSES } from '@/lib/theme';
+import { STATUS_GROUPS, TERMINAL_STATUSES } from '@/lib/theme';
 
 // The two role-scoped views over deliveries. Same columns except:
 //   - deliveries_admin has charged_snapshot, agent_payment_snapshot, margin
@@ -227,6 +227,49 @@ export async function listDeliveries(
     const bT = lastChange.get(b.id ?? '') ?? b.created_at ?? '';
     return bT.localeCompare(aT);
   });
+}
+
+/** A handful of fields per row — used by the New Delivery screen's pre-submit
+ *  duplicate check. Not a public type elsewhere. */
+export type SimilarOpenDelivery = {
+  id: string;
+  current_status: string | null;
+  raw_address: string | null;
+  created_at: string | null;
+};
+
+/** Open (active + soft) statuses. Built from STATUS_GROUPS so this stays
+ *  in lock-step with the theme's bucket definitions — adding a new soft
+ *  status updates the duplicate check automatically. */
+const OPEN_STATUSES: string[] = [...STATUS_GROUPS.active, ...STATUS_GROUPS.soft];
+
+/** Returns open (non-terminal, non-deleted) deliveries that match the
+ *  agent + normalized customer phone + product + scheduled_date tuple.
+ *  Used by the New Delivery screen to warn admin before creating a near-
+ *  duplicate row. Deliberately ignores raw_address — the server-side
+ *  sibling guard in create_delivery is strict about address match, which
+ *  lets typos like "f" vs "Festac" slip through. We surface the suspicion
+ *  here and let admin confirm. */
+export async function findSimilarOpenDeliveries(
+  agentId: string,
+  customerPhone: string,
+  productCatalogId: string,
+  scheduledDate: string,
+): Promise<SimilarOpenDelivery[]> {
+  const normPhone = normalizePhoneForGrouping(customerPhone);
+  if (!normPhone) return [];
+  const { data, error } = await supabase
+    .from('deliveries')
+    .select('id, current_status, raw_address, created_at')
+    .eq('assigned_agent_id', agentId)
+    .eq('customer_phone_normalized', normPhone)
+    .eq('product_catalog_id', productCatalogId)
+    .eq('scheduled_date', scheduledDate)
+    .is('deleted_at', null)
+    .in('current_status', OPEN_STATUSES)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as SimilarOpenDelivery[];
 }
 
 /** Normalize a Nigerian phone for sibling-grouping. Mirrors the SQL
