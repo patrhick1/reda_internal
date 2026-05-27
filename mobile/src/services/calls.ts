@@ -12,10 +12,17 @@ export type CallStatus =
   | 'completed'
   | 'failed';
 
+export type CalleeAudience = 'user' | 'ops_team';
+
 export type Call = {
   id: string;
   caller_id: string;
-  callee_id: string;
+  // callee_id is null while an ops_team call is still ringing. accept_call
+  // atomically assigns it to the first ops user who accepts and flips
+  // callee_audience to 'user' as part of the same write — see
+  // scripts/ops-team-call.sql.
+  callee_id: string | null;
+  callee_audience: CalleeAudience;
   caller_device_uuid: string;
   accepted_device_uuid: string | null;
   agora_channel: string;
@@ -60,6 +67,29 @@ export async function initiateCall(opts: {
     p_caller_device_uuid: deviceUuid,
     p_related_delivery_id: (opts.relatedDeliveryId ?? null) as string,
     p_client_uuid: newClientUuid(),
+  });
+  if (error) throw error;
+  const row = firstRow(data);
+  if (!row) throw new Error('initiate_call returned no row');
+  return row;
+}
+
+/** Fire a "ring the ops team" call. All active admin/dispatcher/rep phones
+ *  ring; whoever accepts first wins the row server-side and the rest
+ *  dismiss via the Realtime sub. Agents are the primary caller — they hit
+ *  this when a delivery issue needs attention right now and a push isn't
+ *  attention-grabbing enough. See scripts/ops-team-call.sql for the
+ *  audience semantics. */
+export async function initiateTeamCall(opts: {
+  relatedDeliveryId?: string | null;
+}): Promise<Call> {
+  const deviceUuid = await getOrCreateDeviceUuid();
+  const { data, error } = await supabase.rpc('initiate_call', {
+    p_callee_id: null as unknown as string,
+    p_caller_device_uuid: deviceUuid,
+    p_related_delivery_id: (opts.relatedDeliveryId ?? null) as string,
+    p_client_uuid: newClientUuid(),
+    p_callee_audience: 'ops_team',
   });
   if (error) throw error;
   const row = firstRow(data);

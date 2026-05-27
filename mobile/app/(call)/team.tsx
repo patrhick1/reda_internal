@@ -13,7 +13,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { AppBar, Avatar, Banner, Empty, Icon } from '@/components/ui';
 import { colors, fonts, radii, spacing } from '@/lib/theme';
 import { useAuth } from '@/hooks/useAuth';
-import { listCallableUsers, initiateCall, type CallableUser } from '@/services/calls';
+import { listCallableUsers, initiateCall, initiateTeamCall, type CallableUser } from '@/services/calls';
 import { ensureMicPermission } from '@/lib/calls/permissions';
 import { canPlaceCall, CALL_UNSUPPORTED_HINT } from '@/lib/calls/availability';
 
@@ -43,9 +43,18 @@ export default function TeamScreen() {
   const [callingId, setCallingId] = useState<string | null>(null);
 
   const userId = account.kind === 'active' ? account.userId : null;
+  const role   = account.kind === 'active' ? account.role : null;
+  const isAgent = role === 'agent';
 
   const load = useCallback(async () => {
     if (!userId) return;
+    // Agents don't see the directory — they can only ring the whole ops
+    // team, so there's nothing to load.
+    if (isAgent) {
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
     try {
       const rows = await listCallableUsers(userId);
       setUsers(rows);
@@ -55,11 +64,47 @@ export default function TeamScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [userId]);
+  }, [userId, isAgent]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  /** Agent-only path: ring every active admin+dispatcher+rep. First to
+   *  accept wins server-side. */
+  const onAlertTeam = useCallback(async () => {
+    if (callingId) return;
+    if (!canPlaceCall()) {
+      Alert.alert('Calls not available on web', CALL_UNSUPPORTED_HINT);
+      return;
+    }
+    setCallingId('team');
+    try {
+      const micOk = await ensureMicPermission();
+      if (!micOk) {
+        Alert.alert(
+          'Microphone needed',
+          'Reda needs the microphone to ring ops. Tap "Open settings" → Permissions → Microphone → Allow.',
+          [
+            { text: 'Not now', style: 'cancel' },
+            { text: 'Open settings', onPress: () => { Linking.openSettings().catch(() => { /* noop */ }); } },
+          ],
+        );
+        return;
+      }
+      const call = await initiateTeamCall({ relatedDeliveryId });
+      router.push(`/call/${call.id}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('ringing call')) {
+        Alert.alert('Already on a call', 'You already have a call ringing. Try again in a moment.');
+      } else {
+        Alert.alert('Could not alert team', msg);
+      }
+    } finally {
+      setCallingId(null);
+    }
+  }, [callingId, relatedDeliveryId, router]);
 
   const onCall = useCallback(
     async (target: CallableUser) => {
@@ -119,6 +164,55 @@ export default function TeamScreen() {
     label: ROLE_LABEL[role] ?? role,
     rows: users.filter((u) => u.role === role),
   })).filter((s) => s.rows.length > 0);
+
+  // Agent-mode render: single "Alert team" CTA. No directory — agents
+  // never call individual users.
+  if (isAgent) {
+    const teamBusy = callingId === 'team';
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.surface }}>
+        <AppBar
+          title="Alert team"
+          subtitle={canPlaceCall() ? 'Rings every admin, dispatcher, and rep' : 'Calls available on the mobile app'}
+          onBack={() => router.back()}
+        />
+        {!canPlaceCall() ? (
+          <View style={{ paddingHorizontal: spacing.xl, paddingTop: spacing.lg }}>
+            <Banner tone="info" icon="phone" title="Calls work on the mobile app">
+              {CALL_UNSUPPORTED_HINT}
+            </Banner>
+          </View>
+        ) : null}
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing['3xl'], gap: spacing['2xl'] }}>
+          <Text style={{ fontFamily: fonts.regular, fontSize: 14, color: colors.textSecondary, textAlign: 'center' }}>
+            {relatedDeliveryId
+              ? 'Ringing about this delivery. Whoever picks up first will see the row.'
+              : 'Ringing every active admin, dispatcher, and rep. Whoever picks up first wins.'}
+          </Text>
+          <TouchableOpacity
+            onPress={onAlertTeam}
+            disabled={teamBusy || !canPlaceCall()}
+            activeOpacity={0.8}
+            style={{
+              width: 160, height: 160, borderRadius: 80,
+              backgroundColor: teamBusy ? colors.successSoft : colors.success,
+              alignItems: 'center', justifyContent: 'center',
+              opacity: !canPlaceCall() ? 0.4 : 1,
+            }}
+          >
+            {teamBusy ? (
+              <ActivityIndicator color={colors.white} size="large" />
+            ) : (
+              <Icon name="phone" size={56} color={colors.white} />
+            )}
+          </TouchableOpacity>
+          <Text style={{ fontFamily: fonts.semibold, fontSize: 16, color: colors.textPrimary }}>
+            {teamBusy ? 'Ringing the team…' : 'Tap to ring the team'}
+          </Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>

@@ -94,7 +94,10 @@ function AuthGate() {
   const { account } = useAuth();
   useNotificationTapRouting(account.kind === 'active' ? account.role : null);
   useCallInvitePushHandler();
-  useIncomingCallSubscription(account.kind === 'active' ? account.userId : null);
+  useIncomingCallSubscription(
+    account.kind === 'active' ? account.userId : null,
+    account.kind === 'active' ? account.role : null,
+  );
   const segments = useSegments();
   const router = useRouter();
 

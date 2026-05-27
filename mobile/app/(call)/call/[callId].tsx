@@ -74,9 +74,12 @@ function CallScreen() {
   const joinedRef = useRef<string | null>(null);
 
   // Identify the peer (the OTHER party) and fetch their display name once.
+  // For ops_team calls before accept, callee_id is null — the caller is
+  // ringing the whole team; there's no peer yet. Skip the fetch.
   useEffect(() => {
     if (!call || !userId) return;
     const peerId = call.caller_id === userId ? call.callee_id : call.caller_id;
+    if (!peerId) return;
     if (peer?.id === peerId) return;
     supabase
       .from('users')

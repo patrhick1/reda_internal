@@ -297,30 +297,52 @@ async function resolve(
     const { data: call, error: callErr } = await supabase
       .from('calls')
       .select(`
-        id, callee_id, agora_channel, ringing_until, related_delivery_id,
+        id, callee_id, callee_audience, agora_channel, ringing_until, related_delivery_id,
         caller:users!calls_caller_id_fkey(display_name)
       `)
       .eq('id', audience.callId)
       .maybeSingle();
     if (callErr) return { error: 'call lookup failed', status: 500 };
-    if (!call || !call.callee_id) {
-      return { title: '', body: '', data: undefined, userIds: [] };
-    }
+    if (!call) return { title: '', body: '', data: undefined, userIds: [] };
 
     const callerName  = (call as any).caller?.display_name ?? 'Someone';
     const callerFirst = callerName.split(/\s+/)[0];
+    const isTeamCall  = (call as any).callee_audience === 'ops_team';
+
+    // Resolve recipients. Two shapes:
+    //   - 1:1 call → push the named callee; multi-device fanout via push_tokens.
+    //   - ops_team call → push every active admin+dispatcher+rep. The first
+    //     accepter atomically claims the row server-side; every other phone's
+    //     Realtime sub sees the flip and CallKeep dismisses cleanly.
+    let recipientIds: string[];
+    if (isTeamCall) {
+      const { data: opsUsers, error: opsErr } = await supabase
+        .from('users')
+        .select('id')
+        .in('role', ['admin', 'dispatcher', 'rep'])
+        .eq('is_active', true);
+      if (opsErr) return { error: 'ops user lookup failed', status: 500 };
+      recipientIds = (opsUsers ?? []).map((u) => u.id as string);
+    } else {
+      if (!call.callee_id) {
+        return { title: '', body: '', data: undefined, userIds: [] };
+      }
+      recipientIds = [call.callee_id as string];
+    }
+
     return {
-      title: 'Incoming call',
-      body:  `${callerFirst} is calling`,
+      title: isTeamCall ? 'Team call' : 'Incoming call',
+      body:  isTeamCall ? `${callerFirst} needs ops` : `${callerFirst} is calling`,
       data: {
         route:               'call_invite',
         call_id:             call.id,
         agora_channel:       call.agora_channel,
         caller_name:         callerName,
+        callee_audience:     (call as any).callee_audience,
         ringing_until:       call.ringing_until,
         related_delivery_id: call.related_delivery_id,
       },
-      userIds: [call.callee_id as string],
+      userIds: recipientIds,
     };
   }
 

@@ -128,7 +128,7 @@ export function ProfileScreen() {
         <Card style={{ padding: 0 }}>
           <ProfileRow
             icon="users"
-            label="Team directory"
+            label={user.role === 'agent' ? 'Alert team' : 'Team directory'}
             value=""
             onPress={() => router.push('/(call)/team')}
             divider

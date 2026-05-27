@@ -21,17 +21,20 @@ type Phase = 'idle' | 'incoming';
 type Snapshot = {
   callId: string | null;
   callerName: string;
+  isTeamCall: boolean;
 };
 
 let phase: Phase = 'idle';
 let activeCallId: string | null = null;
 let activeCallerName: string = '';
+let activeIsTeamCall: boolean = false;
 const listeners = new Set<(s: Snapshot) => void>();
 
 function snapshot(): Snapshot {
   return {
     callId: phase === 'incoming' ? activeCallId : null,
     callerName: activeCallerName,
+    isTeamCall: activeIsTeamCall,
   };
 }
 
@@ -71,19 +74,27 @@ export function getSnapshot(): Snapshot {
 export function presentIncoming(call: Call, callerName: string): void {
   if (phase === 'incoming' && activeCallId === call.id) return;
   if (phase === 'incoming') {
-    declineCall(call.id, 'busy').catch(() => {
-      /* noop */
-    });
+    // Already ringing for something else. For 1:1 incoming we tell the new
+    // caller we're busy; for team calls we just ignore it (no decline RPC
+    // exists for ops_team — the server refuses, and refusing on behalf of
+    // the whole team is wrong semantically anyway).
+    if (call.callee_audience !== 'ops_team') {
+      declineCall(call.id, 'busy').catch(() => {
+        /* noop */
+      });
+    }
     return;
   }
   activeCallId = call.id;
+  activeIsTeamCall = call.callee_audience === 'ops_team';
   activeCallerName = callerName || 'Reda team';
   phase = 'incoming';
   // CallKeep is best-effort — fires the system UI on devices where
   // ConnectionService is available. Even when it doesn't fire (Gionee /
   // Xiaomi / Oppo / etc. that suppress telecom), the IncomingCallOverlay
   // subscribed via subscribe() above will show the in-app ring.
-  callkeep.displayIncomingCall(call.id, activeCallerName);
+  const ringLabel = activeIsTeamCall ? `Team · ${activeCallerName}` : activeCallerName;
+  callkeep.displayIncomingCall(call.id, ringLabel);
   notify();
 }
 
@@ -134,9 +145,15 @@ export async function answer(callId: string): Promise<void> {
 /** CallKeep 'endCall' event during ringing → decline. */
 export async function declineFromSystemUI(callId: string): Promise<void> {
   if (activeCallId !== callId || phase !== 'incoming') return;
-  declineCall(callId, 'declined from system UI').catch(() => {
-    /* noop */
-  });
+  // Team-call rings can't be "declined" on behalf of the team — declining
+  // would either kill the page for everyone (wrong) or be refused by the
+  // server. Just dismiss locally; peers keep ringing, the row expires to
+  // 'missed' if nobody accepts within 45s.
+  if (!activeIsTeamCall) {
+    declineCall(callId, 'declined from system UI').catch(() => {
+      /* noop */
+    });
+  }
   callkeep.dismissCall(callId);
   reset();
 }
@@ -157,5 +174,6 @@ function reset(): void {
   phase = 'idle';
   activeCallId = null;
   activeCallerName = '';
+  activeIsTeamCall = false;
   notify();
 }

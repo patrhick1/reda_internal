@@ -15,6 +15,7 @@ import { useAuth } from '@/hooks/useAuth';
 import {
   listCallHistory,
   initiateCall,
+  initiateTeamCall,
   type CallHistoryRow,
   type CallStatus,
 } from '@/services/calls';
@@ -52,13 +53,18 @@ export default function CallHistoryScreen() {
   const onRedial = useCallback(
     async (row: CallHistoryRow) => {
       if (!userId || callingId) return;
-      const peerId = row.caller_id === userId ? row.callee_id : row.caller_id;
       setCID(row.id);
       try {
-        const call = await initiateCall({
-          calleeId: peerId,
-          relatedDeliveryId: row.related_delivery_id,
-        });
+        // Team-call redial → re-fire the team ring; otherwise dial the peer.
+        // A missed/cancelled team call has callee_id=null, so peer-based
+        // redial doesn't apply.
+        const isTeamRow = row.callee_audience === 'ops_team' || row.callee_id === null;
+        const call = isTeamRow
+          ? await initiateTeamCall({ relatedDeliveryId: row.related_delivery_id })
+          : await initiateCall({
+              calleeId: (row.caller_id === userId ? row.callee_id : row.caller_id) as string,
+              relatedDeliveryId: row.related_delivery_id,
+            });
         router.push(`/call/${call.id}`);
       } catch (err) {
         Alert.alert('Could not start call', err instanceof Error ? err.message : String(err));

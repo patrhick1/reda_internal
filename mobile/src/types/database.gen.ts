@@ -357,7 +357,8 @@ export type Database = {
         Row: {
           accepted_device_uuid: string | null
           agora_channel: string
-          callee_id: string
+          callee_audience: string
+          callee_id: string | null
           caller_device_uuid: string
           caller_id: string
           client_uuid: string | null
@@ -374,7 +375,8 @@ export type Database = {
         Insert: {
           accepted_device_uuid?: string | null
           agora_channel: string
-          callee_id: string
+          callee_audience?: string
+          callee_id?: string | null
           caller_device_uuid: string
           caller_id: string
           client_uuid?: string | null
@@ -391,7 +393,8 @@ export type Database = {
         Update: {
           accepted_device_uuid?: string | null
           agora_channel?: string
-          callee_id?: string
+          callee_audience?: string
+          callee_id?: string | null
           caller_device_uuid?: string
           caller_id?: string
           client_uuid?: string | null
@@ -1692,7 +1695,8 @@ export type Database = {
         Returns: {
           accepted_device_uuid: string | null
           agora_channel: string
-          callee_id: string
+          callee_audience: string
+          callee_id: string | null
           caller_device_uuid: string
           caller_id: string
           client_uuid: string | null
@@ -1760,7 +1764,8 @@ export type Database = {
         Returns: {
           accepted_device_uuid: string | null
           agora_channel: string
-          callee_id: string
+          callee_audience: string
+          callee_id: string | null
           caller_device_uuid: string
           caller_id: string
           client_uuid: string | null
@@ -1781,36 +1786,21 @@ export type Database = {
           isSetofReturn: false
         }
       }
-      change_delivery_status:
-        | {
-            Args: {
-              p_client_uuid: string
-              p_delivery_id: string
-              p_effective_at?: string
-              p_notes?: string
-              p_paid?: number
-              p_payment_method?: string
-              p_quantity_delivered?: number
-              p_reason?: string
-              p_to_status: string
-            }
-            Returns: undefined
-          }
-        | {
-            Args: {
-              p_client_uuid: string
-              p_delivery_id: string
-              p_effective_at?: string
-              p_new_scheduled_date?: string
-              p_notes?: string
-              p_paid?: number
-              p_payment_method?: string
-              p_quantity_delivered?: number
-              p_reason?: string
-              p_to_status: string
-            }
-            Returns: undefined
-          }
+      change_delivery_status: {
+        Args: {
+          p_client_uuid: string
+          p_delivery_id: string
+          p_effective_at?: string
+          p_new_scheduled_date?: string
+          p_notes?: string
+          p_paid?: number
+          p_payment_method?: string
+          p_quantity_delivered?: number
+          p_reason?: string
+          p_to_status: string
+        }
+        Returns: undefined
+      }
       claim_followup: {
         Args: { p_delivery_id: string; p_takeover?: boolean }
         Returns: {
@@ -1962,7 +1952,8 @@ export type Database = {
         Returns: {
           accepted_device_uuid: string | null
           agora_channel: string
-          callee_id: string
+          callee_audience: string
+          callee_id: string | null
           caller_device_uuid: string
           caller_id: string
           client_uuid: string | null
@@ -2003,7 +1994,8 @@ export type Database = {
         Returns: {
           accepted_device_uuid: string | null
           agora_channel: string
-          callee_id: string
+          callee_audience: string
+          callee_id: string | null
           caller_device_uuid: string
           caller_id: string
           client_uuid: string | null
@@ -2059,6 +2051,7 @@ export type Database = {
       }
       initiate_call: {
         Args: {
+          p_callee_audience?: string
           p_callee_id: string
           p_caller_device_uuid: string
           p_client_uuid: string
@@ -2067,7 +2060,8 @@ export type Database = {
         Returns: {
           accepted_device_uuid: string | null
           agora_channel: string
-          callee_id: string
+          callee_audience: string
+          callee_id: string | null
           caller_device_uuid: string
           caller_id: string
           client_uuid: string | null

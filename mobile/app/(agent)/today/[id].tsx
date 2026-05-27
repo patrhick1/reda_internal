@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Linking,
   Platform,
   ScrollView,
@@ -8,6 +9,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { initiateTeamCall } from '@/services/calls';
+import { ensureMicPermission } from '@/lib/calls/permissions';
+import { canPlaceCall } from '@/lib/calls/availability';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
@@ -325,25 +329,57 @@ export default function AgentDeliveryDetail() {
           ) : null}
         </Card>
 
-        {/* Quick entry to ring ops about this specific delivery. Opens the
-            Team directory with related_delivery_id so the call is linked
-            to this row for audit. */}
-        <Card onPress={() => router.push(`/(call)/team?related_delivery_id=${d.id}`)}>
+        {/* One-tap team page. Rings every active admin/dispatcher/rep
+            phone; first accepter wins server-side. The row is linked to
+            this delivery so post-accept the ops user has full context. */}
+        <Card
+          onPress={async () => {
+            if (!canPlaceCall()) {
+              Alert.alert('Calls work on the mobile app', 'Open Reda on your phone to alert the team.');
+              return;
+            }
+            const micOk = await ensureMicPermission();
+            if (!micOk) {
+              Alert.alert(
+                'Microphone needed',
+                'Reda needs the microphone to ring ops. Tap "Open settings" → Permissions → Microphone → Allow.',
+                [
+                  { text: 'Not now', style: 'cancel' },
+                  { text: 'Open settings', onPress: () => { Linking.openSettings().catch(() => { /* noop */ }); } },
+                ],
+              );
+              return;
+            }
+            try {
+              const call = await initiateTeamCall({ relatedDeliveryId: d.id });
+              router.push(`/call/${call.id}`);
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              if (msg.includes('ringing call')) {
+                Alert.alert('Already on a call', 'You already have a call ringing. Try again in a moment.');
+              } else {
+                Alert.alert('Could not alert team', msg);
+              }
+            }
+          }}
+        >
           <View
             style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Icon name="phone" size={16} color={colors.success} />
               <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.textPrimary }}>
-                Call admin / dispatch
+                Alert team
               </Text>
             </View>
             <Icon name="chevronRight" size={16} color={colors.textSecondary} />
           </View>
         </Card>
 
-        {/* Messages (only renders when there's a flag thread) */}
-        <MessageThread deliveryId={d.id!} deliveryStatus={status} canReply={false} />
+        {/* Messages — agent can reply to ops-seeded threads or follow up on
+            their own flagged thread. Seeding still goes through
+            FlagDeliverySheet so the chip + status change are captured. */}
+        <MessageThread deliveryId={d.id!} deliveryStatus={status} canPost canSeed={false} />
 
         {/* History */}
         <Card>

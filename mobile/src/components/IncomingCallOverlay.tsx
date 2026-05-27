@@ -141,7 +141,7 @@ export function IncomingCallOverlay() {
               textTransform: 'uppercase',
             }}
           >
-            Incoming Reda call
+            {snap.isTeamCall ? 'Team call · needs ops' : 'Incoming Reda call'}
           </Text>
           <Avatar user={{ display_name: snap.callerName }} size={140} />
           <Text
@@ -164,8 +164,8 @@ export function IncomingCallOverlay() {
             {busy === 'accept'
               ? 'Connecting…'
               : busy === 'decline'
-                ? 'Declining…'
-                : 'is calling you'}
+                ? (snap.isTeamCall ? 'Dismissing…' : 'Declining…')
+                : (snap.isTeamCall ? 'is paging the team' : 'is calling you')}
           </Text>
         </View>
 
@@ -180,7 +180,7 @@ export function IncomingCallOverlay() {
         >
           <ActionButton
             icon="phoneOff"
-            label="Decline"
+            label={snap.isTeamCall ? 'Dismiss' : 'Decline'}
             color={colors.red}
             onPress={onDecline}
             disabled={busy !== null}
