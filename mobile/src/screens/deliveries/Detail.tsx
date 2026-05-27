@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import * as Clipboard from 'expo-clipboard';
 import { useSupabaseChannel } from '@/hooks/useSupabaseChannel';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
@@ -742,50 +741,6 @@ function MoneyRow({ label, value, accent }: { label: string; value: string; acce
   );
 }
 
-/** One-tap copy for the reason+notes pair on a history row. Reps WhatsApp
- *  the client after every status change; copying saves them retyping the
- *  agent's note. Inline "Copied ✓" state lives for 1.5s, then reverts. */
-function CopyNotePill({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  const onPress = useCallback(async () => {
-    try {
-      await Clipboard.setStringAsync(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* clipboard failed silently — rare; selectable text is still available */
-    }
-  }, [text]);
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        marginTop: 6,
-        alignSelf: 'flex-start',
-        paddingVertical: 4,
-        paddingHorizontal: 10,
-        borderRadius: 999,
-        borderWidth: 1,
-        borderColor: copied ? colors.success : colors.borderStrong,
-      }}
-    >
-      {copied ? <Icon name="check" size={12} color={colors.success} /> : null}
-      <Text
-        style={{
-          fontFamily: fonts.medium,
-          fontSize: 11,
-          color: copied ? colors.success : colors.textSecondary,
-        }}
-      >
-        {copied ? 'Copied' : 'Copy note'}
-      </Text>
-    </TouchableOpacity>
-  );
-}
-
 function HistoryRow({
   row,
   first,
@@ -859,11 +814,11 @@ function HistoryRow({
             {row.notes}
           </Text>
         ) : null}
-        {/* Reps usually retype this into WhatsApp when updating the client.
-            One-tap copy of reason + notes saves the retype. */}
-        {row.reason || row.notes ? (
-          <CopyNotePill text={[row.reason, row.notes].filter(Boolean).join('\n')} />
-        ) : null}
+        {/* Copy-note pill temporarily removed: expo-clipboard's native module
+            isn't in the binary currently on Uzo's phone, and using it via OTA
+            crashed the screen. Re-add after the next `eas build` lands. The
+            reason + notes Text above is still `selectable`, so a long-press
+            copy from the native menu still works. */}
         {/* show transition labels for terminal context */}
         {row.from_status ? (
           <Text
