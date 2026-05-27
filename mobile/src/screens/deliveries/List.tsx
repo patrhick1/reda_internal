@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -13,7 +13,7 @@ import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { listDeliveries, type DeliveryRow } from '@/services/deliveries';
 import { listActiveFollowups, type ActiveFollowup } from '@/services/followups';
-import { supabase } from '@/lib/supabase';
+import { useSupabaseChannel } from '@/hooks/useSupabaseChannel';
 import { listUsers, type AppUser } from '@/services/users';
 import { canAssignDelivery, canSeeClientName } from '@/lib/permissions';
 import { formatNaira } from '@/lib/format';
@@ -115,19 +115,18 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   // screen level — one channel covers every row. Pairs with
   // scripts/delivery-followups-realtime.sql which adds the table to the
   // supabase_realtime publication.
-  useEffect(() => {
-    if (!canSeeClaims) return;
-    const channel = supabase
-      .channel('deliveries-list-followups')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'delivery_followups' }, () => {
-        followupsQ.reload();
-      })
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canSeeClaims]);
+  useSupabaseChannel(
+    canSeeClaims ? 'deliveries-list-followups' : null,
+    (ch) =>
+      ch.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'delivery_followups' },
+        () => {
+          followupsQ.reload();
+        },
+      ),
+    [canSeeClaims],
+  );
 
   const followupByDelivery = useMemo(() => {
     const m = new Map<string, ActiveFollowup>();

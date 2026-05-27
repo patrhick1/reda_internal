@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import {
@@ -7,7 +7,7 @@ import {
   releaseFollowup,
   type ActiveFollowup,
 } from '@/services/followups';
-import { supabase } from '@/lib/supabase';
+import { useSupabaseChannel } from '@/hooks/useSupabaseChannel';
 import { Banner, Button } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 import { errorMessage } from '@/lib/errors';
@@ -61,10 +61,10 @@ export function FollowupClaimBanner({ deliveryId, currentUserId }: FollowupClaim
   // changes that matter to this screen. Pairs with
   // scripts/delivery-followups-realtime.sql which adds the table to the
   // supabase_realtime publication.
-  useEffect(() => {
-    const channel = supabase
-      .channel(`delivery-followup:${deliveryId}`)
-      .on(
+  useSupabaseChannel(
+    `delivery-followup:${deliveryId}`,
+    (ch) =>
+      ch.on(
         'postgres_changes',
         {
           event: '*',
@@ -75,12 +75,9 @@ export function FollowupClaimBanner({ deliveryId, currentUserId }: FollowupClaim
         () => {
           void reload();
         },
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [deliveryId, reload]);
+      ),
+    [deliveryId, reload],
+  );
 
   const onClaim = useCallback(
     async (takeover = false) => {

@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { useEffect, useState } from 'react';
+import { useSupabaseChannel } from '@/hooks/useSupabaseChannel';
 import { getCall, type Call } from '@/services/calls';
 
 // Subscribes to a single calls row via Supabase Realtime. The caller mounts
@@ -11,23 +11,17 @@ import { getCall, type Call } from '@/services/calls';
 // updates come from the postgres_changes channel.
 export function useOutgoingCallSubscription(callId: string | null): Call | null {
   const [call, setCall] = useState<Call | null>(null);
-  const lastCallIdRef = useRef<string | null>(null);
 
+  // Initial REST fetch — Realtime only emits CHANGES; without this the
+  // consumer would have to wait for a status flip to see anything. The
+  // `cancelled` flag guards against stale-state writes if callId changes
+  // (or unmounts) while the fetch is in flight.
   useEffect(() => {
     if (!callId) {
       setCall(null);
-      lastCallIdRef.current = null;
       return;
     }
-
-    // If the same callId, don't re-subscribe.
-    if (lastCallIdRef.current === callId) return;
-    lastCallIdRef.current = callId;
-
     let cancelled = false;
-
-    // Initial fetch — Realtime only emits CHANGES; without this the consumer
-    // would have to wait for a status flip to see anything.
     getCall(callId)
       .then((row) => {
         if (cancelled) return;
@@ -36,24 +30,24 @@ export function useOutgoingCallSubscription(callId: string | null): Call | null 
       .catch((err) => {
         console.warn('[outgoing-call] initial fetch failed', err);
       });
+    return () => {
+      cancelled = true;
+    };
+  }, [callId]);
 
-    const channel = supabase
-      .channel(`outgoing-call:${callId}`)
-      .on(
+  // Realtime updates for this specific call row.
+  useSupabaseChannel(
+    callId ? `outgoing-call:${callId}` : null,
+    (ch) =>
+      ch.on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'calls', filter: `id=eq.${callId}` },
         (payload) => {
-          if (cancelled) return;
           setCall(payload.new as Call);
         },
-      )
-      .subscribe();
-
-    return () => {
-      cancelled = true;
-      supabase.removeChannel(channel);
-    };
-  }, [callId]);
+      ),
+    [callId],
+  );
 
   return call;
 }

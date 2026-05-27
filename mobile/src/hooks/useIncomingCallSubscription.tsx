@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
 import { Platform } from 'react-native';
 import { supabase } from '@/lib/supabase';
+import { useSupabaseChannel } from '@/hooks/useSupabaseChannel';
 import * as coord from '@/lib/calls/coordinator';
 import { type Call } from '@/services/calls';
 import type { Role } from '@/lib/permissions';
@@ -23,52 +23,52 @@ import type { Role } from '@/lib/permissions';
 // browser tab is open, even though the user can't act on it. The call still
 // rings on their phone (where the subscription IS active).
 export function useIncomingCallSubscription(userId: string | null, role: Role | null): void {
-  useEffect(() => {
-    if (!userId) return;
-    if (Platform.OS === 'web') return;
+  const enabled = userId !== null && Platform.OS !== 'web';
+  const opsRoles: ReadonlyArray<Role> = ['admin', 'dispatcher', 'rep'];
+  const isOps = enabled && role !== null && opsRoles.includes(role);
 
-    const opsRoles: ReadonlyArray<Role> = ['admin', 'dispatcher', 'rep'];
-    const isOps = role !== null && opsRoles.includes(role);
+  // 1:1 calls — every signed-in non-web user.
+  useSupabaseChannel(
+    enabled ? `incoming-calls:${userId}` : null,
+    (ch) =>
+      ch
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'calls', filter: `callee_id=eq.${userId}` },
+          async (payload) => {
+            const row = payload.new as Call;
+            if (row.status !== 'ringing') return;
+            // Staleness short-circuit (ringing_until already past).
+            if (new Date(row.ringing_until).getTime() < Date.now()) return;
+            const callerName = await fetchCallerName(row.caller_id);
+            coord.presentIncoming(row, callerName);
+          },
+        )
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'calls', filter: `callee_id=eq.${userId}` },
+          (payload) => {
+            const row = payload.new as Call;
+            // We CANNOT read payload.old.status reliably — the calls table has
+            // REPLICA IDENTITY default, so the OLD payload only contains the
+            // primary key. Instead, check against the coordinator's own
+            // tracked-incoming state. If we're currently showing this call's
+            // ring UI and the row is no longer 'ringing', dismiss.
+            if (row.status !== 'ringing' && coord.getIncomingCallId() === row.id) {
+              coord.externallyDismissed(row.id);
+            }
+          },
+        ),
+    [userId],
+  );
 
-    const channel = supabase
-      .channel(`incoming-calls:${userId}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'calls', filter: `callee_id=eq.${userId}` },
-        async (payload) => {
-          const row = payload.new as Call;
-          if (row.status !== 'ringing') return;
-          // Staleness short-circuit (ringing_until already past).
-          if (new Date(row.ringing_until).getTime() < Date.now()) return;
-          const callerName = await fetchCallerName(row.caller_id);
-          coord.presentIncoming(row, callerName);
-        },
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'calls', filter: `callee_id=eq.${userId}` },
-        (payload) => {
-          const row = payload.new as Call;
-          // We CANNOT read payload.old.status reliably — the calls table has
-          // REPLICA IDENTITY default, so the OLD payload only contains the
-          // primary key. Instead, check against the coordinator's own
-          // tracked-incoming state. If we're currently showing this call's
-          // ring UI and the row is no longer 'ringing', dismiss.
-          if (row.status !== 'ringing' && coord.getIncomingCallId() === row.id) {
-            coord.externallyDismissed(row.id);
-          }
-        },
-      )
-      .subscribe();
-
-    // Second channel for ops users: ring rows with audience='ops_team' that
-    // are still in the ringing state. The first accepter's UPDATE flips
-    // callee_audience to 'user' and sets callee_id, so peers see the row
-    // leave this filter on UPDATE and the dismissal handler fires.
-    let opsChannel: ReturnType<typeof supabase.channel> | null = null;
-    if (isOps) {
-      opsChannel = supabase
-        .channel(`incoming-team-calls:${userId}`)
+  // Ops team broadcast ring. The first accepter's UPDATE flips
+  // callee_audience to 'user' and sets callee_id, so peers see the row
+  // leave this filter on UPDATE and the dismissal handler fires.
+  useSupabaseChannel(
+    isOps ? `incoming-team-calls:${userId}` : null,
+    (ch) =>
+      ch
         .on(
           'postgres_changes',
           {
@@ -105,15 +105,9 @@ export function useIncomingCallSubscription(userId: string | null, role: Role | 
             if (row.status === 'ringing' && row.callee_audience === 'ops_team') return;
             coord.externallyDismissed(row.id);
           },
-        )
-        .subscribe();
-    }
-
-    return () => {
-      supabase.removeChannel(channel);
-      if (opsChannel) supabase.removeChannel(opsChannel);
-    };
-  }, [userId, role]);
+        ),
+    [userId],
+  );
 }
 
 async function fetchCallerName(callerId: string): Promise<string> {

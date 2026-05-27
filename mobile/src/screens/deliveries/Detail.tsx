@@ -12,7 +12,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
-import { supabase } from '@/lib/supabase';
+import { useSupabaseChannel } from '@/hooks/useSupabaseChannel';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
@@ -103,10 +103,10 @@ export function DeliveryDetail() {
   // so the channel only fires on changes that matter. Pairs with the
   // supabase_realtime publication entry added in
   // scripts/client-notified-tag.sql.
-  useEffect(() => {
-    const channel = supabase
-      .channel(`delivery-client-notifications:${id}`)
-      .on(
+  useSupabaseChannel(
+    `delivery-client-notifications:${id}`,
+    (ch) =>
+      ch.on(
         'postgres_changes',
         {
           event: '*',
@@ -117,13 +117,9 @@ export function DeliveryDetail() {
         () => {
           notifQ.reload();
         },
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+      ),
+    [id],
+  );
 
   const onMarkNotified = useCallback(async (historyId: string) => {
     try {
