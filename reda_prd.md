@@ -394,7 +394,7 @@ Rules:
 - Money: customer_price (**per-trip flat amount, NOT multiplied by quantity** — enforced in `MarkDeliveredSheet` + the four list/detail screens that compute totals); for admin also charged, agent_payment, margin, remit; for agent also their agent_payment if delivered
 - Client name and notes (prominent — these are the client rules)
 - Status with state machine UI (only valid transitions clickable)
-- Status history timeline (everyone reads, no one edits)
+- Status history timeline (everyone reads, no one edits) — each row's reason + notes text is `selectable` (long-press → native Copy menu); for rows with a reason or notes, a small **Copy note** pill (since 2026-05-27, requires app version ≥ 1.1.1) does one-tap copy of `reason\nnotes` to the clipboard via `expo-clipboard`. Reps WhatsApp the customer after every status change; this removes the retype. Pill flips to a green "Copied" state for ~1.5 s then reverts.
 - Notes field (editable)
 - Parent delivery reference if this is a rollover
 
@@ -403,9 +403,10 @@ Rules:
 - Server-side gate: caller must be admin or dispatcher AND the delivery's `current_status` must be in the pre-delivery set (`active` + `soft` buckets — `pending`, `available`, `not_answering`, `number_busy`, `switched_off`, `tomorrow`, `postponed`, `follow_up`). Terminal statuses freeze the row to protect snapshots + stock decrements.
 - Edit lock: the screen acquires a 5-minute `edit_locks` row (with 60-second client heartbeat) so two admins editing the same delivery see "<Name> is editing this — Take over" rather than silently overwriting each other.
 
-**Follow-up claim (admin + dispatcher, soft-statuses only):**
-- When a delivery is in a soft status (customer didn't answer / line busy / phone off / tomorrow / postponed / follow up), a yellow "Needs follow-up" banner offers **I'll handle this**. Tapping it inserts a `delivery_followups` row scoped to the caller; other admins/dispatchers see "<Name> is handling this — Take over" both on the detail screen and as a small claimer-avatar on the deliveries list.
+**Follow-up claim (admin + dispatcher + rep, soft-statuses only):**
+- When a delivery is in a soft status (customer didn't answer / line busy / phone off / tomorrow / postponed / follow up / not around / not available / not connecting / will call back), a yellow "Needs follow-up" banner offers **I'll handle this**. Tapping it inserts a `delivery_followups` row scoped to the caller; other admins/dispatchers/reps see "<Name> is handling this — Take over" both on the detail screen and as a small claimer-avatar on the deliveries list.
 - A trigger on `deliveries.current_status` auto-deletes the claim on any status change (even soft→soft). Manual **Release** is also available.
+- **Live across peers (since 2026-05-27).** Both the per-delivery banner ([FollowupClaimBanner](mobile/src/components/delivery/FollowupClaimBanner.tsx)) and the screen-level avatar pill on the deliveries list subscribe via `postgres_changes` on `delivery_followups` (added to `supabase_realtime` publication the same day). Peers see a claim / take-over / release within ~100–300 ms without refocusing. Subscription plumbing is the [`useSupabaseChannel`](mobile/src/hooks/useSupabaseChannel.ts) hook, which uses `useId()` to suffix the channel topic per mount and side-step a supabase-js singleton race during Fast Refresh / strict-mode double-mount. Followup statuses are derived from `delivery_status_defs.needs_followup` so SQL gate (`claim_followup`) and UI gate (`canClaimFollowup`) read from one source.
 
 **Logic:**
 - RLS on `deliveries` handles role-based filtering automatically
@@ -452,14 +453,14 @@ Where:
 **UI for status change:**
 - Status field on delivery detail shows current status
 - Tap to change → modal with valid next statuses (state machine filters options)
-- If transition is backward, modal also requires a reason (text field)
+- If transition is backward, modal also requires a reason. Reason / Note-to-ops field is a 4-row multiline input (since 2026-05-27, via the shared [`Input`](mobile/src/components/ui/Input.tsx) component's `multiline numberOfLines={N}` props) so long context — *"customer said he did not remember ordering anything; vendor should send him a photo of the products"* — wraps instead of scrolling horizontally. Any caller that wants the same treatment passes `multiline` on `Input`.
 - If new status = 'delivered': prompt for `quantity_delivered` (default = quantity_ordered) and `paid` + `payment_method`
 - If new status = 'postponed' (since 2026-05-27): a YYYY-MM-DD date input is required with `+1 / +2 / +3 / +7` quick chips. Validation: format must match `YYYY-MM-DD` and the date must be **strictly after today** (Lagos). Sundays auto-bump to Monday via the server-side `_ensure_workday` helper. The date threads through `change_delivery_status` as `p_new_scheduled_date`; the server ignores it for every status except `postponed`.
 - If client_rules say "no partial deliveries" and `quantity_delivered < quantity_ordered`: warn but allow (audit will capture)
 
 **Auto-seed message thread on intervention-class status (agent only, since 2026-05-27).** When an agent picks one of the six customer-unreachable statuses (`not_answering`, `not_around`, `not_available`, `not_connecting`, `number_busy`, `switched_off`) from *Update status*, the submit routes through the existing `flag_delivery_issue` RPC instead of plain `change_delivery_status`. Result: status changes AND a `delivery_messages` row gets seeded (issue_type = `cant_reach_client`, note = the reason text) so ops know there's something to handle without the agent having to also tap the caution icon. UI surfaces a *"This will also message ops so they can help."* hint banner; the reason field's label switches from *Reason* to *Note to ops*. Ops users (admin/dispatcher/rep) using the same sheet skip this routing — they may legitimately pick those statuses for their own reasons (e.g. correcting a status post-call) without seeding a thread. Mapping table lives in [delivery-messages.ts → STATUS_AUTO_ISSUE](mobile/src/services/delivery-messages.ts) next to `ISSUE_DEFAULT_STATUS` so the inverse-mapping symmetry is visible. Implementation: new queue job kind `flag_delivery` mirrors the existing `change_delivery_status` executor so agents in spotty coverage keep offline resilience.
 
-**Client-notified tag per status-history row (since 2026-05-27).** Each row in the delivery history timeline now has a *"Mark client notified"* button for admin/dispatcher/rep (gated by `canMarkClientNotified`). One tap inserts a `delivery_client_notifications` row keyed on `status_history_id`; first-tap wins via PK conflict, peers see *"<Name> told the client · <time>"*. Lets multiple reps coordinate so one of them owns the WhatsApp ping to the customer for a given status change. The latest-history tag also surfaces as the *Notified* pill on the deliveries list (see §5.8). Permission: ops-only by `canMarkClientNotified`; the agent assigned to the delivery has SELECT access on `delivery_client_notifications` (informational read — they don't act on it). Anchored by [scripts/client-notified-tag.sql](scripts/client-notified-tag.sql) + [services/clientNotifications.ts](mobile/src/services/clientNotifications.ts).
+**Client-notified tag per status-history row (since 2026-05-27).** Each row in the delivery history timeline now has a *"Mark client notified"* button for admin/dispatcher/rep (gated by `canMarkClientNotified`). One tap inserts a `delivery_client_notifications` row keyed on `status_history_id`; first-tap wins via PK conflict, peers see *"<Name> told the client · <time>"*. Lets multiple reps coordinate so one of them owns the WhatsApp ping to the customer for a given status change. The latest-history tag also surfaces as the *Notified* pill on the deliveries list (see §5.8). Permission: ops-only by `canMarkClientNotified`; the agent assigned to the delivery has SELECT access on `delivery_client_notifications` (informational read — they don't act on it). Anchored by [scripts/client-notified-tag.sql](scripts/client-notified-tag.sql) + [services/clientNotifications.ts](mobile/src/services/clientNotifications.ts). **Realtime-live**: the detail screen subscribes via `postgres_changes` filtered to `delivery_id=eq.<id>` so a peer's tap renders the green check on every other open phone within ~100–300 ms without refocusing (same `useSupabaseChannel` pattern as the follow-up claim).
 
 **Logic:**
 - Insert row in `delivery_status_history`
@@ -828,36 +829,38 @@ These (and additional RPCs added during testing) live in security-definer functi
 
 ### 5.17 Internal voice calling
 
-**User story:** As an internal user (admin / dispatcher / agent / warehouse), I can place a 1:1 voice call to any other active internal user from the Team directory in Profile, or redial from Call history.
+**User story:** As an internal user (admin / dispatcher / rep / warehouse), I can place a 1:1 voice call to any other active internal user from the Team directory in Profile, or redial from Call history. As an **agent**, I can ring the *whole ops team at once* (admin + dispatcher + rep) to flag an urgent delivery issue — the call goes to whoever picks up first.
 
 **Screens:**
-- **Team directory** ([app/(call)/team.tsx](mobile/app/(call)/team.tsx)) — roster of active users grouped by role, tap to call. Reached from Profile → Team directory.
+- **Team directory** ([app/(call)/team.tsx](mobile/app/(call)/team.tsx)) — roster of active users grouped by role, tap to call. Reached from Profile → Team directory. **Agent variant (since 2026-05-27):** when the viewer's role is `agent`, the same route renders a single big green **Alert team** CTA instead of the directory; one tap fires a team-broadcast call. Agents cannot dial individual users.
 - **Call screen** ([app/(call)/call/[callId].tsx](mobile/app/(call)/call/%5BcallId%5D.tsx)) — caller name, status, duration timer, mute, speaker, end. Shared between caller and callee (`isCaller = userId === call.caller_id`).
-- **Call history** ([app/(call)/history.tsx](mobile/app/(call)/history.tsx)) — own calls newest first; missed/declined/cancelled colored red; tap-to-redial.
-- **Incoming call UI** — provided by the system telecom framework via `react-native-callkeep`; full-screen lock-screen UI with the user's chosen system ringtone, Bluetooth headset accept/end support. No custom screen.
+- **Call history** ([app/(call)/history.tsx](mobile/app/(call)/history.tsx)) — own calls newest first; missed/declined/cancelled colored red; tap-to-redial. Team-call rows redial via `initiateTeamCall` not `initiateCall` so the broadcast semantics carry through.
+- **Incoming call UI** — provided by the system telecom framework via `react-native-callkeep`; full-screen lock-screen UI with the user's chosen system ringtone, Bluetooth headset accept/end support. No custom screen. Team-call rings render as **"Team call · `<Agent>`"** in CallKeep so the callee knows it's a broadcast page; the in-app overlay's Decline button reads **Dismiss** (local-only) because the server refuses `decline_call` on `callee_audience='ops_team'` rows — declining on behalf of the whole team would kill the page for peers who haven't seen it yet.
 
 **Logic:**
 - Audio via Agora Voice SDK (`react-native-agora`). App Certificate stays server-side only — tokens minted by the [issue-agora-token](supabase/functions/issue-agora-token/index.ts) Edge Function with a 5-minute TTL. Mobile refreshes on `onTokenPrivilegeWillExpire`.
 - Ring UX via [react-native-callkeep](https://github.com/react-native-webrtc/react-native-callkeep) (Android `ConnectionService`). Same model WhatsApp uses on Android. No bundled ringtone — OS plays the user's selection.
 - **Three signaling layers, one job each**:
-  - **Push** wakes the device. Trigger `notify_call_invite_push` on `calls` insert calls `send_edge_notification` with `audience: 'call_invite'`; the [send-notification](supabase/functions/send-notification/index.ts) function resolves the callee, fans out to all their `push_tokens`.
-  - **Supabase Realtime** drives state truth. `useIncomingCallSubscription` watches `calls` filtered to `callee_id=eq.<me>`; `useOutgoingCallSubscription` watches the specific in-progress call row.
+  - **Push** wakes the device. Trigger `notify_call_invite_push` on `calls` insert calls `send_edge_notification` with `audience: 'call_invite'`; the [send-notification](supabase/functions/send-notification/index.ts) function resolves recipients — for 1:1 it's the `callee_id`; for `callee_audience='ops_team'` it fans out to every active admin + dispatcher + rep — and pushes to all their `push_tokens`.
+  - **Supabase Realtime** drives state truth. `useIncomingCallSubscription` watches `calls` filtered to `callee_id=eq.<me>` for 1:1; ops users get a second sub filtered to `callee_audience=eq.ops_team` for team rings. `useOutgoingCallSubscription` watches the specific in-progress call row regardless of audience.
   - **CallKeep** drives the ring UI. `coord.presentIncoming()` calls `RNCallKeep.displayIncomingCall`; the system rings; user taps Answer → coord runs `accept_call` RPC + fetches token + Agora `joinChannel` + navigates to the in-call screen.
-- **Multi-device callee**: DB-atomic "first accept wins" via the `update calls set status='accepted' where status='ringing'` returning-clause guard (zero-row return raises 40001). Edge Function token gate verifies `accepted_device_uuid = req.device_uuid` — the losing device gets no token even if it tries to accept. Stable per-device Agora `uid` via FNV-1a 32-bit hash of `device_uuid` so accidental dupes self-kick.
-- Optional `related_delivery_id` links the call into a specific delivery's audit context (column on `calls`, FK to deliveries, `on delete set null`).
-- Idempotency via `client_uuid` (uuid; partial unique index) plus partial unique indexes on `(caller_id) where status='ringing'` and `(callee_id) where status='ringing'`.
+- **Audience-targeted calls (since 2026-05-27).** `calls.callee_audience text not null` (`'user' | 'ops_team'`) with a CHECK constraint enforcing `(callee_audience='user') = (callee_id is not null)` — every row is *either* targeted at a named user *or* fanned to ops, never both, never neither. `initiate_call` gains a 5th `p_callee_audience` param (default `'user'` keeps old callers binary-compatible); when caller role is `agent`, audience MUST be `'ops_team'` — agents are hard-blocked from dialing individuals. `accept_call` branches on audience: for ops-team rings, the atomic UPDATE assigns `callee_id = v_user` AND flips `callee_audience='user'` as part of the same write, so the invariant holds post-accept and the rest of the lifecycle (tokens, end_call, history, expire sweep) treats the row identically to 1:1. The partial unique index `calls_one_ringing_per_callee` is narrowed to `where callee_audience='user'` so ops-team rings don't fight 1:1 ringing rules.
+- **Multi-device callee (1:1) AND multi-callee (ops-team)**: same atomic primitive in both cases — `update calls set status='accepted' ... where status='ringing' ...` with a partial returning clause; zero-row return raises 40001. The losing accepter (whether a peer device on a 1:1 ring or a peer rep on a team ring) sees the row leave its sub's filter on UPDATE and CallKeep dismisses without toast spam. Edge Function token gate verifies `accepted_device_uuid = req.device_uuid` — the losing device gets no token even if it tries to accept. Stable per-device Agora `uid` via FNV-1a 32-bit hash of `device_uuid` so accidental dupes self-kick.
+- Optional `related_delivery_id` links the call into a specific delivery's audit context (column on `calls`, FK to deliveries, `on delete set null`). For team-page calls the agent's "Alert team" button on a delivery automatically threads the delivery id through so whichever rep picks up has full context immediately.
+- Idempotency via `client_uuid` (uuid; partial unique index) plus partial unique indexes on `(caller_id) where status='ringing'` and `(callee_id) where status='ringing' and callee_audience='user'`. The caller-side index naturally prevents one agent from spamming the team with concurrent pages.
 
 **Edge cases:**
 - **Stale push tap** (call already missed/cancelled): tap-handler short-circuits on `ringing_until` past now → routes to call history with the call highlighted instead of mounting a ghost ring.
-- **Callee offline** (no push tokens or all unreachable): server-side `expire_ringing_calls` cron at 30s cadence flips the row to `missed`.
-- **Mic permission denied at accept**: `ensureMicPermission()` is called inside `coord.answer` before `acceptCall` — denial fires `decline_call(p_reason='mic_denied')` so the caller's UI clears immediately instead of waiting 45s.
+- **Callee / team offline** (no push tokens or all unreachable): server-side `expire_ringing_calls` cron at 1-minute cadence (was 30s before 2026-05-27 — see §6 Operations on cron-cost tuning) flips the row to `missed`. Caller's "calling..." UI clears via Realtime on the row transition.
+- **Mic permission denied at accept**: `ensureMicPermission()` is called inside `coord.answer` before `acceptCall` — denial fires `decline_call(p_reason='mic_denied')` so the caller's UI clears immediately instead of waiting 45s. For team-page rings: dismisses locally only (no `decline_call`), other peers keep ringing.
 - **Token expiry mid-call**: Agora SDK fires `onTokenPrivilegeWillExpire` → refresh via [issue-agora-token](supabase/functions/issue-agora-token/index.ts) → `engine.renewToken(...)`.
 - **Network drop mid-call**: Agora auto-reconnects. Connection state surfaces as "Reconnecting…" via `onConnectionStateChanged` (state=4).
 - **Cancelled calls leaving zombie Agora channels**: caller's `cancel_call` triggers Agora `leaveChannel`; Agora channels are ephemeral with no participants.
 
 **Acceptance:**
 - Any pair of active internal users can complete a voice call end-to-end on Android.
-- Calls are 1:1 only; partial unique indexes prevent concurrent rings per user.
+- Agents can fire an ops-team broadcast and any active admin / dispatcher / rep can pick it up; only one wins, peers dismiss cleanly.
+- Concurrent rings prevented: partial unique indexes on `caller_id` (all audiences) and `callee_id` (1:1 only) where `status='ringing'`.
 - Multi-device callee: only one device joins the channel; the others' CallKeep UIs dismiss within 1s via `coord.externallyDismissed`.
 - Push, Realtime, and DB stay consistent under cold-start, backgrounded, and foregrounded paths.
 - No audio is persisted server-side — Supabase Storage stays at zero usage from this feature.
@@ -882,6 +885,22 @@ These (and additional RPCs added during testing) live in security-definer functi
 ### Reliability
 - App crashes captured (Sentry or similar) — out of v1 scope but plumbing should be ready
 - Database backups: Supabase free tier includes daily backups, retention 7 days
+
+### Operations (added 2026-05-27 after the expo-clipboard OTA incident)
+
+**Native-module rebuild discipline.** Adding any package that ships a native module (e.g. `expo-clipboard`, `react-native-callkeep`, `react-native-agora`) requires a new `eas build` BEFORE the JS that imports it can be safely OTA'd. Any `eas update` that pushes import-of-a-new-native-module to existing binaries will crash on open. The guard:
+
+1. `npx expo install <module>` updates package.json.
+2. **Bump `mobile/app.json` version** (e.g. 1.1.0 → 1.1.1) in the same commit. Because `runtimeVersion.policy = "appVersion"`, expo-updates segments JS bundles by app version — old binaries on 1.1.0 keep getting 1.1.0 bundles; new 1.1.1 binaries get the new JS. No coordination needed for rollout; users update at their own pace.
+3. `eas build --profile preview --platform android` produces the new APK.
+4. `eas update --channel preview` publishes the JS, tagged to the new version.
+5. Distribute the new APK; old binaries stay safe on their last bundle.
+
+Skipping step 2 is what caused the 2026-05-27 white-screen incident — `expo-clipboard` JS shipped via OTA to a 1.1.0 binary that didn't have the native module linked, so the Detail screen force-closed for everyone. CI could enforce this with a pre-`eas update` check that fails if `package.json` added a dep but `app.json` version didn't move — open item.
+
+**Cron-cost tuning.** Sub-minute pg_cron schedules write to `cron.job_run_details` per run AND drive WAL replication events on every UPDATE; both are CPU costs that compound at scale. The `internal-calls-expire-ringing` job ran at 30s for 8 days before being moved to 60s on 2026-05-27 once CPU pressure forced an audit. Heuristic: a cron whose work is sub-millisecond and frequently no-ops should be the longest interval the UX tolerates, not the shortest the use case theoretically wants. For Reda's call-expiry sweep, 60s instead of 30s delayed the `ringing → missed` transition by at most 30s in the Call History screen — invisible. The cron schedule string follows pg_cron's two-form syntax: `'[1-59] seconds'` for sub-minute, standard 5-field cron (`* * * * *`) for ≥1 minute.
+
+**Compute-tier sizing.** Reda spent its first weeks on the Free / Nano tier (Shared CPU, burstable AWS t-class). Daily-max CPU climbed from ~55% to 100% over the week leading up to 2026-05-27 — symptomatic of approaching the burst-credit baseline. The diagnosis came from comparing `pg_stat_statements` cumulative cost against the per-minute Supabase Metrics API (`https://<ref>.supabase.co/customer/v1/privileged/metrics`, Basic auth with `service_role`). Symptom shape on a credit-throttled burstable: high user+system mode, iowait ≈ 0, load avg > #cores. Fix: bump Compute Add-On to Micro ($10/mo) or Small ($15/mo) — both give 2-core *dedicated* ARM CPU and remove the credit cap. Memory hasn't been a bottleneck; pick the tier on CPU need, not RAM.
 
 ### Accessibility
 - Tap targets minimum 44px
