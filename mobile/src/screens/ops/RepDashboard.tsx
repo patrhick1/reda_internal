@@ -1,5 +1,13 @@
-// Dispatcher home dashboard. The rep home is RepDashboard (separate file)
-// because reps also surface a Recent-activity list; dispatchers don't.
+// Rep home dashboard. Mirrors the dispatcher dashboard (OpsDashboard)
+// but adds the shared Recent-activity list so reps can see today's
+// delivery updates at a glance — their job is delivery success, not
+// agent coordination, so this list is the most useful surface to lead
+// with after the hero and the needs-review CTA.
+//
+// Kept as a separate file from OpsDashboard intentionally: no role flag
+// inside a shared component. If rep and dispatcher diverge further the
+// two files evolve independently; if they converge again we extract more
+// shared building blocks then.
 import { useCallback, useMemo } from 'react';
 import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -9,16 +17,17 @@ import { listDeliveries, siblingGroupKey, type DeliveryRow } from '@/services/de
 import { listUsers } from '@/services/users';
 import { listBotInbound } from '@/services/bot';
 import { AppBar, Avatar, Card, FAB, Icon, SectionHeader } from '@/components/ui';
+import { RecentActivityCard } from '@/components/delivery/RecentActivityCard';
 import { colors, fonts, statusBucket } from '@/lib/theme';
 
-type OpsBasePath = '/(dispatcher)';
+const REP_BASE = '/(rep)' as const;
 
 function shortDate(): string {
   const lagos = new Date(new Date().getTime() + 60 * 60 * 1000);
   return lagos.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
 }
 
-export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
+export function RepDashboard() {
   const user = useCurrentUser();
   const router = useRouter();
   const deliveriesQ = useAsync(() => listDeliveries(user.role), [user.role]);
@@ -59,7 +68,6 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
             {stats.total === 1 ? 'order' : 'orders'}
           </Text>
 
-          {/* Status bar */}
           <View style={{
             marginTop: 14, flexDirection: 'row', height: 8, borderRadius: 4, overflow: 'hidden',
             backgroundColor: colors.surface,
@@ -83,7 +91,7 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
 
         {/* Needs review (black CTA) */}
         {(reviewCount > 0 || unassignedCount > 0) ? (
-          <Card style={{ backgroundColor: colors.black }} onPress={() => router.push(`${basePath}/review` as `${OpsBasePath}/review`)}>
+          <Card style={{ backgroundColor: colors.black }} onPress={() => router.push(`${REP_BASE}/review`)}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontFamily: fonts.bold, fontSize: 11, color: colors.textTertiary, letterSpacing: 0.8, textTransform: 'uppercase' }}>
@@ -106,12 +114,19 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
           </Card>
         ) : null}
 
+        {/* Recent activity — shared with admin */}
+        <RecentActivityCard
+          rows={deliveries}
+          loading={deliveriesQ.loading}
+          basePath={REP_BASE}
+        />
+
         {/* Agent workload */}
         <SectionHeader
           right={
             <Text
               style={{ fontFamily: fonts.semibold, fontSize: 12, color: colors.textSecondary }}
-              onPress={() => router.push(`${basePath}/deliveries` as `${OpsBasePath}/deliveries`)}
+              onPress={() => router.push(`${REP_BASE}/deliveries`)}
             >
               See all →
             </Text>
@@ -161,7 +176,7 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
         )}
       </ScrollView>
 
-      <FAB icon="plus" label="Create" onPress={() => router.push(`${basePath}/deliveries/new` as `${OpsBasePath}/deliveries/new`)} />
+      <FAB icon="plus" label="Create" onPress={() => router.push(`${REP_BASE}/deliveries/new`)} />
     </View>
   );
 }
@@ -176,9 +191,6 @@ function Legend({ label, n, color }: { label: string; n: number; color: string }
   );
 }
 
-/** Sibling-collapsed bucket counts. Race-assigned siblings count as one
- *  customer order. Per group outcome (priority): done → active → soft → closed.
- *  total = unique chains scheduled today. */
 function bucketCounts(rows: DeliveryRow[]): {
   active: number; soft: number; done: number; closed: number; total: number;
 } {

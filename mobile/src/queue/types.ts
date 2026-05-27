@@ -18,6 +18,10 @@ export type ChangeDeliveryStatusArgs = {
   quantityDelivered: number | null;
   paid: number | null;
   paymentMethod: 'cash' | 'transfer' | null;
+  /** YYYY-MM-DD. Only meaningful when toStatus = 'postponed' — the server
+   *  ignores it otherwise. Required by the UI for postponed transitions;
+   *  null for every other status. */
+  newScheduledDate: string | null;
 };
 
 export type CreateStockAdjustmentArgs = {

@@ -109,6 +109,7 @@ export function StatusUpdatePanel({
         quantityDelivered: qty,
         paid: paidNum,
         paymentMethod: method,
+        newScheduledDate: null,
       }, `Status → ${toStatus} · ${delivery.customer_name ?? ''}`);
       onCommitted(toStatus);
     } catch (e) {

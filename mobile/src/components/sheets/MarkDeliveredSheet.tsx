@@ -88,6 +88,7 @@ export function MarkDeliveredSheet({
         quantityDelivered: qtyNum,
         paid: paidNum,
         paymentMethod: method,
+        newScheduledDate: null,
       }, `Mark delivered · ${delivery!.customer_name ?? ''}`);
       onConfirmed('delivered', jobId);
     } catch (e) {

@@ -1,4 +1,4 @@
-import { OpsDashboard } from '@/screens/ops/OpsDashboard';
+import { RepDashboard } from '@/screens/ops/RepDashboard';
 export default function RepHome() {
-  return <OpsDashboard basePath="/(rep)" />;
+  return <RepDashboard />;
 }

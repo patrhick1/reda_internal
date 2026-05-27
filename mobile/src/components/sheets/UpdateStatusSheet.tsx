@@ -33,6 +33,7 @@ export function UpdateStatusSheet({
 
   const [picked, setPicked] = useState<DeliveryStatusTransition | null>(null);
   const [reason, setReason] = useState('');
+  const [postponeDate, setPostponeDate] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const enqueueStatus = useEnqueueChangeStatus();
@@ -45,8 +46,11 @@ export function UpdateStatusSheet({
   function reset() {
     setPicked(null);
     setReason('');
+    setPostponeDate('');
     setError(null);
   }
+
+  const isPostponed = picked?.to_status === 'postponed';
 
   async function submit() {
     if (!delivery || !picked) return;
@@ -54,6 +58,27 @@ export function UpdateStatusSheet({
       setError('A reason is required for this transition');
       return;
     }
+
+    // Postponed requires a future scheduled_date (server validates too).
+    let newScheduledDate: string | null = null;
+    if (isPostponed) {
+      const trimmed = postponeDate.trim();
+      if (!trimmed) {
+        setError('Pick a date to postpone to');
+        return;
+      }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+        setError('Date format must be YYYY-MM-DD');
+        return;
+      }
+      const todayLagos = lagosTodayYmd();
+      if (trimmed <= todayLagos) {
+        setError('Postpone date must be after today');
+        return;
+      }
+      newScheduledDate = trimmed;
+    }
+
     setSubmitting(true);
     setError(null);
     try {
@@ -65,6 +90,7 @@ export function UpdateStatusSheet({
         quantityDelivered: null,
         paid: null,
         paymentMethod: null,
+        newScheduledDate,
       }, `Status → ${picked.to_status} · ${delivery.customer_name ?? ''}`);
       const newStatus = picked.to_status;
       reset();
@@ -74,6 +100,11 @@ export function UpdateStatusSheet({
     } finally {
       setSubmitting(false);
     }
+  }
+
+  /** Convenience: set the date input to today + N days (Lagos). */
+  function setRelative(daysAhead: number) {
+    setPostponeDate(addDaysYmd(lagosTodayYmd(), daysAhead));
   }
 
   if (!delivery) return null;
@@ -129,6 +160,38 @@ export function UpdateStatusSheet({
             <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary }}>Change to</Text>
             <StatusPill status={picked.to_status} />
           </View>
+          {isPostponed ? (
+            <View style={{ gap: 8 }}>
+              <Input
+                label="Postpone to (required)"
+                value={postponeDate}
+                onChange={setPostponeDate}
+                placeholder="YYYY-MM-DD"
+                icon="calendar"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {[1, 2, 3, 7].map(n => (
+                  <Pressable
+                    key={n}
+                    onPress={() => setRelative(n)}
+                    style={({ pressed }) => ([{
+                      paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999,
+                      borderWidth: 1, borderColor: colors.border, backgroundColor: colors.white,
+                    }, pressed && { backgroundColor: colors.surface }])}
+                  >
+                    <Text style={{ fontFamily: fonts.semibold, fontSize: 12, color: colors.black }}>
+                      +{n}{n === 1 ? ' day' : ' days'}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={{ fontFamily: fonts.medium, fontSize: 11, color: colors.textSecondary }}>
+                Sundays auto-bump to Monday.
+              </Text>
+            </View>
+          ) : null}
           <Input
             label={picked.requires_reason ? 'Reason (required)' : 'Reason (optional)'}
             value={reason}
@@ -165,4 +228,22 @@ export function UpdateStatusSheet({
       )}
     </Sheet>
   );
+}
+
+/** YYYY-MM-DD for "today" in Africa/Lagos. Lagos is UTC+01:00 year-round. */
+function lagosTodayYmd(): string {
+  const lagos = new Date(new Date().getTime() + 60 * 60 * 1000);
+  return lagos.toISOString().slice(0, 10);
+}
+
+/** YYYY-MM-DD `n` calendar days after the given YYYY-MM-DD. Caller picks the
+ *  base; we just arithmetic on UTC midnight to dodge DST/TZ wobble. */
+function addDaysYmd(baseYmd: string, days: number): string {
+  const parts = baseYmd.split('-');
+  const y = Number(parts[0]);
+  const m = Number(parts[1]);
+  const d = Number(parts[2]);
+  const base = new Date(Date.UTC(y, m - 1, d));
+  base.setUTCDate(base.getUTCDate() + days);
+  return base.toISOString().slice(0, 10);
 }

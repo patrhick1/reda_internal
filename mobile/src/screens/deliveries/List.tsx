@@ -32,9 +32,9 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   // so the picker stays hidden for them — narrowing has no work to do.
   const [agentId, setAgentId] = useState<string | null>(null);
   const showAgentPicker = canAssignDelivery(user.role);
-  // Customer-name substring filter. Admin/dispatcher only — agents have at
-  // most a handful of rows on screen and don't need it. Plain client-side
-  // narrow over the already-fetched list; no extra round-trip.
+  // Customer-name substring filter. Ops roles (admin / dispatcher / rep) —
+  // agents have at most a handful of rows on screen and don't need it. Plain
+  // client-side narrow over the already-fetched list; no extra round-trip.
   const showNameSearch = canAssignDelivery(user.role);
   const [nameQuery, setNameQuery] = useState('');
   const nameNeedle = nameQuery.trim().toLowerCase();

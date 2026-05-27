@@ -17,7 +17,11 @@ import {
   AppBar, Avatar, Button, Card, Empty, Hint, Icon, StatusPill,
 } from '@/components/ui';
 import { colors, fonts, TERMINAL_STATUSES } from '@/lib/theme';
-import { canClaimFollowup, canEditDelivery, canHandoffToSubAgent, canSeeCharged, canSeeMargin } from '@/lib/permissions';
+import { canClaimFollowup, canEditDelivery, canHandoffToSubAgent, canMarkClientNotified, canSeeCharged, canSeeMargin, canUpdateStatus } from '@/lib/permissions';
+import {
+  listClientNotificationsForDelivery, markClientNotified,
+  type ClientNotificationRow,
+} from '@/services/clientNotifications';
 import { FollowupClaimBanner } from '@/components/delivery/FollowupClaimBanner';
 import { HINTS } from '@/hints/registry';
 import { formatDateTime, formatNaira } from '@/lib/format';
@@ -37,6 +41,8 @@ export function DeliveryDetail() {
   const deliveryQ = useAsync(() => getDelivery(user.role, id), [user.role, id]);
   const historyQ  = useAsync(() => listDeliveryHistory(id), [id]);
   const defsQ     = useAsync(() => listStatusDefs(), []);
+  const notifQ    = useAsync(() => listClientNotificationsForDelivery(id), [id]);
+  const canMarkNotified = canMarkClientNotified(user.role);
 
   const [markOpen, setMarkOpen] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
@@ -63,8 +69,20 @@ export function DeliveryDetail() {
   useFocusEffect(useCallback(() => {
     deliveryQ.reload();
     historyQ.reload();
+    notifQ.reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []));
+
+  const onMarkNotified = useCallback(async (historyId: string) => {
+    try {
+      await markClientNotified(historyId);
+    } catch (err) {
+      Alert.alert('Could not mark notified', err instanceof Error ? err.message : String(err));
+    } finally {
+      notifQ.reload();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Drop the optimistic veil when either the server has caught up OR the
   // tracked queue job has ended. Two paths converge here:
@@ -163,11 +181,7 @@ export function DeliveryDetail() {
   const showAgentPayment = user.role === 'admin' || (user.role === 'agent' && d.assigned_agent_id === user.userId);
 
   const charged = 'charged_snapshot' in d ? (d.charged_snapshot ?? null) : null;
-  const canEdit =
-    user.role === 'admin' ||
-    user.role === 'dispatcher' ||
-    user.role === 'rep' ||
-    (user.role === 'agent' && d.assigned_agent_id === user.userId);
+  const canEdit = canUpdateStatus(user.role, d.assigned_agent_id === user.userId);
 
   const onCommitted = (newStatus: string, jobId: string) => {
     setOptimistic({ status: newStatus, jobId });
@@ -423,7 +437,16 @@ export function DeliveryDetail() {
           ) : (
             <View>
               {[...historyQ.data!].reverse().map((h, i, arr) => (
-                <HistoryRow key={h.id} row={h} first={i === 0} last={i === arr.length - 1} labelByStatus={labelByStatus} />
+                <HistoryRow
+                  key={h.id}
+                  row={h}
+                  first={i === 0}
+                  last={i === arr.length - 1}
+                  labelByStatus={labelByStatus}
+                  notification={notifQ.data?.get(h.id) ?? null}
+                  canMark={canMarkNotified}
+                  onMark={onMarkNotified}
+                />
               ))}
             </View>
           )}
@@ -481,12 +504,15 @@ function MoneyRow({ label, value, accent }: { label: string; value: string; acce
 }
 
 function HistoryRow({
-  row, first, last, labelByStatus,
+  row, first, last, labelByStatus, notification, canMark, onMark,
 }: {
   row: DeliveryStatusHistoryRow;
   first: boolean;
   last: boolean;
   labelByStatus: Map<string, string>;
+  notification: ClientNotificationRow | null;
+  canMark: boolean;
+  onMark: (historyId: string) => void;
 }) {
   return (
     <View style={{ flexDirection: 'row', gap: 12 }}>
@@ -524,6 +550,31 @@ function HistoryRow({
           <Text style={{ fontFamily: fonts.regular, fontSize: 11, color: colors.textTertiary, marginTop: 2 }}>
             from {labelByStatus.get(row.from_status) ?? row.from_status}
           </Text>
+        ) : null}
+        {/* Client-notified tag. Reps see the button until someone taps it;
+            once tagged everyone sees who and when. */}
+        {notification ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
+            <Icon name="check" size={14} color={colors.success} />
+            <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.success }}>
+              Client notified · {notification.holderName} · {formatDateTime(notification.notifiedAt)}
+            </Text>
+          </View>
+        ) : canMark ? (
+          <TouchableOpacity
+            onPress={() => onMark(row.id)}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6,
+              alignSelf: 'flex-start',
+              paddingVertical: 6, paddingHorizontal: 10,
+              borderRadius: 999, borderWidth: 1, borderColor: colors.borderStrong,
+            }}
+          >
+            <Icon name="check" size={14} color={colors.textSecondary} />
+            <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary }}>
+              Mark client notified
+            </Text>
+          </TouchableOpacity>
         ) : null}
       </View>
     </View>

@@ -636,6 +636,63 @@ export type Database = {
           },
         ]
       }
+      delivery_client_notifications: {
+        Row: {
+          delivery_id: string
+          notified_at: string
+          notified_by_user_id: string
+          status_history_id: string
+        }
+        Insert: {
+          delivery_id: string
+          notified_at?: string
+          notified_by_user_id: string
+          status_history_id: string
+        }
+        Update: {
+          delivery_id?: string
+          notified_at?: string
+          notified_by_user_id?: string
+          status_history_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "delivery_client_notifications_delivery_id_fkey"
+            columns: ["delivery_id"]
+            isOneToOne: false
+            referencedRelation: "deliveries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_client_notifications_delivery_id_fkey"
+            columns: ["delivery_id"]
+            isOneToOne: false
+            referencedRelation: "deliveries_admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_client_notifications_delivery_id_fkey"
+            columns: ["delivery_id"]
+            isOneToOne: false
+            referencedRelation: "deliveries_safe"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_client_notifications_notified_by_user_id_fkey"
+            columns: ["notified_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_client_notifications_status_history_id_fkey"
+            columns: ["status_history_id"]
+            isOneToOne: true
+            referencedRelation: "delivery_status_history"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       delivery_followups: {
         Row: {
           claimed_at: string
@@ -1724,20 +1781,36 @@ export type Database = {
           isSetofReturn: false
         }
       }
-      change_delivery_status: {
-        Args: {
-          p_client_uuid: string
-          p_delivery_id: string
-          p_effective_at?: string
-          p_notes?: string
-          p_paid?: number
-          p_payment_method?: string
-          p_quantity_delivered?: number
-          p_reason?: string
-          p_to_status: string
-        }
-        Returns: undefined
-      }
+      change_delivery_status:
+        | {
+            Args: {
+              p_client_uuid: string
+              p_delivery_id: string
+              p_effective_at?: string
+              p_notes?: string
+              p_paid?: number
+              p_payment_method?: string
+              p_quantity_delivered?: number
+              p_reason?: string
+              p_to_status: string
+            }
+            Returns: undefined
+          }
+        | {
+            Args: {
+              p_client_uuid: string
+              p_delivery_id: string
+              p_effective_at?: string
+              p_new_scheduled_date?: string
+              p_notes?: string
+              p_paid?: number
+              p_payment_method?: string
+              p_quantity_delivered?: number
+              p_reason?: string
+              p_to_status: string
+            }
+            Returns: undefined
+          }
       claim_followup: {
         Args: { p_delivery_id: string; p_takeover?: boolean }
         Returns: {
@@ -2017,6 +2090,17 @@ export type Database = {
       }
       is_admin: { Args: never; Returns: boolean }
       is_admin_or_dispatcher: { Args: never; Returns: boolean }
+      mark_client_notified: {
+        Args: { p_status_history_id: string }
+        Returns: {
+          delivery_id: string
+          holder_name: string
+          is_self: boolean
+          notified_at: string
+          notified_by_user_id: string
+          status_history_id: string
+        }[]
+      }
       mark_inbound_processed: {
         Args: {
           p_delivery_id?: string

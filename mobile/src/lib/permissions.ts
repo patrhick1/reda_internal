@@ -115,6 +115,17 @@ export function canCorrectStatus(role: Role): boolean {
   return role === 'admin';
 }
 
+/** Forward status updates on a delivery (Update status / Mark delivered).
+ *  Admin and dispatcher can update any delivery; an agent can update only
+ *  their own assigned row. Rep and warehouse cannot — reps coordinate but
+ *  do not make ground-truth status calls.
+ *  Server anchor: change_delivery_status() RPC + RLS on deliveries_update_*. */
+export function canUpdateStatus(role: Role, isAssignedAgent: boolean): boolean {
+  if (role === 'admin' || role === 'dispatcher') return true;
+  if (role === 'agent') return isAssignedAgent;
+  return false;
+}
+
 /** Soft-delete a delivery. Admin-only.
  * Server anchor: deliveries_delete_admin policy. */
 export function canDeleteDelivery(role: Role): boolean {
@@ -159,4 +170,12 @@ const FOLLOWUP_STATUSES = new Set<string>(STATUS_GROUPS.soft);
 export function canClaimFollowup(role: Role, currentStatus: string | null): boolean {
   if (!isOps(role)) return false;
   return FOLLOWUP_STATUSES.has(currentStatus ?? '');
+}
+
+/** Can this user tag a status-history row as "client notified on WhatsApp"?
+ *  Operational set only — agents don't message clients, they deliver.
+ *  Server anchor: `mark_client_notified` RPC + dcn_select_ops_or_self_agent
+ *  policy (scripts/client-notified-tag.sql). */
+export function canMarkClientNotified(role: Role): boolean {
+  return isOps(role);
 }

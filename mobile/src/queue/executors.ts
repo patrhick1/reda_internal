@@ -30,6 +30,7 @@ const EXECUTORS: Record<JobKind, Executor> = {
       p_quantity_delivered: args.quantityDelivered as unknown as number,
       p_paid: args.paid as unknown as number,
       p_payment_method: args.paymentMethod as unknown as string,
+      p_new_scheduled_date: args.newScheduledDate as unknown as string,
     });
     if (error) throw error;
   },

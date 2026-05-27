@@ -28,12 +28,13 @@ export type AgentEarningRow = {
   customer_name: string;
   scheduled_date: string;
   agent_payment_snapshot: number;
-  client_name: string | null;
   product_name: string | null;
 };
 
 /** Returns this agent's delivered-deliveries in the last N days (default 35 — covers month).
- *  Reads from deliveries_safe, which exposes agent_payment_snapshot only to the assigned agent. */
+ *  Reads from deliveries_safe, which exposes agent_payment_snapshot only to the assigned agent.
+ *  Client name is intentionally omitted — agents don't get to see which vendor
+ *  the delivery belongs to. */
 export async function listAgentEarnings(userId: string, days: number = 35): Promise<AgentEarningRow[]> {
   const todayLagosDate = new Date(new Date().getTime() + 60 * 60 * 1000);
   const cutoff = new Date(todayLagosDate);
@@ -46,7 +47,6 @@ export async function listAgentEarnings(userId: string, days: number = 35): Prom
       customer_name,
       scheduled_date,
       agent_payment_snapshot,
-      client:clients(name),
       product:product_catalog(product_name)
     `)
     .eq('assigned_agent_id', userId)
@@ -56,7 +56,7 @@ export async function listAgentEarnings(userId: string, days: number = 35): Prom
 
   if (error) throw error;
   return (data ?? [])
-    .filter((row): row is { id: string; customer_name: string; scheduled_date: string; agent_payment_snapshot: number; client: { name: string } | null; product: { product_name: string } | null } =>
+    .filter((row): row is { id: string; customer_name: string; scheduled_date: string; agent_payment_snapshot: number; product: { product_name: string } | null } =>
       row.id !== null && row.customer_name !== null && row.scheduled_date !== null && row.agent_payment_snapshot !== null,
     )
     .map((row) => ({
@@ -64,7 +64,6 @@ export async function listAgentEarnings(userId: string, days: number = 35): Prom
       customer_name: row.customer_name,
       scheduled_date: row.scheduled_date,
       agent_payment_snapshot: row.agent_payment_snapshot,
-      client_name: row.client?.name ?? null,
       product_name: row.product?.product_name ?? null,
     }));
 }
@@ -309,6 +308,8 @@ export type ChangeStatusInput = {
   quantityDelivered: number | null;
   paid: number | null;
   paymentMethod: 'cash' | 'transfer' | null;
+  // For 'postponed' only — YYYY-MM-DD; server ignores otherwise.
+  newScheduledDate: string | null;
 };
 
 export async function changeDeliveryStatus(input: ChangeStatusInput): Promise<void> {
@@ -321,6 +322,7 @@ export async function changeDeliveryStatus(input: ChangeStatusInput): Promise<vo
     p_quantity_delivered: input.quantityDelivered as unknown as number,
     p_paid: input.paid as unknown as number,
     p_payment_method: input.paymentMethod as unknown as string,
+    p_new_scheduled_date: input.newScheduledDate as unknown as string,
   });
   if (error) throw error;
 }

@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import { ActivityIndicator, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
@@ -7,8 +7,8 @@ import { listDeliveries, siblingGroupKey, type DeliveryRow } from '@/services/de
 import { listBotInbound } from '@/services/bot';
 import { ISSUE_LABELS, listOpenIssuesForOps, type OpenIssueRow } from '@/services/delivery-messages';
 import { AppBar, Card, Icon, SectionHeader, StatusPill } from '@/components/ui';
+import { RecentActivityCard } from '@/components/delivery/RecentActivityCard';
 import { colors, fonts, statusBucket } from '@/lib/theme';
-import { formatNaira } from '@/lib/format';
 import { type IconName } from '@/components/ui';
 
 function todayHeaderDate(): string {
@@ -33,7 +33,6 @@ export default function AdminHome() {
   }, []));
 
   const stats = useMemo(() => summarize(todayQ.data ?? []), [todayQ.data]);
-  const recent = useMemo(() => [...(todayQ.data ?? [])].slice(0, 4), [todayQ.data]);
   const reviewCount = (reviewQ.data ?? []).length;
   const openIssues = issuesQ.data ?? [];
   const firstName = user.displayName.split(' ')[0] ?? user.displayName;
@@ -110,50 +109,11 @@ export default function AdminHome() {
         </View>
 
         {/* Recent activity */}
-        <SectionHeader
-          right={
-            <Text
-              style={{ fontFamily: fonts.semibold, fontSize: 12, color: colors.textSecondary }}
-              onPress={() => router.push('/(admin)/deliveries')}
-            >
-              See all →
-            </Text>
-          }
-        >
-          Recent activity
-        </SectionHeader>
-        {todayQ.loading && !todayQ.data ? (
-          <ActivityIndicator color={colors.black} />
-        ) : recent.length === 0 ? (
-          <Card>
-            <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary, textAlign: 'center', paddingVertical: 12 }}>
-              No deliveries today yet. They&apos;ll appear here as orders come in.
-            </Text>
-          </Card>
-        ) : (
-          <View style={{ gap: 8 }}>
-            {recent.map(d => (
-              <Card key={d.id} dense onPress={() => router.push({ pathname: '/(admin)/deliveries/[id]', params: { id: d.id! } })}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                  <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Text style={{ flex: 1, fontFamily: fonts.bold, fontSize: 14, color: colors.black }} numberOfLines={1}>
-                        {d.customer_name}
-                      </Text>
-                      <StatusPill status={d.current_status ?? 'pending'} variant="subtle" size="sm" />
-                    </View>
-                    <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary, marginTop: 2 }} numberOfLines={1}>
-                      {d.product_name ?? '—'} · {d.assigned_agent_name ?? 'Unassigned'}
-                    </Text>
-                  </View>
-                  <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.black }}>
-                    {formatNaira(d.customer_price)}
-                  </Text>
-                </View>
-              </Card>
-            ))}
-          </View>
-        )}
+        <RecentActivityCard
+          rows={todayQ.data ?? []}
+          loading={todayQ.loading}
+          basePath="/(admin)"
+        />
       </ScrollView>
     </View>
   );

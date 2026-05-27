@@ -225,27 +225,11 @@ export default function AgentDeliveryDetail() {
           ) : null}
         </Card>
 
-        {/* Vendor */}
-        <Card style={d.client_name ? undefined : { opacity: 0.6 }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={kicker}>Vendor</Text>
-          </View>
-          <Text style={{ fontFamily: fonts.bold, fontSize: 16, color: colors.black, marginTop: 4 }}>
-            {d.client_name ?? '—'}
-          </Text>
-          {/* Quick entry to ring ops about this specific delivery. Opens the
-              Team directory with related_delivery_id so the call is linked
-              to this row for audit. */}
-          <TouchableOpacity
-            onPress={() => router.push(`/(call)/team?related_delivery_id=${d.id}`)}
-            style={{
-              marginTop: 12, paddingTop: 12,
-              borderTopWidth: 1, borderTopColor: colors.border,
-              flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-            }}
-            accessibilityLabel="Call admin or dispatch about this delivery"
-            accessibilityRole="button"
-          >
+        {/* Quick entry to ring ops about this specific delivery. Opens the
+            Team directory with related_delivery_id so the call is linked
+            to this row for audit. */}
+        <Card onPress={() => router.push(`/(call)/team?related_delivery_id=${d.id}`)}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Icon name="phone" size={16} color={colors.success} />
               <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.textPrimary }}>
@@ -253,7 +237,7 @@ export default function AgentDeliveryDetail() {
               </Text>
             </View>
             <Icon name="chevronRight" size={16} color={colors.textSecondary} />
-          </TouchableOpacity>
+          </View>
         </Card>
 
         {/* Messages (only renders when there's a flag thread) */}

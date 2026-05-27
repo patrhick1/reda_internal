@@ -76,7 +76,7 @@ function EarningRow({ row }: { row: AgentEarningRow }) {
         <View style={{ flex: 1 }}>
           <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>{row.customer_name}</Text>
           <Text numberOfLines={1} style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
-            {[row.product_name, row.client_name].filter(Boolean).join(' · ')}
+            {row.product_name ?? '—'}
           </Text>
           <Text style={{ fontFamily: fonts.mono, fontSize: 11, color: colors.textTertiary, marginTop: 2 }}>
             {row.scheduled_date}

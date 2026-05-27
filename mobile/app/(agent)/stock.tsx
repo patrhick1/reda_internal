@@ -62,9 +62,6 @@ function StockRow({ row }: { row: StockMatrixRow }) {
         </View>
         <View style={{ flex: 1 }}>
           <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>{row.product_name}</Text>
-          <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
-            {row.client_name}
-          </Text>
         </View>
         <View style={{ alignItems: 'flex-end' }}>
           <Text style={{

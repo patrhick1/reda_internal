@@ -147,7 +147,6 @@ const DeliveryCard = memo(function DeliveryCard({ delivery, onPress }: { deliver
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginTop: 8 }}>
             <Text style={{ flex: 1, fontFamily: fonts.medium, fontSize: 13, color: colors.black }} numberOfLines={1}>
-              <Text style={{ color: colors.textSecondary }}>{delivery.client_name ?? '—'} · </Text>
               <Text style={{ fontFamily: fonts.semibold }}>{delivery.product_name ?? '—'}</Text>
               {delivery.quantity_ordered && delivery.quantity_ordered > 1 ? (
                 <Text style={{ color: colors.textSecondary }}> × {delivery.quantity_ordered}</Text>
