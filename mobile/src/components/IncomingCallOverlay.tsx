@@ -164,8 +164,12 @@ export function IncomingCallOverlay() {
             {busy === 'accept'
               ? 'Connecting…'
               : busy === 'decline'
-                ? (snap.isTeamCall ? 'Dismissing…' : 'Declining…')
-                : (snap.isTeamCall ? 'is paging the team' : 'is calling you')}
+                ? snap.isTeamCall
+                  ? 'Dismissing…'
+                  : 'Declining…'
+                : snap.isTeamCall
+                  ? 'is paging the team'
+                  : 'is calling you'}
           </Text>
         </View>
 

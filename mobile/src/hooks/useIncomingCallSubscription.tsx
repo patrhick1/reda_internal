@@ -22,10 +22,7 @@ import type { Role } from '@/lib/permissions';
 // coordinator state set to 'incoming' for every call that arrives while the
 // browser tab is open, even though the user can't act on it. The call still
 // rings on their phone (where the subscription IS active).
-export function useIncomingCallSubscription(
-  userId: string | null,
-  role: Role | null,
-): void {
+export function useIncomingCallSubscription(userId: string | null, role: Role | null): void {
   useEffect(() => {
     if (!userId) return;
     if (Platform.OS === 'web') return;
@@ -75,9 +72,9 @@ export function useIncomingCallSubscription(
         .on(
           'postgres_changes',
           {
-            event:  'INSERT',
+            event: 'INSERT',
             schema: 'public',
-            table:  'calls',
+            table: 'calls',
             filter: 'callee_audience=eq.ops_team',
           },
           async (payload) => {
@@ -94,9 +91,9 @@ export function useIncomingCallSubscription(
         .on(
           'postgres_changes',
           {
-            event:  'UPDATE',
+            event: 'UPDATE',
             schema: 'public',
-            table:  'calls',
+            table: 'calls',
             // After accept, callee_audience flips off ops_team. The losing
             // accepters need to see THAT update, not just rows still in
             // ops_team. Drop the filter so we catch the transition; the

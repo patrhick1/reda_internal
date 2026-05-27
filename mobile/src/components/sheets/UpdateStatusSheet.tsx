@@ -9,7 +9,8 @@ import {
   type DeliveryStatusTransition,
 } from '@/services/deliveries';
 import { useAsync } from '@/hooks/useAsync';
-import { useEnqueueChangeStatus } from '@/queue/mutations';
+import { useEnqueueChangeStatus, useEnqueueFlagDelivery } from '@/queue/mutations';
+import { STATUS_AUTO_ISSUE } from '@/services/delivery-messages';
 import { errorMessage } from '@/lib/errors';
 
 /** Bottom-sheet status updater for non-`delivered` transitions.
@@ -18,12 +19,18 @@ export function UpdateStatusSheet({
   open,
   delivery,
   isAdmin,
+  autoSeedThreadOnIntervention = false,
   onClose,
   onCommitted,
 }: {
   open: boolean;
   delivery: DeliveryRow | null;
   isAdmin: boolean;
+  /** When true, picking a status in `STATUS_AUTO_ISSUE` routes the submit
+   *  through `flag_delivery_issue` instead of `change_delivery_status` so a
+   *  thread gets seeded automatically. Only the agent's delivery detail
+   *  screen opts in — ops users keep the plain status-change semantics. */
+  autoSeedThreadOnIntervention?: boolean;
   onClose: () => void;
   /** Called once the mutation has been enqueued. `jobId` is the queue job
    *  the parent should watch so the optimistic veil clears once the job
@@ -43,6 +50,7 @@ export function UpdateStatusSheet({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const enqueueStatus = useEnqueueChangeStatus();
+  const enqueueFlag = useEnqueueFlagDelivery();
 
   // Filter out 'delivered' — that has its own sheet.
   const options = useMemo(() => {
@@ -57,6 +65,9 @@ export function UpdateStatusSheet({
   }
 
   const isPostponed = picked?.to_status === 'postponed';
+  const autoIssue =
+    picked && autoSeedThreadOnIntervention ? (STATUS_AUTO_ISSUE[picked.to_status] ?? null) : null;
+  const willSeedThread = autoIssue !== null;
 
   async function submit() {
     if (!delivery || !picked) return;
@@ -88,19 +99,33 @@ export function UpdateStatusSheet({
     setSubmitting(true);
     setError(null);
     try {
-      const jobId = await enqueueStatus(
-        {
-          deliveryId: delivery.id ?? '',
-          toStatus: picked.to_status,
-          reason: reason.trim() || null,
-          notes: null,
-          quantityDelivered: null,
-          paid: null,
-          paymentMethod: null,
-          newScheduledDate,
-        },
-        `Status → ${picked.to_status} · ${delivery.customer_name ?? ''}`,
-      );
+      const label = `Status → ${picked.to_status} · ${delivery.customer_name ?? ''}`;
+      // Intervention-class statuses (only when the caller opts in — agent-side)
+      // route through `flag_delivery_issue` so ops get a thread automatically.
+      // Everything else goes through the plain status RPC unchanged.
+      const jobId = autoIssue
+        ? await enqueueFlag(
+            {
+              deliveryId: delivery.id ?? '',
+              issueType: autoIssue,
+              note: reason.trim() || null,
+              newStatus: picked.to_status,
+            },
+            label,
+          )
+        : await enqueueStatus(
+            {
+              deliveryId: delivery.id ?? '',
+              toStatus: picked.to_status,
+              reason: reason.trim() || null,
+              notes: null,
+              quantityDelivered: null,
+              paid: null,
+              paymentMethod: null,
+              newScheduledDate,
+            },
+            label,
+          );
       const newStatus = picked.to_status;
       reset();
       onCommitted(newStatus, jobId);
@@ -192,6 +217,11 @@ export function UpdateStatusSheet({
             </Text>
             <StatusPill status={picked.to_status} />
           </View>
+          {willSeedThread ? (
+            <Banner tone="info" icon="alert">
+              This will also message ops so they can help.
+            </Banner>
+          ) : null}
           {isPostponed ? (
             <View style={{ gap: 8 }}>
               <Input
@@ -233,10 +263,24 @@ export function UpdateStatusSheet({
             </View>
           ) : null}
           <Input
-            label={picked.requires_reason ? 'Reason (required)' : 'Reason (optional)'}
+            label={
+              willSeedThread
+                ? picked.requires_reason
+                  ? 'Note to ops (required)'
+                  : 'Note to ops (optional)'
+                : picked.requires_reason
+                  ? 'Reason (required)'
+                  : 'Reason (optional)'
+            }
             value={reason}
             onChange={setReason}
-            placeholder={picked.requires_reason ? 'e.g. customer rescheduled' : ''}
+            placeholder={
+              willSeedThread
+                ? 'Anything ops should know to help'
+                : picked.requires_reason
+                  ? 'e.g. customer rescheduled'
+                  : ''
+            }
             autoCapitalize="sentences"
           />
           {error ? (

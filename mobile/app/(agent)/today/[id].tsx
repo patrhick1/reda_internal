@@ -335,7 +335,10 @@ export default function AgentDeliveryDetail() {
         <Card
           onPress={async () => {
             if (!canPlaceCall()) {
-              Alert.alert('Calls work on the mobile app', 'Open Reda on your phone to alert the team.');
+              Alert.alert(
+                'Calls work on the mobile app',
+                'Open Reda on your phone to alert the team.',
+              );
               return;
             }
             const micOk = await ensureMicPermission();
@@ -345,7 +348,14 @@ export default function AgentDeliveryDetail() {
                 'Reda needs the microphone to ring ops. Tap "Open settings" → Permissions → Microphone → Allow.',
                 [
                   { text: 'Not now', style: 'cancel' },
-                  { text: 'Open settings', onPress: () => { Linking.openSettings().catch(() => { /* noop */ }); } },
+                  {
+                    text: 'Open settings',
+                    onPress: () => {
+                      Linking.openSettings().catch(() => {
+                        /* noop */
+                      });
+                    },
+                  },
                 ],
               );
               return;
@@ -356,7 +366,10 @@ export default function AgentDeliveryDetail() {
             } catch (err) {
               const msg = err instanceof Error ? err.message : String(err);
               if (msg.includes('ringing call')) {
-                Alert.alert('Already on a call', 'You already have a call ringing. Try again in a moment.');
+                Alert.alert(
+                  'Already on a call',
+                  'You already have a call ringing. Try again in a moment.',
+                );
               } else {
                 Alert.alert('Could not alert team', msg);
               }
@@ -447,6 +460,7 @@ export default function AgentDeliveryDetail() {
         open={updateOpen}
         delivery={d}
         isAdmin={false}
+        autoSeedThreadOnIntervention
         onClose={() => setUpdateOpen(false)}
         onCommitted={onCommitted}
       />

@@ -14,6 +14,7 @@ import type {
   ChangeDeliveryStatusArgs,
   CreateStockAdjustmentArgs,
   CreateStockTransferArgs,
+  FlagDeliveryArgs,
 } from './types';
 
 // Each hook returns the queue job ID so callers (e.g. the delivery detail
@@ -26,6 +27,16 @@ export function useEnqueueChangeStatus() {
   return useCallback(
     async (args: ChangeDeliveryStatusArgs, label: string): Promise<string> => {
       return await enqueue({ kind: 'change_delivery_status', args, label });
+    },
+    [enqueue],
+  );
+}
+
+export function useEnqueueFlagDelivery() {
+  const { enqueue } = useQueue();
+  return useCallback(
+    async (args: FlagDeliveryArgs, label: string): Promise<string> => {
+      return await enqueue({ kind: 'flag_delivery', args, label });
     },
     [enqueue],
   );

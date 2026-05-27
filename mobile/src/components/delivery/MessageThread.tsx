@@ -238,10 +238,14 @@ function ReplyComposer({ deliveryId, onSent }: { deliveryId: string; onSent: () 
 
 function labelForRole(r: AuthorRole): string {
   switch (r) {
-    case 'agent':      return 'Agent';
-    case 'admin':      return 'Admin';
-    case 'dispatcher': return 'Dispatcher';
-    case 'rep':        return 'Rep';
+    case 'agent':
+      return 'Agent';
+    case 'admin':
+      return 'Admin';
+    case 'dispatcher':
+      return 'Dispatcher';
+    case 'rep':
+      return 'Rep';
   }
 }
 

@@ -7,6 +7,7 @@
 
 export type JobKind =
   | 'change_delivery_status'
+  | 'flag_delivery'
   | 'create_stock_adjustment'
   | 'create_stock_transfer';
 
@@ -22,6 +23,16 @@ export type ChangeDeliveryStatusArgs = {
    *  ignores it otherwise. Required by the UI for postponed transitions;
    *  null for every other status. */
   newScheduledDate: string | null;
+};
+
+/** Args for the `flag_delivery_issue` RPC. Used when UpdateStatusSheet
+ *  detects an intervention-class status and routes the agent's submit
+ *  through the flag path so ops get a thread automatically. */
+export type FlagDeliveryArgs = {
+  deliveryId: string;
+  issueType: 'wrong_address' | 'cant_reach_client' | 'payment_dispute' | 'product_issue' | 'other';
+  note: string | null;
+  newStatus: string | null;
 };
 
 export type CreateStockAdjustmentArgs = {
@@ -43,6 +54,7 @@ export type CreateStockTransferArgs = {
 
 export type JobArgs =
   | { kind: 'change_delivery_status'; args: ChangeDeliveryStatusArgs }
+  | { kind: 'flag_delivery'; args: FlagDeliveryArgs }
   | { kind: 'create_stock_adjustment'; args: CreateStockAdjustmentArgs }
   | { kind: 'create_stock_transfer'; args: CreateStockTransferArgs };
 

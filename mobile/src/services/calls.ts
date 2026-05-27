@@ -80,9 +80,7 @@ export async function initiateCall(opts: {
  *  this when a delivery issue needs attention right now and a push isn't
  *  attention-grabbing enough. See scripts/ops-team-call.sql for the
  *  audience semantics. */
-export async function initiateTeamCall(opts: {
-  relatedDeliveryId?: string | null;
-}): Promise<Call> {
+export async function initiateTeamCall(opts: { relatedDeliveryId?: string | null }): Promise<Call> {
   const deviceUuid = await getOrCreateDeviceUuid();
   const { data, error } = await supabase.rpc('initiate_call', {
     p_callee_id: null as unknown as string,

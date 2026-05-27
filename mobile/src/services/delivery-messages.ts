@@ -191,3 +191,20 @@ export const ISSUE_STATUS_OVERRIDES: Record<IssueType, string[]> = {
   product_issue: [],
   other: ['follow_up'],
 };
+
+/** Inverse of ISSUE_DEFAULT_STATUS / ISSUE_STATUS_OVERRIDES — when an agent
+ *  picks one of these statuses via UpdateStatusSheet (not the caution flag),
+ *  the sheet routes through `flag_delivery_issue` instead of
+ *  `change_delivery_status` so a thread gets seeded automatically. The map
+ *  intentionally only covers the customer-unreachable subset of soft_failure;
+ *  customer-deferral statuses (tomorrow / postponed / will_call_back) and
+ *  in-transit statuses (picked_up / waybilled) keep using the plain status
+ *  RPC because they don't need ops escalation. */
+export const STATUS_AUTO_ISSUE: Record<string, IssueType> = {
+  not_answering: 'cant_reach_client',
+  not_around: 'cant_reach_client',
+  not_available: 'cant_reach_client',
+  not_connecting: 'cant_reach_client',
+  number_busy: 'cant_reach_client',
+  switched_off: 'cant_reach_client',
+};

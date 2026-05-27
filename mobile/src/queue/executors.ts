@@ -12,6 +12,7 @@ import type {
   ChangeDeliveryStatusArgs,
   CreateStockAdjustmentArgs,
   CreateStockTransferArgs,
+  FlagDeliveryArgs,
   Job,
   JobKind,
 } from './types';
@@ -31,6 +32,17 @@ const EXECUTORS: Record<JobKind, Executor> = {
       p_paid: args.paid as unknown as number,
       p_payment_method: args.paymentMethod as unknown as string,
       p_new_scheduled_date: args.newScheduledDate as unknown as string,
+    });
+    if (error) throw error;
+  },
+  async flag_delivery(clientUuid, raw) {
+    const args = raw as FlagDeliveryArgs;
+    const { error } = await supabase.rpc('flag_delivery_issue', {
+      p_client_uuid: clientUuid,
+      p_delivery_id: args.deliveryId,
+      p_issue_type: args.issueType,
+      p_note: args.note as unknown as string,
+      p_new_status: args.newStatus as unknown as string,
     });
     if (error) throw error;
   },

@@ -13,7 +13,12 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { AppBar, Avatar, Banner, Empty, Icon } from '@/components/ui';
 import { colors, fonts, radii, spacing } from '@/lib/theme';
 import { useAuth } from '@/hooks/useAuth';
-import { listCallableUsers, initiateCall, initiateTeamCall, type CallableUser } from '@/services/calls';
+import {
+  listCallableUsers,
+  initiateCall,
+  initiateTeamCall,
+  type CallableUser,
+} from '@/services/calls';
 import { ensureMicPermission } from '@/lib/calls/permissions';
 import { canPlaceCall, CALL_UNSUPPORTED_HINT } from '@/lib/calls/availability';
 
@@ -43,7 +48,7 @@ export default function TeamScreen() {
   const [callingId, setCallingId] = useState<string | null>(null);
 
   const userId = account.kind === 'active' ? account.userId : null;
-  const role   = account.kind === 'active' ? account.role : null;
+  const role = account.kind === 'active' ? account.role : null;
   const isAgent = role === 'agent';
 
   const load = useCallback(async () => {
@@ -87,7 +92,14 @@ export default function TeamScreen() {
           'Reda needs the microphone to ring ops. Tap "Open settings" → Permissions → Microphone → Allow.',
           [
             { text: 'Not now', style: 'cancel' },
-            { text: 'Open settings', onPress: () => { Linking.openSettings().catch(() => { /* noop */ }); } },
+            {
+              text: 'Open settings',
+              onPress: () => {
+                Linking.openSettings().catch(() => {
+                  /* noop */
+                });
+              },
+            },
           ],
         );
         return;
@@ -173,7 +185,11 @@ export default function TeamScreen() {
       <View style={{ flex: 1, backgroundColor: colors.surface }}>
         <AppBar
           title="Alert team"
-          subtitle={canPlaceCall() ? 'Rings every admin, dispatcher, and rep' : 'Calls available on the mobile app'}
+          subtitle={
+            canPlaceCall()
+              ? 'Rings every admin, dispatcher, and rep'
+              : 'Calls available on the mobile app'
+          }
           onBack={() => router.back()}
         />
         {!canPlaceCall() ? (
@@ -183,8 +199,23 @@ export default function TeamScreen() {
             </Banner>
           </View>
         ) : null}
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing['3xl'], gap: spacing['2xl'] }}>
-          <Text style={{ fontFamily: fonts.regular, fontSize: 14, color: colors.textSecondary, textAlign: 'center' }}>
+        <View
+          style={{
+            flex: 1,
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: spacing['3xl'],
+            gap: spacing['2xl'],
+          }}
+        >
+          <Text
+            style={{
+              fontFamily: fonts.regular,
+              fontSize: 14,
+              color: colors.textSecondary,
+              textAlign: 'center',
+            }}
+          >
             {relatedDeliveryId
               ? 'Ringing about this delivery. Whoever picks up first will see the row.'
               : 'Ringing every active admin, dispatcher, and rep. Whoever picks up first wins.'}
@@ -194,9 +225,12 @@ export default function TeamScreen() {
             disabled={teamBusy || !canPlaceCall()}
             activeOpacity={0.8}
             style={{
-              width: 160, height: 160, borderRadius: 80,
+              width: 160,
+              height: 160,
+              borderRadius: 80,
               backgroundColor: teamBusy ? colors.successSoft : colors.success,
-              alignItems: 'center', justifyContent: 'center',
+              alignItems: 'center',
+              justifyContent: 'center',
               opacity: !canPlaceCall() ? 0.4 : 1,
             }}
           >
