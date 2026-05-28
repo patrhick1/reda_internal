@@ -217,6 +217,8 @@ Each feature below is a discrete unit of work. Order doesn't imply build order �
 - **Past-date Banner.** Whenever the typed `scheduled_date` is before today (Africa/Lagos), an amber *"Scheduled for a past date"* banner appears under the form noting that the assigned agent won't see this delivery on their Today tab. Doesn't block — backfilling yesterday's manual entries during reconciliation is a legitimate workflow.
 - **Pre-submit duplicate check.** Before calling `create_delivery`, the form runs `findSimilarOpenDeliveries(agentId, customerPhone, productCatalogId, scheduledDate)` and if any open (non-terminal, non-deleted) row matches, prompts *"Possible duplicate"* with a list of the existing rows by status + address and requires explicit *"Create anyway"*. Mirrors the server-side same-agent sibling guard in `create_delivery` but **ignores raw_address** — that branch is too strict for typo'd addresses (e.g. `"f"` vs `"Festac"`) and lets real duplicates through. We surface the suspicion at the UI and let admin decide. Failure of the pre-check is non-fatal — the server-side guard remains the source of truth.
 
+**After-hours bump (since 2026-05-27).** Any delivery created at or after **22:00 Africa/Lagos** with `scheduled_date = today` is automatically moved to the next working day (Sunday-skipped via the existing `_ensure_workday` helper). Late-evening orders cannot realistically be served the same day; the spreadsheet-era practice of pushing them to tomorrow becomes a server-side guarantee. The bump lives inside `create_delivery` itself, so both the **manual mobile** path AND the **bot pipeline** get it for free without duplicating logic. Past dates (backfill for reconciliation) and explicit future dates are untouched — the condition is `lagos_hour >= 22 AND p_scheduled_date = lagos_today`. The audit-log payload for bumped rows carries `auto_bumped_after_hours=true` and `original_scheduled_date` so we can measure how often this triggers and tune the 22:00 cutoff if needed. On the New-delivery form, an info banner *"After 10pm Lagos — will land tomorrow"* appears whenever the picked date is today and the device clock reports ≥ 22:00 Lagos, so admins aren't surprised by the bumped value.
+
 **Acceptance:**
 - Creates delivery row with all required fields
 - Money snapshots populated correctly
@@ -224,6 +226,7 @@ Each feature below is a discrete unit of work. Order doesn't imply build order �
 - Auto-assignment runs if agent left blank
 - Past-date warning fires when `scheduled_date` < today (Lagos)
 - Pre-submit duplicate prompt blocks accidental same-agent / same-customer / same-product duplicates even when address text differs from the existing row
+- After-hours bump fires for any delivery (manual or bot) created at ≥ 22:00 Lagos with `scheduled_date = today`; the row lands on the next working day with the audit-log noting the original date
 
 ---
 

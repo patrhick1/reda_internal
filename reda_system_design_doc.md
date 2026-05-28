@@ -48,6 +48,8 @@ Uzo reads the request and forwards it (after any quality-control edits — typos
 
 The bot watches only that parsing channel. It parses the message to extract: customer name, phone, raw address, product, quantity ordered, customer price, vendor, date.
 
+**After-hours bump (since 2026-05-27).** Any delivery (bot or manual) created at or after 22:00 Africa/Lagos with `scheduled_date = today` is automatically pushed to the next working day. The bump lives inside `create_delivery` so both pipelines pick it up without duplication; past and explicit-future dates are untouched. The Sunday-skip from `_ensure_workday` is reused so a Saturday-22:30 order lands on Monday, not Sunday. Rationale: late-evening orders can't realistically be served the same day, and treating that as a server-side guarantee removes a recurring spreadsheet-era judgment call.
+
 ### Address normalization (AI-assisted)
 
 Lagos addresses are messy — no postal codes, informal landmarks, typos, multiple ways to refer to the same place. The bot uses a two-step pipeline to map the raw address to a known location from the rate card:

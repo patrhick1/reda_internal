@@ -23,6 +23,15 @@ function todayLagos(): string {
   return lagos.toISOString().slice(0, 10);
 }
 
+/** Lagos hour-of-day (0-23). Independent of the device's clock zone — we
+ *  shift UTC by +1 directly. Used to surface the after-hours banner; the
+ *  server is the authority that actually does the bump. */
+function lagosHour(): number {
+  const now = new Date();
+  const lagos = new Date(now.getTime() + 60 * 60 * 1000);
+  return lagos.getUTCHours();
+}
+
 /** Cross-platform yes/no prompt. Resolves true when the admin confirms,
  *  false on cancel / dismiss. On web we fall back to window.confirm
  *  because RN's Alert.alert is a no-op there. */
@@ -100,6 +109,17 @@ export function NewDelivery() {
     const d = state?.scheduledDate ?? '';
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
     return d < today;
+  }, [state?.scheduledDate, today]);
+
+  // After-hours hint: if it's >= 22:00 Lagos and the picked date is today,
+  // tell the user the server will bump it to tomorrow. Server is the
+  // authority; this is purely a "no surprises" UI nudge. The hour is read
+  // once at mount/state-change rather than ticking — close enough; the
+  // banner doesn't drive behaviour.
+  const afterHoursBumpComing = useMemo(() => {
+    const d = state?.scheduledDate ?? '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
+    return d === today && lagosHour() >= 22;
   }, [state?.scheduledDate, today]);
 
   async function handleSubmit() {
@@ -195,6 +215,23 @@ export function NewDelivery() {
             >
               {state?.scheduledDate} is before today ({today}). The assigned agent won&apos;t see
               this delivery on their Today tab. Change the date to today if this was a typo.
+            </Text>
+          </Banner>
+        ) : null}
+
+        {afterHoursBumpComing ? (
+          <Banner tone="info" icon="calendar" title="After 10pm Lagos — will land tomorrow">
+            <Text
+              style={{
+                fontFamily: fonts.medium,
+                fontSize: 13,
+                color: colors.infoDark,
+                lineHeight: 19,
+              }}
+            >
+              It&apos;s past 10pm Lagos. New orders for today are automatically moved to the next
+              working day so agents aren&apos;t sent out late. Pick tomorrow or a later date
+              explicitly if you want to override this.
             </Text>
           </Banner>
         ) : null}
