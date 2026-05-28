@@ -173,6 +173,45 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
           </Card>
         ) : null}
 
+        {/* Stock shortcut — read-only view of warehouse + agent holdings.
+            Only dispatcher route group has a /stock directory today, so this
+            card is only meaningful here (this component is dispatcher-only). */}
+        <Card
+          dense
+          onPress={() => router.push(`${basePath}/stock` as `${OpsBasePath}/stock`)}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <View
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: colors.surface,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Icon name="warehouse" size={18} color={colors.black} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>
+                Stock
+              </Text>
+              <Text
+                style={{
+                  fontFamily: fonts.medium,
+                  fontSize: 12,
+                  color: colors.textSecondary,
+                  marginTop: 2,
+                }}
+              >
+                Warehouse holdings, by agent or by client
+              </Text>
+            </View>
+            <Icon name="chevronRight" size={20} color={colors.textSecondary} />
+          </View>
+        </Card>
+
         {/* Agent workload */}
         <SectionHeader
           right={

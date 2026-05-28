@@ -1,14 +1,19 @@
 // Tab-bar configuration shared by the dispatcher and rep route groups.
-// Both roles get the same 4 tabs (Dashboard / Deliveries / Review / Profile)
-// — no stock tab, since neither role has stock access.
+// Both roles get the same 4 visible tabs (Dashboard / Deliveries / Review /
+// Profile). Dispatchers additionally have a hidden Stock route (no tab in
+// the bar — entered from the dashboard Quick action) so they can monitor
+// inventory; reps remain stockless.
 import { Tabs } from 'expo-router';
 import { Icon } from '@/components/ui';
+import { useCurrentUser } from '@/hooks/useAuth';
 import { colors, fonts } from '@/lib/theme';
 import { RedaTabBar } from '@/queue/RedaTabBar';
 import { useNeedsReviewCount } from '@/hooks/useNeedsReviewCount';
 
 export function OpsTabsLayout() {
   const needsReviewCount = useNeedsReviewCount();
+  const user = useCurrentUser();
+  const showStock = user.role === 'dispatcher';
   return (
     <Tabs
       tabBar={(props) => <RedaTabBar {...props} />}
@@ -72,6 +77,21 @@ export function OpsTabsLayout() {
           ),
         }}
       />
+      {/* Hidden route: declared only for dispatchers so expo-router accepts
+          the (dispatcher)/stock directory without surfacing it in the tab
+          bar. Reps must NOT declare this — they have no (rep)/stock dir. */}
+      {showStock ? (
+        <Tabs.Screen
+          name="stock"
+          options={{
+            title: 'Stock',
+            tabBarIcon: ({ color, focused }) => (
+              <Icon name="warehouse" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
+            ),
+            href: null,
+          }}
+        />
+      ) : null}
     </Tabs>
   );
 }
