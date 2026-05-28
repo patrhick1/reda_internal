@@ -45,6 +45,10 @@ export default function WarehouseLayout() {
       <Tabs.Screen name="receive" options={{ href: null }} />
       <Tabs.Screen name="transfer" options={{ href: null }} />
       <Tabs.Screen name="adjust" options={{ href: null }} />
+      {/* Available orders — shared dispatcher+warehouse view, entered via
+          the card on the Stock home. Read-only here (no /deliveries route
+          in this group, so order rows are non-tappable). */}
+      <Tabs.Screen name="available" options={{ href: null }} />
     </Tabs>
   );
 }

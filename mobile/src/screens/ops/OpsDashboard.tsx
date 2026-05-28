@@ -1,14 +1,14 @@
 // Dispatcher home dashboard. The rep home is RepDashboard (separate file)
 // because reps also surface a Recent-activity list; dispatchers don't.
 import { useCallback, useMemo } from 'react';
-import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { listDeliveries, siblingGroupKey, type DeliveryRow } from '@/services/deliveries';
-import { listUsers } from '@/services/users';
 import { listBotInbound } from '@/services/bot';
-import { AppBar, Avatar, Card, FAB, Icon, SectionHeader } from '@/components/ui';
+import { listAvailableOrders } from '@/services/available-orders';
+import { AppBar, Card, FAB, Icon } from '@/components/ui';
 import { colors, fonts, statusBucket } from '@/lib/theme';
 
 type OpsBasePath = '/(dispatcher)';
@@ -27,32 +27,37 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
   const user = useCurrentUser();
   const router = useRouter();
   const deliveriesQ = useAsync(() => listDeliveries(user.role), [user.role]);
-  const usersQ = useAsync(() => listUsers(), []);
   const reviewQ = useAsync(() => listBotInbound('needs_review', 100), []);
+  const availableQ = useAsync(() => listAvailableOrders(), []);
 
   useFocusEffect(
     useCallback(() => {
       deliveriesQ.reload();
       reviewQ.reload();
+      availableQ.reload();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []),
   );
 
   const deliveries = useMemo(() => deliveriesQ.data ?? [], [deliveriesQ.data]);
-  const agents = useMemo(
-    () => (usersQ.data ?? []).filter((u) => u.role === 'agent' && u.is_active),
-    [usersQ.data],
-  );
-
   const stats = useMemo(() => bucketCounts(deliveries), [deliveries]);
   const reviewCount = (reviewQ.data ?? []).length;
   const unassignedCount = deliveries.filter((d) => !d.assigned_agent_id).length;
+  const availableRows = useMemo(() => availableQ.data ?? [], [availableQ.data]);
+  const availableAgents = useMemo(
+    () => new Set(availableRows.map((r) => r.agent_id)).size,
+    [availableRows],
+  );
+  const availableUnits = useMemo(
+    () => availableRows.reduce((sum, r) => sum + r.quantity_ordered, 0),
+    [availableRows],
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <AppBar
         title="Operations"
-        subtitle={`${shortDate()} · ${agents.length} ${agents.length === 1 ? 'agent' : 'agents'} active`}
+        subtitle={shortDate()}
         right={<Icon name="bell" size={20} color={colors.black} />}
       />
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 96, gap: 12 }}>
@@ -173,9 +178,49 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
           </Card>
         ) : null}
 
-        {/* Stock shortcut — read-only view of warehouse + agent holdings.
-            Only dispatcher route group has a /stock directory today, so this
-            card is only meaningful here (this component is dispatcher-only). */}
+        {/* Available orders — Mary's main work surface. One tap → per-client
+            product totals + per-agent breakdown so she can plan stock
+            allocation for today. Replaces the agent-workload section Uzo
+            said the dispatcher doesn't use. */}
+        <Card
+          dense
+          onPress={() => router.push(`${basePath}/available` as `${OpsBasePath}/available`)}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <View
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: colors.surface,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Icon name="truck" size={18} color={colors.black} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>
+                Available orders
+              </Text>
+              <Text
+                style={{
+                  fontFamily: fonts.medium,
+                  fontSize: 12,
+                  color: colors.textSecondary,
+                  marginTop: 2,
+                }}
+              >
+                {availableRows.length === 0
+                  ? 'Nothing confirmed yet today'
+                  : `${availableUnits} ${availableUnits === 1 ? 'unit' : 'units'} across ${availableAgents} ${availableAgents === 1 ? 'agent' : 'agents'}`}
+              </Text>
+            </View>
+            <Icon name="chevronRight" size={20} color={colors.textSecondary} />
+          </View>
+        </Card>
+
+        {/* Stock shortcut — read-only view of warehouse + agent holdings. */}
         <Card
           dense
           onPress={() => router.push(`${basePath}/stock` as `${OpsBasePath}/stock`)}
@@ -212,100 +257,6 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
           </View>
         </Card>
 
-        {/* Agent workload */}
-        <SectionHeader
-          right={
-            <Text
-              style={{ fontFamily: fonts.semibold, fontSize: 12, color: colors.textSecondary }}
-              onPress={() => router.push(`${basePath}/deliveries` as `${OpsBasePath}/deliveries`)}
-            >
-              See all →
-            </Text>
-          }
-        >
-          Agent workload
-        </SectionHeader>
-        {deliveriesQ.loading && !deliveriesQ.data ? (
-          <ActivityIndicator color={colors.black} />
-        ) : agents.length === 0 ? (
-          <Card>
-            <Text
-              style={{
-                fontFamily: fonts.medium,
-                fontSize: 13,
-                color: colors.textSecondary,
-                textAlign: 'center',
-                paddingVertical: 8,
-              }}
-            >
-              No active agents yet.
-            </Text>
-          </Card>
-        ) : (
-          <View style={{ gap: 8 }}>
-            {agents.slice(0, 6).map((a) => {
-              const aDels = deliveries.filter((d) => d.assigned_agent_id === a.id);
-              const pending = aDels.filter((d) =>
-                ['pending', 'available'].includes(d.current_status ?? ''),
-              ).length;
-              const done = aDels.filter((d) => d.current_status === 'delivered').length;
-              const total = aDels.length;
-              const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-              return (
-                <Card key={a.id} dense>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                    <Avatar user={a} size={40} />
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}
-                        numberOfLines={1}
-                      >
-                        {a.display_name}
-                      </Text>
-                      <Text
-                        style={{
-                          fontFamily: fonts.medium,
-                          fontSize: 12,
-                          color: colors.textSecondary,
-                          marginTop: 2,
-                        }}
-                      >
-                        {done}/{total} delivered · {pending} pending
-                      </Text>
-                      <View
-                        style={{
-                          marginTop: 6,
-                          height: 4,
-                          backgroundColor: colors.surface,
-                          borderRadius: 2,
-                          overflow: 'hidden',
-                        }}
-                      >
-                        <View
-                          style={{
-                            height: '100%',
-                            width: `${pct}%`,
-                            backgroundColor: colors.success,
-                          }}
-                        />
-                      </View>
-                    </View>
-                    <Text
-                      style={{
-                        fontFamily: fonts.extrabold,
-                        fontSize: 18,
-                        color: colors.black,
-                        letterSpacing: -0.4,
-                      }}
-                    >
-                      {pct}%
-                    </Text>
-                  </View>
-                </Card>
-              );
-            })}
-          </View>
-        )}
       </ScrollView>
 
       <FAB

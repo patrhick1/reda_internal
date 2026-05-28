@@ -66,6 +66,11 @@ export type Tone = 'red' | 'blue' | 'amber' | 'green' | 'gray';
 export const STATUS_META: Record<string, { label: string; tone: Tone; desc: string }> = {
   pending: { label: 'Pending', tone: 'red', desc: 'Awaiting agent' },
   available: { label: 'Available', tone: 'blue', desc: 'Customer reachable' },
+  available_evening: {
+    label: 'Available (evening)',
+    tone: 'blue',
+    desc: 'Customer reachable in the evening',
+  },
   not_answering: { label: 'Not answering', tone: 'amber', desc: 'No answer' },
   number_busy: { label: 'Number busy', tone: 'amber', desc: 'Line busy' },
   switched_off: { label: 'Switched off', tone: 'amber', desc: 'Phone off' },
@@ -93,7 +98,7 @@ export const STATUS_META: Record<string, { label: string; tone: Tone; desc: stri
 };
 
 export const STATUS_GROUPS: Record<'active' | 'soft' | 'done' | 'closed', string[]> = {
-  active: ['pending', 'available'],
+  active: ['pending', 'available', 'available_evening'],
   soft: [
     'not_answering',
     'number_busy',

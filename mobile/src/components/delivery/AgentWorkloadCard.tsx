@@ -30,7 +30,7 @@ export function AgentWorkloadCard({
       const aDels = deliveries.filter((d) => d.assigned_agent_id === a.id);
       const done = aDels.filter((d) => d.current_status === 'delivered').length;
       const pending = aDels.filter((d) =>
-        ['pending', 'available'].includes(d.current_status ?? ''),
+        ['pending', 'available', 'available_evening'].includes(d.current_status ?? ''),
       ).length;
       const total = aDels.length;
       const pct = total > 0 ? Math.round((done / total) * 100) : 0;

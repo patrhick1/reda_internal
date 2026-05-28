@@ -4,6 +4,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { listCurrentStock, type StockMatrixRow } from '@/services/stock';
+import { listAvailableOrders } from '@/services/available-orders';
 import { AppBar, Avatar, Button, Card, Empty, Icon } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 import { canAdjustOwnStock, canDoWarehouseTransfer, canReceiveStock } from '@/lib/permissions';
@@ -24,9 +25,12 @@ export default function WarehouseHome() {
   const router = useRouter();
   const user = useCurrentUser();
   const { data, loading, error, reload } = useAsync(() => listCurrentStock(), []);
+  const availableQ = useAsync(() => listAvailableOrders(), []);
   useFocusEffect(
     useCallback(() => {
       reload();
+      availableQ.reload();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [reload]),
   );
 
@@ -34,6 +38,16 @@ export default function WarehouseHome() {
   const showReceive = canReceiveStock(user.role);
   const showTransfer = canDoWarehouseTransfer(user.role);
   const showAdjust = canAdjustOwnStock(user.role);
+
+  const availableRows = useMemo(() => availableQ.data ?? [], [availableQ.data]);
+  const availableAgents = useMemo(
+    () => new Set(availableRows.map((r) => r.agent_id)).size,
+    [availableRows],
+  );
+  const availableUnits = useMemo(
+    () => availableRows.reduce((sum, r) => sum + r.quantity_ordered, 0),
+    [availableRows],
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -100,9 +114,50 @@ export default function WarehouseHome() {
         refreshControl={
           <RefreshControl
             refreshing={loading && !!data}
-            onRefresh={reload}
+            onRefresh={() => {
+              reload();
+              availableQ.reload();
+            }}
             tintColor={colors.black}
           />
+        }
+        ListHeaderComponent={
+          <View style={{ marginBottom: 12 }}>
+            <Card dense onPress={() => router.push('/(warehouse)/available')}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 20,
+                    backgroundColor: colors.surface,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Icon name="truck" size={18} color={colors.black} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>
+                    Available orders
+                  </Text>
+                  <Text
+                    style={{
+                      fontFamily: fonts.medium,
+                      fontSize: 12,
+                      color: colors.textSecondary,
+                      marginTop: 2,
+                    }}
+                  >
+                    {availableRows.length === 0
+                      ? 'Nothing confirmed yet today'
+                      : `${availableUnits} ${availableUnits === 1 ? 'unit' : 'units'} across ${availableAgents} ${availableAgents === 1 ? 'agent' : 'agents'}`}
+                  </Text>
+                </View>
+                <Icon name="chevronRight" size={20} color={colors.textSecondary} />
+              </View>
+            </Card>
+          </View>
         }
         renderItem={({ item }) => <GroupCard group={item} />}
         ListEmptyComponent={

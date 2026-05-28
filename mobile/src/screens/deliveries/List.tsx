@@ -151,7 +151,10 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     () => ({
       all,
       active: all.filter((d) => statusBucket(d.current_status) === 'active'),
-      available: all.filter((d) => d.current_status === 'available'),
+      available: all.filter(
+        (d) =>
+          d.current_status === 'available' || d.current_status === 'available_evening',
+      ),
       soft: all.filter((d) => statusBucket(d.current_status) === 'soft'),
       done: all.filter((d) => statusBucket(d.current_status) === 'done'),
       unassigned: all.filter((d) => !d.assigned_agent_id),

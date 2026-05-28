@@ -77,20 +77,33 @@ export function OpsTabsLayout() {
           ),
         }}
       />
-      {/* Hidden route: declared only for dispatchers so expo-router accepts
-          the (dispatcher)/stock directory without surfacing it in the tab
-          bar. Reps must NOT declare this — they have no (rep)/stock dir. */}
+      {/* Hidden routes: declared only for dispatchers so expo-router accepts
+          the (dispatcher)/stock and (dispatcher)/available directories
+          without surfacing them in the tab bar. Reps must NOT declare these
+          — they have no matching directories. */}
       {showStock ? (
-        <Tabs.Screen
-          name="stock"
-          options={{
-            title: 'Stock',
-            tabBarIcon: ({ color, focused }) => (
-              <Icon name="warehouse" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
-            ),
-            href: null,
-          }}
-        />
+        <>
+          <Tabs.Screen
+            name="stock"
+            options={{
+              title: 'Stock',
+              tabBarIcon: ({ color, focused }) => (
+                <Icon name="warehouse" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
+              ),
+              href: null,
+            }}
+          />
+          <Tabs.Screen
+            name="available"
+            options={{
+              title: 'Available',
+              tabBarIcon: ({ color, focused }) => (
+                <Icon name="truck" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
+              ),
+              href: null,
+            }}
+          />
+        </>
       ) : null}
     </Tabs>
   );
