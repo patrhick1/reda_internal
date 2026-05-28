@@ -76,6 +76,12 @@ export type Job = {
   createdAt: number;
   /** Human label for the dead-letter UI. e.g. "Mark delivered · Mr Adeyemi". */
   label: string;
+  /** The `users.id` of whoever signed in when this job was enqueued. The
+   *  drain refuses to replay any job whose enqueuer doesn't match the
+   *  current session — defense-in-depth on top of per-user storage keying,
+   *  so a future bug crossing the storage boundary still can't fire an
+   *  RPC under the wrong user. */
+  enqueuedByUserId: string;
 };
 
 /** Backoff schedule. Cap at 8 retries → goes to dead_letter on 9th failure.

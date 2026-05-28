@@ -13,7 +13,8 @@ import NetInfo from '@react-native-community/netinfo';
 import { newClientUuid } from '@/lib/uuid';
 import { logError } from '@/lib/sentry';
 import { errorMessage } from '@/lib/errors';
-import { loadJobs, saveJobs, clearJobs } from './storage';
+import { useAuth } from '@/hooks/useAuth';
+import { loadJobs, saveJobs, migrateLegacyQueue, clearAllQueueStorageForTests } from './storage';
 import { executeJob } from './executors';
 import {
   BACKOFF_MS,
@@ -36,7 +37,9 @@ type QueueContextValue = {
   drop: (jobIds: string[]) => Promise<void>;
   /** Force a drain pass now, ignoring backoff. Returns once the pass finishes. */
   drainNow: () => Promise<void>;
-  /** True if any job is pending or in-flight (used to block logout). */
+  /** True if any job is pending, in-flight, retrying, OR dead-lettered.
+   *  Dead-lettered jobs are still "unsynced" — the user needs to review +
+   *  discard them deliberately, not silently lose them on sign-out. */
   hasUnsynced: boolean;
 };
 
@@ -46,25 +49,65 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [online, setOnline] = useState<boolean>(true);
   const [draining, setDraining] = useState<boolean>(false);
-  const bootedRef = useRef(false);
   const drainTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The drain loop runs at most once at a time; this ref guards re-entry.
   const drainingRef = useRef(false);
 
-  // Boot — load persisted jobs once.
-  useEffect(() => {
-    if (bootedRef.current) return;
-    bootedRef.current = true;
-    loadJobs().then(setJobs);
-  }, []);
+  // The current owner of the in-memory queue. Set after a successful load
+  // of that user's persisted jobs; cleared on sign-out / before a swap.
+  // Enqueue + persist + drain all gate on it, so jobs never leak across
+  // sessions even mid-render.
+  const ownerRef = useRef<string | null>(null);
 
-  // Persist whenever jobs change. Skip the first render's empty-state write.
+  const { account } = useAuth();
+  // signed_out / loading have no userId; everything else (active,
+  // incomplete, deactivated) does. We track the queue against whichever
+  // user the session reports — even deactivated users keep ownership of
+  // their unsynced work until they re-authenticate as someone else.
+  const userId =
+    account.kind === 'signed_out' || account.kind === 'loading' ? null : account.userId;
+
+  // Boot / user-swap. On every userId change we wipe the in-memory queue
+  // first (and clear ownerRef so the persist + drain effects below are
+  // disabled during the gap), then load the new user's persisted queue
+  // and re-arm ownership. Persist effect is keyed off ownerRef.current ===
+  // userId so the gap between userId changing and the async load
+  // resolving cannot accidentally clobber either user's storage.
   const lastSavedRef = useRef<Job[]>([]);
   useEffect(() => {
+    let cancelled = false;
+    ownerRef.current = null;
+    lastSavedRef.current = [];
+    setJobs([]);
+    if (!userId) return;
+    (async () => {
+      const migrated = await migrateLegacyQueue(userId);
+      if (migrated > 0) {
+        logError(
+          'queue.migrate',
+          new Error(`migrated ${migrated} legacy queue jobs to per-user key`),
+        );
+      }
+      const loaded = await loadJobs(userId);
+      if (cancelled) return;
+      lastSavedRef.current = loaded;
+      setJobs(loaded);
+      ownerRef.current = userId;
+    })().catch((err) => logError('queue.boot', err));
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  // Persist whenever jobs change. Gated on ownerRef matching userId so the
+  // load-in-flight window can't write to the wrong key.
+  useEffect(() => {
     if (jobs === lastSavedRef.current) return;
+    const owner = ownerRef.current;
+    if (!owner || owner !== userId) return;
     lastSavedRef.current = jobs;
-    saveJobs(jobs).catch((err) => logError('queue.persist', err));
-  }, [jobs]);
+    saveJobs(owner, jobs).catch((err) => logError('queue.persist', err));
+  }, [jobs, userId]);
 
   // Subscribe to NetInfo. We treat `isInternetReachable === false` as offline,
   // but null/undefined as "assume online" so we don't ping uselessly when the
@@ -103,6 +146,28 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           });
         });
         if (!next) break;
+
+        // Defense in depth: never fire an RPC for a job that a different
+        // user enqueued. Per-user storage keying already prevents this in
+        // the happy path; this guard catches any future bug crossing that
+        // boundary (e.g. a misconfigured migration or a shared-instance
+        // race) without letting it manifest as a server-side permission
+        // denial.
+        if (next.enqueuedByUserId !== ownerRef.current) {
+          setJobs((curr) =>
+            curr.map((j) =>
+              j.id === next.id
+                ? {
+                    ...j,
+                    status: 'dead_letter' as const,
+                    lastError: 'enqueued by a different user',
+                    nextAttemptAt: Date.now(),
+                  }
+                : j,
+            ),
+          );
+          continue;
+        }
 
         // Mark in-flight.
         setJobs((curr) =>
@@ -191,6 +256,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
 
   const enqueue = useCallback<QueueContextValue['enqueue']>(
     async (input) => {
+      const owner = ownerRef.current;
+      if (!owner) {
+        throw new Error('cannot enqueue: not signed in');
+      }
       const id = newClientUuid();
       const job: Job = {
         id,
@@ -203,6 +272,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         nextAttemptAt: Date.now(),
         createdAt: Date.now(),
         label: input.label,
+        enqueuedByUserId: owner,
       };
       setJobs((curr) => [...curr, job]);
       if (online) schedule(0);
@@ -248,7 +318,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
   const hasUnsynced = useMemo(
     () =>
       jobs.some(
-        (j) => j.status === 'pending' || j.status === 'in_flight' || j.status === 'failed_retrying',
+        (j) =>
+          j.status === 'pending' ||
+          j.status === 'in_flight' ||
+          j.status === 'failed_retrying' ||
+          j.status === 'dead_letter',
       ),
     [jobs],
   );
@@ -274,7 +348,8 @@ export function useQueue(): QueueContextValue {
   return ctx;
 }
 
-/** Test-only helper to wipe persistence. Never call from production code. */
+/** Test-only helper to wipe every per-user queue + the legacy key.
+ *  Never call from production code. */
 export async function __clearQueueForTests(): Promise<void> {
-  await clearJobs();
+  await clearAllQueueStorageForTests();
 }
