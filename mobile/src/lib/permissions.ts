@@ -87,8 +87,10 @@ export function canManageAgentProfiles(role: Role): boolean {
 
 // --- Stock permissions --------------------------------------------------------
 // Server anchor: scripts/warehouse-stock-ops.sql — create_stock_adjustment +
-// create_stock_transfer permission branches. The shape is admin OR
-// warehouse-scoped check, never dispatcher/rep/agent for writes.
+// create_stock_transfer permission branches. Adjustments stay admin/warehouse
+// (warehouse own-stock only). Transfers admit dispatcher too — dispatcher
+// coordinates rider stock without holding any themselves, so they pick any
+// from/to without the participant restriction warehouse has.
 
 /** Adjust ANOTHER user's stock for any reason, or use the `correction`
  *  escape hatch. Admin-only.
@@ -112,18 +114,21 @@ export function canReceiveStock(role: Role): boolean {
   return role === 'admin' || role === 'warehouse';
 }
 
-/** Paired warehouse_issue / warehouse_return transfer. Admin + warehouse.
+/** Paired warehouse_issue / warehouse_return transfer. Admin + dispatcher + warehouse.
  *  Warehouse must be a participant (from for issue, to for return) — enforced
- *  server-side; this helper just gates the screen.
+ *  server-side; admin + dispatcher have no participant restriction. This helper
+ *  just gates the screen.
  *  Server anchor: create_stock_transfer warehouse_issue / warehouse_return branches. */
 export function canDoWarehouseTransfer(role: Role): boolean {
-  return role === 'admin' || role === 'warehouse';
+  return role === 'admin' || role === 'dispatcher' || role === 'warehouse';
 }
 
-/** Agent-to-agent transfer. Admin-only.
- *  Server anchor: create_stock_transfer reason='transfer' (no warehouse branch). */
+/** Agent-to-agent transfer. Admin + dispatcher.
+ *  Dispatcher coordinates rider stock between routes; warehouse role cannot
+ *  do this (they're tied to their own holdings).
+ *  Server anchor: create_stock_transfer reason='transfer' (admin + dispatcher). */
 export function canTransferAgentToAgent(role: Role): boolean {
-  return role === 'admin';
+  return role === 'admin' || role === 'dispatcher';
 }
 
 /** Correction adjustment (the books-override path). Admin-only — kept as

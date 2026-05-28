@@ -27,15 +27,19 @@ import { errorMessage } from '@/lib/errors';
  * Paired stock transfer screen.
  *
  * `scope` toggles which reasons + endpoints are available:
- *  - admin:     all three reasons (transfer / warehouse_issue / warehouse_return),
- *               every user pickable as from/to. Mirrors the original
- *               /(admin)/stock/transfer.tsx exactly.
- *  - warehouse: only warehouse_issue + warehouse_return; the `transfer`
- *               reason is hidden (server-side guard would 42501 anyway).
- *               Warehouse side of the paired transfer is locked to the
- *               caller, matching the create_stock_transfer warehouse
- *               branches (`p_from_user_id = auth.uid()` for issue,
- *               `p_to_user_id = auth.uid()` for return).
+ *  - admin:      all three reasons (transfer / warehouse_issue / warehouse_return),
+ *                every user pickable as from/to. Mirrors the original
+ *                /(admin)/stock/transfer.tsx exactly.
+ *  - dispatcher: same as admin — dispatcher coordinates rider stock and is
+ *                trusted with both warehouse-issued and agent→agent moves,
+ *                without being a participant in either. Server gate mirrors
+ *                this (create_stock_transfer admits v_role='dispatcher').
+ *  - warehouse:  only warehouse_issue + warehouse_return; the `transfer`
+ *                reason is hidden (server-side guard would 42501 anyway).
+ *                Warehouse side of the paired transfer is locked to the
+ *                caller, matching the create_stock_transfer warehouse
+ *                branches (`p_from_user_id = auth.uid()` for issue,
+ *                `p_to_user_id = auth.uid()` for return).
  */
 type BulkRow = {
   id: string;
@@ -57,7 +61,7 @@ type Product = { id: string; product_name: string };
 const makeNewBulkRow = newRow;
 
 export type StockTransferScreenProps = {
-  scope: 'admin' | 'warehouse';
+  scope: 'admin' | 'warehouse' | 'dispatcher';
 };
 
 export function StockTransferScreen({ scope }: StockTransferScreenProps) {
@@ -104,7 +108,7 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
     const hadBulkData =
       rows.some((r) => r.productId || r.quantity) ||
       rows.length > 1 ||
-      (scope === 'admin' && !!warehouseId) ||
+      (scope !== 'warehouse' && !!warehouseId) ||
       !!bulkAgentId;
     const anyDirty = hadSingleData || hadBulkData;
     const apply = () => {
@@ -203,8 +207,9 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
   }
 
   // --------------------------------------------------------------------------
-  // Single-mode submit (admin scope only; unreachable when scope='warehouse'
-  // because the 'transfer' reason is filtered out of the picker).
+  // Single-mode submit (admin + dispatcher scope; unreachable when
+  // scope='warehouse' because the 'transfer' reason is filtered out of
+  // the picker).
   // --------------------------------------------------------------------------
   async function handleSubmitSingle() {
     setError(null);
@@ -332,7 +337,7 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
   // Reason picker: full set for admin; warehouse_issue + warehouse_return only
   // for warehouse (transfer = agent→agent is admin-only on the server).
   const reasonOptions = PAIRED_REASONS.filter(
-    (r) => scope === 'admin' || r.value !== 'transfer',
+    (r) => scope !== 'warehouse' || r.value !== 'transfer',
   ).map((r) => ({ value: r.value, label: r.label, sub: r.sub }));
   const warehouseOptions = warehouseUsers.map((u) => ({ value: u.id, label: u.display_name }));
   const agentOptions = agentUsers.map((u) => ({ value: u.id, label: u.display_name }));

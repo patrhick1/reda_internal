@@ -1,6 +1,6 @@
-// Dispatcher stock is read-only — no receive/transfer/adjust modal routes,
-// the shared Overview hides those CTAs via the permission helpers. Just an
-// index + per-client detail page.
+// Dispatcher stock: Overview + per-client detail + Transfer (warehouse_issue /
+// warehouse_return / agent→agent). Receive + Adjust stay warehouse-only —
+// dispatcher doesn't hold stock themselves, they just coordinate moves.
 import { Stack } from 'expo-router';
 import { colors, fonts } from '@/lib/theme';
 
@@ -15,6 +15,7 @@ export default function DispatcherStockLayout() {
     >
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="client/[id]" options={{ headerShown: false }} />
+      <Stack.Screen name="transfer" options={{ title: 'New transfer' }} />
     </Stack>
   );
 }
