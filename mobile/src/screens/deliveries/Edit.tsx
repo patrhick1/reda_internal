@@ -19,7 +19,12 @@ import {
 } from '@/services/deliveries';
 import { canEditDelivery } from '@/lib/permissions';
 import { AppBar, Banner, Button, Card, Empty } from '@/components/ui';
-import { DeliveryFieldsForm, type DeliveryFormState } from './DeliveryFieldsForm';
+import {
+  DeliveryFieldsForm,
+  MissingFieldsBanner,
+  type DeliveryFormState,
+  type FormValidation,
+} from './DeliveryFieldsForm';
 import { colors, fonts } from '@/lib/theme';
 import { errorMessage } from '@/lib/errors';
 
@@ -44,14 +49,15 @@ export default function EditDeliveryScreen() {
   const lock = useEditLock('delivery', lockableId);
 
   const [state, setState] = useState<DeliveryFormState | null>(null);
-  const [isValid, setIsValid] = useState(false);
+  const [validation, setValidation] = useState<FormValidation>({ isValid: false, missing: [] });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleFormChange = useCallback((s: DeliveryFormState, v: boolean) => {
+  const handleFormChange = useCallback((s: DeliveryFormState, v: FormValidation) => {
     setState(s);
-    setIsValid(v);
+    setValidation(v);
   }, []);
+  const isValid = validation.isValid;
 
   const initial = useMemo<Partial<DeliveryFormState>>(() => {
     const d = deliveryQ.data;
@@ -233,6 +239,7 @@ export default function EditDeliveryScreen() {
             {error}
           </Banner>
         ) : null}
+        {!isValid ? <MissingFieldsBanner missing={validation.missing} /> : null}
       </ScrollView>
 
       <View
@@ -251,18 +258,22 @@ export default function EditDeliveryScreen() {
           gap: 8,
         }}
       >
-        <Button variant="secondary" onPress={() => router.back()} disabled={submitting}>
-          Cancel
-        </Button>
-        <Button
-          variant="emphasis"
-          full
-          icon="check"
-          onPress={handleSave}
-          disabled={!isValid || submitting}
-        >
-          {submitting ? 'Saving…' : 'Save changes'}
-        </Button>
+        <View style={{ flex: 1 }}>
+          <Button variant="secondary" full onPress={() => router.back()} disabled={submitting}>
+            Cancel
+          </Button>
+        </View>
+        <View style={{ flex: 2 }}>
+          <Button
+            variant="emphasis"
+            full
+            icon="check"
+            onPress={handleSave}
+            disabled={!isValid || submitting}
+          >
+            {submitting ? 'Saving…' : 'Save changes'}
+          </Button>
+        </View>
       </View>
     </KeyboardAvoidingView>
   );

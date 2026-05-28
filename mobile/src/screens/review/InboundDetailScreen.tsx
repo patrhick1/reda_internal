@@ -20,7 +20,9 @@ import { newClientUuid } from '@/lib/uuid';
 import { AppBar, Banner, Button, Card, Empty, Sheet } from '@/components/ui';
 import {
   DeliveryFieldsForm,
+  MissingFieldsBanner,
   type DeliveryFormState,
+  type FormValidation,
 } from '@/screens/deliveries/DeliveryFieldsForm';
 import { colors, fonts } from '@/lib/theme';
 import { formatDateTime } from '@/lib/format';
@@ -81,7 +83,7 @@ export default function InboundDetailScreen() {
   );
 
   const [state, setState] = useState<DeliveryFormState | null>(null);
-  const [isValid, setIsValid] = useState(false);
+  const [validation, setValidation] = useState<FormValidation>({ isValid: false, missing: [] });
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
@@ -89,10 +91,11 @@ export default function InboundDetailScreen() {
   const [showFullText, setShowFullText] = useState(false);
   const clientUuidRef = useRef<string>(newClientUuid());
 
-  const handleFormChange = useCallback((s: DeliveryFormState, v: boolean) => {
+  const handleFormChange = useCallback((s: DeliveryFormState, v: FormValidation) => {
     setState(s);
-    setIsValid(v);
+    setValidation(v);
   }, []);
+  const isValid = validation.isValid;
 
   // ---- early-return states ------------------------------------------------
 
@@ -346,6 +349,7 @@ export default function InboundDetailScreen() {
             {error}
           </Banner>
         ) : null}
+        {!isValid ? <MissingFieldsBanner missing={validation.missing} /> : null}
       </ScrollView>
 
       {/* Footer buttons */}
@@ -365,23 +369,28 @@ export default function InboundDetailScreen() {
           gap: 8,
         }}
       >
-        <Button
-          variant="secondary"
-          icon="x"
-          onPress={() => setDiscardOpen(true)}
-          disabled={submitting || discarding}
-        >
-          Discard
-        </Button>
-        <Button
-          variant="emphasis"
-          full
-          icon="check"
-          onPress={handleCreate}
-          disabled={!isValid || submitting || discarding}
-        >
-          {submitting ? 'Creating…' : 'Create delivery'}
-        </Button>
+        <View style={{ flex: 1 }}>
+          <Button
+            variant="secondary"
+            full
+            icon="x"
+            onPress={() => setDiscardOpen(true)}
+            disabled={submitting || discarding}
+          >
+            Discard
+          </Button>
+        </View>
+        <View style={{ flex: 2 }}>
+          <Button
+            variant="emphasis"
+            full
+            icon="check"
+            onPress={handleCreate}
+            disabled={!isValid || submitting || discarding}
+          >
+            {submitting ? 'Creating…' : 'Create delivery'}
+          </Button>
+        </View>
       </View>
 
       {/* Discard reason sheet */}

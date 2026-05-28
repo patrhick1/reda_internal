@@ -15,7 +15,13 @@ import { formatNaira } from '@/lib/format';
 import { AppBar, Banner, Button } from '@/components/ui';
 import { colors, fonts, STATUS_META } from '@/lib/theme';
 import { errorMessage } from '@/lib/errors';
-import { DeliveryFieldsForm, type DeliveryFormState } from './DeliveryFieldsForm';
+import {
+  DeliveryFieldsForm,
+  MissingFieldsBanner,
+  missingFieldsMessage,
+  type DeliveryFormState,
+  type FormValidation,
+} from './DeliveryFieldsForm';
 
 function todayLagos(): string {
   const now = new Date();
@@ -68,15 +74,16 @@ export function NewDelivery() {
   const showChargePreview = canSeeCharged(user.role);
 
   const [state, setState] = useState<DeliveryFormState | null>(null);
-  const [isValid, setIsValid] = useState(false);
+  const [validation, setValidation] = useState<FormValidation>({ isValid: false, missing: [] });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const clientUuidRef = useRef<string>(newClientUuid());
 
-  const handleFormChange = useCallback((s: DeliveryFormState, v: boolean) => {
+  const handleFormChange = useCallback((s: DeliveryFormState, v: FormValidation) => {
     setState(s);
-    setIsValid(v);
+    setValidation(v);
   }, []);
+  const isValid = validation.isValid;
 
   // Reda charge preview: mirror the server clamp so admin sees the cap kick in
   // before submit. Dispatchers don't see Charged (canSeeCharged is admin-only).
@@ -126,7 +133,7 @@ export function NewDelivery() {
     setError(null);
     if (!state) return;
     if (!isValid) {
-      setError('Fill in all the required fields');
+      setError(missingFieldsMessage(validation.missing));
       return;
     }
     if (state.scheduledDate && !/^\d{4}-\d{2}-\d{2}$/.test(state.scheduledDate)) {
@@ -275,19 +282,25 @@ export function NewDelivery() {
           </Banner>
         ) : null}
 
+        {!isValid ? <MissingFieldsBanner missing={validation.missing} /> : null}
+
         <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Button variant="secondary" onPress={() => router.back()} disabled={submitting}>
-            Cancel
-          </Button>
-          <Button
-            variant="emphasis"
-            full
-            icon="check"
-            onPress={handleSubmit}
-            disabled={submitting || !isValid}
-          >
-            {submitting ? 'Creating…' : 'Create delivery'}
-          </Button>
+          <View style={{ flex: 1 }}>
+            <Button variant="secondary" full onPress={() => router.back()} disabled={submitting}>
+              Cancel
+            </Button>
+          </View>
+          <View style={{ flex: 2 }}>
+            <Button
+              variant="emphasis"
+              full
+              icon="check"
+              onPress={handleSubmit}
+              disabled={submitting || !isValid}
+            >
+              {submitting ? 'Creating…' : 'Create delivery'}
+            </Button>
+          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

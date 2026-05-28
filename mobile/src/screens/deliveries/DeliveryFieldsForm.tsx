@@ -1,3 +1,4 @@
+import type { ReactElement } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { useAsync } from '@/hooks/useAsync';
@@ -46,30 +47,81 @@ export type DeliveryFieldsFormProps = {
   /** When the contractor sent "x or y" as the phone, pass the *other* number
    *  here. We render a one-tap "Use 080... instead" link under the phone. */
   alternatePhone?: string | null;
-  /** Fired on every field change with the latest state + a validity flag.
-   *  `isValid` is true iff required fields are filled with sane shapes. */
-  onChange: (state: DeliveryFormState, isValid: boolean) => void;
+  /** Fired on every field change with the latest state + a validation summary.
+   *  `missing` lists the human-readable labels of fields the operator still
+   *  needs to fill or correct. `isValid` is `missing.length === 0`. */
+  onChange: (state: DeliveryFormState, validation: FormValidation) => void;
 };
 
-const REQUIRED_KEYS: (keyof DeliveryFormState)[] = [
-  'clientId',
-  'productCatalogId',
-  'customerName',
-  'customerPhone',
-  'rawAddress',
-  'quantityOrdered',
-  'customerPrice',
+export type FormValidation = { isValid: boolean; missing: string[] };
+
+/** Required field → label shown to the operator when it's missing. Order
+ *  matches the on-screen layout so the hint list reads top-to-bottom. */
+const REQUIRED_FIELDS: { key: keyof DeliveryFormState; label: string }[] = [
+  { key: 'customerName', label: 'Customer name' },
+  { key: 'customerPhone', label: 'Phone' },
+  { key: 'rawAddress', label: 'Address' },
+  { key: 'clientId', label: 'Client' },
+  { key: 'productCatalogId', label: 'Product' },
+  { key: 'quantityOrdered', label: 'Quantity' },
+  { key: 'customerPrice', label: 'Customer price' },
 ];
 
-function isValidState(s: DeliveryFormState): boolean {
-  for (const k of REQUIRED_KEYS) {
-    const v = s[k];
-    if (v === null || v === undefined || v === '') return false;
+/** Info banner that names what the operator still has to fill before they can
+ *  submit. Returns null when nothing is missing — safe to drop into any screen
+ *  unconditionally next to the submit button. */
+export function MissingFieldsBanner({
+  missing,
+}: {
+  missing: readonly string[];
+}): ReactElement | null {
+  if (missing.length === 0) return null;
+  return (
+    <Banner tone="info" icon="alert">
+      <Text
+        style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.infoDark, lineHeight: 19 }}
+      >
+        {missingFieldsMessage(missing)}
+      </Text>
+    </Banner>
+  );
+}
+
+/** Render the missing-field list into a short, operator-friendly sentence.
+ *  - 1 missing: "Fill in Quantity to continue."
+ *  - 2 missing: "Fill in Quantity and Product to continue."
+ *  - 3-4: comma list with Oxford 'and'.
+ *  - 5+: cap with "+N more" so the banner doesn't blow up. */
+export function missingFieldsMessage(missing: readonly string[]): string {
+  if (missing.length === 0) return '';
+  if (missing.length === 1) return `Fill in ${missing[0]} to continue.`;
+  if (missing.length === 2) return `Fill in ${missing[0]} and ${missing[1]} to continue.`;
+  if (missing.length <= 4) {
+    const head = missing.slice(0, -1).join(', ');
+    const tail = missing[missing.length - 1];
+    return `Fill in ${head}, and ${tail} to continue.`;
   }
-  if (!Number.isInteger(s.quantityOrdered) || (s.quantityOrdered ?? 0) <= 0) return false;
-  if (s.customerPrice === null || !Number.isFinite(s.customerPrice) || s.customerPrice < 0)
-    return false;
-  return true;
+  const shown = missing.slice(0, 4).join(', ');
+  const rest = missing.length - 4;
+  return `Fill in ${shown} (+${rest} more) to continue.`;
+}
+
+function validateState(s: DeliveryFormState): FormValidation {
+  const missing: string[] = [];
+  for (const { key, label } of REQUIRED_FIELDS) {
+    const v = s[key];
+    if (v === null || v === undefined || v === '') {
+      missing.push(label);
+      continue;
+    }
+    if (key === 'quantityOrdered') {
+      if (!Number.isInteger(v) || (v as number) <= 0)
+        missing.push('Quantity (positive whole number)');
+    } else if (key === 'customerPrice') {
+      if (!Number.isFinite(v as number) || (v as number) < 0) missing.push('Customer price');
+    }
+  }
+  return { isValid: missing.length === 0, missing };
 }
 
 const kicker = {
@@ -171,7 +223,7 @@ export function DeliveryFieldsForm({
 
   // Emit the latest state on every change.
   useEffect(() => {
-    onChange(state, isValidState(state));
+    onChange(state, validateState(state));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
 
