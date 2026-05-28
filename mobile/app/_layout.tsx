@@ -73,11 +73,13 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <StatusBar style="auto" />
       <ErrorBoundary>
-        <QueueProvider>
-          <AuthProvider>
+        {/* AuthProvider must wrap QueueProvider — the queue keys its
+            persisted storage off the signed-in userId via useAuth(). */}
+        <AuthProvider>
+          <QueueProvider>
             <AuthGate />
-          </AuthProvider>
-        </QueueProvider>
+          </QueueProvider>
+        </AuthProvider>
       </ErrorBoundary>
     </SafeAreaProvider>
   );
