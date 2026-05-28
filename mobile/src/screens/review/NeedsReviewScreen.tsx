@@ -184,34 +184,51 @@ function InboundCard({ row, onNavigate }: { row: BotInboundRow; onNavigate?: () 
 
   return (
     <Card onPress={onNavigate ?? (() => setExpanded((e) => !e))}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
         <View
           style={{
+            flex: 1,
             backgroundColor: pill.bg,
             paddingHorizontal: 10,
             paddingVertical: 4,
-            borderRadius: 999,
+            borderRadius: 12,
             flexDirection: 'row',
-            alignItems: 'center',
+            alignItems: 'flex-start',
             gap: 4,
           }}
         >
-          <Icon name="bot" size={12} color={pill.fg} />
-          <Text style={{ fontFamily: fonts.bold, fontSize: 11, color: pill.fg }}>
+          <View style={{ marginTop: 2 }}>
+            <Icon name="bot" size={12} color={pill.fg} />
+          </View>
+          <Text
+            style={{
+              flex: 1,
+              fontFamily: fonts.bold,
+              fontSize: 11,
+              color: pill.fg,
+              lineHeight: 14,
+            }}
+          >
             {reason ?? pill.label}
           </Text>
         </View>
         <Text
+          numberOfLines={1}
           style={{
+            flexShrink: 0,
             fontFamily: fonts.mono,
             fontSize: 11,
             color: colors.textSecondary,
-            marginLeft: 'auto',
+            paddingTop: 4,
           }}
         >
           {time}
         </Text>
-        {onNavigate ? <Icon name="chevronRight" size={16} color={colors.textSecondary} /> : null}
+        {onNavigate ? (
+          <View style={{ marginTop: 3 }}>
+            <Icon name="chevronRight" size={16} color={colors.textSecondary} />
+          </View>
+        ) : null}
       </View>
       {extracted.customer_name ? (
         <Text style={{ fontFamily: fonts.bold, fontSize: 15, color: colors.black }}>
