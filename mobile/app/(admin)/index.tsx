@@ -166,7 +166,6 @@ export default function AdminHome() {
           deliveries={todayQ.data ?? []}
           agents={agents}
           loading={todayQ.loading && !todayQ.data}
-          basePath="/(admin)"
         />
       </ScrollView>
     </View>

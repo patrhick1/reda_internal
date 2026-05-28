@@ -190,7 +190,6 @@ export function RepDashboard() {
           deliveries={deliveries}
           agents={agents}
           loading={deliveriesQ.loading && !deliveriesQ.data}
-          basePath={REP_BASE}
         />
       </ScrollView>
     </View>

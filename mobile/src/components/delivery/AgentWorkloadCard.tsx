@@ -1,40 +1,51 @@
+import { useMemo } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
 import { Avatar, Card, SectionHeader } from '@/components/ui';
 import type { DeliveryRow } from '@/services/deliveries';
 import type { AppUser } from '@/services/users';
 import { colors, fonts } from '@/lib/theme';
 
-type BasePath = '/(admin)' | '/(dispatcher)' | '/(rep)';
+type AgentRow = {
+  agent: AppUser;
+  total: number;
+  done: number;
+  pending: number;
+  pct: number;
+};
 
 export function AgentWorkloadCard({
   deliveries,
   agents,
   loading,
-  basePath,
-  limit = 6,
 }: {
   deliveries: DeliveryRow[];
   agents: AppUser[];
   loading: boolean;
-  basePath: BasePath;
-  limit?: number;
 }) {
-  const router = useRouter();
+  // Busiest agents float to the top so the zero-workload rows don't push
+  // the actionable ones below the fold. Alphabetical tiebreaker keeps the
+  // order stable when totals match.
+  const rows: AgentRow[] = useMemo(() => {
+    const out = agents.map((a) => {
+      const aDels = deliveries.filter((d) => d.assigned_agent_id === a.id);
+      const done = aDels.filter((d) => d.current_status === 'delivered').length;
+      const pending = aDels.filter((d) =>
+        ['pending', 'available'].includes(d.current_status ?? ''),
+      ).length;
+      const total = aDels.length;
+      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+      return { agent: a, total, done, pending, pct };
+    });
+    out.sort((a, b) => {
+      if (b.total !== a.total) return b.total - a.total;
+      return (a.agent.display_name ?? '').localeCompare(b.agent.display_name ?? '');
+    });
+    return out;
+  }, [agents, deliveries]);
+
   return (
     <>
-      <SectionHeader
-        right={
-          <Text
-            style={{ fontFamily: fonts.semibold, fontSize: 12, color: colors.textSecondary }}
-            onPress={() => router.push(`${basePath}/deliveries`)}
-          >
-            See all →
-          </Text>
-        }
-      >
-        Agent workload
-      </SectionHeader>
+      <SectionHeader>Agent workload</SectionHeader>
       {loading && agents.length === 0 ? (
         <ActivityIndicator color={colors.black} />
       ) : agents.length === 0 ? (
@@ -53,67 +64,58 @@ export function AgentWorkloadCard({
         </Card>
       ) : (
         <View style={{ gap: 8 }}>
-          {agents.slice(0, limit).map((a) => {
-            const aDels = deliveries.filter((d) => d.assigned_agent_id === a.id);
-            const pending = aDels.filter((d) =>
-              ['pending', 'available'].includes(d.current_status ?? ''),
-            ).length;
-            const done = aDels.filter((d) => d.current_status === 'delivered').length;
-            const total = aDels.length;
-            const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-            return (
-              <Card key={a.id} dense>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                  <Avatar user={a} size={40} />
-                  <View style={{ flex: 1 }}>
-                    <Text
-                      style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}
-                      numberOfLines={1}
-                    >
-                      {a.display_name}
-                    </Text>
-                    <Text
-                      style={{
-                        fontFamily: fonts.medium,
-                        fontSize: 12,
-                        color: colors.textSecondary,
-                        marginTop: 2,
-                      }}
-                    >
-                      {done}/{total} delivered · {pending} pending
-                    </Text>
-                    <View
-                      style={{
-                        marginTop: 6,
-                        height: 4,
-                        backgroundColor: colors.surface,
-                        borderRadius: 2,
-                        overflow: 'hidden',
-                      }}
-                    >
-                      <View
-                        style={{
-                          height: '100%',
-                          width: `${pct}%`,
-                          backgroundColor: colors.success,
-                        }}
-                      />
-                    </View>
-                  </View>
+          {rows.map(({ agent, total, done, pending, pct }) => (
+            <Card key={agent.id} dense>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <Avatar user={agent} size={40} />
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}
+                    numberOfLines={1}
+                  >
+                    {agent.display_name}
+                  </Text>
                   <Text
                     style={{
-                      fontFamily: fonts.extrabold,
-                      fontSize: 18,
-                      color: colors.black,
-                      letterSpacing: -0.4,
+                      fontFamily: fonts.medium,
+                      fontSize: 12,
+                      color: colors.textSecondary,
+                      marginTop: 2,
                     }}
                   >
-                    {pct}%
+                    {done}/{total} delivered · {pending} pending
                   </Text>
+                  <View
+                    style={{
+                      marginTop: 6,
+                      height: 4,
+                      backgroundColor: colors.surface,
+                      borderRadius: 2,
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <View
+                      style={{
+                        height: '100%',
+                        width: `${pct}%`,
+                        backgroundColor: colors.success,
+                      }}
+                    />
+                  </View>
                 </View>
-              </Card>
-            );
-          })}
+                <Text
+                  style={{
+                    fontFamily: fonts.extrabold,
+                    fontSize: 18,
+                    color: colors.black,
+                    letterSpacing: -0.4,
+                  }}
+                >
+                  {pct}%
+                </Text>
+              </View>
+            </Card>
+          ))}
         </View>
       )}
     </>
