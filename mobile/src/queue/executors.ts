@@ -1,13 +1,13 @@
 // Phase 9 — job executors. Each maps a queued Job to the actual supabase.rpc()
 // call. Throwing means "retry"; returning means "done".
 //
-// Errors that are *permanent* (validation, idempotent conflict already resolved
-// favourably, RLS deny) should still throw — the queue will retry, then dead-
-// letter. The user reviews dead-letters explicitly. We deliberately do NOT
-// try to classify errors here; that would be brittle and the dead-letter UX is
-// fine for v1.
+// We pass every RPC error through classifyRpcError so SQLSTATE-marked
+// permanent failures (insufficient_stock, RLS denies, check violations) come
+// out as TerminalError. The drain loop short-circuits TerminalError straight
+// to dead_letter — no point in 8 retries when the answer won't change.
 
 import { supabase } from '@/lib/supabase';
+import { classifyRpcError } from '@/lib/errors';
 import type {
   ChangeDeliveryStatusArgs,
   CreateStockAdjustmentArgs,
@@ -33,7 +33,7 @@ const EXECUTORS: Record<JobKind, Executor> = {
       p_payment_method: args.paymentMethod as unknown as string,
       p_new_scheduled_date: args.newScheduledDate as unknown as string,
     });
-    if (error) throw error;
+    if (error) throw classifyRpcError(error);
   },
   async flag_delivery(clientUuid, raw) {
     const args = raw as FlagDeliveryArgs;
@@ -44,7 +44,7 @@ const EXECUTORS: Record<JobKind, Executor> = {
       p_note: args.note as unknown as string,
       p_new_status: args.newStatus as unknown as string,
     });
-    if (error) throw error;
+    if (error) throw classifyRpcError(error);
   },
   async create_stock_adjustment(clientUuid, raw) {
     const args = raw as CreateStockAdjustmentArgs;
@@ -56,7 +56,7 @@ const EXECUTORS: Record<JobKind, Executor> = {
       p_reason: args.reason,
       p_notes: args.notes as unknown as string,
     });
-    if (error) throw error;
+    if (error) throw classifyRpcError(error);
   },
   async create_stock_transfer(clientUuid, raw) {
     const args = raw as CreateStockTransferArgs;
@@ -69,7 +69,7 @@ const EXECUTORS: Record<JobKind, Executor> = {
       p_reason: args.reason,
       p_notes: args.notes as unknown as string,
     });
-    if (error) throw error;
+    if (error) throw classifyRpcError(error);
   },
 };
 

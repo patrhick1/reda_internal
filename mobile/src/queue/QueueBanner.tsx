@@ -16,16 +16,25 @@ export function QueueBanner() {
   const { jobs, online, draining } = snapshot;
 
   const tone = useMemo(() => {
-    const dead = jobs.filter((j) => j.status === 'dead_letter').length;
+    const deadJobs = jobs.filter((j) => j.status === 'dead_letter');
+    const dead = deadJobs.length;
     const pending = jobs.filter((j) => j.status === 'pending' || j.status === 'in_flight').length;
     const retrying = jobs.filter((j) => j.status === 'failed_retrying').length;
 
     if (dead > 0) {
+      // Single failure → show the actual reason inline (e.g. "Issue 3 99
+      // Bullet · Not enough stock — source has 0 units, needs 3"). Several
+      // failures → keep it short and lean on the dead-letter screen.
+      const first = deadJobs[0]!;
+      const text =
+        dead === 1
+          ? `${first.label}${first.lastError ? ` · ${first.lastError}` : ''}`
+          : `${dead} changes failed — tap to review`;
       return {
         bg: colors.redSoft,
         fg: colors.red,
         icon: 'alert' as const,
-        text: `${dead} ${dead === 1 ? 'change' : 'changes'} failed — tap to review`,
+        text,
         onPress: () => router.push('/(queue)/dead-letter'),
       };
     }
@@ -84,6 +93,7 @@ export function QueueBanner() {
     >
       <Icon name={tone.icon} size={16} color={tone.fg} />
       <Text
+        numberOfLines={2}
         style={{
           flex: 1,
           fontFamily: fonts.semibold,

@@ -12,7 +12,7 @@ import { AppState } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import { newClientUuid } from '@/lib/uuid';
 import { logError } from '@/lib/sentry';
-import { errorMessage } from '@/lib/errors';
+import { errorMessage, TerminalError } from '@/lib/errors';
 import { useAuth } from '@/hooks/useAuth';
 import { loadJobs, saveJobs, migrateLegacyQueue, clearAllQueueStorageForTests } from './storage';
 import { executeJob } from './executors';
@@ -179,10 +179,19 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           setJobs((curr) => curr.filter((j) => j.id !== next.id));
         } catch (e) {
           const msg = errorMessage(e);
+          const isTerminal = e instanceof TerminalError;
           const nextAttempts = next.attempts + 1;
-          const dead = nextAttempts >= MAX_ATTEMPTS;
+          // Terminal errors (insufficient_stock, RLS deny, constraint
+          // violation) won't succeed on retry — skip backoff and surface
+          // the message via the banner immediately.
+          const dead = isTerminal || nextAttempts >= MAX_ATTEMPTS;
           const wait = BACKOFF_MS[Math.min(nextAttempts - 1, BACKOFF_MS.length - 1)] ?? 600_000;
-          logError('queue.executor', e, { kind: next.kind, attempts: nextAttempts, dead });
+          logError('queue.executor', e, {
+            kind: next.kind,
+            attempts: nextAttempts,
+            dead,
+            terminal: isTerminal,
+          });
           setJobs((curr) =>
             curr.map((j) =>
               j.id === next.id
@@ -191,7 +200,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
                     status: dead ? ('dead_letter' as const) : ('failed_retrying' as const),
                     attempts: nextAttempts,
                     lastError: msg,
-                    nextAttemptAt: Date.now() + wait,
+                    nextAttemptAt: Date.now() + (dead ? 0 : wait),
                   }
                 : j,
             ),
