@@ -195,7 +195,10 @@ function OrderRow({ row, onPress }: { row: AvailableOrderRow; onPress: (() => vo
     <Card dense onPress={onPress}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }} numberOfLines={1}>
+          <Text
+            style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}
+            numberOfLines={1}
+          >
             {row.customer_name}
             {row.location_name ? (
               <Text style={{ fontFamily: fonts.medium, color: colors.textSecondary }}>

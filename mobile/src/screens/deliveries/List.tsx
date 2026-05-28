@@ -152,8 +152,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
       all,
       active: all.filter((d) => statusBucket(d.current_status) === 'active'),
       available: all.filter(
-        (d) =>
-          d.current_status === 'available' || d.current_status === 'available_evening',
+        (d) => d.current_status === 'available' || d.current_status === 'available_evening',
       ),
       soft: all.filter((d) => statusBucket(d.current_status) === 'soft'),
       done: all.filter((d) => statusBucket(d.current_status) === 'done'),

@@ -221,10 +221,7 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
         </Card>
 
         {/* Stock shortcut — read-only view of warehouse + agent holdings. */}
-        <Card
-          dense
-          onPress={() => router.push(`${basePath}/stock` as `${OpsBasePath}/stock`)}
-        >
+        <Card dense onPress={() => router.push(`${basePath}/stock` as `${OpsBasePath}/stock`)}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <View
               style={{
@@ -256,7 +253,6 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
             <Icon name="chevronRight" size={20} color={colors.textSecondary} />
           </View>
         </Card>
-
       </ScrollView>
 
       <FAB

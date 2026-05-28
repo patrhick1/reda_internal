@@ -122,7 +122,9 @@ export function StockOverview({ basePath }: { basePath: StockBasePath }) {
               variant="primary"
               full
               icon="arrowDown"
-              onPress={() => router.push(`${basePath}/stock/receive` as `${StockBasePath}/stock/receive`)}
+              onPress={() =>
+                router.push(`${basePath}/stock/receive` as `${StockBasePath}/stock/receive`)
+              }
             >
               Receive stock
             </Button>
@@ -136,9 +138,7 @@ export function StockOverview({ basePath }: { basePath: StockBasePath }) {
                     full
                     icon="arrowRight"
                     onPress={() =>
-                      router.push(
-                        `${basePath}/stock/transfer` as `${StockBasePath}/stock/transfer`,
-                      )
+                      router.push(`${basePath}/stock/transfer` as `${StockBasePath}/stock/transfer`)
                     }
                   >
                     New transfer
