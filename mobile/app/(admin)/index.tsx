@@ -5,12 +5,14 @@ import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { listDeliveries, siblingGroupKey, type DeliveryRow } from '@/services/deliveries';
 import { listBotInbound } from '@/services/bot';
+import { listUsers } from '@/services/users';
 import {
   ISSUE_LABELS,
   listOpenIssuesForOps,
   type OpenIssueRow,
 } from '@/services/delivery-messages';
 import { AppBar, Card, Icon, SectionHeader, StatusPill } from '@/components/ui';
+import { AgentWorkloadCard } from '@/components/delivery/AgentWorkloadCard';
 import { RecentActivityCard } from '@/components/delivery/RecentActivityCard';
 import { colors, fonts, statusBucket } from '@/lib/theme';
 import { type IconName } from '@/components/ui';
@@ -31,6 +33,7 @@ export default function AdminHome() {
   const todayQ = useAsync(() => listDeliveries(user.role), [user.role]);
   const reviewQ = useAsync(() => listBotInbound('needs_review', 100), []);
   const issuesQ = useAsync(() => listOpenIssuesForOps(), []);
+  const usersQ = useAsync(() => listUsers(), []);
 
   useFocusEffect(
     useCallback(() => {
@@ -44,6 +47,10 @@ export default function AdminHome() {
   const stats = useMemo(() => summarize(todayQ.data ?? []), [todayQ.data]);
   const reviewCount = (reviewQ.data ?? []).length;
   const openIssues = issuesQ.data ?? [];
+  const agents = useMemo(
+    () => (usersQ.data ?? []).filter((u) => u.role === 'agent' && u.is_active),
+    [usersQ.data],
+  );
   const firstName = user.displayName.split(' ')[0] ?? user.displayName;
 
   return (
@@ -153,6 +160,14 @@ export default function AdminHome() {
 
         {/* Recent activity */}
         <RecentActivityCard rows={todayQ.data ?? []} loading={todayQ.loading} basePath="/(admin)" />
+
+        {/* Agent workload — shared with rep dashboard */}
+        <AgentWorkloadCard
+          deliveries={todayQ.data ?? []}
+          agents={agents}
+          loading={todayQ.loading && !todayQ.data}
+          basePath="/(admin)"
+        />
       </ScrollView>
     </View>
   );

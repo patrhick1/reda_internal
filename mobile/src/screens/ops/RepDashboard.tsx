@@ -9,14 +9,15 @@
 // two files evolve independently; if they converge again we extract more
 // shared building blocks then.
 import { useCallback, useMemo } from 'react';
-import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { listDeliveries, siblingGroupKey, type DeliveryRow } from '@/services/deliveries';
 import { listUsers } from '@/services/users';
 import { listBotInbound } from '@/services/bot';
-import { AppBar, Avatar, Card, Icon, SectionHeader } from '@/components/ui';
+import { AppBar, Card, Icon } from '@/components/ui';
+import { AgentWorkloadCard } from '@/components/delivery/AgentWorkloadCard';
 import { RecentActivityCard } from '@/components/delivery/RecentActivityCard';
 import { colors, fonts, statusBucket } from '@/lib/theme';
 
@@ -184,100 +185,13 @@ export function RepDashboard() {
         {/* Recent activity — shared with admin */}
         <RecentActivityCard rows={deliveries} loading={deliveriesQ.loading} basePath={REP_BASE} />
 
-        {/* Agent workload */}
-        <SectionHeader
-          right={
-            <Text
-              style={{ fontFamily: fonts.semibold, fontSize: 12, color: colors.textSecondary }}
-              onPress={() => router.push(`${REP_BASE}/deliveries`)}
-            >
-              See all →
-            </Text>
-          }
-        >
-          Agent workload
-        </SectionHeader>
-        {deliveriesQ.loading && !deliveriesQ.data ? (
-          <ActivityIndicator color={colors.black} />
-        ) : agents.length === 0 ? (
-          <Card>
-            <Text
-              style={{
-                fontFamily: fonts.medium,
-                fontSize: 13,
-                color: colors.textSecondary,
-                textAlign: 'center',
-                paddingVertical: 8,
-              }}
-            >
-              No active agents yet.
-            </Text>
-          </Card>
-        ) : (
-          <View style={{ gap: 8 }}>
-            {agents.slice(0, 6).map((a) => {
-              const aDels = deliveries.filter((d) => d.assigned_agent_id === a.id);
-              const pending = aDels.filter((d) =>
-                ['pending', 'available'].includes(d.current_status ?? ''),
-              ).length;
-              const done = aDels.filter((d) => d.current_status === 'delivered').length;
-              const total = aDels.length;
-              const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-              return (
-                <Card key={a.id} dense>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                    <Avatar user={a} size={40} />
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}
-                        numberOfLines={1}
-                      >
-                        {a.display_name}
-                      </Text>
-                      <Text
-                        style={{
-                          fontFamily: fonts.medium,
-                          fontSize: 12,
-                          color: colors.textSecondary,
-                          marginTop: 2,
-                        }}
-                      >
-                        {done}/{total} delivered · {pending} pending
-                      </Text>
-                      <View
-                        style={{
-                          marginTop: 6,
-                          height: 4,
-                          backgroundColor: colors.surface,
-                          borderRadius: 2,
-                          overflow: 'hidden',
-                        }}
-                      >
-                        <View
-                          style={{
-                            height: '100%',
-                            width: `${pct}%`,
-                            backgroundColor: colors.success,
-                          }}
-                        />
-                      </View>
-                    </View>
-                    <Text
-                      style={{
-                        fontFamily: fonts.extrabold,
-                        fontSize: 18,
-                        color: colors.black,
-                        letterSpacing: -0.4,
-                      }}
-                    >
-                      {pct}%
-                    </Text>
-                  </View>
-                </Card>
-              );
-            })}
-          </View>
-        )}
+        {/* Agent workload — shared with admin */}
+        <AgentWorkloadCard
+          deliveries={deliveries}
+          agents={agents}
+          loading={deliveriesQ.loading && !deliveriesQ.data}
+          basePath={REP_BASE}
+        />
       </ScrollView>
     </View>
   );

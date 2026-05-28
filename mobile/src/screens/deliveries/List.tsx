@@ -34,7 +34,7 @@ import { todayLagos, yesterdayLagos } from '@/lib/date';
 const SOFT_STATUSES = new Set<string>(STATUS_GROUPS.soft);
 
 type BasePath = '/(admin)' | '/(dispatcher)' | '/(rep)';
-type Filter = 'all' | 'active' | 'soft' | 'done' | 'unassigned';
+type Filter = 'all' | 'active' | 'available' | 'soft' | 'done' | 'unassigned';
 type DatePreset = 'today' | 'yesterday' | 'custom' | 'all';
 
 export function DeliveriesList({ basePath }: { basePath: BasePath }) {
@@ -151,6 +151,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     () => ({
       all,
       active: all.filter((d) => statusBucket(d.current_status) === 'active'),
+      available: all.filter((d) => d.current_status === 'available'),
       soft: all.filter((d) => statusBucket(d.current_status) === 'soft'),
       done: all.filter((d) => statusBucket(d.current_status) === 'done'),
       unassigned: all.filter((d) => !d.assigned_agent_id),
@@ -162,6 +163,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   const filterOptions = [
     { id: 'all' as const, label: 'All', count: buckets.all.length },
     { id: 'active' as const, label: 'Active', count: buckets.active.length },
+    { id: 'available' as const, label: 'Available', count: buckets.available.length },
     { id: 'soft' as const, label: 'Soft fail', count: buckets.soft.length },
     { id: 'done' as const, label: 'Done', count: buckets.done.length },
     { id: 'unassigned' as const, label: 'Unassigned', count: buckets.unassigned.length },
