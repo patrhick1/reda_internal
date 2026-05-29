@@ -585,6 +585,65 @@ Server-side guard lives in [scripts/warehouse-stock-ops.sql](scripts/warehouse-s
 
 ---
 
+### 5.11a Route assignment refinement (pending Uzo — 2026-05-29)
+
+**Problem Uzo raised (WhatsApp 2026-05-29).** Soft-failed deliveries are rolling over to the **same agent** the next day. Uzo's manual workflow is to filter all soft-fails on his Google Sheet, then forward each agent's set to whichever agent is running that route the next day — explicitly because *"we don't send the same agent to the same route two days in a row"*. The app is doing the opposite of his intent.
+
+**Two root causes:**
+1. `rollover_delivery` copies `assigned_agent_id` from the parent row. The new pending row therefore inherits yesterday's agent, and `tg_auto_assign_on_insert` no-ops (it only fires when `assigned_agent_id IS NULL`).
+2. `agent_locations` is **empty** — never populated. Auto-assign's preference_tier (§5.7 step 3) therefore collapses to tier 2 for every agent, so the algorithm only orders by stock + workload + sibling guard. The "who owns which route" signal Uzo has in his head never reaches the algorithm.
+
+**Uzo's mental model (per WhatsApp + the Location Sharing/Remittance sheet).** Three tiers:
+- **Strongest** — agent's home turf, send here often (productivity instinct).
+- **Normal/shufflable** — fair game for daily rotation (cross-training instinct: if only Queen knows Festac and she leaves, nobody can fill in).
+- **Avoid** — don't send unless desperate (specific agent/area mismatches).
+
+These map 1:1 to the existing `agent_locations.kind` enum (`preferred`, `avoid`, plus implicit neutral by absence). The PRD's auto-assign algorithm in §5.7 already weights them correctly — the data is the only gap.
+
+**Backtest findings (last 30 days, [scripts/route-assignment-backtest.sql](scripts/route-assignment-backtest.sql)).**
+
+*Q1 — Per-location pattern across 53 locations with ≥10 deliveries:*
+- 4 **stable** (top agent ≥70% share): Ojodu Berger (Iya Ayo 75%), Mowe (Iya Ayo 100%), Opic (Iya Ayo 90%), Agric (Iya Ayo 75%).
+- 14 **soft-preference** (40–70%): each agent has a personal cluster — Iya Ayo dominates Ikoyi/Agege/Ogba/Iju/Obalende; Kenneth dominates Badagry/Ojo/Iba/Agbara; Audrey dominates Gbagada/Bariga.
+- 35 **rotating** (<40%): no dominant agent, top 2 typically capture 30–50% combined. Even where an agent is the "preferred", workload-balancing has already spread the work organically.
+
+*Q2 — Same-agent-two-days-in-a-row at same location:* 30+ agent/location pairs with ≥6 back-to-back streaks in 30 days. Iya Ayo alone had ~100+ back-to-back-day repeats across 9 locations (11x Ikoyi, 11x Ojodu Berger, 10x Agege, 9x Ketu/Ojota, …). Olawale 8x Festac. Kenneth 9x Ojo, 8x Badagry. This validates the "same agent two days in a row" complaint as systemic, not occasional.
+
+**Recommendation (pending Uzo confirmation).**
+
+1. **One-line `rollover_delivery` fix** — insert the new row with `assigned_agent_id = NULL` instead of copying the parent's agent. The `tg_auto_assign_on_insert` trigger then runs the existing algorithm. Crushes the back-to-back streaks at their source.
+
+2. **Seed `agent_locations`** once with Uzo-validated preferences. Set-up-once data (~30–40 rows total), edited rarely. Not a daily chore. Auto-assign's preference_tier (§5.7) then resolves to 1/3 instead of always 2.
+
+3. **Don't model the daily shuffle explicitly.** The workload tiebreaker in §5.7 step 4 already produces it as a side effect: an agent who handled a route heavily yesterday has higher pending workload today → next order naturally goes to someone else.
+
+4. **Uzo retains manual override** for cross-training intent. When he wants Iya Ayo to learn Ikotun this week, he reassigns those orders manually. The algorithm shouldn't try to autonomously optimize for human-development goals.
+
+**Explicit trade-off.** Workload-balancing produces a *probabilistic* shuffle, not enforced rotation. If Olawale is preferred for Festac AND has low workload three days running, he'll keep getting Festac. This is closer to "send the strongest when available" than "rotate daily". If Uzo really wants enforced rotation (can't get Festac twice in a row), we'd add a "recent-assignment" penalty score against any agent who served this location yesterday — deferred until/unless Uzo asks for it after seeing soft-shuffle behavior in practice.
+
+**Deliberately NOT in the plan:**
+- A `daily_route_plan(date, agent_id, location_id)` table or in-app screen — would just move the Google Sheet into the database with the same daily edit cost.
+- Uzo's "hold rollovers unassigned, assign at 12am" workaround — once `agent_locations` is fed, assignment at rollover time picks the right agent immediately. The workaround was for the plan-in-his-head problem, which the seed solves.
+
+**Open — what we need from Uzo before shipping:**
+
+1. **Validate the empirically-derived `preferred` draft.** Generate from Q1 data: for each agent, list the locations where they're top with ≥30% share. Uzo ticks/edits per row. Cheaper than starting blank.
+2. **Get the `avoid` list per agent.** Not in historical data — only Uzo knows. Probably short (~1–3 per agent).
+3. **Map the abstract route names from his sheet** to DB location IDs:
+   - "Close Location" → ?
+   - "Close Island" → ? (Lekki-Chevron + VI + Ikoyi?)
+   - "Middle Island 1" / "Middle Island 2" → ? (Ajah-Badore + Sangotedo + Awoyaya?)
+   - "Far Island" → ? (Ibeju Lekki + Epe?)
+   - "Extra" → overflow / catch-all?
+4. **Confirm trade-off acceptance** (probabilistic vs enforced rotation).
+
+**Files involved when this ships:**
+- Rollover null-fix: delta SQL recreating `rollover_delivery` (mirror the pattern in `after-hours-bump.sql` — canonical update + paste-into-Supabase delta).
+- Seed: one-shot INSERT into `agent_locations`. Source data assembled from Uzo's responses to the four asks above.
+- Verification: Q3 in [scripts/route-assignment-backtest.sql](scripts/route-assignment-backtest.sql) runs once the seed is in place — compares predicted vs actual assignment over the last 14 days. Target ≥70% match before considering the seed validated.
+
+---
+
 ### 5.16 Sibling coordination (race-assignment auto-cancel)
 
 **User story:** Uzo deliberately creates the same customer/product/day delivery for multiple agents so whoever gets there first delivers it. The system needs to coordinate this without forcing Uzo to change his workflow.
