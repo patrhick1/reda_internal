@@ -307,6 +307,7 @@ function ClientsList({
             { label: 'Customer paid', value: formatNaira(item.total_paid) },
             { label: 'Outstanding', value: formatNaira(item.outstanding) },
             { label: 'Reda fee', value: formatNaira(item.total_reda_fee) },
+            { label: 'Cash POS fee', value: formatNaira(item.total_cash_pos_fee) },
           ]}
         />
       )}
@@ -435,9 +436,12 @@ function SummaryTab({
     const customerPaid = clients.reduce((s, c) => s + Number(c.total_paid), 0);
     const outstanding = clients.reduce((s, c) => s + Number(c.outstanding), 0);
     const redaFee = clients.reduce((s, c) => s + Number(c.total_reda_fee), 0);
+    const cashPosFee = clients.reduce((s, c) => s + Number(c.total_cash_pos_fee), 0);
     const remitToClients = clients.reduce((s, c) => s + Number(c.total_remit), 0);
     const agentPayments = agents.reduce((s, a) => s + Number(a.total_earnings), 0);
     // Reda's gross income for the period = delivery fees collected.
+    // Cash POS fee is a pass-through to the client (already subtracted from
+    // their remit), so it does NOT contribute to Reda margin.
     // Reda's net = delivery fees − agent payouts.
     const margin = redaFee - agentPayments;
     return {
@@ -446,6 +450,7 @@ function SummaryTab({
       customerPaid,
       outstanding,
       redaFee,
+      cashPosFee,
       remitToClients,
       agentPayments,
       margin,
@@ -463,6 +468,7 @@ function SummaryTab({
       `Outstanding:       ${formatNaira(totals.outstanding)}`,
       ``,
       `Reda delivery fee: ${formatNaira(totals.redaFee)}`,
+      `Cash POS fee:      ${formatNaira(totals.cashPosFee)}`,
       `Remit to clients:  ${formatNaira(totals.remitToClients)}`,
       `Agent payments:    ${formatNaira(totals.agentPayments)}`,
       `Reda margin:       ${formatNaira(totals.margin)}`,
@@ -501,6 +507,7 @@ function SummaryTab({
           />
           <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 6 }} />
           <SummaryRow label="Reda delivery fee" value={formatNaira(totals.redaFee)} />
+          <SummaryRow label="Cash POS fee" value={formatNaira(totals.cashPosFee)} />
           <SummaryRow label="Remit to clients" value={formatNaira(totals.remitToClients)} />
           <SummaryRow label="Agent payments" value={formatNaira(totals.agentPayments)} />
           <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 6 }} />

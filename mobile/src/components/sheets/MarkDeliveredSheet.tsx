@@ -25,7 +25,7 @@ export function MarkDeliveredSheet({
 }) {
   const [qty, setQty] = useState('1');
   const [paid, setPaid] = useState('0');
-  const [method, setMethod] = useState<PaymentMethod>('transfer');
+  const [method, setMethod] = useState<PaymentMethod>('cash');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [onHand, setOnHand] = useState<number | null>(null);
@@ -68,6 +68,12 @@ export function MarkDeliveredSheet({
   const agentEarn = Number(delivery.agent_payment_snapshot ?? 0);
   const remit = paidNum - agentEarn;
   const diff = paidNum - expectedTotal;
+  // Cash POS fee — informational only at this surface. The agent still
+  // hands over the full `paid` amount; the ₦500 lives on the client-remit
+  // side of the books (charged when Reda banks the cash). Showing it here
+  // so agents understand why cash and transfer look different on the
+  // reconciliation reports the client sees.
+  const cashPosFee = method === 'cash' && paidNum > 0 ? 500 : 0;
 
   async function submit() {
     setError(null);
@@ -198,6 +204,12 @@ export function MarkDeliveredSheet({
         {Number.isFinite(diff) && diff !== 0 ? (
           <Banner tone="warn" icon="alert" title={diff < 0 ? 'Underpayment' : 'Overpayment'}>
             {`Difference of ${formatNaira(Math.abs(diff))}. Remit will reflect the actual paid amount.`}
+          </Banner>
+        ) : null}
+
+        {cashPosFee > 0 ? (
+          <Banner tone="info" icon="cash" title="POS fee on cash">
+            {`${formatNaira(cashPosFee)} will be deducted from the client's remit (POS charge for banking the cash). Doesn't change what you hand over.`}
           </Banner>
         ) : null}
 

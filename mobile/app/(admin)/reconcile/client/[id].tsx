@@ -34,11 +34,13 @@ export default function ClientReconcileDetail() {
   const totals = useMemo(() => {
     let customerOwed = 0,
       paid = 0,
-      redaFee = 0;
+      redaFee = 0,
+      cashPosFee = 0;
     for (const r of rows) {
       customerOwed += Number(r.customer_price ?? 0);
       paid += Number(r.paid ?? 0);
       redaFee += Number(r.reda_fee ?? 0);
+      cashPosFee += Number(r.cash_pos_fee ?? 0);
     }
     return {
       count: rows.length,
@@ -46,7 +48,8 @@ export default function ClientReconcileDetail() {
       paid,
       outstanding: customerOwed - paid,
       redaFee,
-      remit: paid - redaFee,
+      cashPosFee,
+      remit: paid - redaFee - cashPosFee,
     };
   }, [rows]);
 
@@ -64,6 +67,7 @@ export default function ClientReconcileDetail() {
       `Outstanding:       ${formatNaira(totals.outstanding)}`,
       ``,
       `Reda delivery fee: ${formatNaira(totals.redaFee)}`,
+      `Cash POS fee:      ${formatNaira(totals.cashPosFee)}`,
       `Remit to you:      ${formatNaira(totals.remit)}`,
     ].join('\n');
 
@@ -78,10 +82,12 @@ export default function ClientReconcileDetail() {
               const customer = r.customer_name ?? 'customer';
               const paid = formatNaira(Number(r.paid ?? 0));
               const fee = formatNaira(Number(r.reda_fee ?? 0));
+              const posFee = Number(r.cash_pos_fee ?? 0);
+              const posPart = posFee > 0 ? ` · POS ${formatNaira(posFee)}` : '';
               const remit = formatNaira(Number(r.remit ?? 0));
               const agent = r.agent_name ? ` (${r.agent_name.split(/\s+/)[0]})` : '';
               const date = formatDateLagos(r.scheduled_date);
-              return `• ${date} · ${customer} · ${loc} · ${qty}${product}\n  collected ${paid} · Reda fee ${fee} · remit ${remit}${agent}`;
+              return `• ${date} · ${customer} · ${loc} · ${qty}${product}\n  collected ${paid} · Reda fee ${fee}${posPart} · remit ${remit}${agent}`;
             })
             .join('\n');
 
@@ -131,7 +137,8 @@ export default function ClientReconcileDetail() {
                 marginTop: 4,
               }}
             >
-              {totals.count} {totals.count === 1 ? 'delivery' : 'deliveries'} · paid − Reda fee
+              {totals.count} {totals.count === 1 ? 'delivery' : 'deliveries'} · paid − Reda fee −
+              cash POS fee
             </Text>
 
             <View style={{ marginTop: 14, gap: 6 }}>
@@ -144,6 +151,7 @@ export default function ClientReconcileDetail() {
               />
               <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 4 }} />
               <SmallRow label="Reda delivery fee" value={formatNaira(totals.redaFee)} />
+              <SmallRow label="Cash POS fee" value={formatNaira(totals.cashPosFee)} />
             </View>
           </Card>
         }
@@ -266,6 +274,9 @@ function DeliveryRow({ row }: { row: ClientRemitDetailRow }) {
       >
         <MicroRow label="Customer paid" value={formatNaira(row.paid)} />
         <MicroRow label="Reda fee" value={formatNaira(row.reda_fee)} />
+        {Number(row.cash_pos_fee ?? 0) > 0 ? (
+          <MicroRow label="Cash POS fee" value={formatNaira(row.cash_pos_fee)} />
+        ) : null}
       </View>
     </Card>
   );

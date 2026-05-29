@@ -17,7 +17,11 @@ export type ClientRemitRow = {
   outstanding: number;
   /** Reda's per-delivery delivery fees (sum of charged_snapshot). */
   total_reda_fee: number;
-  /** What Reda owes the client = paid − Reda fee. */
+  /** POS fees Reda pays to bank customer cash (sum of cash_pos_fee_snapshot).
+   *  Passed through to the client — they absorb the cost because their
+   *  customer paid cash. NULL on pre-2026-05-29 rows. */
+  total_cash_pos_fee: number;
+  /** What Reda owes the client = paid − Reda fee − cash POS fee. */
   total_remit: number;
 };
 
@@ -43,7 +47,10 @@ export type ClientRemitDetailRow = {
   payment_method: string | null;
   /** Reda's delivery fee for this trip (= charged_snapshot, from rate_card at create time). */
   reda_fee: number;
-  /** What Reda owes the client for this delivery = paid − reda_fee. */
+  /** ₦500 when the customer paid cash; 0 for transfer. Snapshotted at
+   *  delivered-time so historical rows stay immutable. */
+  cash_pos_fee: number;
+  /** What Reda owes the client for this delivery = paid − reda_fee − cash_pos_fee. */
   remit: number;
   agent_name: string | null;
 };
