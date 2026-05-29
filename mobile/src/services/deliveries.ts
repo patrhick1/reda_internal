@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import type { Database } from '@/types/database.gen';
 import type { Role } from '@/lib/permissions';
-import { STATUS_GROUPS, TERMINAL_STATUSES } from '@/lib/theme';
+import { STATUS_GROUPS } from '@/lib/theme';
 
 // The two role-scoped views over deliveries. Same columns except:
 //   - deliveries_admin has charged_snapshot, agent_payment_snapshot, margin
@@ -175,12 +175,13 @@ export async function listDeliveries(
     attachJoins(row as unknown as JoinShape & object),
   ) as DeliveryRow[];
 
-  // Sort: non-terminal first, then by most recent status change DESC.
-  // Pulls (id, delivery_id, changed_at) from delivery_status_history for the
-  // fetched IDs in a single second query, then merges client-side. For
-  // Reda's scale (~hundreds of rows) this is sub-50ms. We also record the
-  // latest history row's id per delivery so the next step can check which
-  // of them have been tagged 'client notified'.
+  // Sort: most recent status change DESC across all statuses — a row
+  // cancelled 30 seconds ago should sit above a pending row untouched all
+  // day. Pulls (id, delivery_id, changed_at) from delivery_status_history
+  // for the fetched IDs in a single second query, then merges client-side.
+  // For Reda's scale (~hundreds of rows) this is sub-50ms. We also record
+  // the latest history row's id per delivery so the next step can check
+  // which of them have been tagged 'client notified'.
   const ids = rows.map((r) => r.id).filter((id): id is string => !!id);
   const lastChange = new Map<string, string>();
   const latestHistoryByDelivery = new Map<string, string>();
@@ -220,9 +221,6 @@ export async function listDeliveries(
   }
 
   return rows.sort((a, b) => {
-    const aTerm = TERMINAL_STATUSES.has(a.current_status ?? '');
-    const bTerm = TERMINAL_STATUSES.has(b.current_status ?? '');
-    if (aTerm !== bTerm) return aTerm ? 1 : -1;
     const aT = lastChange.get(a.id ?? '') ?? a.created_at ?? '';
     const bT = lastChange.get(b.id ?? '') ?? b.created_at ?? '';
     return bT.localeCompare(aT);
