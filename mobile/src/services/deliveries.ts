@@ -491,13 +491,27 @@ export async function listTransitionsFrom(
   from: string,
   isAdmin: boolean,
 ): Promise<DeliveryStatusTransition[]> {
-  let query = supabase.from('delivery_status_transitions').select('*').eq('from_status', from);
+  // Embed the target status's sort_order so we can return transitions in
+  // the same order ops sees everywhere else (e.g. Available right before
+  // Available evening). The constraint name disambiguates between the
+  // from_status and to_status FKs that both point at delivery_status_defs.
+  let query = supabase
+    .from('delivery_status_transitions')
+    .select('*, to_def:delivery_status_defs!delivery_status_transitions_to_status_fkey(sort_order)')
+    .eq('from_status', from);
   if (!isAdmin) {
     query = query.eq('requires_admin', false);
   }
   const { data, error } = await query;
   if (error) throw error;
-  return data ?? [];
+  type Joined = DeliveryStatusTransition & { to_def: { sort_order: number } | null };
+  const rows = (data ?? []) as unknown as Joined[];
+  rows.sort(
+    (a, b) =>
+      (a.to_def?.sort_order ?? Number.MAX_SAFE_INTEGER) -
+      (b.to_def?.sort_order ?? Number.MAX_SAFE_INTEGER),
+  );
+  return rows.map(({ to_def: _drop, ...rest }) => rest);
 }
 
 export type ChargePreview = {
