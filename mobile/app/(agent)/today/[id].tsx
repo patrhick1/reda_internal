@@ -172,7 +172,7 @@ export default function AgentDeliveryDetail() {
       <ScrollView
         contentContainerStyle={{
           padding: 16,
-          paddingBottom: (isTerminal ? 32 : 130) + insets.bottom,
+          paddingBottom: 130 + insets.bottom,
           gap: 12,
         }}
       >
@@ -419,36 +419,37 @@ export default function AgentDeliveryDetail() {
         </Card>
       </ScrollView>
 
-      {/* Sticky bottom action */}
-      {!isTerminal ? (
-        <View
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            bottom: 0,
-            paddingHorizontal: 16,
-            paddingTop: 16,
-            paddingBottom: 16 + insets.bottom,
-            backgroundColor: colors.surface,
-            borderTopWidth: 1,
-            borderTopColor: colors.border,
-            flexDirection: 'row',
-            gap: 8,
-          }}
-        >
-          <View style={{ flex: 1 }}>
-            <Button variant="secondary" full onPress={() => setUpdateOpen(true)}>
-              Update status
-            </Button>
-          </View>
+      {/* "Update status" stays visible on terminal statuses so a mistaken
+          Cancelled can be escalated — the sheet shows the admin-required note. */}
+      <View
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          paddingHorizontal: 16,
+          paddingTop: 16,
+          paddingBottom: 16 + insets.bottom,
+          backgroundColor: colors.surface,
+          borderTopWidth: 1,
+          borderTopColor: colors.border,
+          flexDirection: 'row',
+          gap: 8,
+        }}
+      >
+        <View style={{ flex: 1 }}>
+          <Button variant="secondary" full onPress={() => setUpdateOpen(true)}>
+            Update status
+          </Button>
+        </View>
+        {!isTerminal ? (
           <View style={{ flex: 1 }}>
             <Button variant="emphasis" full onPress={() => setMarkOpen(true)}>
               Mark delivered
             </Button>
           </View>
-        </View>
-      ) : null}
+        ) : null}
+      </View>
 
       <MarkDeliveredSheet
         open={markOpen}

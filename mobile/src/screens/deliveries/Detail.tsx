@@ -316,7 +316,7 @@ export function DeliveryDetail() {
       <ScrollView
         contentContainerStyle={{
           padding: 16,
-          paddingBottom: (canEdit && !isTerminal ? 130 : 32) + insets.bottom,
+          paddingBottom: (canEdit ? 130 : 32) + insets.bottom,
           gap: 12,
         }}
       >
@@ -668,7 +668,7 @@ export function DeliveryDetail() {
         </Card>
       </ScrollView>
 
-      {canEdit && !isTerminal ? (
+      {canEdit ? (
         <View
           style={{
             position: 'absolute',
@@ -690,12 +690,14 @@ export function DeliveryDetail() {
               Hand off
             </Button>
           ) : null}
-          <Button variant="secondary" onPress={() => setUpdateOpen(true)}>
+          <Button variant="secondary" full={isTerminal} onPress={() => setUpdateOpen(true)}>
             Update status
           </Button>
-          <Button variant="emphasis" full icon="check" onPress={() => setMarkOpen(true)}>
-            Mark delivered
-          </Button>
+          {!isTerminal ? (
+            <Button variant="emphasis" full icon="check" onPress={() => setMarkOpen(true)}>
+              Mark delivered
+            </Button>
+          ) : null}
         </View>
       ) : null}
 

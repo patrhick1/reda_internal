@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { Banner, Icon, Input, Sheet, StatusPill } from '@/components/ui';
-import { colors, fonts, STATUS_META } from '@/lib/theme';
+import { colors, fonts, FINAL_STATUSES, STATUS_META, TERMINAL_STATUSES } from '@/lib/theme';
 import {
   listStatusDefs,
   listTransitionsFrom,
@@ -68,6 +68,9 @@ export function UpdateStatusSheet({
   const autoIssue =
     picked && autoSeedThreadOnIntervention ? (STATUS_AUTO_ISSUE[picked.to_status] ?? null) : null;
   const willSeedThread = autoIssue !== null;
+  const isTerminalPick = picked ? TERMINAL_STATUSES.has(picked.to_status) : false;
+  const isFinalPick = picked ? FINAL_STATUSES.has(picked.to_status) : false;
+  const isFinalCurrent = FINAL_STATUSES.has(currentStatus);
 
   async function submit() {
     if (!delivery || !picked) return;
@@ -168,7 +171,11 @@ export function UpdateStatusSheet({
       ) : options.length === 0 ? (
         <View style={{ padding: 20 }}>
           <Banner tone="info" icon="alert">
-            {`No status changes available from ${STATUS_META[currentStatus]?.label ?? currentStatus}.${isAdmin ? '' : ' Backward transitions require admin.'}`}
+            {isFinalCurrent
+              ? currentStatus === 'delivered'
+                ? 'Delivered is final and can’t be changed from the app. Contact admin if there’s an issue.'
+                : 'This delivery already rolled over to the next day. Contact admin if you need to change it.'
+              : `No status changes available from ${STATUS_META[currentStatus]?.label ?? currentStatus}.${isAdmin ? '' : ' Contact admin if you need to change this.'}`}
           </Banner>
         </View>
       ) : !picked ? (
@@ -220,6 +227,13 @@ export function UpdateStatusSheet({
           {willSeedThread ? (
             <Banner tone="info" icon="alert">
               This will also message ops so they can help.
+            </Banner>
+          ) : null}
+          {isTerminalPick ? (
+            <Banner tone="warn" icon="alert">
+              {isFinalPick
+                ? 'Final — you won’t be able to change this from the app.'
+                : 'Closes the delivery. You’ll need to give a reason if you reopen it.'}
             </Banner>
           ) : null}
           {isPostponed ? (

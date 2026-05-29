@@ -129,6 +129,13 @@ export const STATUS_GROUPS: Record<'active' | 'soft' | 'done' | 'closed', string
  *  edit/action affordances on screens that should only act on open work. */
 export const TERMINAL_STATUSES = new Set<string>([...STATUS_GROUPS.done, ...STATUS_GROUPS.closed]);
 
+/** Terminal statuses whose entry fires side effects we can't safely undo from
+ *  the app — `delivered` triggers the sibling auto-cancel cascade + payment
+ *  snapshots, `rolled_over` is set by EOD bookkeeping. Reverting either needs
+ *  surgical cleanup we haven't built; until then the UI tells the user to
+ *  contact admin. SQL anchor: scripts/open-safe-terminal-revert.sql. */
+export const FINAL_STATUSES = new Set<string>(['delivered', 'rolled_over']);
+
 export function statusBucket(s: string | null | undefined): keyof typeof STATUS_GROUPS {
   if (!s) return 'active';
   for (const k of Object.keys(STATUS_GROUPS) as (keyof typeof STATUS_GROUPS)[]) {

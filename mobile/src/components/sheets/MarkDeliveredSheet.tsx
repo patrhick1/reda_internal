@@ -224,6 +224,10 @@ export function MarkDeliveredSheet({
           </Banner>
         ) : null}
 
+        <Banner tone="warn" icon="alert">
+          Marking delivered is final — you can’t undo it from the app.
+        </Banner>
+
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <Button variant="secondary" onPress={onClose} disabled={submitting}>
             Cancel
