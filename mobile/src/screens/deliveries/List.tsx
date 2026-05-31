@@ -1,25 +1,34 @@
 import { memo, useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
   Text,
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { listDeliveries, type DeliveryRow } from '@/services/deliveries';
 import { listActiveFollowups, type ActiveFollowup } from '@/services/followups';
 import { useSupabaseChannel } from '@/hooks/useSupabaseChannel';
 import { listUsers, type AppUser } from '@/services/users';
-import { canAssignDelivery, canCreateDelivery, canSeeClientName } from '@/lib/permissions';
+import {
+  canAssignDelivery,
+  canBulkAssignDelivery,
+  canCreateDelivery,
+  canSeeClientName,
+} from '@/lib/permissions';
 import { formatNaira } from '@/lib/format';
 import {
   AppBar,
   Avatar,
+  Button,
   Card,
   Empty,
   FAB,
@@ -28,6 +37,7 @@ import {
   Input,
   StatusPill,
 } from '@/components/ui';
+import { BulkAssignSheet } from '@/components/sheets/BulkAssignSheet';
 import { colors, fonts, statusBucket, STATUS_GROUPS } from '@/lib/theme';
 import { todayLagos, yesterdayLagos } from '@/lib/date';
 
@@ -40,6 +50,7 @@ type DatePreset = 'today' | 'yesterday' | 'custom' | 'all';
 export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   const user = useCurrentUser();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [filter, setFilter] = useState<Filter>('all');
   const [datePreset, setDatePreset] = useState<DatePreset>('today');
   // Persists across preset toggles so switching today → yesterday → custom
@@ -49,6 +60,14 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   // so the picker stays hidden for them — narrowing has no work to do.
   const [agentId, setAgentId] = useState<string | null>(null);
   const showAgentPicker = canAssignDelivery(user.role);
+  // Multi-select bulk reassign — Uzo's morning queue flow. Admin + dispatcher
+  // only (canBulkAssignDelivery). Long-press a row to enter select mode; in
+  // select mode rows toggle selection on tap and the bottom action bar
+  // surfaces "Assign to…". See BulkAssignSheet for the picker.
+  const canBulkAssign = canBulkAssignDelivery(user.role);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [bulkSheetOpen, setBulkSheetOpen] = useState(false);
   // Reps coordinate with vendors and need the client name on each row so they
   // can scan and call back without opening the detail. Agents have a separate
   // screen (`(agent)/today/index.tsx`) — this gate is defensive in case the
@@ -101,6 +120,41 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
       .filter((u) => u.role === 'agent' && u.is_active)
       .sort((a, b) => (a.display_name ?? '').localeCompare(b.display_name ?? ''));
   }, [agentsQ.data]);
+  // Pool for bulk-assign — only top-level agents (no sub-agents). Mirrors
+  // bulk_assign_deliveries' server-side check so the sheet doesn't show
+  // anyone the RPC would reject.
+  const bulkAssignTargets = useMemo(() => agents.filter((a) => !a.parent_agent_id), [agents]);
+
+  const enterSelect = useCallback((seedId: string | null) => {
+    setSelectMode(true);
+    setSelectedIds(seedId ? new Set([seedId]) : new Set());
+  }, []);
+  const exitSelect = useCallback(() => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }, []);
+  const toggleSelected = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+  const onBulkAssigned = useCallback(
+    (updated: number) => {
+      setBulkSheetOpen(false);
+      exitSelect();
+      reload();
+      const msg = `Assigned ${updated} ${updated === 1 ? 'delivery' : 'deliveries'}.`;
+      if (Platform.OS === 'web') {
+        if (typeof window !== 'undefined') window.alert(msg);
+      } else {
+        Alert.alert('Done', msg);
+      }
+    },
+    [exitSelect, reload],
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -173,7 +227,38 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
-      <AppBar title="Deliveries" subtitle={subtitleFor(datePreset, customDate)} />
+      {selectMode ? (
+        <AppBar
+          title={`${selectedIds.size} selected`}
+          subtitle={subtitleFor(datePreset, customDate)}
+          left={
+            <Pressable
+              onPress={exitSelect}
+              hitSlop={8}
+              style={{ padding: 4, marginLeft: -4 }}
+              accessibilityRole="button"
+              accessibilityLabel="Exit select mode"
+            >
+              <Icon name="x" size={24} color={colors.black} />
+            </Pressable>
+          }
+          right={
+            <Pressable
+              onPress={exitSelect}
+              hitSlop={8}
+              style={{ padding: 4 }}
+              accessibilityRole="button"
+              accessibilityLabel="Done"
+            >
+              <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>
+                Done
+              </Text>
+            </Pressable>
+          }
+        />
+      ) : (
+        <AppBar title="Deliveries" subtitle={subtitleFor(datePreset, customDate)} />
+      )}
       <View
         style={{
           backgroundColor: colors.white,
@@ -238,19 +323,35 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         keyExtractor={keyForDelivery}
         renderItem={({ item }) => {
           const claim = item.id ? followupByDelivery.get(item.id) : undefined;
+          const itemId = item.id ?? '';
+          const selected = selectMode && itemId ? selectedIds.has(itemId) : false;
           return (
             <DeliveryListRow
               delivery={item}
               followup={claim}
               showClient={showClient}
-              onPress={() =>
+              selectMode={selectMode}
+              selected={selected}
+              onPress={() => {
+                if (selectMode) {
+                  if (itemId) toggleSelected(itemId);
+                  return;
+                }
                 router.push({
                   pathname: `${basePath}/deliveries/[id]` as
                     | `/(admin)/deliveries/[id]`
                     | `/(dispatcher)/deliveries/[id]`
                     | `/(rep)/deliveries/[id]`,
-                  params: { id: item.id ?? '' },
-                })
+                  params: { id: itemId },
+                });
+              }}
+              onLongPress={
+                canBulkAssign && itemId
+                  ? () => {
+                      if (!selectMode) enterSelect(itemId);
+                      else toggleSelected(itemId);
+                    }
+                  : undefined
               }
             />
           );
@@ -263,7 +364,11 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
             tintColor={colors.black}
           />
         }
-        contentContainerStyle={{ padding: 16, paddingBottom: 96, flexGrow: 1 }}
+        contentContainerStyle={{
+          padding: 16,
+          paddingBottom: selectMode ? 120 + insets.bottom : 96,
+          flexGrow: 1,
+        }}
         initialNumToRender={12}
         windowSize={7}
         maxToRenderPerBatch={8}
@@ -289,7 +394,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
           )
         }
       />
-      {canCreateDelivery(user.role) ? (
+      {!selectMode && canCreateDelivery(user.role) ? (
         <FAB
           icon="plus"
           label="Create"
@@ -302,6 +407,55 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
           }
         />
       ) : null}
+
+      {selectMode ? (
+        <View
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            paddingHorizontal: 16,
+            paddingTop: 12,
+            paddingBottom: 12 + insets.bottom,
+            backgroundColor: colors.white,
+            borderTopWidth: 1,
+            borderTopColor: colors.border,
+            flexDirection: 'row',
+            gap: 10,
+          }}
+        >
+          <View style={{ flex: 1 }}>
+            <Button
+              variant="secondary"
+              full
+              onPress={() => setSelectedIds(new Set())}
+              disabled={selectedIds.size === 0}
+            >
+              Clear
+            </Button>
+          </View>
+          <View style={{ flex: 2 }}>
+            <Button
+              variant="emphasis"
+              full
+              icon="check"
+              onPress={() => setBulkSheetOpen(true)}
+              disabled={selectedIds.size === 0}
+            >
+              {`Assign ${selectedIds.size}`}
+            </Button>
+          </View>
+        </View>
+      ) : null}
+
+      <BulkAssignSheet
+        open={bulkSheetOpen}
+        deliveryIds={Array.from(selectedIds)}
+        agents={bulkAssignTargets}
+        onClose={() => setBulkSheetOpen(false)}
+        onAssigned={onBulkAssigned}
+      />
     </View>
   );
 }
@@ -311,19 +465,46 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
 const DeliveryListRow = memo(function DeliveryListRow({
   delivery,
   onPress,
+  onLongPress,
   followup,
   showClient,
+  selectMode,
+  selected,
 }: {
   delivery: DeliveryRow;
   onPress: () => void;
+  onLongPress?: () => void;
   followup?: ActiveFollowup;
   showClient: boolean;
+  /** When true, the screen is in multi-select mode — render the checkbox and
+   *  let tap toggle selection. The actual selection logic lives in the parent. */
+  selectMode: boolean;
+  selected: boolean;
 }) {
   const status = delivery.current_status ?? 'pending';
   const showFollowup = followup && SOFT_STATUSES.has(status);
   return (
-    <Card dense onPress={onPress}>
+    <Card dense onPress={onPress} onLongPress={onLongPress}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+        {selectMode ? (
+          <View
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: selected }}
+            style={{
+              width: 22,
+              height: 22,
+              borderRadius: 6,
+              borderWidth: 2,
+              borderColor: selected ? colors.black : colors.border,
+              backgroundColor: selected ? colors.black : 'transparent',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginTop: 2,
+            }}
+          >
+            {selected ? <Icon name="check" size={14} color={colors.white} /> : null}
+          </View>
+        ) : null}
         <View style={{ flex: 1 }}>
           {showClient && delivery.client_name ? (
             <Text

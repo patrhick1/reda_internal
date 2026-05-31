@@ -6,11 +6,12 @@ import { colors, radii } from '@/lib/theme';
 export type CardProps = {
   children: React.ReactNode;
   onPress?: () => void;
+  onLongPress?: () => void;
   dense?: boolean;
   style?: ViewStyle;
 };
 
-export function Card({ children, onPress, dense, style }: CardProps) {
+export function Card({ children, onPress, onLongPress, dense, style }: CardProps) {
   const padding = dense ? 12 : 16;
   const content = (
     <View
@@ -29,9 +30,13 @@ export function Card({ children, onPress, dense, style }: CardProps) {
       {children}
     </View>
   );
-  if (!onPress) return content;
+  if (!onPress && !onLongPress) return content;
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => (pressed ? { opacity: 0.92 } : null)}>
+    <Pressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      style={({ pressed }) => (pressed ? { opacity: 0.92 } : null)}
+    >
       {content}
     </Pressable>
   );

@@ -156,6 +156,16 @@ export function canAssignDelivery(role: Role): boolean {
   return isOps(role);
 }
 
+/** Bulk-reassign N deliveries to one agent in one shot — the Uzo morning-
+ *  queue flow. Tighter than canAssignDelivery: reps don't get this even
+ *  though they can reassign one-off via the Edit screen, because the bulk
+ *  RPC is operationally a routing decision and we want it to stay on the
+ *  ops team that runs daily dispatch.
+ *  Server anchor: bulk_assign_deliveries RPC checks is_admin_or_dispatcher(). */
+export function canBulkAssignDelivery(role: Role): boolean {
+  return role === 'admin' || role === 'dispatcher';
+}
+
 /** Team-lead handoff: a lead can move a delivery they own to one of their own
  *  sub-agents. Distinct from `canAssignDelivery` — narrower scope (only sub-agents),
  *  narrower actor (only the lead who currently owns it). Caller must also have

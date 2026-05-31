@@ -460,6 +460,28 @@ export async function reassignToSubAgent(
   if (error) throw error;
 }
 
+/** Admin/dispatcher bulk reassign: set the assigned agent on every supplied
+ *  delivery in a single round-trip. Terminal / deleted rows and rows already
+ *  on the target agent are silently skipped server-side. Returns the count
+ *  actually updated for the success toast. Not a status change — the
+ *  delivery_status_history table is untouched; the audit_log records each
+ *  assignment with reason='bulk_assign'. The assignment-push trigger fires
+ *  per row, so the new assignee gets one notification per delivery. */
+export async function bulkAssignDeliveries(
+  deliveryIds: string[],
+  agentId: string,
+): Promise<number> {
+  // @ts-expect-error — RPC added 2026-05-30 in scripts/manual-rollover-
+  // assignment.sql, not yet in database.gen.ts. Will resolve after the
+  // next `npm run gen:types` once the SQL has been applied.
+  const { data, error } = await supabase.rpc('bulk_assign_deliveries', {
+    p_delivery_ids: deliveryIds,
+    p_agent_id: agentId,
+  });
+  if (error) throw error;
+  return (data ?? 0) as number;
+}
+
 export async function listDeliveryHistory(deliveryId: string): Promise<DeliveryStatusHistoryRow[]> {
   const { data, error } = await supabase
     .from('delivery_status_history')
