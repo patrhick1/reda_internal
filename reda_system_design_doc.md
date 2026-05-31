@@ -89,6 +89,8 @@ The agent gets a push notification immediately. **Uzo doesn't need to open the a
 
 If Uzo disagrees with the auto-assignment, he reassigns in the app — one tap, audit-logged.
 
+**Rolled-over deliveries explicitly DO NOT auto-assign (since 2026-05-30).** The `tg_auto_assign_on_insert` trigger gates on `created_via <> 'rollover'` so prior-day soft-fails land on tomorrow's queue **unassigned** — see "End of day" below and PRD §5.11a for the full rationale. Fresh bot/manual orders still go through the algorithm normally.
+
 ### In-day flow
 
 Agent receives push notification, opens app, sees delivery details. Calls customer using tap-to-call.
@@ -121,6 +123,7 @@ Agent travels, delivers, collects payment (cash or transfer), verifies amount.
 - **Late-add sibling** (Uzo creates a 4th duplicate after agent A is already en route) → the new agent receives the Stand-by push immediately on row creation.
 - **Rollover dedup.** The 21:00 auto-rollover only carries the OLDEST sibling forward; the rest are cancelled in-place so duplicates don't multiply across days.
 - **One-time backfill** ran on 2026-05-18 to cancel existing duplicate siblings in the data.
+- **Bot smart-reassign (since 2026-05-30).** When Uzo forwards a customer's details to a specific agent on WhatsApp, `bot_create_delivery` checks for an unassigned sibling first (the rolled-over orphan from last night) and **absorbs that row by UPDATEing its `assigned_agent_id` instead of inserting a duplicate**. The match uses the same two-tier predicate as sibling coordination. Race semantics are preserved automatically: the FIRST forward absorbs the orphan; subsequent forwards see an *assigned* sibling, fall through to the existing insert path, and spawn fresh sibling rows for the race. Lets Uzo keep his WhatsApp habit without polluting the audit trail with phantom "the bot also created this" duplicates.
 
 ### End of day
 
@@ -130,7 +133,11 @@ Agent travels, delivers, collects payment (cash or transfer), verifies amount.
 
 **Manual path still available.** Uzo can still open the EOD screen and tap **Roll all forward** — same backend, same idempotency. Useful for clearing early or re-running after fixing something.
 
-Rolling over creates a NEW row for tomorrow (linked via `parent_delivery_id`), copying customer info, product, quantity, address, location, assigned agent. The old row flips to `rolled_over` (terminal). Stock is NOT moved — the new pending row inherits the old assignment, so whoever holds the stock keeps holding it.
+Rolling over creates a NEW row for tomorrow (linked via `parent_delivery_id`), copying customer info, product, quantity, address, location, customer_price. The old row flips to `rolled_over` (terminal). Stock is NOT moved — stock attribution is via delivered-side-effects, not assignment.
+
+**Rolled rows land unassigned (since 2026-05-30).** Per PRD §5.11a, Uzo declined an auto-routing seed for rollover assignment because agents' schedules churn (leave, sickness, new joiners, departures) and the rotation he runs requires human judgment the app can't honestly model. `rollover_delivery` now inserts the new row with `assigned_agent_id = NULL`; the auto-assign trigger skips `created_via='rollover'` so nothing automatically guesses; every rolled-over delivery surfaces on tomorrow's queue under the existing **Unassigned** filter chip on the deliveries list. Uzo clears the queue in 3–5 minutes via multi-select + bulk reassign (long-press a row to enter select mode, tap to toggle, "Assign N" picks an agent via a search-filterable bottom sheet, single round-trip through the `bulk_assign_deliveries` RPC). Alternatively he can keep forwarding orders to agents on WhatsApp exactly as before — the bot smart-reassign (see Race-assign coordination above) absorbs the unassigned orphan into whatever agent he named.
+
+**Carry-cap only counts genuine soft-fails (since 2026-05-30).** The 3-strike rule (mark `unserious` after 2 rollovers) now fires only when the parent's status was a customer-unreachable one — `not_answering`, `not_around`, `not_available`, `not_connecting`, `number_busy`, `switched_off`. Operational rollovers (a row that sat as `pending` because nobody assigned it, an `available` row that never got attempted, a `picked_up` row the agent didn't deliver) carry without burning a strike. Captured per-rollover in `audit_log` as `is_strike_rollover: true|false`.
 
 ## 4. Money model
 
@@ -142,21 +149,27 @@ Per delivery, the system tracks:
 | Quantity Ordered | What customer ordered | From bot or manual |
 | Quantity Delivered | What actually changed hands | Agent records at delivery |
 | Paid | What was actually collected | Agent records |
-| Payment Method | Cash or Transfer | Agent records |
+| Payment Method | Cash or Transfer (defaults to Cash) | Agent records |
 | Location | Geographic area (AI-matched to rate card) | Bot pipeline or manual |
 | Charged | Reda's fee for the trip | Auto from rate card |
 | Agent Payment | What Reda pays the agent | Auto from rate card |
+| Cash POS Fee | ₦500 when cash + paid > 0, else 0 (since 2026-05-29) | Stamped server-side at delivered-time |
 | Margin | Charged − Agent Payment | Computed |
-| Remit | Paid − Charged | Computed |
+| Remit | Paid − Charged − Cash POS Fee | Computed |
 
 ### Key money rules
 
-**Remit is calculated from Paid, not from Customer Price.** This means **Reda never absorbs a customer underpayment.** If customer paid less than expected, the client receives proportionally less. Example:
+**Remit is calculated from Paid, not from Customer Price.** This means **Reda never absorbs a customer underpayment.** If customer paid less than expected, the client receives proportionally less. Example (cash payment):
 
 - Customer Price: ₦19,000 (the agreed price)
-- Paid: ₦15,000 (what the customer actually gave the agent)
+- Paid: ₦15,000 (what the customer actually gave the agent, in cash)
 - Charged: ₦7,000 (Reda's location-based fee)
-- Remit to client: ₦15,000 − ₦7,000 = ₦8,000
+- Cash POS Fee: ₦500 (Reda's cost to bank the cash, passed through to the client)
+- Remit to client: ₦15,000 − ₦7,000 − ₦500 = ₦7,500
+
+For a transfer payment the Cash POS Fee is 0 and Remit = Paid − Charged.
+
+**Cash POS Fee is a pass-through, not Reda revenue.** It represents the per-delivery cost a POS operator charges Reda to convert collected cash into a bank balance. The client absorbs it because their customer chose cash; if everyone paid by transfer, the fee wouldn't exist at all. Snapshotted at delivered-time so a future fee adjustment doesn't retroactively change historical remits — same pattern as Charged and Agent Payment. Hardcoded as ₦500 today; per-client variance would be a `clients.cash_pos_fee` column when actually needed.
 
 **Rate card** drives Charged and Agent Payment. Keyed by Location only — same rate regardless of which agent does the delivery.
 

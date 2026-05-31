@@ -385,7 +385,9 @@ Rules:
 - **Agent:** today's assigned deliveries (RLS filters automatically).
 - **Dispatcher/Admin:** all deliveries. Filter by date, agent, status, **customer name** (case-insensitive substring, client-side narrow over the fetched list — see [List.tsx](mobile/src/screens/deliveries/List.tsx)), client, location. Default view: today.
 
-**Sort (all roles, since 2026-05-16):** non-terminal deliveries first, ordered by **most recent status change DESC** (uses `delivery_status_history.changed_at`). Terminal rows (`delivered`, `cancelled`, `failed_delivery`, `unserious`, `no_product`, `rolled_over`) fall to the bottom, also ordered by last change. Implemented in [listDeliveries](mobile/src/services/deliveries.ts) as a second IN-query against `delivery_status_history` + client-side merge — no schema changes. Supersedes the old per-role rules (admin/dispatcher's `created_at DESC` and agent's 4-bucket `STATUS_PRIORITY`). Same rule applies to the admin home "Recent activity" preview (first 4 of the same fetch).
+**Sort (all roles, since 2026-05-30):** **most recent status change DESC across all statuses** (uses `delivery_status_history.changed_at`, falling back to `created_at` for rows with no history). A row cancelled 30 seconds ago sits above a pending row untouched all day — Uzo's mental model that "most recent change wins" regardless of where the row is in its lifecycle. Implemented in [listDeliveries](mobile/src/services/deliveries.ts) as a second IN-query against `delivery_status_history` + client-side merge — no schema changes. Supersedes the earlier non-terminal-first bucket (2026-05-16 → 2026-05-30) and the per-role rules before that. Same rule applies to the admin home "Recent activity" preview (first 4 of the same fetch).
+
+**Filter chips include `Unassigned` (since 2026-05-30 surfaces a real bucket; chip was already there as a passive filter).** Multi-select bulk reassign — long-press to enter select mode, tap rows to toggle, "Assign N" opens a search-filterable agent picker — ships behind `canBulkAssignDelivery` (admin + dispatcher; reps continue using the single-row reassign on the Edit screen). Used heavily for the rolled-over-unassigned morning queue described in §5.11a. Backed by `bulk_assign_deliveries` RPC; not queued — matches the existing `reassignToSubAgent` precedent and Uzo's typical wifi conditions.
 
 **"Notified" pill on list rows (since 2026-05-27).** When the most-recent `delivery_status_history` row has been tagged via `mark_client_notified` (see §5.9), a small green *Notified* pill renders next to the StatusPill on the list row. Lets peers see at a glance which deliveries have already been communicated to the customer without opening each one. Implementation: `listDeliveries` records the latest history-id per delivery (same sub-query already used for sort) and fires one cheap lookup against `delivery_client_notifications` keyed on that set; merges `latest_notified: boolean` into each row. Hidden when the latest history row is untagged.
 
@@ -468,10 +470,12 @@ Where:
 **Logic:**
 - Insert row in `delivery_status_history`
 - Update `current_status` on delivery
-- If transition = 'delivered': set `quantity_delivered`, `paid`, `payment_method`
+- If transition = 'delivered': set `quantity_delivered`, `paid`, `payment_method`, and `cash_pos_fee_snapshot` (₦500 when `payment_method='cash' AND paid > 0`, else 0 — see §5.12 and the Cash POS fee paragraph below)
 - If transition = 'delivered': **enforce stock** — `current_stock(assigned_agent_id, product_catalog_id) >= quantity_delivered`, else raise `insufficient_stock` (P0001). Skipped when the row has no assigned agent. This is the single chokepoint for stock; `create_delivery` no longer guards (since 2026-05-20).
 - If transition = 'cancelled' and previous was 'delivered': reverse the stock decrement (no explicit code needed; current_stock view recomputes from history)
 - All in a single transaction via Postgres function (see 5.15)
+
+**Cash POS fee (since 2026-05-29).** Both mark-delivered surfaces (`MarkDeliveredSheet` and `StatusUpdatePanel`) now default `payment_method = 'cash'` because the live data showed cash is by far the more common case. When the agent confirms with `method = 'cash' AND paid > 0`, the server stamps `cash_pos_fee_snapshot = 500` on the row inside `change_delivery_status` — the per-delivery POS-to-bank conversion fee Reda incurs when cashing out collected cash, passed through to the client as a deduction from their remit (see §5.12). Transfer rows stamp 0. Snapshotted at delivered-time rather than derived so a future fee adjustment doesn't retroactively change historical client remits — same pattern as `charged_snapshot` and `agent_payment_snapshot`. The `MarkDeliveredSheet` shows a hint banner when cash is picked: *"₦500 will be deducted from the client's remit (POS charge for banking the cash). Doesn't change what you hand over."* Agent's own "Remit to Reda" number is unchanged because the agent still hands over the full collected cash; the deduction lives on the client-remit side of the books.
 
 **Edge cases:**
 - Concurrent status updates (agent and dispatcher both updating same delivery) → last write wins via timestamp; both rows in history
@@ -559,13 +563,14 @@ Server-side guard lives in [scripts/warehouse-stock-ops.sql](scripts/warehouse-s
 
 **Sunday-skip.** Reda's work week is Mon–Sat. The `_ensure_workday(candidate)` helper inside [scripts/phase6-rollover.sql](scripts/phase6-rollover.sql) bumps a Sunday candidate forward to Monday, applied **uniformly** to both the default `+1 day` AND any explicit `p_new_scheduled_date` override. A Saturday-night rollover lands on Monday; a Monday-night rollover lands on Tuesday. When holidays are added, this is the one function to extend.
 
-**What `rollover_delivery` does, per parent:**
-- Mints a new `deliveries` row with `current_status='pending'`, `created_via='rollover'`, `parent_delivery_id=<old>`, copying customer info, product, quantity, address, location, assigned agent, customer_price.
+**What `rollover_delivery` does, per parent (since 2026-05-30 the new row lands unassigned — see §5.11a for the rationale):**
+- Mints a new `deliveries` row with `current_status='pending'`, `created_via='rollover'`, `parent_delivery_id=<old>`, copying customer info, product, quantity, address, location, customer_price. **`assigned_agent_id` is intentionally `NULL`** so Uzo surfaces the row on the deliveries list's Unassigned filter and decides every reassignment himself (§5.11a). The `tg_auto_assign_on_insert` trigger now skips rows where `created_via='rollover'` so the algorithm doesn't immediately pick someone via workload.
 - Re-snapshots `charged_snapshot` and `agent_payment_snapshot` from `current_rate_for_location()` for the new date (falls back to the old snapshots if no rate exists). Uses scalar variables for the rate columns so missing-location rollovers don't fail with "record not yet assigned."
 - Flips the original row to `rolled_over` via `change_delivery_status` — same audit trail, same trigger fanout.
 - Idempotent per `(parent_delivery_id, created_via='rollover')` — re-runs are no-ops.
+- **Carry-cap strike rule (since 2026-05-30):** the cap-trip-to-`unserious` after 2 rollovers only fires when the parent's status was a customer-unreachable one (`not_answering`, `not_around`, `not_available`, `not_connecting`, `number_busy`, `switched_off`). Operational rollovers (`pending`, `available`, `picked_up`, `postponed`, `follow_up`, `tomorrow`, `waybilled`, …) carry without ticking the counter. The customer-unreachable set is the same one §5.11's per-client EOD auto-cancel uses — single canonical definition. Audit-log records `is_strike_rollover: true|false` on every rollover.
 
-**Stock is NOT moved by rollover.** The new pending row inherits the old assignment, so the agent who already holds the stock continues to hold it. Stock attribution is via delivered-side-effects + explicit adjustments; a pending row never moved stock.
+**Stock is NOT moved by rollover.** Stock attribution is via delivered-side-effects + explicit adjustments; a pending row never moved stock. Under the new null-assignment behaviour the stock physically stays with yesterday's assignee (the system never knew about a "transfer" — stock tracks against the agent who last accepted it); once Uzo reassigns via the Unassigned queue, the new agent may need a warehouse transfer if they don't have enough on hand, which `tg_notify_pickup_needed` already signals.
 
 **Per-client EOD auto-cancel (since 2026-05-26).** Inside the same `run_eod_rollover` loop, after the same-agent and race-lost dedup branches, the row's client is checked for the `auto_cancel_soft_fails` policy (see §5.3). If the policy is on AND `current_status` is in the customer-unreachable set (`not_answering`, `not_around`, `not_available`, `not_connecting`, `number_busy`, `switched_off`), the row is transitioned to `failed_delivery` via `change_delivery_status` and the loop continues — no rollover child is minted. The cancel count is surfaced in the EOD summary admin push alongside the usual rolled/capped/deduped counts. Currently enabled for **Shalom** only; toggle-able for any client via Catalog → Clients → Edit.
 
@@ -689,6 +694,7 @@ Server-side guard lives in [scripts/warehouse-stock-ops.sql](scripts/warehouse-s
 - `paid` — what the customer actually paid.
 - `charged_snapshot` — Reda's per-delivery fee from `rate_card` keyed by `location_id`, snapshotted at create time.
 - `agent_payment_snapshot` — what Reda pays the assigned agent for this trip, snapshotted at create time (and re-snapshotted at auto-assign if a per-agent bonus applies).
+- `cash_pos_fee_snapshot` (since 2026-05-29) — ₦500 when the delivery was paid in cash (`payment_method='cash' AND paid > 0`), 0 otherwise. Snapshotted at delivered-time inside `change_delivery_status` so a future fee change doesn't retroactively shrink historical remits. Pass-through to the client, NOT Reda revenue — it represents the POS-to-bank conversion cost Reda incurs cashing out the collected cash. Hardcoded today; per-client variance (e.g. a client paying its own POS fees) would be a `clients.cash_pos_fee` column when actually needed.
 
 **Logic:**
 - Per-client report row math (from `client_remit_summary`):
@@ -696,16 +702,19 @@ Server-side guard lives in [scripts/warehouse-stock-ops.sql](scripts/warehouse-s
   - `total_paid           = SUM(paid)`
   - `outstanding          = total_customer_price - total_paid` (customer short-pay)
   - `total_reda_fee       = SUM(charged_snapshot)`
-  - `total_remit          = total_paid - total_reda_fee` *(what Reda owes the client back)*
+  - `total_cash_pos_fee   = SUM(cash_pos_fee_snapshot)` *(0 for transfer rows and for any pre-2026-05-29 row whose column is NULL — coalesced to 0)*
+  - `total_remit          = total_paid - total_reda_fee - total_cash_pos_fee` *(what Reda owes the client back)*
 - Per-agent earnings (from `agent_earnings_summary`):
   - `total_earnings = SUM(agent_payment_snapshot)` *(no multiplication by quantity)*
-- Per-delivery drill-down (from `client_remit_detail`) includes `reda_fee` and `remit` per row.
+- Per-delivery drill-down (from `client_remit_detail`) includes `reda_fee`, `cash_pos_fee`, and `remit` per row.
+- **Reda margin is unchanged.** Cash POS fee is a pass-through to the client; it does NOT contribute to Reda's gross. The Summary tab's *Reda margin = total_reda_fee − total_agent_payments* keeps the same shape it had pre-cash-POS-fee.
 
 **Edge cases:**
-- Partial payments: `remit` uses actual `paid` − `reda_fee`. Reda never absorbs underpayment — outstanding is the client's collection problem.
+- Partial payments: `remit` uses actual `paid` − `reda_fee` − `cash_pos_fee`. Reda never absorbs underpayment — outstanding is the client's collection problem.
 - Voided deliveries: excluded automatically (`deleted_at` filter).
 - Date range crossing rate changes: snapshots ensure historical rates.
-- A delivery whose location wasn't in the rate card at create time: `reda_fee = 0`, so `remit = paid` for that row. Surfaces in the report; admin can backfill or accept.
+- A delivery whose location wasn't in the rate card at create time: `reda_fee = 0`, so `remit = paid − cash_pos_fee` for that row. Surfaces in the report; admin can backfill or accept.
+- Pre-2026-05-29 delivered rows: `cash_pos_fee_snapshot` is NULL; the `SUM(coalesce(..., 0))` treats them as 0 so already-settled historical remits are unaffected. The change applies forward from the first cash delivery marked after the SQL was pasted.
 
 **Acceptance:**
 - Numbers match manual `SUM`s from raw delivery rows.
@@ -1027,7 +1036,6 @@ Tracking for future. Don't build any of these in v1.
 - Advanced analytics / CSV export
 - Client portal
 - Full offline-first (only "online-with-resilience" in v1)
-- Bulk delivery actions (multi-select)
 - Mark-as-remitted workflow
 - Structured client rules (toggleable flags)
 - Smarter auto-assignment learning (ML-based)
