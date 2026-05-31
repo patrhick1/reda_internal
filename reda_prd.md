@@ -585,62 +585,45 @@ Server-side guard lives in [scripts/warehouse-stock-ops.sql](scripts/warehouse-s
 
 ---
 
-### 5.11a Route assignment refinement (pending Uzo — 2026-05-29)
+### 5.11a Manual rollover assignment + Unassigned queue (since 2026-05-30)
 
-**Problem Uzo raised (WhatsApp 2026-05-29).** Soft-failed deliveries are rolling over to the **same agent** the next day. Uzo's manual workflow is to filter all soft-fails on his Google Sheet, then forward each agent's set to whichever agent is running that route the next day — explicitly because *"we don't send the same agent to the same route two days in a row"*. The app is doing the opposite of his intent.
+**Problem Uzo raised (WhatsApp 2026-05-29).** Soft-failed deliveries were rolling over to the **same agent** the next day. Backtest of the last 30 days (Q2 in [scripts/route-assignment-backtest.sql](scripts/route-assignment-backtest.sql)) found 30+ agent/location pairs with ≥6 back-to-back-day streaks — Iya Ayo alone had ~100 "same agent, same area, two days running" instances across 9 locations (11x Ikoyi, 11x Ojodu Berger, 10x Agege, …). Uzo's manual workaround: filter the soft-fails on his Google Sheet each morning and forward each prior-day agent's set to a different agent on WhatsApp. App was doing the opposite of his intent.
 
-**Two root causes:**
-1. `rollover_delivery` copies `assigned_agent_id` from the parent row. The new pending row therefore inherits yesterday's agent, and `tg_auto_assign_on_insert` no-ops (it only fires when `assigned_agent_id IS NULL`).
-2. `agent_locations` is **empty** — never populated. Auto-assign's preference_tier (§5.7 step 3) therefore collapses to tier 2 for every agent, so the algorithm only orders by stock + workload + sibling guard. The "who owns which route" signal Uzo has in his head never reaches the algorithm.
+**Initial proposal — rejected by Uzo (2026-05-30).** A first design seeded `agent_locations` (the existing preferred/avoid table — empty in production) from Uzo's Location Sharing/Remittance sheet and let `auto_assign_delivery` pick a per-rollover agent using its existing preferred-tier + workload-balancing logic. Q1 of the same backtest showed the empirical pattern would have supported this (per-agent personal clusters of 40–70% share, workload-balancing already spreading the rest). Uzo's reason for rejection: agents' schedules churn (leave, sickness, new joiners, departures); the rotation he runs requires human judgment the app can't honestly model. He wants to assign every rollover himself.
 
-**Uzo's mental model (per WhatsApp + the Location Sharing/Remittance sheet).** Three tiers:
-- **Strongest** — agent's home turf, send here often (productivity instinct).
-- **Normal/shufflable** — fair game for daily rotation (cross-training instinct: if only Queen knows Festac and she leaves, nobody can fill in).
-- **Avoid** — don't send unless desperate (specific agent/area mismatches).
+**What we shipped instead — five changes** ([scripts/manual-rollover-assignment.sql](scripts/manual-rollover-assignment.sql)):
 
-These map 1:1 to the existing `agent_locations.kind` enum (`preferred`, `avoid`, plus implicit neutral by absence). The PRD's auto-assign algorithm in §5.7 already weights them correctly — the data is the only gap.
+1. **Rollover lands unassigned.** `rollover_delivery` inserts the new row with `assigned_agent_id = NULL` (was: copied from parent). Every rolled-over delivery surfaces in tomorrow's queue under the existing **Unassigned** filter chip on the deliveries list — Uzo decides every assignment.
 
-**Backtest findings (last 30 days, [scripts/route-assignment-backtest.sql](scripts/route-assignment-backtest.sql)).**
+2. **Auto-assign trigger skips rollovers.** `tg_auto_assign_on_insert` gates on `created_via <> 'rollover'`. Without this gate, the trigger would call `auto_assign_delivery` and reintroduce the same system-picks-an-agent behaviour we're removing. Fresh bot/manual orders still auto-assign normally.
 
-*Q1 — Per-location pattern across 53 locations with ≥10 deliveries:*
-- 4 **stable** (top agent ≥70% share): Ojodu Berger (Iya Ayo 75%), Mowe (Iya Ayo 100%), Opic (Iya Ayo 90%), Agric (Iya Ayo 75%).
-- 14 **soft-preference** (40–70%): each agent has a personal cluster — Iya Ayo dominates Ikoyi/Agege/Ogba/Iju/Obalende; Kenneth dominates Badagry/Ojo/Iba/Agbara; Audrey dominates Gbagada/Bariga.
-- 35 **rotating** (<40%): no dominant agent, top 2 typically capture 30–50% combined. Even where an agent is the "preferred", workload-balancing has already spread the work organically.
+3. **Strike-cap only counts genuine soft-fails.** The 3-strike carry cap (mark `unserious` after 2 rollovers) used to fire on *any* rollover. Now it fires only when the parent's status was a customer-unreachable one — the same six statuses the per-client EOD auto-cancel uses: `not_answering, not_around, not_available, not_connecting, number_busy, switched_off`. Operational rollovers (a `pending` row nobody assigned, an `available` row that never got attempted, a `picked_up` row the agent didn't deliver) carry without burning a strike. The audit_log records `is_strike_rollover: true|false` on every rollover.
 
-*Q2 — Same-agent-two-days-in-a-row at same location:* 30+ agent/location pairs with ≥6 back-to-back streaks in 30 days. Iya Ayo alone had ~100+ back-to-back-day repeats across 9 locations (11x Ikoyi, 11x Ojodu Berger, 10x Agege, 9x Ketu/Ojota, …). Olawale 8x Festac. Kenneth 9x Ojo, 8x Badagry. This validates the "same agent two days in a row" complaint as systemic, not occasional.
+4. **Multi-select + bulk reassign on the deliveries list.** Long-press a row to enter select mode; tap more rows to add them; the bottom action bar shows **"Assign N"**. Picker is a search-filterable bottom sheet ([mobile/src/components/sheets/BulkAssignSheet.tsx](mobile/src/components/sheets/BulkAssignSheet.tsx)) listing all active top-level agents. New direct-RPC service function `bulkAssignDeliveries(ids, agentId)` calls a new `bulk_assign_deliveries` Postgres function (admin+dispatcher only; skips terminal/deleted rows; returns the count actually updated for the success toast). Not queued — matches the existing `reassignToSubAgent` precedent. New permission helper `canBulkAssignDelivery` (admin OR dispatcher; rep is excluded because bulk routing is dispatch-team work).
 
-**Recommendation (pending Uzo confirmation).**
+5. **Bot smart-reassign (preserves Uzo's WhatsApp habit).** `bot_create_delivery` now checks, immediately after the existing same-agent pre-empt step, whether an **unassigned** open sibling already exists for this (`customer_phone_normalized`, `product_catalog_id`, `scheduled_date`) with the canonical two-tier match (text fingerprint OR normalized address + quantity, from [sibling-coordination.sql:107-120](scripts/sibling-coordination.sql#L107-L120)). When one is found, the bot UPDATEs that row's `assigned_agent_id` instead of inserting a duplicate, returns the orphan's id, and writes a `bot_smart_reassign` audit row. Effect: when Uzo forwards a customer's details to one agent on WhatsApp, the bot absorbs the unassigned rollover into that assignment — clean handover, no duplicate. When he forwards to multiple agents (race-assign), the second+ messages see an *assigned* sibling, fall through to the existing insert path, and spawn fresh race rows. Existing sibling-cancel-on-delivery cascade then closes the losers when one delivers.
 
-1. **One-line `rollover_delivery` fix** — insert the new row with `assigned_agent_id = NULL` instead of copying the parent's agent. The `tg_auto_assign_on_insert` trigger then runs the existing algorithm. Crushes the back-to-back streaks at their source.
+**Existing sibling-collapse-on-rollover behaviour is preserved unchanged.** Per §5.11 "Sibling dedup at rollover (since 2026-05-18)", multiple sibling rows on a rolled date already collapse to one row tomorrow. That's how race-assignment doesn't multiply across days, and it remains the canonical mechanism — manual rollover assignment layers on top of it without touching it.
 
-2. **Seed `agent_locations`** once with Uzo-validated preferences. Set-up-once data (~30–40 rows total), edited rarely. Not a daily chore. Auto-assign's preference_tier (§5.7) then resolves to 1/3 instead of always 2.
+**Operational outcome.** Uzo clears tomorrow's queue in ~3-5 minutes via multi-select on the Unassigned filter; or, if he prefers, forwards orders to agents on WhatsApp exactly as before and the bot absorbs the rollovers into the WhatsApp-named agents. Same result either way.
 
-3. **Don't model the daily shuffle explicitly.** The workload tiebreaker in §5.7 step 4 already produces it as a side effect: an agent who handled a route heavily yesterday has higher pending workload today → next order naturally goes to someone else.
+**Trade-offs accepted:**
+- Bulk-assign uses a direct RPC, not the mutation queue. Network blips during the morning batch surface as immediate errors. Acceptable because Uzo's typical conditions are office wifi; revisit if blips become a complaint.
+- Multi-select state lives in-screen only — no cross-screen handoff. Switching date or filter while in select mode retains existing selections; the server-side `bulk_assign_deliveries` silently skips any stale ids (terminal/deleted) so the worst case is a "Assigned N" toast where N is smaller than expected.
+- Rep role has the existing single-row reassign affordance (Edit screen) but not bulk reassign. Plan-of-record per Uzo: bulk is a dispatch operation.
 
-4. **Uzo retains manual override** for cross-training intent. When he wants Iya Ayo to learn Ikotun this week, he reassigns those orders manually. The algorithm shouldn't try to autonomously optimize for human-development goals.
+**Deliberately NOT built:**
+- The `agent_locations` seed — invalidated by Uzo's pivot. A future implementer should re-read this section before reviving the idea.
+- A daily-route-plan table or in-app screen — same data-entry problem Uzo was pushing back against.
+- A queue-based bulk-assign job kind.
+- A UI distinction between rolled-over-unassigned vs bot-couldn't-assign rows — Uzo wants them in one bucket.
 
-**Explicit trade-off.** Workload-balancing produces a *probabilistic* shuffle, not enforced rotation. If Olawale is preferred for Festac AND has low workload three days running, he'll keep getting Festac. This is closer to "send the strongest when available" than "rotate daily". If Uzo really wants enforced rotation (can't get Festac twice in a row), we'd add a "recent-assignment" penalty score against any agent who served this location yesterday — deferred until/unless Uzo asks for it after seeing soft-shuffle behavior in practice.
+**Verification probes (live after the SQL is pasted).** Each runs read-only via [scripts/db.mjs](scripts/db.mjs):
 
-**Deliberately NOT in the plan:**
-- A `daily_route_plan(date, agent_id, location_id)` table or in-app screen — would just move the Google Sheet into the database with the same daily edit cost.
-- Uzo's "hold rollovers unassigned, assign at 12am" workaround — once `agent_locations` is fed, assignment at rollover time picks the right agent immediately. The workaround was for the plan-in-his-head problem, which the seed solves.
-
-**Open — what we need from Uzo before shipping:**
-
-1. **Validate the empirically-derived `preferred` draft.** Generate from Q1 data: for each agent, list the locations where they're top with ≥30% share. Uzo ticks/edits per row. Cheaper than starting blank.
-2. **Get the `avoid` list per agent.** Not in historical data — only Uzo knows. Probably short (~1–3 per agent).
-3. **Map the abstract route names from his sheet** to DB location IDs:
-   - "Close Location" → ?
-   - "Close Island" → ? (Lekki-Chevron + VI + Ikoyi?)
-   - "Middle Island 1" / "Middle Island 2" → ? (Ajah-Badore + Sangotedo + Awoyaya?)
-   - "Far Island" → ? (Ibeju Lekki + Epe?)
-   - "Extra" → overflow / catch-all?
-4. **Confirm trade-off acceptance** (probabilistic vs enforced rotation).
-
-**Files involved when this ships:**
-- Rollover null-fix: delta SQL recreating `rollover_delivery` (mirror the pattern in `after-hours-bump.sql` — canonical update + paste-into-Supabase delta).
-- Seed: one-shot INSERT into `agent_locations`. Source data assembled from Uzo's responses to the four asks above.
-- Verification: Q3 in [scripts/route-assignment-backtest.sql](scripts/route-assignment-backtest.sql) runs once the seed is in place — compares predicted vs actual assignment over the last 14 days. Target ≥70% match before considering the seed validated.
+1. `select assigned_agent_id from public.deliveries where created_via='rollover' and created_at >= current_date` → all NULL.
+2. Join `audit_log` on `(entity_id, changed_at)` between the `is_strike_rollover` field and the `old_status` field to confirm only customer-unreachable parents have `is_strike_rollover='true'`.
+3. `select count(*) from public.audit_log al join public.deliveries d on d.id=al.entity_id where al.reason like 'auto_assign%' and d.created_via='rollover'` → 0.
+4. Manual smoke on the preview build: long-press a row, multi-select, "Assign N", pick agent, confirm rows move to that agent's filter and a single `bulk_assign` audit row exists per delivery.
 
 ---
 
