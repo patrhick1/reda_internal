@@ -29,6 +29,7 @@ import { MarkDeliveredSheet } from '@/components/sheets/MarkDeliveredSheet';
 import { UpdateStatusSheet } from '@/components/sheets/UpdateStatusSheet';
 import { FlagDeliverySheet } from '@/components/sheets/FlagDeliverySheet';
 import { MessageThread } from '@/components/delivery/MessageThread';
+import { BotRawMessageCard } from '@/components/delivery/BotRawMessageCard';
 import { useQueue } from '@/queue/QueueProvider';
 
 export default function AgentDeliveryDetail() {
@@ -259,6 +260,11 @@ export default function AgentDeliveryDetail() {
             </Button>
           </View>
         </Card>
+
+        {/* Original WhatsApp message — collapsed by default; renders nothing
+            when bot_raw_message is null (manual orders). Same component as
+            the ops Detail view. */}
+        <BotRawMessageCard message={d.bot_raw_message} />
 
         {/* Product + money */}
         <Card>
