@@ -460,7 +460,22 @@ export function DeliveryDetail() {
                 }}
               >
                 Quantity: {d.quantity_ordered}
-                {d.quantity_delivered != null ? ` · delivered ${d.quantity_delivered}` : ''}
+                {d.quantity_delivered != null ? (
+                  <>
+                    {' · delivered '}
+                    <Text
+                      style={{
+                        fontFamily: fonts.bold,
+                        color:
+                          d.quantity_ordered != null && d.quantity_delivered !== d.quantity_ordered
+                            ? colors.warningDark
+                            : colors.textSecondary,
+                      }}
+                    >
+                      {d.quantity_delivered}
+                    </Text>
+                  </>
+                ) : null}
               </Text>
             </View>
             <View style={{ alignItems: 'flex-end' }}>
@@ -508,6 +523,22 @@ export function DeliveryDetail() {
                   {formatNaira(d.paid)}
                 </Text>
               </View>
+              {d.paid != null &&
+              d.customer_price != null &&
+              Number(d.paid) !== Number(d.customer_price) ? (
+                <Text
+                  style={{
+                    fontFamily: fonts.semibold,
+                    fontSize: 12,
+                    color: colors.warningDark,
+                    marginTop: 4,
+                  }}
+                >
+                  {Number(d.paid) < Number(d.customer_price)
+                    ? `${formatNaira(Number(d.customer_price) - Number(d.paid))} short of expected ${formatNaira(d.customer_price)}`
+                    : `${formatNaira(Number(d.paid) - Number(d.customer_price))} over expected ${formatNaira(d.customer_price)}`}
+                </Text>
+              ) : null}
             </View>
           ) : null}
           <View style={{ marginTop: 12, gap: 4 }}>
