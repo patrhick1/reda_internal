@@ -42,6 +42,7 @@ import {
   markClientNotified,
   type ClientNotificationRow,
 } from '@/services/clientNotifications';
+import { BotRawMessageCard } from '@/components/delivery/BotRawMessageCard';
 import { FollowupClaimBanner } from '@/components/delivery/FollowupClaimBanner';
 import { HINTS } from '@/hints/registry';
 import { formatDateTime, formatNaira } from '@/lib/format';
@@ -429,6 +430,10 @@ export function DeliveryDetail() {
             </Text>
           </View>
         </Card>
+
+        {/* Original WhatsApp message (collapsed by default; renders nothing
+            when bot_raw_message is null — i.e. manually-created rows). */}
+        <BotRawMessageCard message={d.bot_raw_message} />
 
         {/* Product + Money */}
         <Card>
