@@ -16,9 +16,7 @@ import { colors, fonts } from '@/lib/theme';
 export function BotRawMessageCard({ message }: { message: string | null | undefined }) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
-
   const trimmed = message?.trim() ?? '';
-  if (!trimmed) return null;
 
   const onCopy = useCallback(async () => {
     try {
@@ -29,6 +27,8 @@ export function BotRawMessageCard({ message }: { message: string | null | undefi
       /* clipboard failed silently — the text remains selectable when expanded */
     }
   }, [trimmed]);
+
+  if (!trimmed) return null;
 
   return (
     <Card>
