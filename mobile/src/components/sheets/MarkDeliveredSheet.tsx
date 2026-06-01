@@ -25,7 +25,7 @@ export function MarkDeliveredSheet({
 }) {
   const [qty, setQty] = useState('1');
   const [paid, setPaid] = useState('0');
-  const [method, setMethod] = useState<PaymentMethod>('cash');
+  const [method, setMethod] = useState<PaymentMethod>('transfer');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [onHand, setOnHand] = useState<number | null>(null);
@@ -44,7 +44,7 @@ export function MarkDeliveredSheet({
     // customer_price is per-delivery (what the agent collects from the
     // customer for this trip, flat — not the product unit price).
     setPaid(String(delivery.customer_price ?? 0));
-    setMethod('cash');
+    setMethod('transfer');
     setError(null);
     setOnHand(null);
     const agentId = delivery.assigned_agent_id;

@@ -42,7 +42,7 @@ export function StatusUpdatePanel({
   const [paid, setPaid] = useState(
     delivery.customer_price !== null ? String(delivery.customer_price) : '',
   );
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>('cash');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>('transfer');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const enqueueStatus = useEnqueueChangeStatus();
