@@ -143,7 +143,7 @@ export function MarkDeliveredSheet({
         ) : null}
         {upsellDelta > 0 && !stockShort ? (
           <Banner tone="info" icon="alert" title="Customer is buying more">
-            {`Order will bump from ${delivery.quantity_ordered} to ${qtyNum}. Type the new amount they paid in the field below.`}
+            {`Customer ordered ${delivery.quantity_ordered}, you're delivering ${qtyNum}. Type the new amount they paid in the field below.`}
           </Banner>
         ) : null}
         <Input
