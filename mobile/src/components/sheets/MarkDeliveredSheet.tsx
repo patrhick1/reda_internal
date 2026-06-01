@@ -62,6 +62,14 @@ export function MarkDeliveredSheet({
   const qtyNum = Number(qty);
   const paidNum = Number(paid);
   const stockShort = onHand !== null && Number.isInteger(qtyNum) && qtyNum > 0 && qtyNum > onHand;
+  // Doorstep upsell: customer buys more than originally ordered. Server
+  // bumps quantity_ordered to match; money stays whatever the agent typed.
+  const upsellDelta =
+    delivery.quantity_ordered != null &&
+    Number.isInteger(qtyNum) &&
+    qtyNum > delivery.quantity_ordered
+      ? qtyNum - delivery.quantity_ordered
+      : 0;
   // All three money fields below are per-delivery. quantity_delivered tracks
   // stock movement and partial-delivery state; it does NOT scale the money.
   const expectedTotal = Number(delivery.customer_price ?? 0);
@@ -79,10 +87,6 @@ export function MarkDeliveredSheet({
     setError(null);
     if (!Number.isInteger(qtyNum) || qtyNum <= 0) {
       setError('Quantity must be a positive whole number');
-      return;
-    }
-    if (delivery!.quantity_ordered != null && qtyNum > delivery!.quantity_ordered) {
-      setError(`Cannot deliver more than ${delivery!.quantity_ordered}`);
       return;
     }
     if (onHand !== null && qtyNum > onHand) {
@@ -135,6 +139,11 @@ export function MarkDeliveredSheet({
         {stockShort ? (
           <Banner tone="error" icon="alert" title="Not enough stock">
             {`You only have ${onHand} on hand for this product. Pick up from the warehouse before marking delivered.`}
+          </Banner>
+        ) : null}
+        {upsellDelta > 0 && !stockShort ? (
+          <Banner tone="info" icon="alert" title="Customer is buying more">
+            {`Order will bump from ${delivery.quantity_ordered} to ${qtyNum}. Type the new amount they paid in the field below.`}
           </Banner>
         ) : null}
         <Input
