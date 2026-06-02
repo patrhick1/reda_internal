@@ -21,9 +21,15 @@
 // queue retries against a permanent skip:
 //   1. event !== 'messages.upsert'                 → ignored
 //   2. data.key.fromMe === true                    → ignored
-//   3. remoteJid ends with '@g.us' (group chat)    → ignored
-//   4. allow-list configured AND sender not on it  → ignored
-//   5. no usable text extracted                    → ignored
+//   3. remoteJid is NOT a group (no '@g.us')        → ignored
+//   4. REDA_GROUP_JID set AND remoteJid doesn't match → ignored
+//   5. no usable text extracted                     → ignored
+//
+// Group-only intake: orders only ever come from forwards into the Reda
+// admin group chat. Direct DMs and other groups are dropped — we don't
+// want to process every WhatsApp message our bot sees. In discovery mode
+// (REDA_GROUP_JID unset) every group JID is logged so an operator can
+// pick the right group ID out of the logs and pin it via env var.
 //
 // Dedupe: Evolution's data.key.id is per-message unique. We prefix
 // 'mybot-' and use it as our message_id, so the UNIQUE constraint on the
@@ -31,7 +37,7 @@
 //
 // Deploy:  supabase functions deploy evolution-webhook --no-verify-jwt
 // Secrets: EVOLUTION_WEBHOOK_SECRET, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-//          EVOLUTION_ALLOWED_SENDERS (optional, comma-separated phone numbers)
+//          REDA_GROUP_JID (optional during discovery; required to lock down)
 
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
@@ -126,34 +132,37 @@ Deno.serve(async (req) => {
     return new Response('no remoteJid', { status: 200 });
   }
 
-  // Filter 3: skip group chats. Order forwards are always 1:1 DMs from
-  // an admin (Uzo). Anything from a @g.us JID is noise for our purposes.
-  if (remoteJid.endsWith('@g.us')) {
-    return new Response('group ignored', { status: 200 });
+  // Filter 3: group-only. Orders only arrive via forwards into the Reda
+  // admin group chat — direct DMs to the bot's number are noise for our
+  // purposes. Inverted from the earlier draft of this function, which
+  // dropped groups.
+  if (!remoteJid.endsWith('@g.us')) {
+    return new Response('direct message ignored (groups only)', { status: 200 });
   }
 
-  // Strip JID suffix to get a clean phone number for storage + allow-list
-  // matching. WhatsApp uses three JID formats:
-  //   <phone>@s.whatsapp.net  → standard direct chat
-  //   <chat-id>@g.us          → group (already filtered above)
-  //   <id>@lid                → Linked ID, used by Evolution for multi-
-  //                              device relay messages. The leading id is
-  //                              NOT a phone number, but we strip the
-  //                              suffix anyway so downstream consumers
-  //                              don't trip on the @ character.
-  const fromPhone = remoteJid.replace(/@(s\.whatsapp\.net|g\.us|lid)$/, '');
-
-  // Filter 4: allow-list. Only enforced if EVOLUTION_ALLOWED_SENDERS is
-  // set — leave it unset during the broad study phase, populate it later
-  // when we know which admin numbers should produce real orders.
-  const allowlistRaw = Deno.env.get('EVOLUTION_ALLOWED_SENDERS');
-  if (allowlistRaw) {
-    const allowed = new Set(
-      allowlistRaw.split(',').map((s) => s.trim()).filter(Boolean),
-    );
-    if (!allowed.has(fromPhone)) {
-      return new Response('sender not allowed', { status: 200 });
+  // Filter 4: only the configured Reda group. When REDA_GROUP_JID is set,
+  // anything not from that exact JID is dropped. When unset (discovery
+  // phase), we log every group JID we see so an operator can pick the
+  // Reda group out of the logs and pin it via env var.
+  const redaGroupJid = Deno.env.get('REDA_GROUP_JID');
+  if (redaGroupJid) {
+    if (remoteJid !== redaGroupJid) {
+      return new Response('group not allowed', { status: 200 });
     }
+  } else {
+    console.log('discovery: group_jid seen', { remoteJid });
+  }
+
+  // In a group, data.key.participant is the actual sender (the admin
+  // who typed/forwarded the message). remoteJid is the group's JID,
+  // which is not useful as a "from" identifier on the row. We store
+  // participant as from_phone after stripping the WhatsApp JID suffix.
+  // For @lid participants the leading id is NOT a real phone, but we
+  // strip anyway so downstream consumers don't trip on the @ character.
+  const participantJid = typeof data.key?.participant === 'string' ? data.key.participant : '';
+  const fromPhone = participantJid.replace(/@(s\.whatsapp\.net|lid)$/, '');
+  if (!fromPhone) {
+    return new Response('no participant', { status: 200 });
   }
 
   // Filter 5: extract text. Drop messages with nothing parseable.
