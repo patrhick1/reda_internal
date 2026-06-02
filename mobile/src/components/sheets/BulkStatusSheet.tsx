@@ -103,7 +103,7 @@ export function BulkStatusSheet({
       ) : !picked ? (
         <View style={{ paddingHorizontal: 12, paddingBottom: 24, paddingTop: 4 }}>
           <Banner tone="info" icon="alert" style={{ marginBottom: 8 }}>
-            Rows that can't reach the picked status (already terminal, missing
+            Rows that can’t reach the picked status (already terminal, missing
             required arg) skip with a count. The list refreshes after.
           </Banner>
           {options.map((def) => {
