@@ -6,7 +6,7 @@
 // Anchor (database): supabase/dashboard → is_admin(), is_admin_or_dispatcher(), public.users.role check.
 // Anchor (column lock): SELECT on deliveries.charged_snapshot is revoked from authenticated.
 
-import { STATUS_GROUPS } from '@/lib/theme';
+import { FINAL_STATUSES, STATUS_GROUPS } from '@/lib/theme';
 
 export type Role = 'admin' | 'dispatcher' | 'agent' | 'warehouse' | 'rep';
 
@@ -214,9 +214,35 @@ export function canSeedThread(role: Role): boolean {
 }
 
 /** Soft-delete a delivery. Admin-only.
- * Server anchor: deliveries_delete_admin policy. */
+ *  Server anchor: `delete_delivery` RPC (scripts/delete-deliveries.sql). */
 export function canDeleteDelivery(role: Role): boolean {
   return role === 'admin';
+}
+
+/** Bulk soft-delete N deliveries in one shot. Admin-only — matches single
+ *  delete; dispatchers can flag for admin to clean up.
+ *  Server anchor: `bulk_delete_deliveries` RPC. */
+export function canBulkDeleteDeliveries(role: Role): boolean {
+  return role === 'admin';
+}
+
+/** Bulk status-change N deliveries. Admin + dispatcher (mirrors
+ *  bulk_assign_deliveries — the bulk wrapper iterates change_delivery_status,
+ *  so the per-row state-machine validation already enforces requires_admin
+ *  per transition).
+ *  Server anchor: `bulk_change_delivery_status` RPC. */
+export function canBulkChangeStatus(role: Role): boolean {
+  return role === 'admin' || role === 'dispatcher';
+}
+
+/** UI gate that mirrors the FINAL_STATUSES check inside `delete_delivery` /
+ *  `bulk_delete_deliveries`. Lets us hide the trash button for delivered /
+ *  rolled_over rows instead of opening a sheet that the RPC would reject.
+ *  Reads from theme.FINAL_STATUSES so adding a new final status only needs
+ *  one edit. The SQL inlines the same list — keep them in sync. */
+export function canDeleteDeliveryByStatus(currentStatus: string | null): boolean {
+  if (!currentStatus) return true;
+  return !FINAL_STATUSES.has(currentStatus);
 }
 
 /** Pre-delivery statuses where the row's customer-facing fields can still be

@@ -28,6 +28,8 @@ import { AppBar, Avatar, Button, Card, Empty, Hint, Icon, StatusPill } from '@/c
 import { colors, fonts, TERMINAL_STATUSES } from '@/lib/theme';
 import {
   canClaimFollowup,
+  canDeleteDelivery,
+  canDeleteDeliveryByStatus,
   canEditDelivery,
   canHandoffToSubAgent,
   canMarkClientNotified,
@@ -49,6 +51,7 @@ import { formatDateTime, formatNaira } from '@/lib/format';
 import { MarkDeliveredSheet } from '@/components/sheets/MarkDeliveredSheet';
 import { UpdateStatusSheet } from '@/components/sheets/UpdateStatusSheet';
 import { HandoffToSubAgentSheet } from '@/components/sheets/HandoffToSubAgentSheet';
+import { DeleteDeliverySheet } from '@/components/sheets/DeleteDeliverySheet';
 import { MessageThread } from '@/components/delivery/MessageThread';
 import { listSubAgents } from '@/services/users';
 import { useQueue } from '@/queue/QueueProvider';
@@ -68,6 +71,7 @@ export function DeliveryDetail() {
   const [markOpen, setMarkOpen] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
   const [handoffOpen, setHandoffOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [callBusy, setCallBusy] = useState(false);
   // Optimistic status + (when queued) the job ID to watch. The veil clears
   // when EITHER the server-confirmed status matches (direct-RPC paths) OR
@@ -292,25 +296,38 @@ export function DeliveryDetail() {
           router.replace(base as `/${string}`);
         }}
         right={
-          canEditDelivery(user.role, status) ? (
-            <TouchableOpacity
-              onPress={() => {
-                const base =
-                  user.role === 'dispatcher'
-                    ? '/(dispatcher)/deliveries'
-                    : user.role === 'rep'
-                      ? '/(rep)/deliveries'
-                      : '/(admin)/deliveries';
-                router.push(`${base}/${d.id}/edit` as `/${string}`);
-              }}
-              hitSlop={8}
-              style={{ padding: 4 }}
-              accessibilityLabel="Edit delivery"
-              accessibilityRole="button"
-            >
-              <Icon name="edit" size={22} color={colors.black} />
-            </TouchableOpacity>
-          ) : undefined
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            {canEditDelivery(user.role, status) ? (
+              <TouchableOpacity
+                onPress={() => {
+                  const base =
+                    user.role === 'dispatcher'
+                      ? '/(dispatcher)/deliveries'
+                      : user.role === 'rep'
+                        ? '/(rep)/deliveries'
+                        : '/(admin)/deliveries';
+                  router.push(`${base}/${d.id}/edit` as `/${string}`);
+                }}
+                hitSlop={8}
+                style={{ padding: 4 }}
+                accessibilityLabel="Edit delivery"
+                accessibilityRole="button"
+              >
+                <Icon name="edit" size={22} color={colors.black} />
+              </TouchableOpacity>
+            ) : null}
+            {canDeleteDelivery(user.role) && canDeleteDeliveryByStatus(status) ? (
+              <TouchableOpacity
+                onPress={() => setDeleteOpen(true)}
+                hitSlop={8}
+                style={{ padding: 4 }}
+                accessibilityLabel="Delete delivery"
+                accessibilityRole="button"
+              >
+                <Icon name="trash" size={22} color={colors.red} />
+              </TouchableOpacity>
+            ) : null}
+          </View>
         }
       />
 
@@ -756,6 +773,21 @@ export function DeliveryDetail() {
         leadId={user.userId}
         onClose={() => setHandoffOpen(false)}
         onCommitted={onHandoffCommitted}
+      />
+      <DeleteDeliverySheet
+        open={deleteOpen}
+        delivery={d}
+        onClose={() => setDeleteOpen(false)}
+        onDeleted={() => {
+          setDeleteOpen(false);
+          const base =
+            user.role === 'dispatcher'
+              ? '/(dispatcher)/deliveries'
+              : user.role === 'rep'
+                ? '/(rep)/deliveries'
+                : '/(admin)/deliveries';
+          router.replace(base as `/${string}`);
+        }}
       />
     </View>
   );

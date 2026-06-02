@@ -482,6 +482,65 @@ export async function bulkAssignDeliveries(
   return (data ?? 0) as number;
 }
 
+/** Admin-only soft delete. Server raises on delivered / rolled_over (the
+ *  FINAL_STATUSES gate) and on missing rows; idempotent on already-deleted
+ *  rows (no-op return). Reason is required. */
+export async function deleteDelivery(deliveryId: string, reason: string): Promise<void> {
+  // @ts-expect-error — RPC added in scripts/delete-deliveries.sql, not yet in
+  // database.gen.ts. Resolves after the next `npm run gen:types`.
+  const { error } = await supabase.rpc('delete_delivery', {
+    p_delivery_id: deliveryId,
+    p_reason: reason,
+  });
+  if (error) throw error;
+}
+
+/** Admin-only bulk soft delete. Returns the per-row tally. Rows in
+ *  delivered/rolled_over, already-deleted, or missing IDs are reported as
+ *  skipped without raising. */
+export async function bulkDeleteDeliveries(
+  deliveryIds: string[],
+  reason: string,
+): Promise<{ deletedCount: number; skippedCount: number }> {
+  // @ts-expect-error — RPC added in scripts/delete-deliveries.sql.
+  const { data, error } = await supabase.rpc('bulk_delete_deliveries', {
+    p_delivery_ids: deliveryIds,
+    p_reason: reason,
+  });
+  if (error) throw error;
+  const row = (data ?? {}) as { deleted_count?: number; skipped_count?: number };
+  return {
+    deletedCount: row.deleted_count ?? 0,
+    skippedCount: row.skipped_count ?? 0,
+  };
+}
+
+/** Admin/dispatcher bulk status change. The server iterates change_delivery_
+ *  status per row, so all the usual validation (transition table,
+ *  requires_admin, requires_reason, sibling-cascade trigger) goes through one
+ *  canonical path. Rows that fail validation are reported as skipped, not as
+ *  errors — the caller decides what to do with the count summary. */
+export async function bulkChangeStatus(
+  deliveryIds: string[],
+  toStatus: string,
+  reason: string,
+  clientUuid: string,
+): Promise<{ changedCount: number; skippedCount: number }> {
+  // @ts-expect-error — RPC added in scripts/delete-deliveries.sql.
+  const { data, error } = await supabase.rpc('bulk_change_delivery_status', {
+    p_client_uuid: clientUuid,
+    p_delivery_ids: deliveryIds,
+    p_to_status: toStatus,
+    p_reason: reason,
+  });
+  if (error) throw error;
+  const row = (data ?? {}) as { changed_count?: number; skipped_count?: number };
+  return {
+    changedCount: row.changed_count ?? 0,
+    skippedCount: row.skipped_count ?? 0,
+  };
+}
+
 export async function listDeliveryHistory(deliveryId: string): Promise<DeliveryStatusHistoryRow[]> {
   const { data, error } = await supabase
     .from('delivery_status_history')

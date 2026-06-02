@@ -21,6 +21,8 @@ import { listUsers, type AppUser } from '@/services/users';
 import {
   canAssignDelivery,
   canBulkAssignDelivery,
+  canBulkChangeStatus,
+  canBulkDeleteDeliveries,
   canCreateDelivery,
   canSeeClientName,
 } from '@/lib/permissions';
@@ -38,6 +40,8 @@ import {
   StatusPill,
 } from '@/components/ui';
 import { BulkAssignSheet } from '@/components/sheets/BulkAssignSheet';
+import { BulkStatusSheet } from '@/components/sheets/BulkStatusSheet';
+import { BulkDeleteSheet } from '@/components/sheets/BulkDeleteSheet';
 import { colors, fonts, statusBucket, STATUS_GROUPS } from '@/lib/theme';
 import { todayLagos, yesterdayLagos } from '@/lib/date';
 
@@ -65,9 +69,13 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   // select mode rows toggle selection on tap and the bottom action bar
   // surfaces "Assign to…". See BulkAssignSheet for the picker.
   const canBulkAssign = canBulkAssignDelivery(user.role);
+  const canBulkStatus = canBulkChangeStatus(user.role);
+  const canBulkDelete = canBulkDeleteDeliveries(user.role);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set());
   const [bulkSheetOpen, setBulkSheetOpen] = useState(false);
+  const [bulkStatusSheetOpen, setBulkStatusSheetOpen] = useState(false);
+  const [bulkDeleteSheetOpen, setBulkDeleteSheetOpen] = useState(false);
   // Reps coordinate with vendors and need the client name on each row so they
   // can scan and call back without opening the detail. Agents have a separate
   // screen (`(agent)/today/index.tsx`) — this gate is defensive in case the
@@ -155,6 +163,48 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     },
     [exitSelect, reload],
   );
+  const onBulkStatusChanged = useCallback(
+    (counts: { changedCount: number; skippedCount: number }) => {
+      setBulkStatusSheetOpen(false);
+      exitSelect();
+      reload();
+      const msg =
+        counts.skippedCount > 0
+          ? `Changed ${counts.changedCount}, skipped ${counts.skippedCount}.`
+          : `Changed ${counts.changedCount}.`;
+      if (Platform.OS === 'web') {
+        if (typeof window !== 'undefined') window.alert(msg);
+      } else {
+        Alert.alert('Done', msg);
+      }
+    },
+    [exitSelect, reload],
+  );
+  const onBulkDeleted = useCallback(
+    (counts: { deletedCount: number; skippedCount: number }) => {
+      setBulkDeleteSheetOpen(false);
+      exitSelect();
+      reload();
+      const msg =
+        counts.skippedCount > 0
+          ? `Deleted ${counts.deletedCount}, skipped ${counts.skippedCount}.`
+          : `Deleted ${counts.deletedCount}.`;
+      if (Platform.OS === 'web') {
+        if (typeof window !== 'undefined') window.alert(msg);
+      } else {
+        Alert.alert('Done', msg);
+      }
+    },
+    [exitSelect, reload],
+  );
+
+  // Resolve the selected IDs back to full DeliveryRow objects so the bulk
+  // sheets can preview eligibility (FINAL_STATUSES, already-deleted) without
+  // a second roundtrip. Memoised against the underlying list + selection set.
+  const selectedRows = useMemo<DeliveryRow[]>(() => {
+    if (!selectMode || selectedIds.size === 0 || !data) return [];
+    return data.filter((d) => d.id && selectedIds.has(d.id));
+  }, [data, selectMode, selectedIds]);
 
   useFocusEffect(
     useCallback(() => {
@@ -422,20 +472,36 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
             borderTopWidth: 1,
             borderTopColor: colors.border,
             flexDirection: 'row',
-            gap: 10,
+            gap: 8,
           }}
         >
-          <View style={{ flex: 1 }}>
+          <Button
+            variant="secondary"
+            onPress={() => setSelectedIds(new Set())}
+            disabled={selectedIds.size === 0}
+          >
+            Clear
+          </Button>
+          {canBulkStatus ? (
             <Button
               variant="secondary"
-              full
-              onPress={() => setSelectedIds(new Set())}
+              onPress={() => setBulkStatusSheetOpen(true)}
               disabled={selectedIds.size === 0}
             >
-              Clear
+              {`Status ${selectedIds.size}`}
             </Button>
-          </View>
-          <View style={{ flex: 2 }}>
+          ) : null}
+          {canBulkDelete ? (
+            <Button
+              variant="secondary"
+              icon="trash"
+              onPress={() => setBulkDeleteSheetOpen(true)}
+              disabled={selectedIds.size === 0}
+            >
+              {`Delete ${selectedIds.size}`}
+            </Button>
+          ) : null}
+          <View style={{ flex: 1 }}>
             <Button
               variant="emphasis"
               full
@@ -455,6 +521,18 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         agents={bulkAssignTargets}
         onClose={() => setBulkSheetOpen(false)}
         onAssigned={onBulkAssigned}
+      />
+      <BulkStatusSheet
+        open={bulkStatusSheetOpen}
+        selected={selectedRows}
+        onClose={() => setBulkStatusSheetOpen(false)}
+        onChanged={onBulkStatusChanged}
+      />
+      <BulkDeleteSheet
+        open={bulkDeleteSheetOpen}
+        selected={selectedRows}
+        onClose={() => setBulkDeleteSheetOpen(false)}
+        onDeleted={onBulkDeleted}
       />
     </View>
   );
