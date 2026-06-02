@@ -133,8 +133,15 @@ Deno.serve(async (req) => {
   }
 
   // Strip JID suffix to get a clean phone number for storage + allow-list
-  // matching.
-  const fromPhone = remoteJid.replace(/@s\.whatsapp\.net|@g\.us/g, '');
+  // matching. WhatsApp uses three JID formats:
+  //   <phone>@s.whatsapp.net  → standard direct chat
+  //   <chat-id>@g.us          → group (already filtered above)
+  //   <id>@lid                → Linked ID, used by Evolution for multi-
+  //                              device relay messages. The leading id is
+  //                              NOT a phone number, but we strip the
+  //                              suffix anyway so downstream consumers
+  //                              don't trip on the @ character.
+  const fromPhone = remoteJid.replace(/@(s\.whatsapp\.net|g\.us|lid)$/, '');
 
   // Filter 4: allow-list. Only enforced if EVOLUTION_ALLOWED_SENDERS is
   // set — leave it unset during the broad study phase, populate it later
