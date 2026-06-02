@@ -38,7 +38,7 @@
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
-const EXTRACTION_PROMPT_VERSION = 'mybot-parse-v4-jsonschema';
+const EXTRACTION_PROMPT_VERSION = 'mybot-parse-v5-phone-fallback';
 const DEFAULT_EXTRACTION_MODEL = 'moonshotai/kimi-k2.5';
 
 // OpenAI-strict-style JSON schema for the extraction output. OpenRouter
@@ -91,7 +91,7 @@ const EXTRACTION_PROMPT = `You are extracting a delivery order from a WhatsApp m
 A message contains one customer with one delivery address, but may contain multiple products (typically one per line, sometimes with a Total line at the bottom).
 
 Return strict JSON with these fields (use null when missing):
-  customer_name    : string  — the recipient's name
+  customer_name    : string  — the recipient's name. If the message has no name, use the customer_phone digits as the customer_name instead of returning null. Only return null if BOTH a name and a phone are missing.
   customer_phone   : string  — Nigerian phone, keep digits and optional leading 0/+234
   raw_address      : string  — the delivery address, free-form, as-is from the message
   total_amount     : number  — the "Total(X)" amount if present in the message, otherwise null
