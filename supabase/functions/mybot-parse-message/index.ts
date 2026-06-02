@@ -4,22 +4,26 @@
 //
 // Pipeline per row — observe-only, no delivery creation:
 //   1. Skip if parse_status != 'pending' (idempotency).
-//   2. Kimi (moonshotai/kimi-k2.5) structured extraction via OpenRouter.
+//   2. Mark parse_status='skipped' if raw_text has < 9 digits. Real
+//      delivery forwards always include a phone number (10+ digits in
+//      Nigeria); chat noise like "Okay" or "Use phone number" has none.
+//      Cheap deterministic filter, saves the OpenRouter call.
+//   3. Kimi (moonshotai/kimi-k2.5) structured extraction via OpenRouter.
 //      The prompt asks for an ARRAY of line items so multi-product orders
 //      get captured in full. The contractor's bot-parse-message still
 //      asks for a single product and silently drops extras — this is the
 //      headline divergence between the two streams. Mybot also varies
 //      the LLM (Kimi vs Gemini), so post-this-change the comparison is
 //      no longer an LLM-only A/B; see reda_evolution_bot_setup.md §8.
-//   3. Per-line product match via match_products_by_text RPC → one
+//   4. Per-line product match via match_products_by_text RPC → one
 //      candidate set per line item. Cross-line consistency check flags
 //      rows where line items resolved to different client_ids (should
 //      not happen — one forward = one client by scope assumption).
-//   4. Address normalize via normalize-address edge function → location_id
+//   5. Address normalize via normalize-address edge function → location_id
 //      + confidence. Reuses the existing Maps + Gemini disambiguation
 //      pipeline the contractor side uses; address is message-level (one
 //      per row), not per-line, so it's called once.
-//   5. Write parse_result + parse_status='parsed' (or 'error') back to the
+//   6. Write parse_result + parse_status='parsed' (or 'error') back to the
 //      row.
 //
 // What we DON'T do here:
@@ -320,7 +324,31 @@ Deno.serve(async (req) => {
     return new Response('empty raw_text', { status: 200 });
   }
 
-  // 2. OpenRouter / Kimi extraction. Model is configurable via the
+  // 2. Low-digit guard. Real delivery forwards always include a phone
+  // number — at minimum 10 digits in Nigeria (11 without country code,
+  // 13 with +234). Sub-9-digit messages are conversation noise: "Okay",
+  // "Use phone number", agents discussing things in-thread. 9 is the
+  // floor — generous enough to allow rare malformed orders, tight enough
+  // to catch all the 0-digit chat traffic we've observed in the study
+  // window. Tighten if a real delivery ever trips it.
+  //
+  // Inlined rather than reusing markError() because the row is NOT in
+  // error: this is a deliberate, expected skip and 'skipped' is the
+  // correct terminal status (see the parse_status CHECK constraint).
+  const digitCount = (row.raw_text.match(/\d/g) ?? []).length;
+  if (digitCount < 9) {
+    await supabase
+      .from('mybot_inbound_messages')
+      .update({
+        parse_status: 'skipped',
+        processed_at: new Date().toISOString(),
+        error_text:   `low-digit-count (${digitCount}); likely chat, not a delivery`,
+      })
+      .eq('id', inboundId);
+    return new Response('low-digit message skipped', { status: 200 });
+  }
+
+  // 3. OpenRouter / Kimi extraction. Model is configurable via the
   // existing ai_config table (key 'openrouter_model'); falls back to the
   // default we ship with so this works out of the box.
   const apiKey = Deno.env.get('OPENROUTER_API_KEY');
