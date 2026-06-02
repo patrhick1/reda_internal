@@ -42,7 +42,7 @@
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
-const EXTRACTION_PROMPT_VERSION = 'mybot-parse-v6-pipe-format';
+const EXTRACTION_PROMPT_VERSION = 'mybot-parse-v7-prompt-strengthening';
 const DEFAULT_EXTRACTION_MODEL = 'openai/gpt-4.1-mini';
 
 // Hard cap on the OpenRouter request so a hung Kimi inference can't park a
@@ -118,6 +118,12 @@ Return strict JSON with these fields (use null when missing):
 Do NOT include the Total line as a product. Do NOT invent products that aren't in the message.
 
 If a product line begins with a leading row counter like "3 -", "3.", or "3)" before the product name, that leading number is a list index, NOT the quantity. In pipe-separated tables like "N - product | qty | unit_price | line_total" the quantity is the field after the product name, not the leading N.
+
+A short line at the very TOP of the message, BEFORE the customer's name or phone or address, is usually an order title, SKU code, or marketing label (e.g. "OUD AL LAYL BROWN TRIPLE WITH OIL", "OPULENT X KHAMRAH ORDER WA", "ORDER 497-O"). These are NOT products — skip them. The real products appear after the address, often as a "+"-joined list or a "Product:" labelled field.
+
+The "@" and "=" symbols commonly mark per-unit prices: "2kg of Date @ 35,500", "1 Batana Oil = 22,500". Treat the number after "@" or "=" as the customer_price for that line.
+
+Watch for quantity hints embedded near a product name: "2 Packs", "3 pieces", "5 units", "N PCS", "Quantity: N Packs". Use the embedded count as the quantity even if there's no separate qty field.
 
 Message:
 """
