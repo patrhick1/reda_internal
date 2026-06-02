@@ -38,8 +38,47 @@
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
-const EXTRACTION_PROMPT_VERSION = 'mybot-parse-v3-multiproduct';
+const EXTRACTION_PROMPT_VERSION = 'mybot-parse-v4-jsonschema';
 const DEFAULT_EXTRACTION_MODEL = 'moonshotai/kimi-k2.5';
+
+// OpenAI-strict-style JSON schema for the extraction output. OpenRouter
+// passes this through to providers that support strict structured outputs
+// (no markdown wrapping, no extra keys, type-checked). For providers that
+// don't support it, OpenRouter quietly degrades to plain json_object
+// behaviour — so we still have stripJsonFences() as a safety net below.
+//
+// OpenAI strict-mode rules followed here:
+//   - Every property listed in `properties` is also in `required`.
+//   - `additionalProperties: false` on every object.
+//   - Nullable fields use the `[T, "null"]` type union, not `nullable: true`.
+const EXTRACTION_SCHEMA = {
+  name:   'mybot_extraction',
+  strict: true,
+  schema: {
+    type:                 'object',
+    additionalProperties: false,
+    required: ['customer_name', 'customer_phone', 'raw_address', 'total_amount', 'products'],
+    properties: {
+      customer_name:  { type: ['string',  'null'] },
+      customer_phone: { type: ['string',  'null'] },
+      raw_address:    { type: ['string',  'null'] },
+      total_amount:   { type: ['number',  'null'] },
+      products: {
+        type:  'array',
+        items: {
+          type:                 'object',
+          additionalProperties: false,
+          required: ['product_name', 'quantity', 'customer_price'],
+          properties: {
+            product_name:   { type: ['string',  'null'] },
+            quantity:       { type: ['integer', 'null'] },
+            customer_price: { type: ['number',  'null'] },
+          },
+        },
+      },
+    },
+  },
+};
 
 // Deliberate divergence from the contractor's bot-parse-message: the
 // contractor still asks for "one product per order" and silently drops
@@ -84,12 +123,11 @@ type Extracted = {
   products:       LineItem[];
 };
 
-// OpenRouter (OpenAI-compatible chat-completions) doesn't enforce a typed
-// schema the way Gemini's responseSchema does — it can promise valid JSON
-// via response_format, but the field types come from the model's own
-// best-effort. Kimi at temperature=0 is usually well-behaved, but we still
-// coerce defensively so a "55,000" string for customer_price or a "2"
-// string for quantity doesn't poison the downstream comparison data.
+// We send a strict JSON schema in the request (see EXTRACTION_SCHEMA),
+// but OpenRouter degrades to plain json_object behaviour when a provider
+// doesn't support strict mode — and even when strict is honored, a model
+// may emit a "55,000" string instead of a number. Coerce defensively so a
+// degraded path doesn't poison the downstream comparison data.
 function toStr(v: any): string | null {
   if (v === null || v === undefined) return null;
   if (typeof v === 'string') return v;
@@ -151,6 +189,21 @@ function pickMatch(candidates: any[]): any | null {
   return null;
 }
 
+// Defensive: even with response_format: json_schema some models still wrap
+// their answer in markdown code fences — especially reasoning models that
+// emit the final answer via the "content" channel after a long reasoning
+// trace. JSON.parse chokes on the leading ``` and trailing ```. Strip them
+// before parsing so we don't reject otherwise-valid output. No-op when the
+// content is already clean JSON.
+function stripJsonFences(s: string): string {
+  let t = s.trim();
+  if (t.startsWith('```')) {
+    t = t.replace(/^```(?:json|jsonc)?\s*\n?/i, '');
+    t = t.replace(/\n?```\s*$/, '');
+  }
+  return t.trim();
+}
+
 async function openrouterExtract(
   text: string,
   model: string,
@@ -162,7 +215,7 @@ async function openrouterExtract(
     model,
     messages: [{ role: 'user', content: prompt }],
     temperature: 0,
-    response_format: { type: 'json_object' },
+    response_format: { type: 'json_schema', json_schema: EXTRACTION_SCHEMA },
   };
   const res = await fetch(url, {
     method: 'POST',
@@ -186,7 +239,8 @@ async function openrouterExtract(
   let parsed: Extracted | null = null;
   if (typeof textOut === 'string' && textOut.length > 0) {
     try {
-      const obj = JSON.parse(textOut);
+      const cleaned = stripJsonFences(textOut);
+      const obj = JSON.parse(cleaned);
       parsed = coerceExtracted(obj);
     } catch {
       // fall through — parsed stays null, marked as error upstream
