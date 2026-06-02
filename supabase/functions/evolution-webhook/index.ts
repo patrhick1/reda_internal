@@ -84,6 +84,19 @@ Deno.serve(async (req) => {
     return new Response('invalid signature', { status: 401 });
   }
 
+  // Size guard. Evolution can ship 4 MB+ payloads when media (audio,
+  // images, video, history syncs) is in the event — those time the
+  // function out on the body upload + JSON parse long before we get a
+  // chance to filter. Drop anything obviously too big to be a plain text
+  // order forward. WhatsApp message bodies are rarely above 8 KB; 64 KB
+  // is generous headroom while still cheap to reject.
+  const lenHeader = req.headers.get('content-length');
+  const declaredLen = lenHeader ? parseInt(lenHeader, 10) : 0;
+  if (Number.isFinite(declaredLen) && declaredLen > 64 * 1024) {
+    console.log('payload too large, dropped', { content_length: declaredLen });
+    return new Response('payload too large', { status: 200 });
+  }
+
   let payload: any;
   try {
     payload = await req.json();
