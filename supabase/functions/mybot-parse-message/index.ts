@@ -5,14 +5,20 @@
 // Pipeline per row — observe-only, no delivery creation:
 //   1. Skip if parse_status != 'pending' (idempotency).
 //   2. Kimi (moonshotai/kimi-k2.5) structured extraction via OpenRouter.
-//      Same prompt as the contractor's bot-parse-message so the streams
-//      are directly comparable — only the LLM differs. The contractor
-//      pipeline runs Gemini; this one runs Kimi. That's the A/B.
-//   3. Product match via match_products_by_text RPC → resolves client_id.
+//      The prompt asks for an ARRAY of line items so multi-product orders
+//      get captured in full. The contractor's bot-parse-message still
+//      asks for a single product and silently drops extras — this is the
+//      headline divergence between the two streams. Mybot also varies
+//      the LLM (Kimi vs Gemini), so post-this-change the comparison is
+//      no longer an LLM-only A/B; see reda_evolution_bot_setup.md §8.
+//   3. Per-line product match via match_products_by_text RPC → one
+//      candidate set per line item. Cross-line consistency check flags
+//      rows where line items resolved to different client_ids (should
+//      not happen — one forward = one client by scope assumption).
 //   4. Address normalize via normalize-address edge function → location_id
 //      + confidence. Reuses the existing Maps + Gemini disambiguation
-//      pipeline the contractor side uses; the address layer is shared on
-//      purpose so the only varying axis is the extraction LLM.
+//      pipeline the contractor side uses; address is message-level (one
+//      per row), not per-line, so it's called once.
 //   5. Write parse_result + parse_status='parsed' (or 'error') back to the
 //      row.
 //
@@ -32,34 +38,50 @@
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
-const EXTRACTION_PROMPT_VERSION = 'mybot-parse-v2-openrouter';
+const EXTRACTION_PROMPT_VERSION = 'mybot-parse-v3-multiproduct';
 const DEFAULT_EXTRACTION_MODEL = 'moonshotai/kimi-k2.5';
 
-// Verbatim copy of the contractor pipeline's prompt so the extractions
-// are directly comparable across the two streams. If you change one,
-// change both — drift defeats the entire comparison exercise.
-const EXTRACTION_PROMPT = `You are extracting a single delivery order from a WhatsApp message that a Reda client forwarded.
+// Deliberate divergence from the contractor's bot-parse-message: the
+// contractor still asks for "one product per order" and silently drops
+// extra lines. This prompt asks for an ARRAY so we can measure how often
+// multi-product orders occur and how accurately Kimi captures them.
+// Once the study window closes we'll know whether to invest in production
+// fan-out (one delivery row per line item).
+const EXTRACTION_PROMPT = `You are extracting a delivery order from a WhatsApp message that a Reda client forwarded.
+
+A message contains one customer with one delivery address, but may contain multiple products (typically one per line, sometimes with a Total line at the bottom).
 
 Return strict JSON with these fields (use null when missing):
   customer_name    : string  — the recipient's name
   customer_phone   : string  — Nigerian phone, keep digits and optional leading 0/+234
   raw_address      : string  — the delivery address, free-form, as-is from the message
-  product_name     : string  — the product the customer ordered (one product per order)
-  quantity         : integer — quantity ordered, default 1 if implied
-  customer_price   : number  — the amount the customer is paying (₦), digits only
+  total_amount     : number  — the "Total(X)" amount if present in the message, otherwise null
+  products         : array   — one entry per product line, in the order they appear:
+    {
+      product_name   : string  — the product name as written
+      quantity       : integer — units of this product, default 1 if implied
+      customer_price : number  — the subtotal for this product line (the parenthesized amount), null if missing
+    }
+
+Do NOT include the Total line as a product. Do NOT invent products that aren't in the message.
 
 Message:
 """
 {{TEXT}}
 """`;
 
+type LineItem = {
+  product_name:   string | null;
+  quantity:       number | null;
+  customer_price: number | null;
+};
+
 type Extracted = {
   customer_name:  string | null;
   customer_phone: string | null;
   raw_address:    string | null;
-  product_name:   string | null;
-  quantity:       number | null;
-  customer_price: number | null;
+  total_amount:   number | null;
+  products:       LineItem[];
 };
 
 // OpenRouter (OpenAI-compatible chat-completions) doesn't enforce a typed
@@ -68,35 +90,65 @@ type Extracted = {
 // best-effort. Kimi at temperature=0 is usually well-behaved, but we still
 // coerce defensively so a "55,000" string for customer_price or a "2"
 // string for quantity doesn't poison the downstream comparison data.
+function toStr(v: any): string | null {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'string') return v;
+  return String(v);
+}
+function toNum(v: any): number | null {
+  if (v === null || v === undefined || v === '') return null;
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  if (typeof v === 'string') {
+    const cleaned = v.replace(/[,_₦\s]/g, '');
+    const n = Number(cleaned);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+function toInt(v: any): number | null {
+  const n = toNum(v);
+  return n === null ? null : Math.round(n);
+}
+
+function coerceLineItem(v: any): LineItem | null {
+  if (!v || typeof v !== 'object') return null;
+  const name = toStr(v.product_name)?.trim() || null;
+  if (!name) return null;  // drop items without a product name — they're not useful as line items
+  return {
+    product_name:   name,
+    quantity:       toInt(v.quantity),
+    customer_price: toNum(v.customer_price),
+  };
+}
+
 function coerceExtracted(obj: any): Extracted | null {
   if (!obj || typeof obj !== 'object') return null;
-  const toStr = (v: any): string | null => {
-    if (v === null || v === undefined) return null;
-    if (typeof v === 'string') return v;
-    return String(v);
-  };
-  const toNum = (v: any): number | null => {
-    if (v === null || v === undefined || v === '') return null;
-    if (typeof v === 'number' && Number.isFinite(v)) return v;
-    if (typeof v === 'string') {
-      const cleaned = v.replace(/[,_₦\s]/g, '');
-      const n = Number(cleaned);
-      return Number.isFinite(n) ? n : null;
-    }
-    return null;
-  };
-  const toInt = (v: any): number | null => {
-    const n = toNum(v);
-    return n === null ? null : Math.round(n);
-  };
+  const products: LineItem[] = Array.isArray(obj.products)
+    ? obj.products.map(coerceLineItem).filter((li: LineItem | null): li is LineItem => li !== null)
+    : [];
   return {
     customer_name:  toStr(obj.customer_name),
     customer_phone: toStr(obj.customer_phone),
     raw_address:    toStr(obj.raw_address),
-    product_name:   toStr(obj.product_name),
-    quantity:       toInt(obj.quantity),
-    customer_price: toNum(obj.customer_price),
+    total_amount:   toNum(obj.total_amount),
+    products,
   };
+}
+
+// Same disambiguation rules as today's single-product matcher: single hit
+// wins, multiple-same-client wins top, otherwise a 0.15 score gap wins
+// top, otherwise leave null and let the study row flag it for review.
+// Factored out so it can be called per line item without duplicating the
+// rules — a divergence here would silently make multi-product rows behave
+// differently from single-product rows in the comparison data.
+function pickMatch(candidates: any[]): any | null {
+  if (candidates.length === 1) return candidates[0];
+  if (candidates.length === 0) return null;
+  const top = candidates[0];
+  const sameClient = candidates.every((m: any) => m.client_id === top.client_id);
+  if (sameClient) return top;
+  if ((candidates[1]?.score ?? 0) + 0.15 <= top.score) return top;
+  return null;
 }
 
 async function openrouterExtract(
@@ -237,36 +289,51 @@ Deno.serve(async (req) => {
   const customerName  = parsed.customer_name?.trim() || null;
   const customerPhone = normalizePhone(parsed.customer_phone);
   const rawAddress    = parsed.raw_address?.trim() || null;
-  const productName   = parsed.product_name?.trim() || null;
-  const quantity      = parsed.quantity && parsed.quantity > 0 ? parsed.quantity : 1;
-  const customerPrice = parsed.customer_price && parsed.customer_price >= 0 ? parsed.customer_price : null;
+  const totalAmount   = parsed.total_amount && parsed.total_amount >= 0 ? parsed.total_amount : null;
 
-  // 3. Product match → client_id. Same disambiguation rules as the
-  // contractor's pipeline: single hit wins, multiple-same-client wins
-  // top, otherwise require a 0.15 score gap, otherwise leave for review.
-  let productMatch: any = null;
-  let productCandidates: any[] = [];
-  if (productName) {
+  // Default quantity to 1 per line so the persisted "extracted" block mirrors
+  // what we'd push downstream if/when fan-out lands. Null prices stay null —
+  // study queries can spot lines without per-line price and decide what to do.
+  const products: LineItem[] = parsed.products.map((li) => ({
+    product_name:   li.product_name,
+    quantity:       li.quantity && li.quantity > 0 ? li.quantity : 1,
+    customer_price: li.customer_price && li.customer_price >= 0 ? li.customer_price : null,
+  }));
+
+  if (products.length === 0) {
+    await markError(supabase, inboundId, 'no products extracted', {
+      extraction_raw:      extractionRaw,
+      extraction_provider: 'openrouter',
+      extraction_model:    model,
+    });
+    return new Response('no products extracted', { status: 200 });
+  }
+
+  // 3. Per-line product match → client_id. Disambiguation rules live in
+  // pickMatch() so the per-line behaviour is identical to the old
+  // single-product path. A line that's an unambiguous miss is fine; a
+  // line that's an ambiguous miss (multi-client, no winner) gets a null
+  // match and stays in the candidates list for review.
+  const productMatches: Array<{ line: LineItem; match: any | null; candidates: any[] }> = [];
+  for (const line of products) {
     const { data: matches } = await supabase.rpc('match_products_by_text', {
-      p_text: productName,
+      p_text:           line.product_name!,  // empty names already filtered by coerceLineItem
       p_min_similarity: 0.4,
     });
-    productCandidates = matches ?? [];
-    if (productCandidates.length === 1) {
-      productMatch = productCandidates[0];
-    } else if (productCandidates.length > 1) {
-      const top = productCandidates[0];
-      const sameClient = productCandidates.every(
-        (m: any) => m.client_id === top.client_id,
-      );
-      if (sameClient) {
-        productMatch = top;
-      } else if ((productCandidates[1]?.score ?? 0) + 0.15 <= top.score) {
-        productMatch = top;
-      }
-      // else: ambiguous — leave productMatch null, study row marked needs-review.
-    }
+    const candidates = matches ?? [];
+    productMatches.push({ line, match: pickMatch(candidates), candidates });
   }
+
+  // Cross-line consistency: per scope, one WhatsApp forward belongs to one
+  // Reda client. If line items resolve to different client_ids, either Kimi
+  // mis-extracted a product name or the catalog has overlapping names — both
+  // worth flagging for the study window. Nulls are excluded (catalog miss is
+  // not a conflict).
+  const resolvedClientIds = productMatches
+    .map((pm) => pm.match?.client_id)
+    .filter((id: any): id is string => typeof id === 'string' && id.length > 0);
+  const uniqueClientIds  = Array.from(new Set(resolvedClientIds));
+  const clientIdConflict = uniqueClientIds.length > 1;
 
   // 4. Address normalize → location_id. Reuses the existing
   // normalize-address edge function so the resolution rules — Maps +
@@ -300,12 +367,12 @@ Deno.serve(async (req) => {
       customer_name:  customerName,
       customer_phone: customerPhone,
       raw_address:    rawAddress,
-      product_name:   productName,
-      quantity,
-      customer_price: customerPrice,
+      total_amount:   totalAmount,
+      products,
     },
-    product:            productMatch,
-    product_candidates: productCandidates,
+    product_matches:     productMatches,
+    resolved_client_ids: uniqueClientIds,
+    client_id_conflict:  clientIdConflict,
     address,
     extraction_raw:      extractionRaw,
     extraction_provider: 'openrouter',

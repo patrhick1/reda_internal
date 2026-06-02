@@ -296,9 +296,26 @@ The Evolution API on your VPS is whatever you're paying for the VPS itself. Noth
 
 ## 8. Phase 2 — AI extraction (now shipped)
 
-Each new row in `mybot_inbound_messages` is automatically parsed by Kimi (default `moonshotai/kimi-k2.5` via OpenRouter), product-matched against the catalog, and address-resolved through the Maps-backed `normalize-address` pipeline. The structured result is stored in `parse_result` on the same row. **Nothing creates deliveries.** The pipeline stops at the parsed row so we can compare extraction quality without polluting `public.deliveries`.
+Each new row in `mybot_inbound_messages` is automatically parsed by Kimi (default `moonshotai/kimi-k2.5` via OpenRouter), product-matched against the catalog **once per line item**, and address-resolved through the Maps-backed `normalize-address` pipeline. The structured result is stored in `parse_result` on the same row. **Nothing creates deliveries.** The pipeline stops at the parsed row so we can compare extraction quality without polluting `public.deliveries`.
 
-The model swap is intentional: the contractor's `bot-parse-message` continues to use Gemini, while our in-house `mybot-parse-message` uses Kimi via OpenRouter. The prompt is **byte-for-byte identical** across both functions, so a diff in `parse_result` between the two streams isolates the LLM choice as the only variable. Switching back is a one-line change to `EXTRACTION_MODEL`.
+The prompt asks Kimi for an **array of line items**, capturing multi-product orders in full. `parse_result.extracted` now has the shape:
+
+```jsonc
+{
+  "customer_name":  "...",
+  "customer_phone": "...",
+  "raw_address":    "...",
+  "total_amount":   55000,                 // null if the message has no "Total(X)" line
+  "products": [
+    { "product_name": "Sp6",              "quantity": 2, "customer_price": 32000 },
+    { "product_name": "Whitening strips", "quantity": 1, "customer_price": 23000 }
+  ]
+}
+```
+
+`parse_result.product_matches` is a parallel array — one entry per line item — each holding `{ line, match, candidates }` (same disambiguation rules as the old single-product matcher, just applied per line). `parse_result.client_id_conflict` flags rows where line items resolved to different `client_id`s — should always be `false` since one forward = one Reda client; a `true` is a signal to investigate the row.
+
+**Prompt divergence note**: the contractor's `bot-parse-message` still asks for a single product and silently drops extras. Mybot now asks for an array. That means two axes vary between the streams (LLM choice AND prompt), not one — the headline study metric is no longer "diff the parsed shape" but **"how many products did mybot extract vs the contractor's 1"**. The query below makes that explicit.
 
 ### Deploy Phase 2
 
@@ -349,29 +366,46 @@ SELECT net.http_post(
 
 The service-role JWT is the same one used by the `mybot_parse_on_insert` trigger — copy it from there.
 
-### Compare against the contractor's parse
+### Multi-product visibility — the headline study metric
 
-The contractor pipeline stores its parsed result in `bot_inbound_messages.parse_result`. Side-by-side:
+How many parsed rows had more than one product? The gap vs the contractor's stream is, by construction, the silent data loss on production today:
 
 ```sql
-SELECT m.message_id AS mybot_id,
+-- mybot rows by line-item count
+SELECT jsonb_array_length(parse_result->'extracted'->'products') AS line_items,
+       count(*)                                                  AS rows
+  FROM public.mybot_inbound_messages
+ WHERE parse_status = 'parsed'
+ GROUP BY line_items
+ ORDER BY line_items;
+```
+
+### Side-by-side: mybot vs contractor on the same source message
+
+The contractor pipeline stores its parsed result in `bot_inbound_messages.parse_result`. Match rows on `raw_text` within a 30-second `received_at` window, then surface the product-count gap plus the per-line names:
+
+```sql
+SELECT m.message_id  AS mybot_id,
        b.wasender_message_id AS contractor_id,
-       m.parse_result->'extracted' AS mybot_extracted,
-       b.parse_result->'extracted' AS contractor_extracted,
-       m.parse_result->'product'->>'product_name'   AS mybot_product,
-       b.parse_result->'product'->>'product_name'   AS contractor_product,
-       m.parse_result->'address'->>'confidence'     AS mybot_loc_confidence,
-       b.parse_result->'address'->>'confidence'     AS contractor_loc_confidence
+       jsonb_array_length(m.parse_result->'extracted'->'products') AS mybot_product_count,
+       1                                                            AS contractor_product_count,
+       m.parse_result->'extracted'->'products'                      AS mybot_products,
+       b.parse_result->'product'->>'product_name'                   AS contractor_product,
+       m.parse_result->'extracted'->>'total_amount'                 AS mybot_total,
+       m.parse_result->'address'->>'confidence'                     AS mybot_loc_conf,
+       b.parse_result->'address'->>'confidence'                     AS contractor_loc_conf,
+       coalesce((m.parse_result->>'client_id_conflict')::boolean, false) AS mybot_client_conflict
   FROM public.mybot_inbound_messages m
-  JOIN public.bot_inbound_messages b
+  JOIN public.bot_inbound_messages   b
     ON abs(extract(epoch from (b.received_at - m.received_at))) < 30
    AND b.raw_text = m.raw_text
  WHERE m.parse_status = 'parsed'
    AND b.status IN ('parsed','created_delivery','needs_review','shadow_only')
- ORDER BY m.received_at DESC LIMIT 50;
+ ORDER BY mybot_product_count DESC, m.received_at DESC
+ LIMIT 50;
 ```
 
-Where the two streams disagree on `product`, `address`, or extracted fields is where the in-house bot needs to improve before it can replace the contractor.
+Rows where `mybot_product_count > 1` are the cases the contractor's stream silently truncated. Cross-check the names in `mybot_products` against the raw text to confirm Kimi got them right — that's the per-line accuracy spot-check.
 
 ## 9. Phase 3 — Cut the contractor (later)
 
