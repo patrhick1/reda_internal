@@ -42,8 +42,8 @@
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
-const EXTRACTION_PROMPT_VERSION = 'mybot-parse-v5-phone-fallback';
-const DEFAULT_EXTRACTION_MODEL = 'moonshotai/kimi-k2.5';
+const EXTRACTION_PROMPT_VERSION = 'mybot-parse-v6-pipe-format';
+const DEFAULT_EXTRACTION_MODEL = 'openai/gpt-4.1-mini';
 
 // Hard cap on the OpenRouter request so a hung Kimi inference can't park a
 // row in parse_status='pending' forever. Observed live: Kimi K2.5 took ~80s
@@ -116,6 +116,8 @@ Return strict JSON with these fields (use null when missing):
     }
 
 Do NOT include the Total line as a product. Do NOT invent products that aren't in the message.
+
+If a product line begins with a leading row counter like "3 -", "3.", or "3)" before the product name, that leading number is a list index, NOT the quantity. In pipe-separated tables like "N - product | qty | unit_price | line_total" the quantity is the field after the product name, not the leading N.
 
 Message:
 """
