@@ -268,19 +268,19 @@ These are messages your bot caught that the contractor didn't (or vice versa —
 
 ---
 
-## 6. Locking down senders (when ready)
+## 6. Group-only intake (current behaviour)
 
-During the initial study phase the function accepts messages from any non-group sender. When you want to restrict to Uzo (and any other admin) only:
+The function only accepts messages from the configured Reda admin group chat. Direct DMs, other groups, and bot self-echoes are dropped.
+
+**Discovery mode** — when `REDA_GROUP_JID` is unset, every group JID seen is logged with the prefix `discovery: group_jid seen`. Send a message in the Reda group, find the JID in the function logs, then pin it:
 
 ```bash
 supabase secrets set \
-  EVOLUTION_ALLOWED_SENDERS="2348012345678,2348098765432" \
+  REDA_GROUP_JID="<the-jid-including-@g.us>" \
   --project-ref <SUPABASE_PROJECT_REF>
 ```
 
-Comma-separated list of phone numbers, no `+`, no spaces, no `@s.whatsapp.net` suffix — just digits. The function reloads on the next request; no redeploy needed.
-
-To remove the allow-list, unset the secret in Supabase dashboard → Settings → Edge Functions → Secrets.
+The function reloads on the next request — no redeploy needed. Anything not from that exact JID returns 200 with `group not allowed` in logs.
 
 ---
 
@@ -294,36 +294,92 @@ The Evolution API on your VPS is whatever you're paying for the VPS itself. Noth
 
 ---
 
-## 8. What comes next
+## 8. Phase 2 — AI extraction (now shipped)
 
-Three phases beyond what we shipped today:
+Each new row in `mybot_inbound_messages` is automatically parsed by Gemini 2.5-flash, product-matched against the catalog, and address-resolved through the Maps-backed `normalize-address` pipeline. The structured result is stored in `parse_result` on the same row. **Nothing creates deliveries.** The pipeline stops at the parsed row so we can compare extraction quality without polluting `public.deliveries`.
 
-### Phase 2 — Add parse comparison
+### Deploy Phase 2
 
-When you have enough sample messages and want to A/B the parse quality:
+**Step 1 — Add the columns and trigger** (Supabase SQL editor):
 
-1. Add a `parse_result` jsonb column to `mybot_inbound_messages`.
-2. Write a new edge function `mybot-parse-message` that reads queued rows, runs the same Gemini prompt as the contractor's pipeline, and writes the structured fields back.
-3. Compare `parse_result` against the contractor's parsed fields side-by-side.
+Paste [`scripts/mybot-parse-trigger.sql`](scripts/mybot-parse-trigger.sql). The sanity SELECTs at the bottom should show four new columns (`parse_status`, `parse_result`, `processed_at`, `error_text`) and one new trigger (`mybot_parse_on_insert`).
 
-### Phase 3 — Cut the contractor
+**Step 2 — Set the Gemini key** (re-use the one already set for `bot-parse-message`):
 
-Once the in-house bot proves itself for ≥N days:
+```bash
+supabase secrets set GEMINI_API_KEY=<same-value-as-bot-parse-message> \
+  --project-ref <SUPABASE_PROJECT_REF>
+```
 
-1. Adjust the in-house pipeline to call `bot_create_delivery` instead of stopping at the table.
+**Step 3 — Deploy the parser**:
+
+```bash
+supabase functions deploy mybot-parse-message \
+  --project-ref <SUPABASE_PROJECT_REF>
+```
+
+(Note: no `--no-verify-jwt` — this function is called by the DB trigger with the service-role JWT, which Supabase's gateway needs to verify.)
+
+**Step 4 — Backfill existing rows** (the trigger only fires on INSERT going forward):
+
+```sql
+-- Force-parse the rows that landed before the trigger was installed.
+-- Run once after Step 3.
+SELECT net.http_post(
+  url    := 'https://<SUPABASE_PROJECT_REF>.supabase.co/functions/v1/mybot-parse-message',
+  headers:= '{"Content-Type":"application/json","Authorization":"Bearer <service-role-jwt>"}'::jsonb,
+  body   := jsonb_build_object('inbound_message_id', id)
+)
+  FROM public.mybot_inbound_messages
+ WHERE parse_status = 'pending';
+```
+
+The service-role JWT is the same one used by the `mybot_parse_on_insert` trigger — copy it from there.
+
+### Compare against the contractor's parse
+
+The contractor pipeline stores its parsed result in `bot_inbound_messages.parse_result`. Side-by-side:
+
+```sql
+SELECT m.message_id AS mybot_id,
+       b.wasender_message_id AS contractor_id,
+       m.parse_result->'extracted' AS mybot_extracted,
+       b.parse_result->'extracted' AS contractor_extracted,
+       m.parse_result->'product'->>'product_name'   AS mybot_product,
+       b.parse_result->'product'->>'product_name'   AS contractor_product,
+       m.parse_result->'address'->>'confidence'     AS mybot_loc_confidence,
+       b.parse_result->'address'->>'confidence'     AS contractor_loc_confidence
+  FROM public.mybot_inbound_messages m
+  JOIN public.bot_inbound_messages b
+    ON abs(extract(epoch from (b.received_at - m.received_at))) < 30
+   AND b.raw_text = m.raw_text
+ WHERE m.parse_status = 'parsed'
+   AND b.status IN ('parsed','created_delivery','needs_review','shadow_only')
+ ORDER BY m.received_at DESC LIMIT 50;
+```
+
+Where the two streams disagree on `product`, `address`, or extracted fields is where the in-house bot needs to improve before it can replace the contractor.
+
+## 9. Phase 3 — Cut the contractor (later)
+
+When the in-house bot proves itself:
+
+1. Wire the parser to call `bot_create_delivery` when all fields resolve.
 2. Disable the contractor's webhook on the Evolution side (or rotate the bearer secret).
-3. Tag deliveries with their origin (`source='mybot'` vs `source='contractor'`) so post-cutover audits stay clean.
+3. Tag deliveries with their origin so post-cutover audits stay clean.
 
-We'll write that work up when we're closer to it. For now, the only thing to do is keep an eye on the table and check the pair query against the contractor's stream.
+Not started — separate ship when we're confident.
 
 ---
 
-## 9. Files touched
+## 10. Files touched
 
 | Path | What it is |
 |---|---|
 | [`scripts/mybot-inbound-table.sql`](scripts/mybot-inbound-table.sql) | Postgres schema for `mybot_inbound_messages`. Paste once. |
-| [`supabase/functions/evolution-webhook/index.ts`](supabase/functions/evolution-webhook/index.ts) | The edge function. Deployed via `supabase functions deploy`. |
+| [`scripts/mybot-parse-trigger.sql`](scripts/mybot-parse-trigger.sql) | Phase 2 columns + trigger. Paste after the parser is deployed. |
+| [`supabase/functions/evolution-webhook/index.ts`](supabase/functions/evolution-webhook/index.ts) | Webhook receiver. Deployed via `supabase functions deploy`. |
+| [`supabase/functions/mybot-parse-message/index.ts`](supabase/functions/mybot-parse-message/index.ts) | Phase 2 parser. Deployed via `supabase functions deploy`. |
 | [`reda_evolution_bot_setup.md`](reda_evolution_bot_setup.md) | This file. |
 
 Nothing else in the repo was modified for this work.
