@@ -45,6 +45,15 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 const EXTRACTION_PROMPT_VERSION = 'mybot-parse-v5-phone-fallback';
 const DEFAULT_EXTRACTION_MODEL = 'moonshotai/kimi-k2.5';
 
+// Hard cap on the OpenRouter request so a hung Kimi inference can't park a
+// row in parse_status='pending' forever. Observed live: Kimi K2.5 took ~80s
+// on one row during the Phase 2 study; Supabase's edge runtime will kill
+// the worker around 150-400s depending on plan, and the kill happens
+// before markError() — so without this cap, a timed-out row stays pending
+// silently. 120s gives Kimi room to reason on long forwards while
+// guaranteeing we always reach the error path.
+const REQUEST_TIMEOUT_MS = 120_000;
+
 // OpenAI-strict-style JSON schema for the extraction output. OpenRouter
 // passes this through to providers that support strict structured outputs
 // (no markdown wrapping, no extra keys, type-checked). For providers that
@@ -221,18 +230,33 @@ async function openrouterExtract(
     temperature: 0,
     response_format: { type: 'json_schema', json_schema: EXTRACTION_SCHEMA },
   };
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type':  'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-      // Optional but encouraged by OpenRouter — surfaces this app in their
-      // dashboards and helps with rate-limit prioritisation.
-      'HTTP-Referer':  'https://reda.app',
-      'X-Title':       'Reda mybot parse',
-    },
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        // Optional but encouraged by OpenRouter — surfaces this app in their
+        // dashboards and helps with rate-limit prioritisation.
+        'HTTP-Referer':  'https://reda.app',
+        'X-Title':       'Reda mybot parse',
+      },
+      body:   JSON.stringify(body),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (err) {
+    // AbortSignal.timeout() raises DOMException('TimeoutError') when it
+    // fires. Anything else here is a network/DNS/TLS failure. Both convert
+    // to a not-parsed return so the handler's existing if(!parsed) branch
+    // flips the row to parse_status='error' instead of leaving it pending.
+    if (err instanceof DOMException && err.name === 'TimeoutError') {
+      console.error('openrouter extract timeout', { timeout_ms: REQUEST_TIMEOUT_MS, model });
+      return { parsed: null, raw: { error: 'request timeout', timeout_ms: REQUEST_TIMEOUT_MS, model } };
+    }
+    console.error('openrouter extract network error', err, { model });
+    return { parsed: null, raw: { error: String(err), model } };
+  }
   if (!res.ok) {
     const errText = await res.text();
     console.error('openrouter extract error', res.status, errText);
@@ -391,7 +415,7 @@ Deno.serve(async (req) => {
     return new Response('no products extracted', { status: 200 });
   }
 
-  // 3. Per-line product match → client_id. Disambiguation rules live in
+  // 4. Per-line product match → client_id. Disambiguation rules live in
   // pickMatch() so the per-line behaviour is identical to the old
   // single-product path. A line that's an unambiguous miss is fine; a
   // line that's an ambiguous miss (multi-client, no winner) gets a null
@@ -417,7 +441,7 @@ Deno.serve(async (req) => {
   const uniqueClientIds  = Array.from(new Set(resolvedClientIds));
   const clientIdConflict = uniqueClientIds.length > 1;
 
-  // 4. Address normalize → location_id. Reuses the existing
+  // 5. Address normalize → location_id. Reuses the existing
   // normalize-address edge function so the resolution rules — Maps +
   // Gemini disambiguation — are shared with the contractor pipeline.
   // If the function fails for any reason we still parse the rest;
@@ -443,7 +467,7 @@ Deno.serve(async (req) => {
     }
   }
 
-  // 5. Persist.
+  // 6. Persist.
   const parseResult = {
     extracted: {
       customer_name:  customerName,
