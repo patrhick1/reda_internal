@@ -54,9 +54,7 @@ export function BulkStatusSheet({
   }, [open]);
 
   const options = useMemo(() => {
-    return (defsQ.data ?? []).filter(
-      (d) => d.status !== 'delivered' && d.status !== 'rolled_over',
-    );
+    return (defsQ.data ?? []).filter((d) => d.status !== 'delivered' && d.status !== 'rolled_over');
   }, [defsQ.data]);
 
   const count = selected.length;
@@ -103,8 +101,8 @@ export function BulkStatusSheet({
       ) : !picked ? (
         <View style={{ paddingHorizontal: 12, paddingBottom: 24, paddingTop: 4 }}>
           <Banner tone="info" icon="alert" style={{ marginBottom: 8 }}>
-            Rows that can’t reach the picked status (already terminal, missing
-            required arg) skip with a count. The list refreshes after.
+            Rows that can’t reach the picked status (already terminal, missing required arg) skip
+            with a count. The list refreshes after.
           </Banner>
           {options.map((def) => {
             const meta = STATUS_META[def.status] ?? { label: def.label, desc: '' };

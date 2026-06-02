@@ -73,8 +73,8 @@ export function BulkDeleteSheet({
     >
       <View style={{ padding: 20, gap: 16, paddingBottom: 32 }}>
         <Banner tone="warn" icon="alert">
-          This hides the deliveries from lists, the sibling matcher, and
-          reports. Not undoable from the app.
+          This hides the deliveries from lists, the sibling matcher, and reports. Not undoable from
+          the app.
         </Banner>
 
         {ineligibleCount > 0 ? (

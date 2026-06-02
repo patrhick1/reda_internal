@@ -65,9 +65,8 @@ export function DeleteDeliverySheet({
     >
       <View style={{ padding: 20, gap: 16, paddingBottom: 32 }}>
         <Banner tone="warn" icon="alert">
-          This hides the delivery from lists, the sibling matcher, and
-          reports. It is not undoable from the app — only an admin can
-          restore via SQL.
+          This hides the delivery from lists, the sibling matcher, and reports. It is not undoable
+          from the app — only an admin can restore via SQL.
         </Banner>
 
         <Input
