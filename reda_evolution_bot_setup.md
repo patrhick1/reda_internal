@@ -296,7 +296,9 @@ The Evolution API on your VPS is whatever you're paying for the VPS itself. Noth
 
 ## 8. Phase 2 — AI extraction (now shipped)
 
-Each new row in `mybot_inbound_messages` is automatically parsed by Gemini 2.5-flash, product-matched against the catalog, and address-resolved through the Maps-backed `normalize-address` pipeline. The structured result is stored in `parse_result` on the same row. **Nothing creates deliveries.** The pipeline stops at the parsed row so we can compare extraction quality without polluting `public.deliveries`.
+Each new row in `mybot_inbound_messages` is automatically parsed by Kimi (default `moonshotai/kimi-k2.5` via OpenRouter), product-matched against the catalog, and address-resolved through the Maps-backed `normalize-address` pipeline. The structured result is stored in `parse_result` on the same row. **Nothing creates deliveries.** The pipeline stops at the parsed row so we can compare extraction quality without polluting `public.deliveries`.
+
+The model swap is intentional: the contractor's `bot-parse-message` continues to use Gemini, while our in-house `mybot-parse-message` uses Kimi via OpenRouter. The prompt is **byte-for-byte identical** across both functions, so a diff in `parse_result` between the two streams isolates the LLM choice as the only variable. Switching back is a one-line change to `EXTRACTION_MODEL`.
 
 ### Deploy Phase 2
 
@@ -304,11 +306,22 @@ Each new row in `mybot_inbound_messages` is automatically parsed by Gemini 2.5-f
 
 Paste [`scripts/mybot-parse-trigger.sql`](scripts/mybot-parse-trigger.sql). The sanity SELECTs at the bottom should show four new columns (`parse_status`, `parse_result`, `processed_at`, `error_text`) and one new trigger (`mybot_parse_on_insert`).
 
-**Step 2 — Set the Gemini key** (re-use the one already set for `bot-parse-message`):
+**Step 2 — Set the OpenRouter key**. Sign up at [openrouter.ai](https://openrouter.ai) → API keys → create one for this project. Top up enough credit for the rough study volume (Kimi via OpenRouter is ~$0.30 / 1M input tokens, ~$2.50 / 1M output — pennies at study scale).
 
 ```bash
-supabase secrets set GEMINI_API_KEY=<same-value-as-bot-parse-message> \
+supabase secrets set OPENROUTER_API_KEY=<your-openrouter-key> \
   --project-ref <SUPABASE_PROJECT_REF>
+```
+
+The contractor's `bot-parse-message` keeps using `GEMINI_API_KEY` — leave that secret alone. The two functions read separate env vars.
+
+**Optional — override the model without redeploying**: insert a row into `ai_config` and the function picks it up on its next invocation. Useful for swapping Kimi for a different OpenRouter slug mid-study. The value column is `jsonb`, so wrap the slug as a JSON string.
+
+```sql
+-- pick any OpenRouter-supported slug; default is moonshotai/kimi-k2.5
+INSERT INTO public.ai_config (key, value)
+VALUES ('openrouter_model', '"moonshotai/kimi-k2.5"'::jsonb)
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 ```
 
 **Step 3 — Deploy the parser**:
