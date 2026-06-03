@@ -8,22 +8,26 @@
 //      delivery forwards always include a phone number (10+ digits in
 //      Nigeria); chat noise like "Okay" or "Use phone number" has none.
 //      Cheap deterministic filter, saves the OpenRouter call.
-//   3. Kimi (moonshotai/kimi-k2.5) structured extraction via OpenRouter.
+//   3. Pre-LLM dedup cache. If a parsed row from the last 24h shares
+//      this row's text_fingerprint, copy its parse_result and skip the
+//      OpenRouter call entirely. Catches Uzo's race-forwards (same
+//      delivery sent to multiple agents). Saves both cost and latency.
+//   4. Kimi (moonshotai/kimi-k2.5) structured extraction via OpenRouter.
 //      The prompt asks for an ARRAY of line items so multi-product orders
 //      get captured in full. The contractor's bot-parse-message still
 //      asks for a single product and silently drops extras — this is the
 //      headline divergence between the two streams. Mybot also varies
 //      the LLM (Kimi vs Gemini), so post-this-change the comparison is
 //      no longer an LLM-only A/B; see reda_evolution_bot_setup.md §8.
-//   4. Per-line product match via match_products_by_text RPC → one
+//   5. Per-line product match via match_products_by_text RPC → one
 //      candidate set per line item. Cross-line consistency check flags
 //      rows where line items resolved to different client_ids (should
 //      not happen — one forward = one client by scope assumption).
-//   5. Address normalize via normalize-address edge function → location_id
+//   6. Address normalize via normalize-address edge function → location_id
 //      + confidence. Reuses the existing Maps + Gemini disambiguation
 //      pipeline the contractor side uses; address is message-level (one
 //      per row), not per-line, so it's called once.
-//   6. Write parse_result + parse_status='parsed' (or 'error') back to the
+//   7. Write parse_result + parse_status='parsed' (or 'error') back to the
 //      row.
 //
 // What we DON'T do here:
@@ -340,10 +344,12 @@ Deno.serve(async (req) => {
     return new Response('inbound_message_id required', { status: 400 });
   }
 
-  // 1. Load + idempotency.
+  // 1. Load + idempotency. text_fingerprint is a STORED generated column
+  // (see scripts/mybot-dedup-cache.sql); pulling it here saves a recompute
+  // in the dedup step below.
   const { data: row, error: loadErr } = await supabase
     .from('mybot_inbound_messages')
-    .select('id, raw_text, parse_status')
+    .select('id, raw_text, parse_status, text_fingerprint')
     .eq('id', inboundId)
     .maybeSingle();
   if (loadErr || !row) {
@@ -382,7 +388,63 @@ Deno.serve(async (req) => {
     return new Response('low-digit message skipped', { status: 200 });
   }
 
-  // 3. OpenRouter / Kimi extraction. Model is configurable via the
+  // 3. Dedup cache lookup. If a parsed row from the last 24h has the same
+  // text_fingerprint, copy its parse_result and skip OpenRouter entirely.
+  // Catches Uzo's race-forwards where the same delivery info is sent to
+  // multiple agents in quick succession. Expected ~5-8% hit rate based on
+  // the contractor stream sample (no AI rewriting in mybot's path, so the
+  // catch rate approaches the true sibling rate).
+  //
+  // We DON'T copy extraction_raw — it carries the source row's OpenRouter
+  // usage object, and double-counting that in cost queries would silently
+  // overstate spend. Replace it with a minimal { dedup_cache_hit: true,
+  // source_id } stub so SUM(extraction_raw.usage.cost) correctly skips
+  // cache-hit rows.
+  if (row.text_fingerprint) {
+    const cutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: cached } = await supabase
+      .from('mybot_inbound_messages')
+      .select('id, parse_result')
+      .eq('text_fingerprint', row.text_fingerprint)
+      .eq('parse_status',     'parsed')
+      .neq('id',              inboundId)
+      .gte('received_at',     cutoffIso)
+      .order('received_at',   { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (cached?.parse_result) {
+      // Preserve the chain: if the source was itself a cache hit, point at
+      // ITS source so dedup_source_id always references the original
+      // LLM-extracted row (the only place real cost was paid).
+      const sourcePr = cached.parse_result as any;
+      const sourceId = sourcePr.dedup_source_id ?? cached.id;
+      const reusedResult = {
+        ...sourcePr,
+        extraction_provider: 'dedup-cache',
+        extraction_raw:      { dedup_cache_hit: true, source_id: sourceId },
+        dedup_source_id:     sourceId,
+      };
+      const { error: cacheUpdErr } = await supabase
+        .from('mybot_inbound_messages')
+        .update({
+          parse_status: 'parsed',
+          parse_result: reusedResult,
+          processed_at: new Date().toISOString(),
+        })
+        .eq('id', inboundId);
+      if (cacheUpdErr) {
+        // Persist failed — fall through to the live extraction path. We'd
+        // rather pay for an LLM call than leave the row stuck.
+        console.error('dedup cache persist failed', cacheUpdErr, 'id', inboundId);
+      } else {
+        console.log('dedup cache hit', { source_id: sourceId, target_id: inboundId });
+        return new Response('dedup cache hit', { status: 200 });
+      }
+    }
+  }
+
+  // 4. OpenRouter / Kimi extraction. Model is configurable via the
   // existing ai_config table (key 'openrouter_model'); falls back to the
   // default we ship with so this works out of the box.
   const apiKey = Deno.env.get('OPENROUTER_API_KEY');
@@ -425,7 +487,7 @@ Deno.serve(async (req) => {
     return new Response('no products extracted', { status: 200 });
   }
 
-  // 4. Per-line product match → client_id. Disambiguation rules live in
+  // 5. Per-line product match → client_id. Disambiguation rules live in
   // pickMatch() so the per-line behaviour is identical to the old
   // single-product path. A line that's an unambiguous miss is fine; a
   // line that's an ambiguous miss (multi-client, no winner) gets a null
@@ -451,7 +513,7 @@ Deno.serve(async (req) => {
   const uniqueClientIds  = Array.from(new Set(resolvedClientIds));
   const clientIdConflict = uniqueClientIds.length > 1;
 
-  // 5. Address normalize → location_id. Reuses the existing
+  // 6. Address normalize → location_id. Reuses the existing
   // normalize-address edge function so the resolution rules — Maps +
   // Gemini disambiguation — are shared with the contractor pipeline.
   // If the function fails for any reason we still parse the rest;
@@ -477,7 +539,7 @@ Deno.serve(async (req) => {
     }
   }
 
-  // 6. Persist.
+  // 7. Persist.
   const parseResult = {
     extracted: {
       customer_name:  customerName,
