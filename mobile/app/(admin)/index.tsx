@@ -14,7 +14,7 @@ import {
 import { AppBar, Card, Icon, SectionHeader, StatusPill } from '@/components/ui';
 import { AgentWorkloadCard } from '@/components/delivery/AgentWorkloadCard';
 import { RecentActivityCard } from '@/components/delivery/RecentActivityCard';
-import { colors, fonts, statusBucket } from '@/lib/theme';
+import { colors, fonts, statusBucket, isAssignedActive } from '@/lib/theme';
 import { type IconName } from '@/components/ui';
 
 function todayHeaderDate(): string {
@@ -84,8 +84,8 @@ export default function AdminHome() {
           </View>
           <View style={{ marginTop: 14, flexDirection: 'row', gap: 18, paddingHorizontal: 2 }}>
             <BreakdownItem label="Active" value={stats.active} />
+            <BreakdownItem label="Unassigned" value={stats.unassigned} />
             <BreakdownItem label="Closed" value={stats.closed} />
-            <BreakdownItem label="Rolled" value={stats.rolled} />
           </View>
         </Card>
 
@@ -381,7 +381,13 @@ function QuickAction({
 
 /** Group sibling rows (same race-assignment) into one logical order, so the
  *  hero stats reflect unique customer orders rather than raw row count.
- *  Per group outcome (priority order): delivered → active → rolled → closed.
+ *  Per group outcome (priority order):
+ *    delivered → active → unassigned → rolled → closed
+ *  `active` is **strict**: the group has at least one row that is in the
+ *  active bucket AND has an assigned agent (mirrors `isAssignedActive` so
+ *  the home matches the Deliveries list's Active filter exactly).
+ *  `unassigned` catches the morning queue — groups whose active-bucket rows
+ *  are all sitting unassigned, waiting to be routed.
  *  `stale` is the subset of `active` chains with at least one soft-fail row,
  *  kept for the Needs Attention block. */
 function summarize(rows: DeliveryRow[]) {
@@ -398,6 +404,7 @@ function summarize(rows: DeliveryRow[]) {
 
   let delivered = 0,
     active = 0,
+    unassigned = 0,
     rolled = 0,
     closed = 0,
     stale = 0;
@@ -406,12 +413,18 @@ function summarize(rows: DeliveryRow[]) {
       delivered++;
       continue;
     }
-    const buckets = group.map((d) => statusBucket(d.current_status));
-    const hasActive = buckets.some((b) => b === 'active');
-    const hasSoft = buckets.some((b) => b === 'soft');
-    if (hasActive || hasSoft) {
+    const hasAssignedActive = group.some((d) => isAssignedActive(d));
+    const hasSoft = group.some((d) => statusBucket(d.current_status) === 'soft');
+    if (hasAssignedActive || hasSoft) {
       active++;
       if (hasSoft) stale++;
+      continue;
+    }
+    // No assigned-active row and no soft row. If the group still has any
+    // active-bucket row sitting unassigned, it's queue work.
+    const hasActiveBucket = group.some((d) => statusBucket(d.current_status) === 'active');
+    if (hasActiveBucket) {
+      unassigned++;
       continue;
     }
     if (group.some((d) => d.current_status === 'rolled_over')) {
@@ -422,7 +435,7 @@ function summarize(rows: DeliveryRow[]) {
   }
   const total = groups.size;
   const rateLabel = total === 0 ? '—' : `${Math.round((delivered / total) * 100)}%`;
-  return { delivered, active, rolled, closed, stale, total, rateLabel };
+  return { delivered, active, unassigned, rolled, closed, stale, total, rateLabel };
 }
 
 function kicker(theme: 'light' | 'dark' = 'light', size: 'sm' | 'md' = 'md') {
