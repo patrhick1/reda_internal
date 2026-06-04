@@ -10,18 +10,27 @@ import { STATUS_GROUPS } from '@/lib/theme';
 export type DeliveryAdminRow = Database['public']['Views']['deliveries_admin']['Row'];
 export type DeliverySafeRow = Database['public']['Views']['deliveries_safe']['Row'];
 
-/** Joined names for display. Same shape regardless of which view was queried. */
+/** Joined names for display, plus per-row latest_* aggregates the deliveries
+ *  views now embed via LATERAL joins. Same shape regardless of which view
+ *  was queried. See scripts/embed-latest-history-in-deliveries-views.sql. */
 export type DeliveryDisplayJoins = {
   client_name: string | null;
   product_name: string | null;
   location_name: string | null;
   assigned_agent_name: string | null;
+  /** Most recent delivery_status_history.id for this delivery (from view's
+   *  LATERAL join). Null if the delivery has no history rows yet. */
+  latest_history_id: string | null;
+  /** Most recent delivery_status_history.changed_at for this delivery
+   *  (from view's LATERAL join). Drives the list's sort key (descending)
+   *  so a row touched 30s ago sits above one untouched all day. Null if
+   *  the delivery has no history rows yet — list falls back to created_at. */
+  latest_changed_at: string | null;
   /** True when the most-recent delivery_status_history row has been tagged
    *  via mark_client_notified. Powers the "Notified" pill on list rows so
    *  reps can see at a glance which deliveries have already been
-   *  communicated. Only listDeliveries computes the real value — single-row
-   *  getDelivery defaults this to false, since Detail.tsx renders the
-   *  per-history notification state inline (see listClientNotificationsForDelivery). */
+   *  communicated. Embedded via LEFT JOIN to delivery_client_notifications
+   *  in the deliveries views since 2026-06-04. */
   latest_notified: boolean;
 };
 
@@ -134,9 +143,22 @@ function attachJoins<T extends object>(
     location_name: location?.name ?? null,
     assigned_agent_name: assigned_agent?.display_name ?? null,
     margin: 'margin' in rest && typeof rest.margin === 'number' ? rest.margin : null,
-    // Default for the single-row path; listDeliveries overwrites with the
-    // real value after its delivery_client_notifications query.
-    latest_notified: false,
+    // latest_* fields come embedded from the deliveries views (LATERAL + LEFT
+    // JOIN). The spread above carries them through at runtime; these explicit
+    // reads put them on the static type (until database.gen.ts is regenerated
+    // to include them) and defend against any path that bypasses the view.
+    latest_history_id:
+      'latest_history_id' in rest && typeof rest.latest_history_id === 'string'
+        ? rest.latest_history_id
+        : null,
+    latest_changed_at:
+      'latest_changed_at' in rest && typeof rest.latest_changed_at === 'string'
+        ? rest.latest_changed_at
+        : null,
+    latest_notified:
+      'latest_notified' in rest && typeof rest.latest_notified === 'boolean'
+        ? rest.latest_notified
+        : false,
   };
 }
 
@@ -175,54 +197,17 @@ export async function listDeliveries(
     attachJoins(row as unknown as JoinShape & object),
   ) as DeliveryRow[];
 
-  // Sort: most recent status change DESC across all statuses — a row
-  // cancelled 30 seconds ago should sit above a pending row untouched all
-  // day. Pulls (id, delivery_id, changed_at) from delivery_status_history
-  // for the fetched IDs in a single second query, then merges client-side.
-  // For Reda's scale (~hundreds of rows) this is sub-50ms. We also record
-  // the latest history row's id per delivery so the next step can check
-  // which of them have been tagged 'client notified'.
-  const ids = rows.map((r) => r.id).filter((id): id is string => !!id);
-  const lastChange = new Map<string, string>();
-  const latestHistoryByDelivery = new Map<string, string>();
-  if (ids.length > 0) {
-    const { data: history } = await supabase
-      .from('delivery_status_history')
-      .select('id, delivery_id, changed_at')
-      .in('delivery_id', ids)
-      .order('changed_at', { ascending: false });
-    for (const h of history ?? []) {
-      // First occurrence per delivery_id wins (already ordered DESC).
-      if (!lastChange.has(h.delivery_id)) {
-        lastChange.set(h.delivery_id, h.changed_at);
-        latestHistoryByDelivery.set(h.delivery_id, h.id);
-      }
-    }
-  }
-
-  // Resolve which of those latest-history rows have a client-notified tag.
-  // Single keyed-by-PK lookup against delivery_client_notifications — RLS
-  // already restricts visibility to ops + the assigned agent, so this is
-  // safe for every role that hits this code path.
-  const notifiedLatestSet = new Set<string>();
-  const latestHistoryIds = Array.from(new Set(latestHistoryByDelivery.values()));
-  if (latestHistoryIds.length > 0) {
-    const { data: notifs } = await supabase
-      .from('delivery_client_notifications')
-      .select('status_history_id')
-      .in('status_history_id', latestHistoryIds);
-    for (const n of notifs ?? []) {
-      notifiedLatestSet.add(n.status_history_id);
-    }
-  }
-  for (const r of rows) {
-    const latestId = latestHistoryByDelivery.get(r.id ?? '');
-    r.latest_notified = latestId ? notifiedLatestSet.has(latestId) : false;
-  }
-
+  // Sort by most recent status change DESC — a row cancelled 30s ago sits
+  // above a pending row untouched all day. Both the sort key
+  // (latest_changed_at) and the Notified pill (latest_notified) are now
+  // embedded in deliveries_admin / deliveries_safe via a LATERAL join to
+  // delivery_status_history + LEFT JOIN to delivery_client_notifications,
+  // so this whole function is a single PostgREST round trip. Falls back to
+  // created_at when a row has no history rows yet.
+  // See scripts/embed-latest-history-in-deliveries-views.sql.
   return rows.sort((a, b) => {
-    const aT = lastChange.get(a.id ?? '') ?? a.created_at ?? '';
-    const bT = lastChange.get(b.id ?? '') ?? b.created_at ?? '';
+    const aT = a.latest_changed_at ?? a.created_at ?? '';
+    const bT = b.latest_changed_at ?? b.created_at ?? '';
     return bT.localeCompare(aT);
   });
 }
