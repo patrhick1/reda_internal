@@ -434,7 +434,13 @@ function summarize(rows: DeliveryRow[]) {
     closed++;
   }
   const total = groups.size;
-  const rateLabel = total === 0 ? '—' : `${Math.round((delivered / total) * 100)}%`;
+  // Completion rate is measured against orders actually in play today —
+  // delivered + active — NOT the full order count. The huge morning
+  // "unassigned" rollover queue hasn't been dispatched yet, so counting it
+  // in the denominator tanks the rate to a misleading single digit. This
+  // answers "of what the agents are working, how much is done?".
+  const inPlay = delivered + active;
+  const rateLabel = inPlay === 0 ? '—' : `${Math.round((delivered / inPlay) * 100)}%`;
   return { delivered, active, unassigned, rolled, closed, stale, total, rateLabel };
 }
 
