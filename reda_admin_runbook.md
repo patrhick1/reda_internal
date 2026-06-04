@@ -45,7 +45,7 @@ If you create the same delivery for multiple agents (same customer phone, produc
 - When one agent taps **I'm en route**, the other agents get a **Stand by** push: *"Funke is on Emmanuel. Hold for now."* Their rows stay open in case Funke can't make it.
 - When one agent marks **Delivered**, the others' rows auto-cancel and they get a **Delivery closed** push. Only the winning agent's stock decrements; the client is billed once.
 - If you add a late duplicate (say, a 4th agent at 11am after Funke went en-route at 10am), that new agent is told to stand by immediately on creation.
-- The 9pm auto-rollover dedups too: if none of the duplicates won today, only the oldest rolls forward to the next workday; the rest are cancelled.
+- The 11:59pm auto-rollover dedups too: if none of the duplicates won today, only one of them rolls forward to the next workday; the rest are cancelled. Whether the duplicates were on the same agent or split across multiple agents (the race pattern), the rollover still collapses them to a single row tomorrow — because rolled rows land unassigned, keeping multiple parents would just give you several phantom unassigned copies of the same order in tomorrow's queue.
 
 You don't need to remember to cancel anything yourself. If the agents have **different phone numbers, addresses, or quantities**, the app treats them as separate orders (not siblings), so legit repeat orders are safe.
 
@@ -76,9 +76,9 @@ Open the app any time after 7pm.
 
 ---
 
-## End of day — auto-rollover at 9pm
+## End of day — auto-rollover at 11:59pm
 
-At **9pm Lagos every night**, the app rolls every still-pending delivery forward to the next working day automatically. You don't have to remember. You'll get a push that says either:
+At **11:59pm Lagos every night**, the app rolls every still-pending delivery forward to the next working day automatically. You don't have to remember. You'll get a push that says either:
 
 - **"Rolled N deliveries forward. Tap to review."** — the cron found stuck rows and rolled them.
 - **"All clear — nothing to roll."** — your team finished everything for the day.
@@ -90,7 +90,7 @@ At **9pm Lagos every night**, the app rolls every still-pending delivery forward
 
 - Go to **Home → End of day** (calendar icon in Quick Actions).
 - Anything in the list is a delivery that didn't close out for that date.
-- Tap **Roll N forward**. Same effect as the 9pm cron — the original delivery is closed (marked as *rolled over*), and a fresh one for the same customer is opened for the next working day.
+- Tap **Roll N forward**. Same effect as the 11:59pm cron — the original delivery is closed (marked as *rolled over*), and a fresh one for the same customer is opened for the next working day.
 
 ### Looking back
 
@@ -112,6 +112,14 @@ If a delivery has the wrong status / quantity / payment:
 If you spotted a wrong name, phone, address, product, quantity or price, tap the **edit** icon in the top-right of the delivery screen. Change what's wrong, **Save changes**. Only works while the delivery is still open — once it's delivered, cancelled, or otherwise closed, the edit icon disappears and you'll have to fix things via a new delivery.
 
 If someone else is already editing the same delivery, you'll see *"<Name> is editing this"* with a **Take over** button — only use Take over if you're sure they've stopped.
+
+### Remove a single phantom row without affecting siblings
+
+When the bot has accidentally spread one order to two agents (a phantom race — symptom: an agent reports a delivery that isn't theirs), you want to close only the wrong row while leaving the intended agent's row open. Use **Update status → "Not my delivery"** on the phantom row.
+
+- `agent_cancelled` (label *"Not my delivery"*) is the only terminal status that does NOT cascade to siblings. Picking it closes just the one row.
+- `cancelled` is for customer-side cancellations and **does** cascade — using it on a phantom row will also take down the intended agent's canonical (the 2026-06-03 incident: 11 phantoms cancelled, 12 intended-agent rows closed alongside, restored via cancelled → pending).
+- Reason is required so the audit log captures why the row was closed.
 
 ### Claim a customer follow-up
 

@@ -99,12 +99,12 @@ Tap **Mark delivered** (the red button at the bottom).
 If the customer paid more or less than expected, the app warns you and
 records the actual amount. Reda will reconcile.
 
-### Wrap up before 9pm
+### Wrap up before 11:59pm
 
-At **9pm Lagos** the app automatically rolls anything still pending to the
+At **11:59pm Lagos** the app automatically rolls anything still pending to the
 next working day (Sunday is skipped — Saturday's pending stops land on
-Monday). So mark your last deliveries before 9pm if you finished them
-today. Anything you mark after 9pm might be on a row that just got
+Monday). So mark your last deliveries before 11:59pm if you finished them
+today. Anything you mark after 11:59pm might be on a row that just got
 rolled — you'll see a "delivery has been deleted" error and need to call
 Uzo to sort it out.
 
@@ -119,6 +119,23 @@ there first delivers it. Two pushes you might see:
 - **"Delivery closed — Funke delivered to Emmanuel. Your row is closed."**
   Another agent already delivered. You don't need to do anything — the
   row is now cancelled in your list.
+
+### "Not my delivery" — when a row shouldn't be on your list
+
+Sometimes a delivery shows up on your list that isn't yours — wrong agent
+named in the forward, or you've tried for hours and the customer can't be
+reached and you're done with it. Use **Update status → "Not my delivery"**.
+
+- The row closes for you, but the **order itself stays live** for any other
+  agent in the race — you're not killing their delivery, just yours.
+- You'll be asked for a short reason ("not my customer", "couldn't reach
+  after 4 calls", etc.) — this helps Uzo spot patterns in the contractor's
+  forwards.
+- If you change your mind later, you can reopen it yourself (Update status →
+  back to Pending, with a reason).
+
+Don't use **Cancelled** for this — that one means "the customer killed the
+order" and it closes everyone else's row too.
 
 Both mean: stand down. Treat them as good news (one less stop).
 

@@ -36,7 +36,7 @@ v1 is shippable when these are true:
 
 - **Mobile + web app:** React Native via Expo (SDK 54). One source tree compiles to two targets: Android (`eas build` / `eas update`) and web (`expo export -p web` → static `dist/` deployed on Vercel free). iOS deferred — no business case until an iPhone user joins. Native-only features (voice calling, biometric unlock, push notifications) are mobile-only and gracefully disabled on web via the `canPlaceCall()` helper + `.web.ts` stubs + `Platform.OS === 'web'` guards.
 - **Backend:** Supabase (Postgres + Auth + Storage + Realtime + Edge Functions). No custom server. Clients speak HTTPS to PostgREST + Edge Functions; RLS enforces permissions per-request — identical surface whether the client is the Android app or a browser.
-- **AI:** Gemini 2.5-flash via Google AI API + Google Maps Geocoding API. All AI calls happen in Edge Functions, never on the phone (keys stay server-side).
+- **AI:** OpenRouter brokering both LLM calls (since 2026-06-03) — `openai/gpt-4.1-mini` for order-field extraction in `bot-parse-message`, `google/gemini-2.5-flash` for address picking in `normalize-address`. Direct Google AI API calls retired because the free tier (20 requests/day) was rate-limiting the address pipeline; OpenRouter routes the same Gemini model on paid billing. Google Maps Geocoding API still called directly. All AI calls happen in Edge Functions, never on the phone (keys stay server-side: `OPENROUTER_API_KEY`, `GOOGLE_MAPS_API_KEY`).
 - **Push:** Expo Push API
 - **Voice calling (§5.17):** Agora Voice SDK via `react-native-agora` (free tier — 10k voice minutes/month). Ring UX via `react-native-callkeep` (Android ConnectionService → native phone-ringtone vibe). RTC tokens minted server-side by the `issue-agora-token` Edge Function; App Certificate never leaves the server.
 - **Hosting:** Supabase managed for the server side (free tier → Pro $25/mo when traffic warrants). Mobile distribution via **EAS Build + Google Play Internal Testing track** + EAS Update for JS-only OTA patches. One-time $25 Google Play Console fee, no monthly mobile-hosting cost. **Web build hosted on Vercel free tier** as a static site (SPA-routed via `mobile/vercel.json`); no Vercel functions used.
@@ -243,7 +243,7 @@ Each feature below is a discrete unit of work. Order doesn't imply build order �
 **Logic flow:**
 1. External WhatsApp automation POSTs to `/functions/v1/inbound-message` with the raw message text (and optionally a `parsed` block if it already extracted structured fields its end). Contract in [reda_bot_intake_contract.md](reda_bot_intake_contract.md).
 2. Row lands in `bot_inbound_messages`; a DB webhook fires `bot-parse-message`.
-3. If the contractor sent a `parsed` block (with at minimum `product_name`), trust those fields and **skip Gemini extraction**. Otherwise run Gemini against the raw text.
+3. **Contractor pre-parse + LLM merge (revised 2026-06-03).** If the contractor sent a `parsed` block with `product_name` AND `raw_address` AND a normalizable `customer_phone` all populated, trust those fields and skip the LLM call entirely. If ANY of those three is missing, call `openai/gpt-4.1-mini` via OpenRouter and **merge**: contractor's fields stay where present, the LLM fills only the gaps. Never discard the contractor's good fields just to recover one empty one (that prior behavior was today's bug — see iteration log). The LLM extraction prompt also carries a phone-as-name fallback ("if the message has no name, use customer_phone digits as customer_name") so we don't lose row that contractors handle via that convention.
 4. Match vendor (client) to `public.clients` — disambiguated by `client_hint` if the contractor supplied one.
 5. Match product to `product_catalog` (trigram).
 6. Address normalization (see 5.6) — short-circuited at high confidence if the contractor provided a `parsed.location` value that matches a known location name/alias.
@@ -257,6 +257,7 @@ Each feature below is a discrete unit of work. Order doesn't imply build order �
 - Vendor unknown → no product match → row stays in Needs Review
 - Product unknown → same
 - Duplicate message (idempotency) → dedupe on `wasender_message_id`. When the contractor doesn't supply one, we derive it from `sha256(received_at + from_phone + text)`, so identical retries dedupe automatically.
+- **Contractor re-forwards the same order naming the same agent (since 2026-06-03).** When `bot_create_delivery` is called with `p_assigned_agent_id = X` and X already holds an open sibling (same customer+product+date, fingerprint OR norm_address+qty match), it raises `P0001` with hint `{kind:'duplicate_same_agent', existing_delivery_id, agent_id}`. `bot-parse-message` catches the hint, marks the inbound row `status='duplicate'` pointing at the canonical delivery, no new row is created, no second agent is involved. Replaces a 2026-05-19 design that silently nulled the assignment and let `tg_auto_assign_on_insert` hand the row to a *different* agent — which created phantom multi-agent races the contractor never asked for (the 2026-06-03 cleanup found 11 such phantoms across Kenneth/Anjola/Audrey/Queen Favour in one day). Intentional multi-agent races (different agents named on different forwards) still work — that's a different code path. See [scripts/fix-bot-create-delivery-no-phantom-race.sql](scripts/fix-bot-create-delivery-no-phantom-race.sql).
 
 **Fix-and-create flow (admin + dispatcher):**
 - Tap any row on the Needs Review tab to open a detail screen with the original message at the top and a pre-filled form below (customer name, phone, address, client, product, quantity, customer price, agent — all sourced from `parse_result.extracted` + `parse_result.product` + `parse_result.agent_resolution`).
@@ -282,9 +283,10 @@ Each feature below is a discrete unit of work. Order doesn't imply build order �
 
 **Pipeline (runs during delivery creation):**
 
+0. **Substring/word-boundary pre-check** against `locations.name + aliases`. If a clean win, skip the API spend entirely (no Maps, no LLM).
 1. Send raw address to Google Maps Geocoding API
-2. If Maps returns a recognizable neighborhood: pass Maps' structured output + rate card location list to Gemini
-3. If Maps returns nothing useful: pass raw address + rate card list to Gemini directly
+2. If Maps returns a recognizable neighborhood: pass Maps' structured output + rate card location list to `google/gemini-2.5-flash` via OpenRouter
+3. If Maps returns nothing useful: pass raw address + rate card list to Gemini-via-OpenRouter directly
 4. Gemini returns:
    ```json
    {
@@ -305,9 +307,9 @@ Each feature below is a discrete unit of work. Order doesn't imply build order �
 - All AI matches logged with raw inputs so accuracy can be analyzed
 
 **Error handling:**
-- Maps API timeout (>5s) → fall through to Gemini-only
-- Gemini API timeout (>10s) → set location_id = null, surface in Needs Review
-- API quota exceeded → log error, queue delivery for retry
+- Maps API timeout (>5s) → fall through to Gemini-via-OpenRouter only
+- OpenRouter request timeout (>30s) → set location_id = null, surface in Needs Review
+- API quota exceeded → log error, queue delivery for retry. (Note: prior to 2026-06-03 the address pipeline called Google AI directly and hit the 20-req/day free-tier cap every morning, silently dropping every subsequent address to `confidence='none'`. Routing through OpenRouter eliminated that cap.)
 
 **Prompt sketch for Gemini (iterate on this):**
 ```
@@ -453,7 +455,8 @@ Rules:
 
 Where:
 - soft failures = not_answering, number_busy, switched_off, tomorrow, postponed, follow_up
-- terminal = delivered, cancelled, failed_delivery, unserious, no_product
+- terminal = delivered, cancelled, agent_cancelled, failed_delivery, unserious, no_product, abandoned, deferred_to_client, rolled_over
+- non-cascading terminals (only ones that DON'T close sibling rows): `agent_cancelled` (agent-side row close — "Not my delivery") and `rolled_over` (EOD-owned). See §5.16.
 
 **UI for status change:**
 - Status field on delivery detail shows current status
@@ -557,7 +560,7 @@ Server-side guard lives in [scripts/warehouse-stock-ops.sql](scripts/warehouse-s
 
 **Two paths, same backend:**
 
-1. **Auto-rollover cron (since 2026-05-17).** [supabase/functions/scheduled-eod-check/index.ts](supabase/functions/scheduled-eod-check/index.ts) runs at **21:00 Lagos** (20:00 UTC) every night via Supabase Scheduled Edge Functions. It signs in as the **Reda System** admin user (a real `users` row — see [scripts/system-user-setup.sql](scripts/system-user-setup.sql)) and calls `run_eod_rollover_all_stuck(p_reason='auto_eod_cron')`. The function walks every distinct `scheduled_date <= current_date` that still has at least one non-terminal delivery and calls `run_eod_rollover(date)` per group. All admins get one confirmation push (success: "Rolled N deliveries forward. Tap to review."; no-op: "All clear — nothing to roll."; failure: "Auto end of day FAILED — open the EOD screen and run it manually."). Audit attribution is honest because the cron is logged in as a real user.
+1. **Auto-rollover cron (since 2026-05-17).** [supabase/functions/scheduled-eod-check/index.ts](supabase/functions/scheduled-eod-check/index.ts) runs at **23:59 Lagos** (22:59 UTC) every night via Supabase Scheduled Edge Functions. (Originally scheduled at 21:00; moved later. Old "21:00" mentions in SQL comments and earlier doc revisions are stale.) It signs in as the **Reda System** admin user (a real `users` row — see [scripts/system-user-setup.sql](scripts/system-user-setup.sql)) and calls `run_eod_rollover_all_stuck(p_reason='auto_eod_cron')`. The function walks every distinct `scheduled_date <= current_date` that still has at least one non-terminal delivery and calls `run_eod_rollover(date)` per group. All admins get one confirmation push (success: "Rolled N deliveries forward. Tap to review."; no-op: "All clear — nothing to roll."; failure: "Auto end of day FAILED — open the EOD screen and run it manually."). Audit attribution is honest because the cron is logged in as a real user.
 
 2. **Manual EOD screen** ([mobile/app/(admin)/eod.tsx](mobile/app/(admin)/eod.tsx)). Single **Roll all forward** button that calls `run_eod_rollover(today)`. Used when an admin wants to clear early or re-run after fixing something. Idempotent — the inner `rollover_delivery` skips parents that already have a rollover child.
 
@@ -578,7 +581,7 @@ Server-side guard lives in [scripts/warehouse-stock-ops.sql](scripts/warehouse-s
 - 0 stuck deliveries → cron sends the "All clear" push so admins know it ran.
 - Pre-existing rolled child → silently skipped (idempotency dedupe).
 - Parent without `location_id` → re-snapshot falls back to old snapshot, no error.
-- Agent marks delivered at 21:00:30 while cron rolls at 21:00:00 → the second action fails because the parent is now terminal. Same race the manual EOD already has; mitigation is operational (the team picks 21:00 Lagos deliberately).
+- Agent marks delivered at 23:59:30 while cron rolls at 23:59:00 → the second action fails because the parent is now terminal. Same race the manual EOD already has; mitigation is operational (the team picks 23:59 Lagos deliberately — by then field agents are off the road).
 
 **Acceptance:**
 - Cron rolls every stuck date forward without admin intervention.
@@ -586,7 +589,14 @@ Server-side guard lives in [scripts/warehouse-stock-ops.sql](scripts/warehouse-s
 - Sunday rollovers always land on Monday, regardless of who/what computed the target date.
 - Manual EOD button still works and produces identical results.
 
-**Sibling dedup at rollover (since 2026-05-18).** When multiple non-terminal siblings exist for the same `(customer_phone_normalized, product_catalog_id, scheduled_date)` group on the rolled date AND they match the two-tier sibling rule (see §5.16 Sibling coordination), only the OLDEST row (`min(created_at)`) rolls forward. The rest are cancelled in place with reason `'duplicate not completed, deduped on rollover'`. Prevents the multiplication that was observed when Saturday's 4-row race-assign groups became Monday's 4-row groups.
+**Sibling dedup at rollover (since 2026-05-18; cross-agent policy revised 2026-06-02).** When multiple non-terminal siblings exist for the same `(customer_phone_normalized, product_catalog_id, scheduled_date)` group on the rolled date AND they match the two-tier sibling rule (see §5.16 Sibling coordination), `run_eod_rollover` collapses each group to a single canonical before rolling:
+
+- **Same-agent dupes:** the canonical is the most-progressed-most-recently-touched row for that agent; the rest are cancelled with reason `'duplicate not completed, same-agent deduped on rollover'`.
+- **Cross-agent groups (race-assigns):** collapse to one canonical regardless of progression state. If any sibling has progressed past pending, the most-progressed wins and others cancel with reason `'race lost, deduped on rollover'`. If all are still pending, the canonical is chosen by status/updated/created/id ordering and others cancel with reason `'duplicate not completed, cross-agent deduped on rollover'`.
+
+The all-pending-cross-agent collapse is intentional and tied to the 2026-05-30 unassigned-rollover behavior: rolled children land with `assigned_agent_id = NULL`, so preserving N parents through EOD just spawns N unassigned phantoms tomorrow — Uzo would have to dedup by eye in the morning queue. Collapsing at EOD gives him one row per real order; he can re-race fresh tomorrow morning by reassigning to multiple agents. (Prior behavior 2026-05-18 → 2026-06-02 preserved all-pending cross-agent siblings, which was correct when rollovers inherited the parent's agent but stopped making sense after the unassigned-rollover change.)
+
+The grouping key (`sib_key`) inside `run_eod_rollover` is computed as `md5(_norm_address(raw_address) || '|' || quantity_ordered)` — same as the matcher's Tier 2 — so that typo-drifted bot forwards with different fingerprints but identical addresses get correctly grouped. Prior versions used `coalesce(text_fingerprint, md5(...))` which silently bypassed dedup whenever both rows had fingerprints; revised 2026-06-02. (See reda_system_design_doc.md §3 "Race-assign coordination → Matcher consistency restored" for the related fix that landed in `_find_sibling_deliveries` and `bot_create_delivery` on the same date.)
 
 ---
 
@@ -650,7 +660,9 @@ Server-side guard lives in [scripts/warehouse-stock-ops.sql](scripts/warehouse-s
 
 **Two-stage trigger** (`tg_handle_sibling_coordination` on `deliveries.current_status`):
 1. **Stage 1 — Stand-by signal.** Fires on `pending → available` (single-shot guard against thrash). Siblings stay open; only their agents are notified: *"<Agent first name> is on <customer>. Hold for now."* via `send-notification` audience=`user`.
-2. **Stage 2 — Auto-cancel.** Fires on `→ delivered`. Each sibling whose `current_status` is still non-terminal is flipped to `cancelled` with a `delivery_status_history` row attributed to the **Reda System** user (clean separation: the delivering agent owns their own delivery; the system owns the cascade). Sibling's agent (if any) gets *"<Agent> delivered to <customer>. Your row is closed."*
+2. **Stage 2 — Auto-cancel.** Fires on transition into **any terminal status EXCEPT `rolled_over` and `agent_cancelled`** (per `archive/sibling-cascade-all-terminal.sql`, updated 2026-06-03 in [scripts/add-agent-cancelled-status.sql](scripts/add-agent-cancelled-status.sql)). Each sibling whose `current_status` is still non-terminal is flipped to `cancelled` with a `delivery_status_history` row attributed to the **Reda System** user. Sibling's agent (if any) gets *"<Other agent> handled the same order (<terminal status>). Closed as duplicate."*
+
+**Non-cascading terminal `agent_cancelled` (shipped 2026-06-03).** Order-level terminals — `delivered`, `cancelled`, `failed_delivery`, `no_product`, `abandoned` — describe the whole order ending (fulfilled, customer killed it, undeliverable, stock blocker, field abandonment), so closing siblings is correct. `agent_cancelled` (label: **"Not my delivery"**) means *this specific agent's row is closed but the order is still live for everyone else* — an agent passes on a delivery that isn't theirs, or admin removes one row of a sibling pair without affecting the other. It is the only non-cascading terminal (alongside `rolled_over`, which is owned by EOD machinery). The 2026-06-03 phantom-race incident is the canonical case it solves: cancelling 11 wrongly-spread phantom rows via `cancelled` cascaded into 12 intended-agent canonicals being cancelled too (had to restore via `cancelled → pending`). `agent_cancelled` would have closed only the phantom side. Self-serve by the assigned agent, reason required, admin-revertible. See [reda_system_design_doc.md §3.5](reda_system_design_doc.md) for design.
 
 **Late-add coverage** (`tg_signal_new_sibling` on `deliveries` INSERT). If Uzo creates a new duplicate AFTER another agent already went `available`, the new agent receives the "Stand by" push immediately on row creation.
 
@@ -764,7 +776,7 @@ Server-side guard lives in [scripts/warehouse-stock-ops.sql](scripts/warehouse-s
   - `notify_delivery_status_change` — fires when `current_status` enters a notify-worthy terminal: `delivered`, `cancelled`, `failed_delivery`, `unserious`, `no_product`. Pushes admins via `audience: 'status_change'` with a friendly body (*"Funke delivered to Mr Adeyemi · Ikeja · ₦18,000 collected"*).
   - `notify_bot_review` — on `bot_inbound_messages` reaching `status='needs_review'`. Pushes admins+dispatchers.
   - `notify_negative_stock` — after every `stock_adjustments` insert; if the resulting `current_stock.quantity_on_hand` is negative, pushes admins.
-- **Scheduled function: `scheduled-eod-check`.** Supabase Cron at `0 19 * * *` (UTC, ~20:00 Lagos). Counts deliveries `pending` past `scheduled_date`; if > 0, pushes admins.
+- **Scheduled function: `scheduled-eod-check`.** Supabase Cron at `59 22 * * *` (UTC, = 23:59 Lagos UTC+1). Triggers the EOD rollover (collapses sibling groups, rolls non-terminal rows to tomorrow unassigned). Time aligned with §5.11 — old `0 19 * * *` (~20:00 Lagos) schedule was stale.
 - **Mobile-side wiring** (`mobile/src/lib/notifications.ts`):
   - `configureNotifications()` runs once at module load — sets `setNotificationHandler` so foreground pushes still raise a banner+sound (without it Android/iOS drop them silently), and creates the Android `default` HIGH-importance channel.
   - `useNotificationTapRouting(role)` mounted inside `AuthGate` — consumes `getLastNotificationResponseAsync` (cold-start) + subscribes to `addNotificationResponseReceivedListener` (warm). Routes on `data.route` first (`review`, `stock`, `eod`) then on `data.delivery_id`, picking the role-appropriate path. No-op on `Platform.OS === 'web'`.
@@ -776,7 +788,7 @@ Server-side guard lives in [scripts/warehouse-stock-ops.sql](scripts/warehouse-s
 - Status change (admins): friendly per-status (Delivered / Failed / Cancelled / Customer not serious / Out of stock).
 - Bot review (admins/dispatchers): `"A WhatsApp message couldn't be parsed — open Review."`
 - Negative stock (admins): `"<agent> is at <-N> on <product>"`.
-- Auto EOD success (admins): `"Rolled N deliveries forward. Tap to review."` (fired by [scheduled-eod-check](supabase/functions/scheduled-eod-check/index.ts) at 21:00 Lagos).
+- Auto EOD success (admins): `"Rolled N deliveries forward. Tap to review."` (fired by [scheduled-eod-check](supabase/functions/scheduled-eod-check/index.ts) at 23:59 Lagos).
 - Auto EOD no-op (admins): `"All clear — nothing to roll."`
 - Auto EOD failure (admins): `"Auto end of day FAILED — open the EOD screen and run it manually. (<error>)"`
 

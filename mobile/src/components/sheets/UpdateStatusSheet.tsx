@@ -231,9 +231,10 @@ export function UpdateStatusSheet({
           ) : null}
           {isTerminalPick ? (
             <Banner tone="warn" icon="alert">
-              {isFinalPick
-                ? 'Final — you won’t be able to change this from the app.'
-                : 'Closes the delivery. You’ll need to give a reason if you reopen it.'}
+              {STATUS_META[picked.to_status]?.warning ??
+                (isFinalPick
+                  ? 'Final — you won’t be able to change this from the app.'
+                  : 'Closes the delivery. You’ll need to give a reason if you reopen it.')}
             </Banner>
           ) : null}
           {isPostponed ? (
