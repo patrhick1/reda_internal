@@ -42,7 +42,7 @@ import {
 import { BulkAssignSheet } from '@/components/sheets/BulkAssignSheet';
 import { BulkStatusSheet } from '@/components/sheets/BulkStatusSheet';
 import { BulkDeleteSheet } from '@/components/sheets/BulkDeleteSheet';
-import { colors, fonts, statusBucket, STATUS_GROUPS } from '@/lib/theme';
+import { colors, fonts, statusBucket, isAssignedActive, STATUS_GROUPS } from '@/lib/theme';
 import { todayLagos, yesterdayLagos } from '@/lib/date';
 
 const SOFT_STATUSES = new Set<string>(STATUS_GROUPS.soft);
@@ -254,7 +254,14 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   const buckets = useMemo(
     () => ({
       all,
-      active: all.filter((d) => statusBucket(d.current_status) === 'active'),
+      // Note on assignment-gating: "Active" is the ONLY status segment that
+      // also requires an assigned agent (isAssignedActive). That's deliberate
+      // — a freshly-rolled pending order is queue work, so it belongs under
+      // "Unassigned", not "Active" (otherwise the whole 804-row queue would
+      // show as Active too). Available/Soft/Done are NOT assignment-gated
+      // because those statuses are only ever set by an agent working the
+      // order, so an unassigned row practically never lands in them.
+      active: all.filter(isAssignedActive),
       available: all.filter(
         (d) => d.current_status === 'available' || d.current_status === 'available_evening',
       ),

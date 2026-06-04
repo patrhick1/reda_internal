@@ -63,7 +63,10 @@ export type Tone = 'red' | 'blue' | 'amber' | 'green' | 'gray';
 
 // Status taxonomy — mirrors `delivery_status_defs` rows in the DB and the
 // pill-color choice from the design kit.
-export const STATUS_META: Record<string, { label: string; tone: Tone; desc: string }> = {
+export const STATUS_META: Record<
+  string,
+  { label: string; tone: Tone; desc: string; warning?: string }
+> = {
   pending: { label: 'Pending', tone: 'red', desc: 'Awaiting agent' },
   available: { label: 'Available', tone: 'blue', desc: 'Customer reachable' },
   available_evening: {
@@ -85,6 +88,13 @@ export const STATUS_META: Record<string, { label: string; tone: Tone; desc: stri
   waybilled: { label: 'Waybilled', tone: 'blue', desc: 'Shipped via waybill' },
   delivered: { label: 'Delivered', tone: 'green', desc: 'Done' },
   cancelled: { label: 'Cancelled', tone: 'gray', desc: 'Closed' },
+  agent_cancelled: {
+    label: 'Not my delivery',
+    tone: 'gray',
+    desc: 'Pass on this row — order stays open for other agents',
+    warning:
+      "Closes only your row. The order stays open for other agents in the race. You'll need a reason if you reopen it.",
+  },
   failed_delivery: { label: 'Failed', tone: 'gray', desc: 'Could not deliver' },
   unserious: { label: 'Unserious', tone: 'gray', desc: 'Customer not serious' },
   no_product: { label: 'No product', tone: 'gray', desc: 'Out of stock' },
@@ -116,6 +126,7 @@ export const STATUS_GROUPS: Record<'active' | 'soft' | 'done' | 'closed', string
   done: ['delivered'],
   closed: [
     'cancelled',
+    'agent_cancelled',
     'failed_delivery',
     'unserious',
     'no_product',
@@ -142,6 +153,18 @@ export function statusBucket(s: string | null | undefined): keyof typeof STATUS_
     if (STATUS_GROUPS[k].includes(s)) return k;
   }
   return 'active';
+}
+
+/** "Active" in the ops sense = open work an agent is actually holding.
+ *  Deliberately stricter than `statusBucket(s) === 'active'`: an unassigned
+ *  pending order is queue work (it belongs under the "Unassigned" segment),
+ *  not active work. Centralised here so the deliveries list and any future
+ *  dashboard agree on one definition instead of drifting apart. */
+export function isAssignedActive(d: {
+  current_status: string | null | undefined;
+  assigned_agent_id: string | null | undefined;
+}): boolean {
+  return statusBucket(d.current_status) === 'active' && !!d.assigned_agent_id;
 }
 
 export const TONE_PALETTE: Record<
