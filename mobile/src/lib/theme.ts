@@ -155,6 +155,18 @@ export function statusBucket(s: string | null | undefined): keyof typeof STATUS_
   return 'active';
 }
 
+/** "Active" in the ops sense = open work an agent is actually holding.
+ *  Deliberately stricter than `statusBucket(s) === 'active'`: an unassigned
+ *  pending order is queue work (it belongs under the "Unassigned" segment),
+ *  not active work. Centralised here so the deliveries list and any future
+ *  dashboard agree on one definition instead of drifting apart. */
+export function isAssignedActive(d: {
+  current_status: string | null | undefined;
+  assigned_agent_id: string | null | undefined;
+}): boolean {
+  return statusBucket(d.current_status) === 'active' && !!d.assigned_agent_id;
+}
+
 export const TONE_PALETTE: Record<
   Tone,
   { bg: string; soft: string; text: string; softText: string }
