@@ -4,6 +4,7 @@ import { Banner, Input, Sheet, StatusPill } from '@/components/ui';
 import { colors, fonts, STATUS_META } from '@/lib/theme';
 import { type DeliveryRow } from '@/services/deliveries';
 import {
+  ACTIONABLE_ISSUE_TYPES,
   flagDelivery,
   ISSUE_DEFAULT_STATUS,
   ISSUE_LABELS,
@@ -13,13 +14,10 @@ import {
 import { newClientUuid } from '@/lib/uuid';
 import { errorMessage } from '@/lib/errors';
 
-const ISSUE_ORDER: IssueType[] = [
-  'wrong_address',
-  'cant_reach_client',
-  'payment_dispute',
-  'product_issue',
-  'other',
-];
+// Chip order mirrors ACTIONABLE_ISSUE_TYPES — single source of truth for
+// "issues that need ops to act." Auto-seeded types (cant_reach_client today)
+// are excluded over there; this list inherits the exclusion automatically.
+const ISSUE_ORDER: IssueType[] = ACTIONABLE_ISSUE_TYPES;
 
 /** Lets the agent flag a delivery with a chip + optional note. The chip
  *  drives a default status transition (see ISSUE_DEFAULT_STATUS) so the

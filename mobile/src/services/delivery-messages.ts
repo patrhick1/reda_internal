@@ -137,6 +137,7 @@ export async function listOpenIssuesForOps(): Promise<OpenIssueRow[]> {
     )
     .eq('author_role', 'agent')
     .is('read_at', null)
+    .in('issue_type', ACTIONABLE_ISSUE_TYPES)
     .order('created_at', { ascending: false });
   if (error) throw error;
   type Raw = {
@@ -208,3 +209,16 @@ export const STATUS_AUTO_ISSUE: Record<string, IssueType> = {
   number_busy: 'cant_reach_client',
   switched_off: 'cant_reach_client',
 };
+
+/** Issue types that genuinely need an admin to take action — the home
+ *  "Needs Attention" feed only shows these. Anything in STATUS_AUTO_ISSUE's
+ *  range is excluded because the "soft-failed today" card already surfaces
+ *  the underlying delivery; surfacing the auto-seeded message thread there
+ *  too would just double-count the same row. Derived (not hardcoded) so that
+ *  if STATUS_AUTO_ISSUE grows, the home filter narrows automatically. */
+const AUTO_SEEDED_ISSUE_TYPES = new Set<IssueType>(
+  Object.values(STATUS_AUTO_ISSUE) as IssueType[],
+);
+export const ACTIONABLE_ISSUE_TYPES: IssueType[] = (
+  Object.keys(ISSUE_LABELS) as IssueType[]
+).filter((t) => !AUTO_SEEDED_ISSUE_TYPES.has(t));
