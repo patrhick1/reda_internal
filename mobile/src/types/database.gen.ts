@@ -1740,6 +1740,8 @@ export type Database = {
           agent_name: string
           deliveries_count: number
           total_earnings: number
+          total_collected: number
+          total_remit: number
           total_quantity: number
         }[]
       }

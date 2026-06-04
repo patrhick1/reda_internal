@@ -30,7 +30,14 @@ export type AgentEarningsRow = {
   agent_name: string;
   deliveries_count: number;
   total_quantity: number;
+  /** What Reda pays the rider (sum of agent_payment_snapshot × quantity_delivered).
+   *  Payroll, money Reda → rider. Still used by the Summary tab's margin math. */
   total_earnings: number;
+  /** Gross cash + transfer the rider collected from customers (sum of paid). */
+  total_collected: number;
+  /** NET the rider owes Reda = total_collected − total_earnings (rider keeps
+   *  their own delivery pay and remits the rest). Drives the "By agent" view. */
+  total_remit: number;
 };
 
 export type ClientRemitDetailRow = {

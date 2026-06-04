@@ -339,8 +339,10 @@ function AgentsList({
   openId: string | null;
   setOpenId: (id: string | null) => void;
 }) {
+  // Headline = total cash the riders owe Reda for the period (net of their own
+  // delivery pay). This is collection-from-riders, NOT agent payroll.
   const total = useMemo(
-    () => (state.data ?? []).reduce((s, r) => s + Number(r.total_earnings), 0),
+    () => (state.data ?? []).reduce((s, r) => s + Number(r.total_remit), 0),
     [state.data],
   );
   const count = (state.data ?? []).length;
@@ -363,12 +365,14 @@ function AgentsList({
       }
       ListHeaderComponent={
         <Card style={{ marginBottom: 12 }}>
-          <Text style={kicker}>Total earnings owed</Text>
+          <Text style={kicker}>Total to collect from agents</Text>
           <Text
             style={{
               fontFamily: fonts.extrabold,
               fontSize: 36,
-              color: colors.success,
+              // Net can go negative (riders Reda owes outweigh those who owe Reda);
+              // don't render a negative total in success-green.
+              color: total >= 0 ? colors.success : colors.red,
               letterSpacing: -1,
               marginTop: 4,
             }}
@@ -394,10 +398,14 @@ function AgentsList({
           subjectKind="agent"
           name={item.agent_name}
           countLabel={`${item.deliveries_count} deliveries · qty ${item.total_quantity}`}
-          amount={Number(item.total_earnings)}
-          amountLabel="Earnings"
-          amountColor={colors.success}
-          extra={[]}
+          amount={Number(item.total_remit)}
+          amountLabel="To remit"
+          amountColor={Number(item.total_remit) >= 0 ? colors.success : colors.red}
+          extra={[
+            { label: 'Collected from customers', value: formatNaira(Number(item.total_collected)) },
+            { label: 'Rider pay (kept)', value: formatNaira(Number(item.total_earnings)) },
+            { label: 'To remit to Reda', value: formatNaira(Number(item.total_remit)) },
+          ]}
         />
       )}
       ListEmptyComponent={
@@ -410,7 +418,7 @@ function AgentsList({
         ) : (
           <Empty
             icon="users"
-            title="No agent earnings"
+            title="Nothing to collect"
             sub="No delivered rows in this date range."
           />
         )

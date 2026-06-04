@@ -71,8 +71,11 @@ You don't need to remember to cancel anything yourself. If the agents have **dif
 
 ### Check by-agent
 
-- Tap **By agent**.
-- The number next to each agent is what you'd pay them for today's deliveries. If an agent says "I delivered to X but it's not here", they forgot to mark it delivered in the app. Tell them to open it now.
+- Tap **By agent**. This view is about money coming *in* from riders, not what you pay them.
+- The big number is *Total to collect from agents* — the total cash riders owe Reda for the period so you can remit clients.
+- The number next to each agent is *To remit* — what that rider needs to send Reda: what they collected from customers minus the rider's own delivery pay (they keep their pay). Tap a row to see the breakdown (collected → rider pay → to remit).
+- A red number means Reda owes the rider (their pay was more than they collected — e.g. unpaid/partial deliveries).
+- If an agent says "I delivered to X but it's not here", they forgot to mark it delivered in the app. Tell them to open it now.
 
 ### Check the daily summary (Reda's own P&L)
 

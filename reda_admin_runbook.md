@@ -45,7 +45,7 @@ If you create the same delivery for multiple agents (same customer phone, produc
 - When one agent taps **I'm en route**, the other agents get a **Stand by** push: *"Funke is on Emmanuel. Hold for now."* Their rows stay open in case Funke can't make it.
 - When one agent marks **Delivered**, the others' rows auto-cancel and they get a **Delivery closed** push. Only the winning agent's stock decrements; the client is billed once.
 - If you add a late duplicate (say, a 4th agent at 11am after Funke went en-route at 10am), that new agent is told to stand by immediately on creation.
-- The 11:59pm auto-rollover dedups too: if none of the duplicates won today, only one of them rolls forward to the next workday; the rest are cancelled. Whether the duplicates were on the same agent or split across multiple agents (the race pattern), the rollover still collapses them to a single row tomorrow — because rolled rows land unassigned, keeping multiple parents would just give you several phantom unassigned copies of the same order in tomorrow's queue.
+- The 9pm auto-rollover dedups too: if none of the duplicates won today, only the oldest rolls forward to the next workday; the rest are cancelled.
 
 You don't need to remember to cancel anything yourself. If the agents have **different phone numbers, addresses, or quantities**, the app treats them as separate orders (not siblings), so legit repeat orders are safe.
 
@@ -65,8 +65,11 @@ Open the app any time after 7pm.
 
 ### Check by-agent
 
-- Tap **By agent**.
-- The number next to each agent is what you'd pay them for today's deliveries. If an agent says "I delivered to X but it's not here", they forgot to mark it delivered in the app. Tell them to open it now.
+- Tap **By agent**. This view is about money coming *in* from riders, not what you pay them.
+- The big number is *Total to collect from agents* — the total cash riders owe Reda for the period so you can remit clients.
+- The number next to each agent is *To remit* — what that rider needs to send Reda: what they collected from customers minus the rider's own delivery pay (they keep their pay). Tap a row to see the breakdown (collected → rider pay → to remit).
+- A red number means Reda owes the rider (their pay was more than they collected — e.g. unpaid/partial deliveries).
+- If an agent says "I delivered to X but it's not here", they forgot to mark it delivered in the app. Tell them to open it now.
 
 ### Check the daily summary (Reda's own P&L)
 
@@ -76,9 +79,9 @@ Open the app any time after 7pm.
 
 ---
 
-## End of day — auto-rollover at 11:59pm
+## End of day — auto-rollover at 9pm
 
-At **11:59pm Lagos every night**, the app rolls every still-pending delivery forward to the next working day automatically. You don't have to remember. You'll get a push that says either:
+At **9pm Lagos every night**, the app rolls every still-pending delivery forward to the next working day automatically. You don't have to remember. You'll get a push that says either:
 
 - **"Rolled N deliveries forward. Tap to review."** — the cron found stuck rows and rolled them.
 - **"All clear — nothing to roll."** — your team finished everything for the day.
@@ -90,7 +93,7 @@ At **11:59pm Lagos every night**, the app rolls every still-pending delivery for
 
 - Go to **Home → End of day** (calendar icon in Quick Actions).
 - Anything in the list is a delivery that didn't close out for that date.
-- Tap **Roll N forward**. Same effect as the 11:59pm cron — the original delivery is closed (marked as *rolled over*), and a fresh one for the same customer is opened for the next working day.
+- Tap **Roll N forward**. Same effect as the 9pm cron — the original delivery is closed (marked as *rolled over*), and a fresh one for the same customer is opened for the next working day.
 
 ### Looking back
 
@@ -112,14 +115,6 @@ If a delivery has the wrong status / quantity / payment:
 If you spotted a wrong name, phone, address, product, quantity or price, tap the **edit** icon in the top-right of the delivery screen. Change what's wrong, **Save changes**. Only works while the delivery is still open — once it's delivered, cancelled, or otherwise closed, the edit icon disappears and you'll have to fix things via a new delivery.
 
 If someone else is already editing the same delivery, you'll see *"<Name> is editing this"* with a **Take over** button — only use Take over if you're sure they've stopped.
-
-### Remove a single phantom row without affecting siblings
-
-When the bot has accidentally spread one order to two agents (a phantom race — symptom: an agent reports a delivery that isn't theirs), you want to close only the wrong row while leaving the intended agent's row open. Use **Update status → "Not my delivery"** on the phantom row.
-
-- `agent_cancelled` (label *"Not my delivery"*) is the only terminal status that does NOT cascade to siblings. Picking it closes just the one row.
-- `cancelled` is for customer-side cancellations and **does** cascade — using it on a phantom row will also take down the intended agent's canonical (the 2026-06-03 incident: 11 phantoms cancelled, 12 intended-agent rows closed alongside, restored via cancelled → pending).
-- Reason is required so the audit log captures why the row was closed.
 
 ### Claim a customer follow-up
 
@@ -218,33 +213,6 @@ While the Google Sheet is still running as a backup:
 - If they don't match: figure out which one is wrong. For new deliveries, the **app** is the one to trust. For old deliveries (added before we moved everything into the app), trust the **sheet** while we're still running both side by side.
 
 After about 5 days in a row of matching numbers, tell Paschal — he'll close the sheet for editing.
-
----
-
-## Call your team
-
-The app has built-in voice calls between everyone on Reda — you, dispatchers, agents, warehouse. No personal numbers exposed, no airtime to reimburse. Audio is encrypted peer-to-peer; nothing is recorded.
-
-**Make a call**
-- Profile → **Team directory** → tap the green phone next to whoever you want
-- Phone rings on every device they're signed in on; first one to answer wins
-
-**Receive a call**
-- Your phone rings with your normal system ringtone, full-screen, even on the lock screen
-- Tap **Accept** to take it or **Decline** to send to "missed"
-- Bluetooth headset accept/end works
-
-**The first call you ever make or take**
-- Android asks once: "Allow Reda to make and manage calls?" — say **Allow**. Without this the ringer won't fire properly.
-- It also asks for microphone access — also Allow. If you say no by mistake, fix it in Android Settings → Apps → Reda → Permissions.
-
-**See past calls**
-- Profile → **Call history** — your last 50 calls, newest first. Red = missed/declined/cancelled. Tap the green phone to redial.
-
-**Things that can go wrong (and the fix)**
-- *Call doesn't ring at all on a teammate's phone* — they probably haven't accepted the "Allow Reda to manage calls" dialog, OR their phone's battery saver is killing background processes. On Xiaomi/Oppo/Realme/Tecno: Settings → Apps → Reda → Battery → unrestricted, plus enable "Autostart" and "Display over other apps".
-- *Call connects but no audio* — the callee denied microphone permission. Have them grant it in Android Settings and try again.
-- *Ring shows up after the caller already hung up* — push was delivered late. Tap the notification to land on Call history with the missed call highlighted; redial from there.
 
 ---
 
