@@ -1,12 +1,14 @@
-import { memo, useCallback, useMemo } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, Text, View } from 'react-native';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, RefreshControl, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { listDeliveries, type DeliveryRow } from '@/services/deliveries';
 import { formatNaira } from '@/lib/format';
-import { Card, Empty, Icon, RedaMark, SectionHeader, StatusPill } from '@/components/ui';
+import { Button, Card, Empty, Icon, RedaMark, SectionHeader, StatusPill } from '@/components/ui';
+import { BulkMarkDeliveredSheet } from '@/components/sheets/BulkMarkDeliveredSheet';
+import { canBulkDeliverRow, canBulkMarkDelivered } from '@/lib/permissions';
 import type { STATUS_GROUPS } from '@/lib/theme';
 import { colors, fonts, statusBucket } from '@/lib/theme';
 
@@ -37,6 +39,74 @@ export default function AgentToday() {
       reload();
     }, [reload]),
   );
+
+  const canBulk = canBulkMarkDelivered(user.role);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [bulkSheetOpen, setBulkSheetOpen] = useState(false);
+  // Orders whose "mark delivered" job was just enqueued but hasn't drained yet.
+  // We suppress re-selecting them so the agent can't double-enqueue a delivery
+  // that's already in flight (the list still shows its pre-delivery status
+  // until the queue drains + a reload lands).
+  const [pendingDeliveredIds, setPendingDeliveredIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+
+  const enterSelect = useCallback((seedId: string | null) => {
+    setSelectMode(true);
+    setSelectedIds(seedId ? new Set([seedId]) : new Set());
+  }, []);
+  const exitSelect = useCallback(() => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }, []);
+  const toggleSelected = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const selectedRows = useMemo<DeliveryRow[]>(() => {
+    if (!selectMode || selectedIds.size === 0 || !data) return [];
+    return data.filter((d) => d.id && selectedIds.has(d.id));
+  }, [data, selectMode, selectedIds]);
+
+  const onBulkConfirmed = useCallback(
+    (count: number) => {
+      setBulkSheetOpen(false);
+      // Capture the submitted ids BEFORE exitSelect clears the selection, so
+      // we can suppress re-selecting them while their jobs are in flight.
+      setPendingDeliveredIds((prev) => {
+        const next = new Set(prev);
+        for (const d of selectedRows) if (d.id) next.add(d.id);
+        return next;
+      });
+      exitSelect();
+      reload();
+      Alert.alert('Done', `Marking ${count} ${count === 1 ? 'order' : 'orders'} delivered…`);
+    },
+    [exitSelect, reload, selectedRows],
+  );
+
+  // Stop suppressing an order once fresh data shows it's no longer eligible —
+  // i.e. its delivered job landed (it's now terminal, so canBulkDeliverRow is
+  // false anyway). Rows still eligible stay suppressed (job in flight). The set
+  // is in-memory, so a dead-lettered job's suppression also lifts on restart.
+  useEffect(() => {
+    if (!data) return;
+    setPendingDeliveredIds((prev) => {
+      if (prev.size === 0) return prev;
+      const next = new Set<string>();
+      for (const id of prev) {
+        const row = data.find((d) => d.id === id);
+        if (row && canBulkDeliverRow(row)) next.add(id);
+      }
+      return next.size === prev.size ? prev : next;
+    });
+  }, [data]);
 
   const stats = useMemo(() => summarize(data ?? []), [data]);
   const dateLabel = todayLagosLabel();
@@ -107,14 +177,34 @@ export default function AgentToday() {
       <FlatList
         data={data ?? []}
         keyExtractor={keyForDelivery}
-        renderItem={({ item }) => (
-          <DeliveryCard
-            delivery={item}
-            onPress={() =>
-              router.push({ pathname: '/(agent)/today/[id]', params: { id: item.id! } })
-            }
-          />
-        )}
+        renderItem={({ item }) => {
+          const itemId = item.id ?? null;
+          const selectable =
+            canBulk && canBulkDeliverRow(item) && !(itemId && pendingDeliveredIds.has(itemId));
+          return (
+            <DeliveryCard
+              delivery={item}
+              selectMode={selectMode}
+              selectable={selectable}
+              selected={!!itemId && selectedIds.has(itemId)}
+              onPress={() => {
+                if (selectMode) {
+                  if (selectable && itemId) toggleSelected(itemId);
+                  return;
+                }
+                router.push({ pathname: '/(agent)/today/[id]', params: { id: item.id! } });
+              }}
+              onLongPress={
+                canBulk && selectable && itemId
+                  ? () => {
+                      if (!selectMode) enterSelect(itemId);
+                      else toggleSelected(itemId);
+                    }
+                  : undefined
+              }
+            />
+          );
+        }}
         ItemSeparatorComponent={SeparatorH12}
         ListHeaderComponent={
           <SectionHeader>
@@ -136,7 +226,11 @@ export default function AgentToday() {
             />
           )
         }
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 32, flexGrow: 1 }}
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingBottom: selectMode ? 110 : 32,
+          flexGrow: 1,
+        }}
         initialNumToRender={10}
         windowSize={5}
         maxToRenderPerBatch={6}
@@ -148,6 +242,47 @@ export default function AgentToday() {
             tintColor={colors.black}
           />
         }
+      />
+
+      {selectMode ? (
+        <View
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            flexDirection: 'row',
+            gap: 8,
+            paddingHorizontal: 16,
+            paddingTop: 12,
+            paddingBottom: insets.bottom + 12,
+            backgroundColor: colors.white,
+            borderTopWidth: 1,
+            borderTopColor: colors.border,
+          }}
+        >
+          <Button variant="secondary" onPress={exitSelect}>
+            Cancel
+          </Button>
+          <View style={{ flex: 1 }}>
+            <Button
+              variant="emphasis"
+              full
+              icon="check"
+              onPress={() => setBulkSheetOpen(true)}
+              disabled={selectedIds.size === 0}
+            >
+              {selectedIds.size === 0 ? 'Select orders' : `Mark ${selectedIds.size} delivered`}
+            </Button>
+          </View>
+        </View>
+      ) : null}
+
+      <BulkMarkDeliveredSheet
+        open={bulkSheetOpen}
+        selected={selectedRows}
+        onClose={() => setBulkSheetOpen(false)}
+        onConfirmed={onBulkConfirmed}
       />
     </View>
   );
@@ -187,16 +322,52 @@ function StatCell({ label, value, accent }: { label: string; value: string; acce
 const DeliveryCard = memo(function DeliveryCard({
   delivery,
   onPress,
+  onLongPress,
+  selectMode,
+  selectable,
+  selected,
 }: {
   delivery: DeliveryRow;
   onPress: () => void;
+  onLongPress?: () => void;
+  /** True when the screen is in multi-select mode (bulk Mark delivered). */
+  selectMode: boolean;
+  /** True when this row is eligible for bulk delivered (open + has location).
+   *  Ineligible rows render dimmed with no checkbox and can't be selected. */
+  selectable: boolean;
+  selected: boolean;
 }) {
   const status = delivery.current_status ?? 'pending';
   const bucket = statusBucket(status);
   const isDone = status === 'delivered';
+  const dimmed = isDone || (selectMode && !selectable);
   return (
-    <Card onPress={onPress} dense style={isDone ? { opacity: 0.65 } : undefined}>
+    <Card
+      onPress={onPress}
+      onLongPress={onLongPress}
+      dense
+      style={dimmed ? { opacity: 0.55 } : undefined}
+    >
       <View style={{ flexDirection: 'row', alignItems: 'stretch', gap: 12 }}>
+        {selectMode ? (
+          <View
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: selected, disabled: !selectable }}
+            style={{
+              width: 22,
+              height: 22,
+              borderRadius: 6,
+              borderWidth: 2,
+              borderColor: !selectable ? colors.border : selected ? colors.black : colors.border,
+              backgroundColor: selected ? colors.black : 'transparent',
+              alignItems: 'center',
+              justifyContent: 'center',
+              alignSelf: 'center',
+            }}
+          >
+            {selected ? <Icon name="check" size={14} color={colors.white} /> : null}
+          </View>
+        ) : null}
         <View
           style={{
             width: 4,

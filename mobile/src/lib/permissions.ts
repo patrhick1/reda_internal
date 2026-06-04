@@ -6,7 +6,7 @@
 // Anchor (database): supabase/dashboard → is_admin(), is_admin_or_dispatcher(), public.users.role check.
 // Anchor (column lock): SELECT on deliveries.charged_snapshot is revoked from authenticated.
 
-import { FINAL_STATUSES, STATUS_GROUPS } from '@/lib/theme';
+import { FINAL_STATUSES, STATUS_GROUPS, statusBucket } from '@/lib/theme';
 
 export type Role = 'admin' | 'dispatcher' | 'agent' | 'warehouse' | 'rep';
 
@@ -233,6 +233,31 @@ export function canBulkDeleteDeliveries(role: Role): boolean {
  *  Server anchor: `bulk_change_delivery_status` RPC. */
 export function canBulkChangeStatus(role: Role): boolean {
   return role === 'admin' || role === 'dispatcher';
+}
+
+/** Bulk "Mark delivered" from the agent's Today screen — long-press to
+ *  multi-select, then mark several delivered at once. Agent-only: it marks
+ *  the caller's OWN assigned rows, and each enqueued change_delivery_status
+ *  job re-checks ownership server-side. Ops keep single-row + their existing
+ *  bulk-status tools; bulk delivered is an in-the-field agent action.
+ *  No new server RPC — reuses change_delivery_status per row via the queue. */
+export function canBulkMarkDelivered(role: Role): boolean {
+  return role === 'agent';
+}
+
+/** A row can be bulk-marked-delivered only if it isn't already terminal AND
+ *  has a location (change_delivery_status raises on delivered with no
+ *  location_id). Mirrors the per-row guards so the bulk sheet can preview
+ *  which selections will be skipped instead of silently failing in the queue. */
+export function canBulkDeliverRow(row: {
+  current_status: string | null;
+  location_id: string | null;
+}): boolean {
+  if (row.location_id == null) return false;
+  // Non-terminal only: 'active' or 'soft' bucket. 'done'/'closed' rows are
+  // already finished and have no valid transition to 'delivered'.
+  const bucket = statusBucket(row.current_status);
+  return bucket === 'active' || bucket === 'soft';
 }
 
 /** UI gate that mirrors the FINAL_STATUSES check inside `delete_delivery` /
