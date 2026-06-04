@@ -4,8 +4,13 @@
 //
 // Pipeline per row:
 //   1. Skip if status != 'queued' (idempotency).
-//   2. Gemini 2.5-flash structured extraction → { customer_name, customer_phone,
-//      raw_address, product_name, quantity, customer_price }.
+//   2. Use the contractor's pre-parse for whichever fields it populated. For
+//      any of {product_name, raw_address, customer_phone} the contractor
+//      left empty, call OpenRouter (openai/gpt-4.1-mini) and MERGE — the
+//      contractor's good fields stay, the LLM only fills the gaps. We never
+//      discard a contractor field to recover a missing one (e.g. their
+//      product_name="Perfume" survives even when their raw_address is
+//      empty and the LLM has to extract the address from raw_text).
 //   3. Match product via match_products_by_text RPC → resolves client_id.
 //   4. Call normalize-address → location_id + confidence.
 //   5. Decide outcome based on flags:
@@ -15,18 +20,47 @@
 //   6. mark_inbound_processed updates the row atomically.
 //
 // Deploy:  supabase functions deploy bot-parse-message
-// Secrets: GEMINI_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-//          (also GOOGLE_MAPS_API_KEY for normalize-address — set there)
+// Secrets: OPENROUTER_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+//          (also GOOGLE_MAPS_API_KEY + GEMINI_API_KEY for normalize-address —
+//           set there; the bot-parse-message extractor itself no longer uses
+//           Gemini.)
 
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
-const EXTRACTION_PROMPT_VERSION = 'bot-parse-v1';
+const EXTRACTION_PROMPT_VERSION = 'bot-parse-v3-gpt-4.1-mini';
+const EXTRACTION_MODEL          = 'openai/gpt-4.1-mini';
+
+// Hard cap on the OpenRouter request so a hung inference can't park a row in
+// status='queued' forever. gpt-4.1-mini typically returns in <5s; 30s leaves
+// generous headroom while guaranteeing we always reach the error path.
+const REQUEST_TIMEOUT_MS = 30_000;
+
+// OpenAI-strict-style JSON schema for the extraction output. OpenRouter passes
+// this through to providers that support strict structured outputs (no markdown
+// wrapping, no extra keys, type-checked). Mirrors the Extracted type below.
+const EXTRACTION_SCHEMA = {
+  name:   'bot_extraction',
+  strict: true,
+  schema: {
+    type:                 'object',
+    additionalProperties: false,
+    required: ['customer_name', 'customer_phone', 'raw_address', 'product_name', 'quantity', 'customer_price'],
+    properties: {
+      customer_name:  { type: ['string',  'null'] },
+      customer_phone: { type: ['string',  'null'] },
+      raw_address:    { type: ['string',  'null'] },
+      product_name:   { type: ['string',  'null'] },
+      quantity:       { type: ['integer', 'null'] },
+      customer_price: { type: ['number',  'null'] },
+    },
+  },
+};
 
 const EXTRACTION_PROMPT = `You are extracting a single delivery order from a WhatsApp message that a Reda client forwarded.
 
 Return strict JSON with these fields (use null when missing):
-  customer_name    : string  — the recipient's name
+  customer_name    : string  — the recipient's name. If the message has no name, use the customer_phone digits as the customer_name instead of returning null. Only return null if BOTH a name and a phone are missing.
   customer_phone   : string  — Nigerian phone, keep digits and optional leading 0/+234
   raw_address      : string  — the delivery address, free-form, as-is from the message
   product_name     : string  — the product the customer ordered (one product per order)
@@ -48,69 +82,124 @@ type Extracted = {
 };
 
 // Read a pre-parsed delivery from the inbound row's raw_payload, if the
-// upstream bot included one. Shape matches what Gemini would emit so the
-// downstream code can treat both sources uniformly. Returns null if no
-// usable parse is present (missing block, wrong types, or empty).
-function extractContractorParse(raw_payload: any): Extracted | null {
+// upstream bot included one. Returns ONLY the fields the contractor
+// actually populated (omitted fields are absent from `fields`, NOT set to
+// null) plus a `needsLlm` flag: true when any of the three load-bearing
+// fields (product_name, raw_address, customer_phone) is missing.
+//
+// The caller uses `needsLlm` to decide whether to call OpenRouter, then
+// merges contractor's values OVER the LLM's — so the contractor's good
+// fields are never discarded just to recover one empty one. This matters
+// because the contractor's parse has client-side context the LLM doesn't:
+// e.g. they correctly parse product_name="Perfume" from a "OUD AL LAYL
+// BROWN SINGLE WITH OIL 2515-U" SKU header the LLM would take literally.
+type PartialExtracted = { fields: Partial<Extracted>; needsLlm: boolean };
+
+function extractContractorParse(raw_payload: any): PartialExtracted {
   const p = raw_payload?.parsed;
-  if (!p || typeof p !== 'object') return null;
-  const name  = typeof p.customer_name  === 'string' ? p.customer_name  : null;
-  const phone = typeof p.customer_phone === 'string' ? p.customer_phone : null;
-  const addr  = typeof p.raw_address    === 'string' ? p.raw_address    : null;
-  const prod  = typeof p.product_name   === 'string' ? p.product_name   : null;
-  const qty   = typeof p.quantity       === 'number' ? p.quantity       : null;
-  const price = typeof p.customer_price === 'number' ? p.customer_price : null;
-  // Need at minimum a product name to be useful. If nothing meaningful is
-  // present, fall through to Gemini rather than half-trust their parse.
-  if (!prod) return null;
-  return {
-    customer_name:  name,
-    customer_phone: phone,
-    raw_address:    addr,
-    product_name:   prod,
-    quantity:       qty,
-    customer_price: price,
-  };
+  if (!p || typeof p !== 'object') return { fields: {}, needsLlm: true };
+
+  const fields: Partial<Extracted> = {};
+  if (typeof p.customer_name  === 'string' && p.customer_name.trim())  fields.customer_name  = p.customer_name.trim();
+  if (normalizePhone(p.customer_phone))                                 fields.customer_phone = p.customer_phone;
+  if (typeof p.raw_address    === 'string' && p.raw_address.trim())     fields.raw_address    = p.raw_address.trim();
+  if (typeof p.product_name   === 'string' && p.product_name.trim())    fields.product_name   = p.product_name.trim();
+  if (typeof p.quantity       === 'number' && p.quantity > 0)           fields.quantity       = p.quantity;
+  if (typeof p.customer_price === 'number' && p.customer_price >= 0)    fields.customer_price = p.customer_price;
+
+  const needsLlm = !fields.product_name || !fields.raw_address || !fields.customer_phone;
+  return { fields, needsLlm };
 }
 
-async function geminiExtract(text: string, model: string, apiKey: string): Promise<{ parsed: Extracted | null; raw: any }> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+// Defensive coercion: even with response_format=json_schema, providers may
+// emit "55,000" as a string or wrap output in markdown fences. Coerce so a
+// degraded response doesn't poison downstream consumers.
+function toStr(v: any): string | null {
+  if (v === null || v === undefined) return null;
+  if (typeof v === 'string') return v;
+  return String(v);
+}
+function toNum(v: any): number | null {
+  if (v === null || v === undefined || v === '') return null;
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  if (typeof v === 'string') {
+    const cleaned = v.replace(/[,_₦\s]/g, '');
+    const n = Number(cleaned);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+function toInt(v: any): number | null {
+  const n = toNum(v);
+  return n === null ? null : Math.round(n);
+}
+function coerceExtracted(obj: any): Extracted | null {
+  if (!obj || typeof obj !== 'object') return null;
+  return {
+    customer_name:  toStr(obj.customer_name),
+    customer_phone: toStr(obj.customer_phone),
+    raw_address:    toStr(obj.raw_address),
+    product_name:   toStr(obj.product_name),
+    quantity:       toInt(obj.quantity),
+    customer_price: toNum(obj.customer_price),
+  };
+}
+function stripJsonFences(s: string): string {
+  let t = s.trim();
+  if (t.startsWith('```')) {
+    t = t.replace(/^```(?:json|jsonc)?\s*\n?/i, '');
+    t = t.replace(/\n?```\s*$/, '');
+  }
+  return t.trim();
+}
+
+async function openrouterExtract(text: string, model: string, apiKey: string): Promise<{ parsed: Extracted | null; raw: any }> {
+  const url = 'https://openrouter.ai/api/v1/chat/completions';
   const prompt = EXTRACTION_PROMPT.replace('{{TEXT}}', text);
   const body = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: {
-      temperature: 0,
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: 'OBJECT',
-        properties: {
-          customer_name:  { type: 'STRING', nullable: true },
-          customer_phone: { type: 'STRING', nullable: true },
-          raw_address:    { type: 'STRING', nullable: true },
-          product_name:   { type: 'STRING', nullable: true },
-          quantity:       { type: 'INTEGER', nullable: true },
-          customer_price: { type: 'NUMBER', nullable: true },
-        },
-      },
-    },
+    model,
+    messages:        [{ role: 'user', content: prompt }],
+    temperature:     0,
+    response_format: { type: 'json_schema', json_schema: EXTRACTION_SCHEMA },
   };
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        // Optional but encouraged by OpenRouter — surfaces this app in their
+        // dashboards and helps with rate-limit prioritisation.
+        'HTTP-Referer':  'https://reda.app',
+        'X-Title':       'Reda bot-parse-message',
+      },
+      body:   JSON.stringify(body),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'TimeoutError') {
+      console.error('openrouter extract timeout', { timeout_ms: REQUEST_TIMEOUT_MS, model });
+      return { parsed: null, raw: { error: 'request timeout', timeout_ms: REQUEST_TIMEOUT_MS, model, _prompt_version: EXTRACTION_PROMPT_VERSION } };
+    }
+    console.error('openrouter extract network error', err, { model });
+    return { parsed: null, raw: { error: String(err), model, _prompt_version: EXTRACTION_PROMPT_VERSION } };
+  }
   if (!res.ok) {
     const errText = await res.text();
-    console.error('gemini extract error', res.status, errText);
-    return { parsed: null, raw: { error: errText, status: res.status } };
+    console.error('openrouter extract error', res.status, errText);
+    return { parsed: null, raw: { error: errText, status: res.status, model, _prompt_version: EXTRACTION_PROMPT_VERSION } };
   }
   const json = await res.json();
-  const textOut = json?.candidates?.[0]?.content?.parts?.[0]?.text;
+  const textOut = json?.choices?.[0]?.message?.content;
   let parsed: Extracted | null = null;
-  if (textOut) {
-    try { parsed = JSON.parse(textOut) as Extracted; } catch { /* fall through */ }
+  if (typeof textOut === 'string' && textOut.length > 0) {
+    try {
+      const cleaned = stripJsonFences(textOut);
+      parsed = coerceExtracted(JSON.parse(cleaned));
+    } catch { /* fall through — parsed stays null */ }
   }
-  return { parsed, raw: { ...json, _prompt_version: EXTRACTION_PROMPT_VERSION } };
+  return { parsed, raw: { ...json, _prompt_version: EXTRACTION_PROMPT_VERSION, _model: model } };
 }
 
 function normalizePhone(p: string | null | undefined): string | null {
@@ -171,53 +260,62 @@ Deno.serve(async (req) => {
   const pipelineEnabled = !!pipelineFlag?.enabled;
   const shadowMode      = !!shadowFlag?.enabled;
 
-  // 2a. If the contractor pre-parsed the message, trust their fields and skip
-  //     Gemini entirely. Saves an API call + 1-2s of latency per message.
-  //     We still run product + location matching against our own tables — the
-  //     contractor doesn't have our UUIDs.
-  const contractorParsed = extractContractorParse(row.raw_payload);
-  let parsed: Extracted | null = null;
-  let geminiRaw: any = null;
-  let source: 'contractor' | 'gemini' = 'gemini';
+  // 2a. Read whatever the contractor's bot pre-parsed. If they populated all
+  //     three load-bearing fields (product_name, raw_address, customer_phone)
+  //     we skip the LLM entirely. Otherwise we call OpenRouter and MERGE —
+  //     contractor's fields stay, LLM fills only the gaps. Product + location
+  //     matching still run against our own tables — the contractor doesn't
+  //     have our UUIDs.
+  const { fields: contractorFields, needsLlm } = extractContractorParse(row.raw_payload);
+  let parsed: Extracted;
+  let extractionRaw: any = null;
+  let source: 'contractor' | 'contractor+openrouter' | 'openrouter';
 
-  if (contractorParsed) {
-    parsed = contractorParsed;
+  if (!needsLlm) {
+    // All load-bearing fields present in contractor's parse — trust it.
+    parsed = contractorFields as Extracted;
     source = 'contractor';
   } else {
-    // Gemini model name.
-    const { data: modelCfg } = await supabase.rpc('get_ai_config', { p_key: 'gemini_model' });
-    const model = typeof modelCfg === 'string' ? modelCfg : 'gemini-2.5-flash';
-
-    // 2b. Gemini extraction (fallback when no contractor parse).
-    const geminiKey = Deno.env.get('GEMINI_API_KEY');
-    if (!geminiKey) {
+    // 2b. Fall through to OpenRouter / openai/gpt-4.1-mini. The merge below
+    //     takes contractor's value when present, LLM's otherwise.
+    const apiKey = Deno.env.get('OPENROUTER_API_KEY');
+    if (!apiKey) {
       await supabase.rpc('mark_inbound_processed', {
         p_inbound_id:  inboundId,
         p_status:      'error',
         p_parse:       null,
         p_delivery_id: null,
-        p_error:       'GEMINI_API_KEY not configured',
+        p_error:       'OPENROUTER_API_KEY not configured',
       });
-      return new Response('GEMINI_API_KEY missing', { status: 500 });
+      return new Response('OPENROUTER_API_KEY missing', { status: 500 });
     }
-    const out = await geminiExtract(row.raw_text, model, geminiKey);
-    parsed    = out.parsed;
-    geminiRaw = out.raw;
-    if (!parsed) {
+    const out = await openrouterExtract(row.raw_text, EXTRACTION_MODEL, apiKey);
+    extractionRaw = out.raw;
+    if (!out.parsed) {
       await supabase.rpc('mark_inbound_processed', {
         p_inbound_id:  inboundId,
         p_status:      'error',
-        p_parse:       { gemini: geminiRaw },
+        p_parse:       { extraction_raw: extractionRaw, extraction_model: EXTRACTION_MODEL, contractor_fields: contractorFields },
         p_delivery_id: null,
-        p_error:       'gemini extraction failed',
+        p_error:       'openrouter extraction failed',
       });
       return new Response('extraction failed', { status: 200 });
     }
+    // Merge: contractor's value wins where present, LLM fills the rest.
+    parsed = {
+      customer_name:  contractorFields.customer_name  ?? out.parsed.customer_name,
+      customer_phone: contractorFields.customer_phone ?? out.parsed.customer_phone,
+      raw_address:    contractorFields.raw_address    ?? out.parsed.raw_address,
+      product_name:   contractorFields.product_name   ?? out.parsed.product_name,
+      quantity:       contractorFields.quantity       ?? out.parsed.quantity,
+      customer_price: contractorFields.customer_price ?? out.parsed.customer_price,
+    };
+    source = Object.keys(contractorFields).length > 0 ? 'contractor+openrouter' : 'openrouter';
   }
 
-  // At this point `parsed` is guaranteed non-null — either from contractor or
-  // from Gemini (Gemini path returns early on null above).
-  const p = parsed!;
+  // `parsed` is now fully populated (contractor-only, merged, or LLM-only).
+  // The OpenRouter branch returned early on extraction failure.
+  const p = parsed;
   const customerName  = p.customer_name?.trim() || null;
   const customerPhone = normalizePhone(p.customer_phone);
   const rawAddress    = p.raw_address?.trim() || null;
@@ -360,12 +458,13 @@ Deno.serve(async (req) => {
     product:   productMatch,
     product_candidates: productCandidates,
     address,
-    source,                  // "contractor" | "gemini" — which pipeline produced `extracted`
+    source,                  // "contractor" | "contractor+openrouter" | "openrouter" — which pipeline produced `extracted`
     client_hint:   clientHint,    // null if contractor didn't supply one
     location_hint: locationHint,  // null if contractor didn't supply one
     agent_hint:    agentHintRaw,  // raw string from contractor, null if none
     agent_resolution: agentResolution, // { agent_id, reason } — for visibility in admin
-    gemini_extraction_raw: geminiRaw, // null on the contractor path
+    extraction_raw:   extractionRaw,                                  // null when source='contractor', LLM response body otherwise
+    extraction_model: source === 'contractor' ? null : EXTRACTION_MODEL,
   };
 
   const haveAllFields =
@@ -414,6 +513,35 @@ Deno.serve(async (req) => {
   });
 
   if (createErr) {
+    // bot_create_delivery signals "the contractor's bot re-forwarded this
+    // exact order to the same agent who already holds it" via a structured
+    // P0001 with hint={kind:'duplicate_same_agent', existing_delivery_id}.
+    // Don't treat it as an error — mark the inbound row as a duplicate of
+    // the existing delivery. No new row, no second agent involved.
+    //
+    // Gate on errcode P0001 AND the JSON hint shape, so an unrelated future
+    // exception path can't accidentally trigger this branch by emitting a
+    // hint that JSON-parses with a matching `kind` field.
+    let hint: any = null;
+    const isOurSignal = (createErr as any).code === 'P0001'
+                     && typeof (createErr as any).hint === 'string';
+    if (isOurSignal) {
+      try { hint = JSON.parse((createErr as any).hint); } catch { /* not our hint */ }
+    }
+    if (hint?.kind === 'duplicate_same_agent' && typeof hint.existing_delivery_id === 'string') {
+      await supabase.rpc('mark_inbound_processed', {
+        p_inbound_id:  inboundId,
+        p_status:      'duplicate',
+        p_parse:       parseResult,
+        p_delivery_id: hint.existing_delivery_id,
+        p_error:       null,
+      });
+      return new Response(JSON.stringify({ delivery_id: hint.existing_delivery_id, duplicate: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+
     console.error('bot_create_delivery failed', createErr);
     await supabase.rpc('mark_inbound_processed', {
       p_inbound_id:  inboundId,

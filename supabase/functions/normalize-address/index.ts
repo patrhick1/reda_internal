@@ -3,22 +3,51 @@
 //
 // Pipeline:
 //   1. Read enable_address_normalization flag. If off → confidence='none'.
-//   2. Trigram pre-check against locations.name + aliases. If clear winner,
-//      short-circuit (no API spend).
-//   3. Google Maps geocode → formatted_address + (lat,lon) for context.
-//   4. Gemini 2.5-flash → pick best location from candidates, return confidence.
+//   2. Substring/word-boundary pre-check against locations.name + aliases. If
+//      clear winner, short-circuit (no API spend).
+//   3. Google Maps geocode → formatted_address + location_type for context.
+//   4. google/gemini-2.5-flash via OpenRouter — pick best location from
+//      candidates, return confidence. Routed through OpenRouter (not Google's
+//      generativelanguage endpoint) so the call isn't capped at 20/day on the
+//      free tier. Same model, paid billing.
 //   5. Always write a row to address_match_log (delivery_id may be null).
 //
 // Returns:
 //   { match_log_id, matched_location_id, confidence, maps_response, gemini_response }
+//   (The `gemini_response` column name is historical — it now stores the
+//    OpenRouter chat-completion response. Model is still Gemini.)
 //
 // Deploy:  supabase functions deploy normalize-address
-// Secrets: GOOGLE_MAPS_API_KEY, GEMINI_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+// Secrets: GOOGLE_MAPS_API_KEY, OPENROUTER_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
-const PROMPT_VERSION = 'normalize-address-v1';
+const PROMPT_VERSION    = 'normalize-address-v2-gemini-2.5-flash-via-openrouter';
+const LLM_MODEL         = 'google/gemini-2.5-flash';
+
+// Hard cap on the OpenRouter request so a hung inference can't park the
+// caller forever. Gemini 2.5 Flash typically returns in <3s; 30s leaves
+// generous headroom while guaranteeing we always reach the error path.
+const REQUEST_TIMEOUT_MS = 30_000;
+
+// OpenAI-strict-style JSON schema for the location-pick output. OpenAI strict
+// mode requires every property in `required`; null location_id uses the
+// type-union expression.
+const PICK_SCHEMA = {
+  name:   'location_pick',
+  strict: true,
+  schema: {
+    type:                 'object',
+    additionalProperties: false,
+    required: ['location_id', 'confidence', 'reasoning'],
+    properties: {
+      location_id: { type: ['string', 'null'] },
+      confidence:  { type: 'string', enum: ['high', 'medium', 'low', 'none'] },
+      reasoning:   { type: 'string' },
+    },
+  },
+};
 
 type Confidence = 'high' | 'medium' | 'low' | 'none';
 
@@ -49,7 +78,18 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-async function geminiPickLocation(
+// Defensive: even with response_format=json_schema some providers wrap the
+// answer in markdown code fences. Strip them so JSON.parse doesn't choke.
+function stripJsonFences(s: string): string {
+  let t = s.trim();
+  if (t.startsWith('```')) {
+    t = t.replace(/^```(?:json|jsonc)?\s*\n?/i, '');
+    t = t.replace(/\n?```\s*$/, '');
+  }
+  return t.trim();
+}
+
+async function openrouterPickLocation(
   rawAddress: string,
   mapsFormatted: string | null,
   mapsLocationType: string | null,
@@ -92,50 +132,56 @@ Use confidence:
 - "low"    = weak signal, your best guess only.
 - "none"   = cannot identify, OR you recognize the address as outside Lagos.`;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const url = 'https://openrouter.ai/api/v1/chat/completions';
   const body = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: {
-      temperature: 0,
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: 'OBJECT',
-        properties: {
-          location_id: { type: 'STRING', nullable: true },
-          confidence:  { type: 'STRING', enum: ['high', 'medium', 'low', 'none'] },
-          reasoning:   { type: 'STRING' },
-        },
-        required: ['confidence'],
-      },
-    },
+    model,
+    messages:        [{ role: 'user', content: prompt }],
+    temperature:     0,
+    response_format: { type: 'json_schema', json_schema: PICK_SCHEMA },
   };
 
+  let res: Response;
   try {
-    const res = await fetch(url, {
+    res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        // Optional but encouraged by OpenRouter — surfaces this app in their
+        // dashboards and helps with rate-limit prioritisation.
+        'HTTP-Referer':  'https://reda.app',
+        'X-Title':       'Reda normalize-address',
+      },
+      body:   JSON.stringify(body),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
-    if (!res.ok) {
-      const errText = await res.text();
-      console.error('gemini error', res.status, errText);
-      return { raw: { _http_status: res.status, _err: errText, _prompt_version: PROMPT_VERSION }, pickedId: null, confidence: 'none' };
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'TimeoutError') {
+      console.error('openrouter pick timeout', { timeout_ms: REQUEST_TIMEOUT_MS, model });
+      return { raw: { error: 'request timeout', timeout_ms: REQUEST_TIMEOUT_MS, model, _prompt_version: PROMPT_VERSION }, pickedId: null, confidence: 'none' };
     }
-    const json = await res.json();
-    const text = json?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) return { raw: { ...json, _no_text: true, _prompt_version: PROMPT_VERSION }, pickedId: null, confidence: 'none' };
-    let parsed: any;
-    try { parsed = JSON.parse(text); } catch (e) { return { raw: { ...json, _parse_err: String(e), _prompt_version: PROMPT_VERSION }, pickedId: null, confidence: 'none' }; }
-    const validId = candidates.some((c) => c.id === parsed.location_id) ? parsed.location_id : null;
-    return {
-      raw: { ...json, _parsed: parsed, _prompt_version: PROMPT_VERSION },
-      pickedId: validId,
-      confidence: clampConfidence(parsed.confidence),
-    };
-  } catch (e) {
-    console.error('gemini fetch failed', e);
-    return { raw: { _fetch_threw: String(e), _prompt_version: PROMPT_VERSION }, pickedId: null, confidence: 'none' };
+    console.error('openrouter pick network error', err, { model });
+    return { raw: { error: String(err), model, _prompt_version: PROMPT_VERSION }, pickedId: null, confidence: 'none' };
   }
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error('openrouter pick error', res.status, errText);
+    return { raw: { _http_status: res.status, _err: errText, _prompt_version: PROMPT_VERSION, _model: model }, pickedId: null, confidence: 'none' };
+  }
+  const json = await res.json();
+  const text = json?.choices?.[0]?.message?.content;
+  if (typeof text !== 'string' || text.length === 0) {
+    return { raw: { ...json, _no_text: true, _prompt_version: PROMPT_VERSION, _model: model }, pickedId: null, confidence: 'none' };
+  }
+  let parsed: any;
+  try { parsed = JSON.parse(stripJsonFences(text)); }
+  catch (e) { return { raw: { ...json, _parse_err: String(e), _prompt_version: PROMPT_VERSION, _model: model }, pickedId: null, confidence: 'none' }; }
+  const validId = candidates.some((c) => c.id === parsed.location_id) ? parsed.location_id : null;
+  return {
+    raw: { ...json, _parsed: parsed, _prompt_version: PROMPT_VERSION, _model: model },
+    pickedId: validId,
+    confidence: clampConfidence(parsed.confidence),
+  };
 }
 
 Deno.serve(async (req) => {
@@ -210,7 +256,9 @@ Deno.serve(async (req) => {
       confidence = trgmWinner.score >= 0.8 ? 'high' : 'medium';
     }
 
-    // 2. If we don't have a clear winner, call Maps + Gemini.
+    // 2. If we don't have a clear winner, call Maps + LLM. The LLM is Gemini
+    //    2.5 Flash routed through OpenRouter so we're not capped at Google's
+    //    20-request-per-day free tier.
     if (confidence === 'none' || confidence === 'low') {
       const mapsKey = Deno.env.get('GOOGLE_MAPS_API_KEY');
       let formatted: string | null = null;
@@ -222,20 +270,16 @@ Deno.serve(async (req) => {
         locationType = top?.geometry?.location_type ?? null;
       }
 
-      // Model name from ai_config.
-      const { data: modelCfg } = await supabase.rpc('get_ai_config', { p_key: 'gemini_model' });
-      const model = (typeof modelCfg === 'string' ? modelCfg : 'gemini-2.5-flash');
-
-      const geminiKey = Deno.env.get('GEMINI_API_KEY');
-      if (geminiKey) {
-        const gem = await geminiPickLocation(rawAddress, formatted, locationType, candidates, model, geminiKey);
-        if (gem) {
-          geminiResponse = gem.raw;
-          if (gem.pickedId) {
-            matchedLocationId = gem.pickedId;
-            confidence = gem.confidence;
+      const openrouterKey = Deno.env.get('OPENROUTER_API_KEY');
+      if (openrouterKey) {
+        const pick = await openrouterPickLocation(rawAddress, formatted, locationType, candidates, LLM_MODEL, openrouterKey);
+        if (pick) {
+          geminiResponse = pick.raw;
+          if (pick.pickedId) {
+            matchedLocationId = pick.pickedId;
+            confidence = pick.confidence;
           } else {
-            confidence = gem.confidence === 'none' ? 'none' : confidence;
+            confidence = pick.confidence === 'none' ? 'none' : confidence;
           }
         }
       }
