@@ -28,6 +28,7 @@ import { AppBar, Avatar, Button, Card, Empty, Hint, Icon, StatusPill } from '@/c
 import { colors, fonts, TERMINAL_STATUSES } from '@/lib/theme';
 import {
   canClaimFollowup,
+  canCorrectDeliveryLocation,
   canDeleteDelivery,
   canDeleteDeliveryByStatus,
   canEditDelivery,
@@ -49,6 +50,7 @@ import { FollowupClaimBanner } from '@/components/delivery/FollowupClaimBanner';
 import { HINTS } from '@/hints/registry';
 import { formatDateTime, formatNaira } from '@/lib/format';
 import { MarkDeliveredSheet } from '@/components/sheets/MarkDeliveredSheet';
+import { CorrectLocationSheet } from '@/components/sheets/CorrectLocationSheet';
 import { UpdateStatusSheet } from '@/components/sheets/UpdateStatusSheet';
 import { HandoffToSubAgentSheet } from '@/components/sheets/HandoffToSubAgentSheet';
 import { DeleteDeliverySheet } from '@/components/sheets/DeleteDeliverySheet';
@@ -72,6 +74,7 @@ export function DeliveryDetail() {
   const [updateOpen, setUpdateOpen] = useState(false);
   const [handoffOpen, setHandoffOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [correctLocOpen, setCorrectLocOpen] = useState(false);
   const [callBusy, setCallBusy] = useState(false);
   // Optimistic status + (when queued) the job ID to watch. The veil clears
   // when EITHER the server-confirmed status matches (direct-RPC paths) OR
@@ -446,6 +449,36 @@ export function DeliveryDetail() {
               {d.location_name ?? 'Unmatched location'}
             </Text>
           </View>
+          {/* Post-delivery location correction. Delivered rows are locked out
+              of the Edit screen, but a wrong location means charged_snapshot
+              and agent_payment_snapshot were frozen at the wrong rate and feed
+              reconciliation. Admin-only; the dedicated correct_delivery_location
+              RPC re-snapshots both and audit-logs the change. */}
+          {canCorrectDeliveryLocation(user.role, status) ? (
+            <TouchableOpacity
+              onPress={() => setCorrectLocOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Correct delivery location"
+              style={{
+                marginTop: 12,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                paddingVertical: 10,
+                paddingHorizontal: 14,
+                borderRadius: 999,
+                borderWidth: 1.5,
+                borderColor: colors.black,
+                backgroundColor: colors.white,
+              }}
+            >
+              <Icon name="mapPin" size={15} color={colors.black} />
+              <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.black }}>
+                Correct location
+              </Text>
+            </TouchableOpacity>
+          ) : null}
         </Card>
 
         {/* Original WhatsApp message (collapsed by default; renders nothing
@@ -766,6 +799,18 @@ export function DeliveryDetail() {
         isAdmin={user.role === 'admin'}
         onClose={() => setUpdateOpen(false)}
         onCommitted={onCommitted}
+      />
+      <CorrectLocationSheet
+        open={correctLocOpen}
+        deliveryId={d.id ?? null}
+        currentLocationId={d.location_id ?? null}
+        currentLocationName={d.location_name ?? null}
+        onClose={() => setCorrectLocOpen(false)}
+        onCorrected={() => {
+          setCorrectLocOpen(false);
+          deliveryQ.reload();
+          historyQ.reload();
+        }}
       />
       <HandoffToSubAgentSheet
         open={handoffOpen}

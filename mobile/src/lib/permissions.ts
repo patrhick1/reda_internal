@@ -299,6 +299,17 @@ export function canUnassignDelivery(role: Role, currentStatus: string | null): b
   return PRE_DELIVERY_STATUSES.has(currentStatus ?? 'pending');
 }
 
+/** Correct the `location_id` on an already-DELIVERED row — re-snapshots
+ *  charged_snapshot + agent_payment_snapshot from the new location's rate.
+ *  Admin only (it mutates frozen money on a closed row, so it sits tighter
+ *  than the ops-wide edit gate) and `delivered` only (pre-delivery rows use
+ *  the normal Edit screen; other terminal states don't feed reconciliation).
+ *  Server anchor: `correct_delivery_location` RPC checks is_admin() and
+ *  current_status = 'delivered'. */
+export function canCorrectDeliveryLocation(role: Role, currentStatus: string | null): boolean {
+  return role === 'admin' && currentStatus === 'delivered';
+}
+
 /** Resolve (fix-and-create or discard) a needs_review bot inbound row.
  *  Operational set.
  *  Server anchor: `resolve_inbound_to_delivery` / `discard_inbound` RPCs. */

@@ -487,6 +487,7 @@ export type Database = {
           agent_payment_snapshot: number | null
           assigned_agent_id: string | null
           bot_raw_message: string | null
+          cash_pos_fee_snapshot: number | null
           charged_snapshot: number | null
           client_id: string
           created_at: string
@@ -517,6 +518,7 @@ export type Database = {
           agent_payment_snapshot?: number | null
           assigned_agent_id?: string | null
           bot_raw_message?: string | null
+          cash_pos_fee_snapshot?: number | null
           charged_snapshot?: number | null
           client_id: string
           created_at?: string
@@ -547,6 +549,7 @@ export type Database = {
           agent_payment_snapshot?: number | null
           assigned_agent_id?: string | null
           bot_raw_message?: string | null
+          cash_pos_fee_snapshot?: number | null
           charged_snapshot?: number | null
           client_id?: string
           created_at?: string
@@ -686,6 +689,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_client_notifications_status_history_id_fkey"
+            columns: ["status_history_id"]
+            isOneToOne: true
+            referencedRelation: "deliveries_admin"
+            referencedColumns: ["latest_history_id"]
+          },
+          {
+            foreignKeyName: "delivery_client_notifications_status_history_id_fkey"
+            columns: ["status_history_id"]
+            isOneToOne: true
+            referencedRelation: "deliveries_safe"
+            referencedColumns: ["latest_history_id"]
           },
           {
             foreignKeyName: "delivery_client_notifications_status_history_id_fkey"
@@ -1044,6 +1061,62 @@ export type Database = {
         }
         Relationships: []
       }
+      mybot_inbound_messages: {
+        Row: {
+          created_at: string
+          error_text: string | null
+          from_phone: string | null
+          id: string
+          message_id: string
+          paired_contractor_id: string | null
+          parse_result: Json | null
+          parse_status: string
+          processed_at: string | null
+          raw_payload: Json
+          raw_text: string
+          received_at: string
+          text_fingerprint: string | null
+        }
+        Insert: {
+          created_at?: string
+          error_text?: string | null
+          from_phone?: string | null
+          id?: string
+          message_id: string
+          paired_contractor_id?: string | null
+          parse_result?: Json | null
+          parse_status?: string
+          processed_at?: string | null
+          raw_payload: Json
+          raw_text: string
+          received_at?: string
+          text_fingerprint?: string | null
+        }
+        Update: {
+          created_at?: string
+          error_text?: string | null
+          from_phone?: string | null
+          id?: string
+          message_id?: string
+          paired_contractor_id?: string | null
+          parse_result?: Json | null
+          parse_status?: string
+          processed_at?: string | null
+          raw_payload?: Json
+          raw_text?: string
+          received_at?: string
+          text_fingerprint?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mybot_inbound_messages_paired_contractor_id_fkey"
+            columns: ["paired_contractor_id"]
+            isOneToOne: false
+            referencedRelation: "bot_inbound_messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       product_catalog: {
         Row: {
           client_id: string
@@ -1313,6 +1386,9 @@ export type Database = {
           customer_price: number | null
           deleted_at: string | null
           id: string | null
+          latest_changed_at: string | null
+          latest_history_id: string | null
+          latest_notified: boolean | null
           location_id: string | null
           margin: number | null
           paid: number | null
@@ -1324,62 +1400,6 @@ export type Database = {
           raw_address: string | null
           scheduled_date: string | null
           updated_at: string | null
-        }
-        Insert: {
-          agent_payment_snapshot?: number | null
-          assigned_agent_id?: string | null
-          bot_raw_message?: string | null
-          charged_snapshot?: number | null
-          client_id?: string | null
-          created_at?: string | null
-          created_by_user_id?: string | null
-          created_date?: string | null
-          created_via?: string | null
-          current_status?: string | null
-          customer_name?: string | null
-          customer_phone?: string | null
-          customer_price?: number | null
-          deleted_at?: string | null
-          id?: string | null
-          location_id?: string | null
-          margin?: never
-          paid?: number | null
-          parent_delivery_id?: string | null
-          payment_method?: string | null
-          product_catalog_id?: string | null
-          quantity_delivered?: number | null
-          quantity_ordered?: number | null
-          raw_address?: string | null
-          scheduled_date?: string | null
-          updated_at?: string | null
-        }
-        Update: {
-          agent_payment_snapshot?: number | null
-          assigned_agent_id?: string | null
-          bot_raw_message?: string | null
-          charged_snapshot?: number | null
-          client_id?: string | null
-          created_at?: string | null
-          created_by_user_id?: string | null
-          created_date?: string | null
-          created_via?: string | null
-          current_status?: string | null
-          customer_name?: string | null
-          customer_phone?: string | null
-          customer_price?: number | null
-          deleted_at?: string | null
-          id?: string | null
-          location_id?: string | null
-          margin?: never
-          paid?: number | null
-          parent_delivery_id?: string | null
-          payment_method?: string | null
-          product_catalog_id?: string | null
-          quantity_delivered?: number | null
-          quantity_ordered?: number | null
-          raw_address?: string | null
-          scheduled_date?: string | null
-          updated_at?: string | null
         }
         Relationships: [
           {
@@ -1462,6 +1482,9 @@ export type Database = {
           customer_phone: string | null
           customer_price: number | null
           id: string | null
+          latest_changed_at: string | null
+          latest_history_id: string | null
+          latest_notified: boolean | null
           location_id: string | null
           paid: number | null
           parent_delivery_id: string | null
@@ -1472,56 +1495,6 @@ export type Database = {
           raw_address: string | null
           scheduled_date: string | null
           updated_at: string | null
-        }
-        Insert: {
-          agent_payment_snapshot?: never
-          assigned_agent_id?: string | null
-          bot_raw_message?: string | null
-          client_id?: string | null
-          created_at?: string | null
-          created_by_user_id?: string | null
-          created_date?: string | null
-          created_via?: string | null
-          current_status?: string | null
-          customer_name?: string | null
-          customer_phone?: string | null
-          customer_price?: number | null
-          id?: string | null
-          location_id?: string | null
-          paid?: number | null
-          parent_delivery_id?: string | null
-          payment_method?: string | null
-          product_catalog_id?: string | null
-          quantity_delivered?: number | null
-          quantity_ordered?: number | null
-          raw_address?: string | null
-          scheduled_date?: string | null
-          updated_at?: string | null
-        }
-        Update: {
-          agent_payment_snapshot?: never
-          assigned_agent_id?: string | null
-          bot_raw_message?: string | null
-          client_id?: string | null
-          created_at?: string | null
-          created_by_user_id?: string | null
-          created_date?: string | null
-          created_via?: string | null
-          current_status?: string | null
-          customer_name?: string | null
-          customer_phone?: string | null
-          customer_price?: number | null
-          id?: string | null
-          location_id?: string | null
-          paid?: number | null
-          parent_delivery_id?: string | null
-          payment_method?: string | null
-          product_catalog_id?: string | null
-          quantity_delivered?: number | null
-          quantity_ordered?: number | null
-          raw_address?: string | null
-          scheduled_date?: string | null
-          updated_at?: string | null
         }
         Relationships: [
           {
@@ -1625,6 +1598,7 @@ export type Database = {
           agent_payment_snapshot: number | null
           assigned_agent_id: string | null
           bot_raw_message: string | null
+          cash_pos_fee_snapshot: number | null
           charged_snapshot: number | null
           client_id: string
           created_at: string
@@ -1664,28 +1638,18 @@ export type Database = {
         Args: { p_delivery_id: string }
         Returns: undefined
       }
-      _notify_admins_eod_summary:
-        | {
-            Args: {
-              p_cap_hit_count: number
-              p_capped_ids: string[]
-              p_for_date: string
-              p_race_lost_count: number
-              p_same_agent_count: number
-            }
-            Returns: undefined
-          }
-        | {
-            Args: {
-              p_cap_hit_count: number
-              p_capped_ids: string[]
-              p_for_date: string
-              p_policy_cancel_count?: number
-              p_race_lost_count: number
-              p_same_agent_count: number
-            }
-            Returns: undefined
-          }
+      _notify_admins_eod_summary: {
+        Args: {
+          p_cap_hit_count: number
+          p_capped_ids: string[]
+          p_for_date: string
+          p_policy_cancel_count?: number
+          p_race_lost_count: number
+          p_same_agent_count: number
+          p_sibling_resolved_count?: number
+        }
+        Returns: undefined
+      }
       _open_sibling_agents: {
         Args: { p_delivery_id: string }
         Returns: {
@@ -1739,10 +1703,10 @@ export type Database = {
           agent_id: string
           agent_name: string
           deliveries_count: number
-          total_earnings: number
           total_collected: number
-          total_remit: number
+          total_earnings: number
           total_quantity: number
+          total_remit: number
         }[]
       }
       agent_pending_workload: { Args: { p_agent_id: string }; Returns: number }
@@ -1763,6 +1727,23 @@ export type Database = {
           p_scheduled_date?: string
         }
         Returns: string
+      }
+      bulk_assign_deliveries: {
+        Args: { p_agent_id: string; p_delivery_ids: string[] }
+        Returns: number
+      }
+      bulk_change_delivery_status: {
+        Args: {
+          p_client_uuid: string
+          p_delivery_ids: string[]
+          p_reason: string
+          p_to_status: string
+        }
+        Returns: Json
+      }
+      bulk_delete_deliveries: {
+        Args: { p_delivery_ids: string[]; p_reason: string }
+        Returns: Json
       }
       cancel_call: {
         Args: { p_call_id: string }
@@ -1823,6 +1804,7 @@ export type Database = {
         Args: { p_client_id: string; p_from: string; p_to: string }
         Returns: {
           agent_name: string
+          cash_pos_fee: number
           customer_name: string
           customer_price: number
           delivery_id: string
@@ -1843,12 +1825,17 @@ export type Database = {
           client_name: string
           deliveries_count: number
           outstanding: number
+          total_cash_pos_fee: number
           total_customer_price: number
           total_paid: number
           total_quantity: number
           total_reda_fee: number
           total_remit: number
         }[]
+      }
+      correct_delivery_location: {
+        Args: { p_delivery_id: string; p_location_id: string; p_reason: string }
+        Returns: undefined
       }
       create_app_user: {
         Args: {
@@ -1978,6 +1965,10 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      delete_delivery: {
+        Args: { p_delivery_id: string; p_reason: string }
+        Returns: undefined
       }
       discard_inbound: {
         Args: { p_inbound_id: string; p_reason: string }
@@ -2217,6 +2208,10 @@ export type Database = {
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
+      unassign_delivery: {
+        Args: { p_delivery_id: string; p_reason: string }
+        Returns: undefined
+      }
       update_client:
         | {
             Args: {

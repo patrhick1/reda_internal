@@ -454,11 +454,30 @@ export async function reassignToSubAgent(
  *  not null) so the previous assignee is not notified — they just stop
  *  seeing the row in their list on next refresh. */
 export async function unassignDelivery(deliveryId: string, reason: string): Promise<void> {
-  // @ts-expect-error — RPC added 2026-06-05 in scripts/unassign-delivery.sql,
-  // not yet in database.gen.ts. Will resolve after the next `npm run gen:types`
-  // once the SQL has been applied.
   const { error } = await supabase.rpc('unassign_delivery', {
     p_delivery_id: deliveryId,
+    p_reason: reason,
+  });
+  if (error) throw error;
+}
+
+/** Admin: correct the location on an already-DELIVERED row. The server re-runs
+ *  effective_rate(new_location, client, agent) and re-snapshots both
+ *  charged_snapshot (Reda's fee) and agent_payment_snapshot (the agent's
+ *  earning) — the normal Edit path refuses delivered rows, and these snapshots
+ *  feed reconciliation directly, so a wrong location silently mis-bills both
+ *  sides until corrected here. Reason is required and prefixed with
+ *  'location_correction:' in the audit_log. Server raises on non-admin
+ *  callers, non-delivered / deleted rows, an unchanged location, or a target
+ *  location with no active rate card; the caller surfaces the raise text. */
+export async function correctDeliveryLocation(
+  deliveryId: string,
+  locationId: string,
+  reason: string,
+): Promise<void> {
+  const { error } = await supabase.rpc('correct_delivery_location', {
+    p_delivery_id: deliveryId,
+    p_location_id: locationId,
     p_reason: reason,
   });
   if (error) throw error;
@@ -475,9 +494,6 @@ export async function bulkAssignDeliveries(
   deliveryIds: string[],
   agentId: string,
 ): Promise<number> {
-  // @ts-expect-error — RPC added 2026-05-30 in scripts/manual-rollover-
-  // assignment.sql, not yet in database.gen.ts. Will resolve after the
-  // next `npm run gen:types` once the SQL has been applied.
   const { data, error } = await supabase.rpc('bulk_assign_deliveries', {
     p_delivery_ids: deliveryIds,
     p_agent_id: agentId,
@@ -490,8 +506,6 @@ export async function bulkAssignDeliveries(
  *  FINAL_STATUSES gate) and on missing rows; idempotent on already-deleted
  *  rows (no-op return). Reason is required. */
 export async function deleteDelivery(deliveryId: string, reason: string): Promise<void> {
-  // @ts-expect-error — RPC added in scripts/delete-deliveries.sql, not yet in
-  // database.gen.ts. Resolves after the next `npm run gen:types`.
   const { error } = await supabase.rpc('delete_delivery', {
     p_delivery_id: deliveryId,
     p_reason: reason,
@@ -506,7 +520,6 @@ export async function bulkDeleteDeliveries(
   deliveryIds: string[],
   reason: string,
 ): Promise<{ deletedCount: number; skippedCount: number }> {
-  // @ts-expect-error — RPC added in scripts/delete-deliveries.sql.
   const { data, error } = await supabase.rpc('bulk_delete_deliveries', {
     p_delivery_ids: deliveryIds,
     p_reason: reason,
@@ -530,7 +543,6 @@ export async function bulkChangeStatus(
   reason: string,
   clientUuid: string,
 ): Promise<{ changedCount: number; skippedCount: number }> {
-  // @ts-expect-error — RPC added in scripts/delete-deliveries.sql.
   const { data, error } = await supabase.rpc('bulk_change_delivery_status', {
     p_client_uuid: clientUuid,
     p_delivery_ids: deliveryIds,
