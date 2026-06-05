@@ -246,6 +246,20 @@ export function ProfileScreen() {
           <AboutRow />
         </Card>
 
+        {/* Admin tools — feature flags live behind an admin-only `set_feature_flag`
+            RPC, and this row only renders in the admin context, so the
+            `/(admin)/flags` push is always valid. */}
+        {user.role === 'admin' ? (
+          <Card style={{ padding: 0 }}>
+            <ProfileRow
+              icon="sliders"
+              label="Feature flags"
+              value=""
+              onPress={() => router.push('/(admin)/flags')}
+            />
+          </Card>
+        ) : null}
+
         <Button variant="destructive" full icon="logout" onPress={signOut}>
           Sign out
         </Button>

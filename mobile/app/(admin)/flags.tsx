@@ -46,7 +46,7 @@ export default function Flags() {
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <AppBar
         title="Feature flags"
-        subtitle="Runtime toggles for the bot pipeline"
+        subtitle="Turn features on or off"
         onBack={() => router.back()}
       />
       <ScrollView
