@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { Banner, Icon, Input, Sheet, StatusPill } from '@/components/ui';
-import { colors, fonts, STATUS_META } from '@/lib/theme';
+import { colors, fonts, STATUS_HIDDEN_FROM_PICKER, STATUS_META } from '@/lib/theme';
 import {
   bulkChangeStatus,
   listStatusDefs,
@@ -16,14 +16,15 @@ import { errorMessage } from '@/lib/errors';
  *  status per row and reports succeeded/skipped counts; this sheet stages
  *  the picker + reason and surfaces the count via the parent's toast.
  *
- *  Two statuses are excluded from the picker even though the DB allows them:
- *    - delivered: requires per-row quantity + paid + payment_method that
+ *  Excluded from the picker even though the DB allows them:
+ *    - `delivered`: requires per-row quantity + paid + payment_method that
  *      the bulk wrapper can't supply, so every row would skip.
- *    - rolled_over: system-managed by the rollover machinery; bulk-setting
- *      it would bypass the parent/child mint.
- *  Everything else (cancelled, available, all soft-fails, etc.) is fair game
- *  — the server's per-row state machine enforces requires_admin and the
- *  transition table. */
+ *    - Anything in STATUS_HIDDEN_FROM_PICKER (system-managed statuses like
+ *      rolled_over / unserious, plus picked_up / waybilled / deferred_to_client
+ *      that we keep out of human pickers — see theme.ts).
+ *  Everything else (cancelled, available, soft-fails, agent_cancelled, etc.)
+ *  is fair game — the server's per-row state machine enforces requires_admin
+ *  and the transition table. */
 export function BulkStatusSheet({
   open,
   selected,
@@ -54,7 +55,9 @@ export function BulkStatusSheet({
   }, [open]);
 
   const options = useMemo(() => {
-    return (defsQ.data ?? []).filter((d) => d.status !== 'delivered' && d.status !== 'rolled_over');
+    return (defsQ.data ?? []).filter(
+      (d) => d.status !== 'delivered' && !STATUS_HIDDEN_FROM_PICKER.has(d.status),
+    );
   }, [defsQ.data]);
 
   const count = selected.length;

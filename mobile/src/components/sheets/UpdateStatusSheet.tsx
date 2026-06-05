@@ -1,7 +1,14 @@
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { Banner, Icon, Input, Sheet, StatusPill } from '@/components/ui';
-import { colors, fonts, FINAL_STATUSES, STATUS_META, TERMINAL_STATUSES } from '@/lib/theme';
+import {
+  colors,
+  fonts,
+  FINAL_STATUSES,
+  STATUS_HIDDEN_FROM_PICKER,
+  STATUS_META,
+  TERMINAL_STATUSES,
+} from '@/lib/theme';
 import {
   listStatusDefs,
   listTransitionsFrom,
@@ -52,9 +59,12 @@ export function UpdateStatusSheet({
   const enqueueStatus = useEnqueueChangeStatus();
   const enqueueFlag = useEnqueueFlagDelivery();
 
-  // Filter out 'delivered' — that has its own sheet.
+  // Filter out 'delivered' (has its own sheet) and any status in
+  // STATUS_HIDDEN_FROM_PICKER (system-managed or non-pickable workflows).
   const options = useMemo(() => {
-    return (transitionsQ.data ?? []).filter((t) => t.to_status !== 'delivered');
+    return (transitionsQ.data ?? []).filter(
+      (t) => t.to_status !== 'delivered' && !STATUS_HIDDEN_FROM_PICKER.has(t.to_status),
+    );
   }, [transitionsQ.data]);
 
   function reset() {

@@ -147,6 +147,22 @@ export const TERMINAL_STATUSES = new Set<string>([...STATUS_GROUPS.done, ...STAT
  *  contact admin. SQL anchor: scripts/open-safe-terminal-revert.sql. */
 export const FINAL_STATUSES = new Set<string>(['delivered', 'rolled_over']);
 
+/** Statuses that should never appear in any user-driven status picker — the
+ *  system still uses them (rolled_over via EOD, unserious via the 3-strike
+ *  cap, picked_up / waybilled / deferred_to_client via internal workflows)
+ *  but Uzo wants the Update Status / Bulk Status dropdowns kept to the
+ *  options that actually make sense to a human picking from a list. The DB
+ *  transitions table is unchanged so server-side machinery keeps working.
+ *  Both `UpdateStatusSheet` and `BulkStatusSheet` filter their options
+ *  through this set. */
+export const STATUS_HIDDEN_FROM_PICKER = new Set<string>([
+  'unserious',
+  'rolled_over',
+  'deferred_to_client',
+  'picked_up',
+  'waybilled',
+]);
+
 export function statusBucket(s: string | null | undefined): keyof typeof STATUS_GROUPS {
   if (!s) return 'active';
   for (const k of Object.keys(STATUS_GROUPS) as (keyof typeof STATUS_GROUPS)[]) {
