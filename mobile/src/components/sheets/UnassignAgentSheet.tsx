@@ -94,9 +94,7 @@ export function UnassignAgentSheet({
               <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.black }}>
                 {agentName}
               </Text>
-              <Text
-                style={{ fontFamily: fonts.medium, fontSize: 11, color: colors.textSecondary }}
-              >
+              <Text style={{ fontFamily: fonts.medium, fontSize: 11, color: colors.textSecondary }}>
                 will be unassigned
               </Text>
             </View>

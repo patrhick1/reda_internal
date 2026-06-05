@@ -216,9 +216,7 @@ export const STATUS_AUTO_ISSUE: Record<string, IssueType> = {
  *  the underlying delivery; surfacing the auto-seeded message thread there
  *  too would just double-count the same row. Derived (not hardcoded) so that
  *  if STATUS_AUTO_ISSUE grows, the home filter narrows automatically. */
-const AUTO_SEEDED_ISSUE_TYPES = new Set<IssueType>(
-  Object.values(STATUS_AUTO_ISSUE) as IssueType[],
-);
+const AUTO_SEEDED_ISSUE_TYPES = new Set<IssueType>(Object.values(STATUS_AUTO_ISSUE) as IssueType[]);
 export const ACTIONABLE_ISSUE_TYPES: IssueType[] = (
   Object.keys(ISSUE_LABELS) as IssueType[]
 ).filter((t) => !AUTO_SEEDED_ISSUE_TYPES.has(t));

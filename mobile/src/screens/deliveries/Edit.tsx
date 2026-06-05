@@ -251,7 +251,9 @@ export default function EditDeliveryScreen() {
             <View style={{ marginTop: 8, gap: 10 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <Avatar user={{ display_name: d.assigned_agent_name ?? '' }} size={28} />
-                <Text style={{ flex: 1, fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>
+                <Text
+                  style={{ flex: 1, fontFamily: fonts.bold, fontSize: 14, color: colors.black }}
+                >
                   {d.assigned_agent_name ?? 'Assigned'}
                 </Text>
               </View>
@@ -281,11 +283,9 @@ export default function EditDeliveryScreen() {
                   Unassign agent
                 </Text>
               </Pressable>
-              <Text
-                style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary }}
-              >
-                Moves this delivery back to the Unassigned bucket. The current rider stops seeing
-                it on next refresh; you can reassign anytime.
+              <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary }}>
+                Moves this delivery back to the Unassigned bucket. The current rider stops seeing it
+                on next refresh; you can reassign anytime.
               </Text>
             </View>
           </Card>
