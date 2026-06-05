@@ -8,7 +8,9 @@ import { useCurrentUser } from '@/hooks/useAuth';
 import { listDeliveries, siblingGroupKey, type DeliveryRow } from '@/services/deliveries';
 import { listBotInbound } from '@/services/bot';
 import { listAvailableOrders } from '@/services/available-orders';
+import { listOpenIssuesForOps } from '@/services/delivery-messages';
 import { AppBar, Card, FAB, Icon } from '@/components/ui';
+import { IssuesAttentionBlock } from '@/components/delivery/IssuesAttentionBlock';
 import { colors, fonts, statusBucket } from '@/lib/theme';
 
 type OpsBasePath = '/(dispatcher)';
@@ -29,12 +31,17 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
   const deliveriesQ = useAsync(() => listDeliveries(user.role), [user.role]);
   const reviewQ = useAsync(() => listBotInbound('needs_review', 100), []);
   const availableQ = useAsync(() => listAvailableOrders(), []);
+  // Actionable agent-flagged issues — wrong_address / payment_dispute /
+  // product_issue / other. Auto-seeded cant_reach_client threads are filtered
+  // out server-side so this card doesn't double up with the soft-fail count.
+  const issuesQ = useAsync(() => listOpenIssuesForOps(), []);
 
   useFocusEffect(
     useCallback(() => {
       deliveriesQ.reload();
       reviewQ.reload();
       availableQ.reload();
+      issuesQ.reload();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []),
   );
@@ -43,6 +50,7 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
   const stats = useMemo(() => bucketCounts(deliveries), [deliveries]);
   const reviewCount = (reviewQ.data ?? []).length;
   const unassignedCount = deliveries.filter((d) => !d.assigned_agent_id).length;
+  const openIssues = issuesQ.data ?? [];
   const availableRows = useMemo(() => availableQ.data ?? [], [availableQ.data]);
   const availableAgents = useMemo(
     () => new Set(availableRows.map((r) => r.agent_id)).size,
@@ -113,6 +121,21 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
             <Legend label="Closed" n={stats.closed} color={colors.closed} />
           </View>
         </Card>
+
+        {/* Open agent-flagged issues — same card admin home shows. Renders
+            only when there's something actionable so the dashboard stays
+            tight when ops is caught up. */}
+        {openIssues.length > 0 ? (
+          <IssuesAttentionBlock
+            issues={openIssues}
+            onOpen={(deliveryId) =>
+              router.push({
+                pathname: `${basePath}/deliveries/[id]` as `${OpsBasePath}/deliveries/[id]`,
+                params: { id: deliveryId },
+              })
+            }
+          />
+        ) : null}
 
         {/* Needs review (black CTA) */}
         {reviewCount > 0 || unassignedCount > 0 ? (
