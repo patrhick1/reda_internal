@@ -445,6 +445,25 @@ export async function reassignToSubAgent(
   if (error) throw error;
 }
 
+/** Admin/dispatcher/rep: clear assigned_agent_id on a non-terminal delivery,
+ *  moving it back to the Unassigned bucket. Reason is required and prefixed
+ *  with 'unassign:' in the audit_log so consumers can filter for unassign
+ *  events. Server raises on terminal / deleted / already-unassigned rows;
+ *  the caller surfaces the raise text via the sheet's error banner. The
+ *  assignment-push trigger does NOT fire on unassign (it gates on new agent
+ *  not null) so the previous assignee is not notified — they just stop
+ *  seeing the row in their list on next refresh. */
+export async function unassignDelivery(deliveryId: string, reason: string): Promise<void> {
+  // @ts-expect-error — RPC added 2026-06-05 in scripts/unassign-delivery.sql,
+  // not yet in database.gen.ts. Will resolve after the next `npm run gen:types`
+  // once the SQL has been applied.
+  const { error } = await supabase.rpc('unassign_delivery', {
+    p_delivery_id: deliveryId,
+    p_reason: reason,
+  });
+  if (error) throw error;
+}
+
 /** Admin/dispatcher bulk reassign: set the assigned agent on every supplied
  *  delivery in a single round-trip. Terminal / deleted rows and rows already
  *  on the target agent are silently skipped server-side. Returns the count

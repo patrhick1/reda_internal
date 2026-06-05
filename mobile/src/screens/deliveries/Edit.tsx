@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   Text,
   View,
@@ -17,14 +18,15 @@ import {
   updateDeliveryFields,
   type UpdateDeliveryFieldsPatch,
 } from '@/services/deliveries';
-import { canEditDelivery } from '@/lib/permissions';
-import { AppBar, Banner, Button, Card, Empty } from '@/components/ui';
+import { canEditDelivery, canUnassignDelivery } from '@/lib/permissions';
+import { AppBar, Avatar, Banner, Button, Card, Empty, Icon } from '@/components/ui';
 import {
   DeliveryFieldsForm,
   MissingFieldsBanner,
   type DeliveryFormState,
   type FormValidation,
 } from './DeliveryFieldsForm';
+import { UnassignAgentSheet } from '@/components/sheets/UnassignAgentSheet';
 import { colors, fonts } from '@/lib/theme';
 import { errorMessage } from '@/lib/errors';
 
@@ -52,6 +54,7 @@ export default function EditDeliveryScreen() {
   const [validation, setValidation] = useState<FormValidation>({ isValid: false, missing: [] });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [unassignSheetOpen, setUnassignSheetOpen] = useState(false);
 
   const handleFormChange = useCallback((s: DeliveryFormState, v: FormValidation) => {
     setState(s);
@@ -234,6 +237,59 @@ export default function EditDeliveryScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <DeliveryFieldsForm initial={initial} onChange={handleFormChange} />
+        {/* Explicit unassign action. The agent picker above is set up to send
+            null to update_delivery_fields, but the server-side `coalesce(p_x,
+            v_old.x)` pattern silently preserves the existing agent on that
+            path — clearing the picker doesn't actually clear the assignment.
+            This card is the supported way to move a row back to Unassigned,
+            backed by the dedicated `unassign_delivery` RPC (audit-logged with
+            a required reason). Hidden when there's nothing to unassign or the
+            viewer lacks permission. */}
+        {d.assigned_agent_id && canUnassignDelivery(user.role, d.current_status) ? (
+          <Card>
+            <Text style={kicker}>Assignment</Text>
+            <View style={{ marginTop: 8, gap: 10 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Avatar user={{ display_name: d.assigned_agent_name ?? '' }} size={28} />
+                <Text style={{ flex: 1, fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>
+                  {d.assigned_agent_name ?? 'Assigned'}
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => setUnassignSheetOpen(true)}
+                disabled={submitting}
+                accessibilityRole="button"
+                accessibilityLabel={`Unassign ${d.assigned_agent_name ?? 'agent'}`}
+                style={({ pressed }) => [
+                  {
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    paddingVertical: 12,
+                    paddingHorizontal: 16,
+                    borderRadius: 999,
+                    borderWidth: 1.5,
+                    borderColor: colors.red,
+                    backgroundColor: colors.white,
+                  },
+                  pressed && !submitting && { opacity: 0.85 },
+                ]}
+              >
+                <Icon name="x" size={16} color={colors.red} />
+                <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.red }}>
+                  Unassign agent
+                </Text>
+              </Pressable>
+              <Text
+                style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary }}
+              >
+                Moves this delivery back to the Unassigned bucket. The current rider stops seeing
+                it on next refresh; you can reassign anytime.
+              </Text>
+            </View>
+          </Card>
+        ) : null}
         {error ? (
           <Banner tone="error" icon="alert">
             {error}
@@ -275,6 +331,34 @@ export default function EditDeliveryScreen() {
           </Button>
         </View>
       </View>
+
+      <UnassignAgentSheet
+        open={unassignSheetOpen}
+        deliveryId={d.id ?? null}
+        agentName={d.assigned_agent_name}
+        onClose={() => setUnassignSheetOpen(false)}
+        onUnassigned={() => {
+          setUnassignSheetOpen(false);
+          // DeliveryFieldsForm captures `initial` once at mount, so a Reload
+          // here would leave the form's internal `assignedAgentId` pointing at
+          // the now-gone agent — the next Save would re-assign the row. Mirror
+          // the save flow: drop the lock, navigate back. Admin can re-open if
+          // they need to fix other fields; the row will reload with
+          // assigned_agent_id=null and the assignment card will hide.
+          void lock.release().catch(() => {
+            /* swallow — server expires the lock either way */
+          });
+          router.back();
+        }}
+      />
     </KeyboardAvoidingView>
   );
 }
+
+const kicker = {
+  fontFamily: fonts.bold,
+  fontSize: 11,
+  color: colors.textSecondary,
+  letterSpacing: 0.8,
+  textTransform: 'uppercase' as const,
+};

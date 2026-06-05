@@ -286,6 +286,19 @@ export function canEditDelivery(role: Role, currentStatus: string | null): boole
   return PRE_DELIVERY_STATUSES.has(currentStatus ?? 'pending');
 }
 
+/** Clear `assigned_agent_id` on an existing delivery — moves it back to the
+ *  Unassigned bucket. Same role + status gate as `canEditDelivery`: ops set
+ *  (admin + dispatcher + rep), non-terminal rows only. Reps already manage
+ *  one-off assignment via the Edit screen so they get unassign too. Server
+ *  also raises on already-unassigned rows; the UI hides the button when
+ *  `assigned_agent_id is null` so the RPC is never reached for that case.
+ *  Server anchor: `unassign_delivery` RPC checks is_admin_or_dispatcher() and
+ *  delivery_status_defs.category <> 'terminal'. */
+export function canUnassignDelivery(role: Role, currentStatus: string | null): boolean {
+  if (!isOps(role)) return false;
+  return PRE_DELIVERY_STATUSES.has(currentStatus ?? 'pending');
+}
+
 /** Resolve (fix-and-create or discard) a needs_review bot inbound row.
  *  Operational set.
  *  Server anchor: `resolve_inbound_to_delivery` / `discard_inbound` RPCs. */
