@@ -232,10 +232,12 @@ Each feature below is a discrete unit of work. Order doesn't imply build order �
 
 ### 5.5 Delivery creation (bot pipeline)
 
-**User story:** As Uzo, I forward client messages to a parsing channel; the bot creates a delivery.
+**User story:** As Uzo, I receive each order from the client, then forward it into the **relevant agent's WhatsApp group**; the contractor's bot reads it there and creates a delivery already attributed to that agent.
+
+**Channel reality (how an order reaches the bot).** The client sends the order to Uzo (via their dedicated client group). Uzo forwards it — after any quality-control edits — into the WhatsApp group of the agent he's giving it to. The contractor's bot is a member of **every agent group**, so *the group a message lands in is how we know which agent the order is for*. The bot parses the message in that group and POSTs it to the app with the agent identified. (An earlier design contemplated a single parsing channel replacing the per-agent groups; that did not happen — the per-agent groups are load-bearing precisely because the group doubles as agent attribution.)
 
 **Components:**
-- WhatsApp listener (separate from the app — likely an Edge Function or external service)
+- WhatsApp listener (separate from the app — likely an Edge Function or external service) — reads across the agent groups the bot belongs to
 - Parser (LLM-assisted or regex-based)
 - Address normalization (Maps + Gemini)
 - Delivery creator
@@ -247,7 +249,7 @@ Each feature below is a discrete unit of work. Order doesn't imply build order �
 4. Match vendor (client) to `public.clients` — disambiguated by `client_hint` if the contractor supplied one.
 5. Match product to `product_catalog` (trigram).
 6. Address normalization (see 5.6) — short-circuited at high confidence if the contractor provided a `parsed.location` value that matches a known location name/alias.
-7. **Optional agent pre-assignment.** If the contractor sent `parsed.assigned_agent` (display name, email, or phone) and it resolves to exactly one active agent, that agent is pre-assigned and auto-assignment is skipped. Ambiguous or unknown values are silently ignored and we fall back to auto-assignment as usual. The resolution outcome (`resolved` / `no_match` / `ambiguous`) is stored in `bot_inbound_messages.parse_result.agent_resolution` for auditing.
+7. **Agent attribution (normally pre-set from the group).** Because the order is read out of a specific agent's group, the contractor's `parsed.assigned_agent` (display name, email, or phone) is normally present and names that agent — so for bot-created orders the agent is usually **pre-assigned and auto-assignment (§5.7) is skipped**. It must resolve to exactly one active agent; ambiguous or unknown values are treated as unset, and only then does auto-assignment pick the agent. The resolution outcome (`resolved` / `no_match` / `ambiguous`) is stored in `bot_inbound_messages.parse_result.agent_resolution` for auditing.
 8. Insert delivery row with `created_via = 'bot'`, `bot_raw_message` = original text.
 9. Insert initial history row.
 10. Push-notify assigned agent (whether pre-assigned by the bot or chosen by auto-assignment — same `notify_assignment_push` trigger).
@@ -1012,7 +1014,7 @@ Suggested sequence. Each milestone is independently testable.
 - **Demo:** a full operating day, Uzo runs daily reconciliation and shares a per-client report via WhatsApp.
 
 ### Milestone 5: Bot + AI pipeline (week 8-10)
-- Bot integration (reads from parsing channel, creates deliveries)
+- Bot integration (reads from the per-agent WhatsApp groups, creates deliveries attributed to the group's agent)
 - AI address normalization (Maps + Gemini)
 - Needs Review queue
 - **Demo:** Uzo forwards real client messages, bot creates real deliveries, AI normalizes addresses

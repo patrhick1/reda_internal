@@ -16,7 +16,7 @@ Stack:
 - OpenRouter (multi-model brokering: `openai/gpt-4.1-mini` for order-field extraction in `bot-parse-message`, `google/gemini-2.5-flash` for address picking in `normalize-address`) + Google Maps Geocoding API for the geocode step. Direct Google AI calls retired 2026-06-03 — Gemini's free tier (20 requests/day) was rate-limiting the address pipeline. Same models, paid billing through OpenRouter.
 - Online-with-resilience for v1 (mutations queue locally and retry; full offline-first comes in v2)
 
-The existing WhatsApp ingestion bot stays but is reconfigured — it reads from a single parsing channel that Uzo controls, instead of multiple agent groups. Make.com automation gets retired (saves ₦16k/month).
+The existing WhatsApp ingestion bot (currently the contractor's) stays. It sits in **every agent's WhatsApp group**: Uzo forwards each client order into the group of the agent he's assigning it to, the bot reads it there — so the group identifies which agent the order is for — and POSTs it to the app. (An earlier plan to replace the per-agent groups with a single parsing channel did not happen; the groups are load-bearing because they double as agent attribution.) Make.com automation gets retired (saves ₦16k/month).
 
 ## 2. Roles & permissions
 
@@ -42,11 +42,11 @@ Owns the physical stock flow (since 2026-05-27): vendor intakes into self (`bulk
 
 ### Creation
 
-A client (e.g., Dentora) sends a delivery request to their dedicated client group on WhatsApp. Reda has one client group per client. Format is reasonably structured because clients have been trained.
+A client (e.g., Dentora) sends a delivery request to Uzo — via their dedicated client group on WhatsApp (one client group per client). Format is reasonably structured because clients have been trained. **The client does not interact with the app or the bot directly; everything routes through Uzo.**
 
-Uzo reads the request and forwards it (after any quality-control edits — typos, missing info, format normalization) to a **single parsing channel** he controls. This replaces the previous model of forwarding to many agent-specific groups.
+Uzo reads the request and forwards it (after any quality-control edits — typos, missing info, format normalization) into the **WhatsApp group of the agent he's assigning it to**. The contractor's bot is a member of **every agent group**, so the group a message lands in is how the system knows which agent the order is for. (An earlier design contemplated a single parsing channel replacing the per-agent groups; the live mechanism is the per-agent groups, precisely because the group doubles as agent attribution.)
 
-The bot watches only that parsing channel. It parses the message to extract: customer name, phone, raw address, product, quantity ordered, customer price, vendor, date.
+The bot parses the message in that group to extract: customer name, phone, raw address, product, quantity ordered, customer price, vendor, date — and POSTs it to the app with the agent identified from the group.
 
 **After-hours bump (since 2026-05-27).** Any delivery (bot or manual) created at or after 22:00 Africa/Lagos with `scheduled_date = today` is automatically pushed to the next working day. The bump lives inside `create_delivery` so both pipelines pick it up without duplication; past and explicit-future dates are untouched. The Sunday-skip from `_ensure_workday` is reused so a Saturday-22:30 order lands on Monday, not Sunday. Rationale: late-evening orders can't realistically be served the same day, and treating that as a server-side guarantee removes a recurring spreadsheet-era judgment call.
 
@@ -78,7 +78,7 @@ Every AI-matched location is logged with the raw address, the match, confidence,
 
 ### Auto-assignment with sensible defaults
 
-After location is set, the bot picks an agent based on a small scoring function:
+When an order arrives through a specific agent's group, that agent is already attributed and this step is **skipped**. Auto-assignment is the fallback — for manual creates, or when the group/agent couldn't be resolved. In that case, after location is set, the bot picks an agent based on a small scoring function:
 
 1. **Stock filter.** Only agents currently holding stock of the requested product+vendor are eligible. If nobody has stock, delivery stays unassigned and surfaces in the app for Uzo to handle.
 2. **Active filter.** Skip deactivated agents.
@@ -179,7 +179,7 @@ Per delivery, the system tracks:
 | Quantity Ordered | What customer ordered | From bot or manual |
 | Quantity Delivered | What actually changed hands | Agent records at delivery |
 | Paid | What was actually collected | Agent records |
-| Payment Method | Cash or Transfer (defaults to Cash) | Agent records |
+| Payment Method | Cash or Transfer (defaults to Transfer — ≈98% of delivered orders) | Agent records |
 | Location | Geographic area (AI-matched to rate card) | Bot pipeline or manual |
 | Charged | Reda's fee for the trip | Auto from rate card |
 | Agent Payment | What Reda pays the agent | Auto from rate card |
@@ -219,10 +219,10 @@ For a transfer payment the Cash POS Fee is 0 and Remit = Paid − Charged.
 - `customer_price` = what the customer is supposed to pay the agent for this trip (flat, per delivery — not per unit).
 - `paid` = what the customer actually paid.
 - `charged_snapshot` = Reda's per-delivery fee from `rate_card` for the delivery's location, snapshotted at create time.
-- **Remit to client = paid − charged_snapshot.** Reda always takes its fee out of what was actually collected, never out of what was promised.
-- Customer outstanding = `customer_price − paid` (the client's collection problem, not Reda's).
+- **Remit to client = paid − charged_snapshot − cash_pos_fee_snapshot.** Reda always takes its fee out of what was actually collected, never out of what was promised. (`cash_pos_fee_snapshot` is ₦500 on cash deliveries, 0 on transfer — see the §4 table.)
+- Customer outstanding = `customer_price − paid` (the client's collection problem, not Reda's). Tracked and displayed, but there is **no collection/aging workflow** — see §14.
 
-**Agent settlement to Reda:** rhythm to confirm. Cash and transfer recorded identically (no bank integration).
+**Agent settlement to Reda (daily — resolved 2026-05-15).** The rider hands Reda everything they collected, keeping their per-delivery `agent_payment_snapshot`. So **rider → Reda remittance = paid − agent_payment_snapshot**, summed per agent over the day across `delivered` rows only. Cash and transfer are recorded identically (no bank integration). The reconciliation **By agent** tab shows this rider→Reda figure (not payroll).
 
 ## 5. Partial deliveries
 
@@ -253,7 +253,7 @@ Stock is tracked at the (User, Product) level where "user" can be an agent or th
 **Two locations for stock:** agent's hand, warehouse (currently one — Shomolu).
 
 **Movements:**
-- **Delivery completion** — when a delivery flips to `delivered`, the view automatically decrements the assigned agent's holding by `quantity_delivered`.
+- **Delivery completion** — when a delivery flips to `delivered`, the assigned agent's holding drops by `quantity_delivered`. This is a **pure view computation, not a written ledger row**: `current_stock = SUM(stock_adjustments.quantity_delta) − SUM(quantity_delivered)` over delivered, non-deleted rows per (agent, product). Because nothing is written at delivery, reverting `delivered` automatically restores the stock. Two corollaries worth knowing (both in §14): a delivered row with **no assigned agent** decrements nothing, and a **partial** delivery only subtracts `quantity_delivered` — the leftover stays on the agent's books with no automatic return.
 - **Single-row stock adjustments** (`create_stock_adjustment`): `loss`, `theft`, `damaged`, `found`, `correction`, `bulk_intake`.
 - **Paired stock adjustments** (`create_stock_transfer`, two atomic linked rows): `transfer` (agent↔agent), `warehouse_issue` (warehouse → agent), `warehouse_return` (agent → warehouse).
 
@@ -279,9 +279,10 @@ Status changes are validated against a state machine.
 
 **Status categories** (current list — query `delivery_status_defs` for authoritative):
 - Initial: Pending
-- Active: Available
+- Active: Available, Available Evening
 - Soft failure (retry-able): Not Answering, Number Busy, Switched Off, Tomorrow, Postponed, Follow Up, Not Connecting, Not Around, Will Call Back, Not Available, Picked Up, Waybilled
-- Terminal: Delivered, Cancelled, Failed Delivery, Unserious, No Product, Rolled Over, Abandoned, Deferred To Client
+- Terminal (order-level, cascade to siblings): Delivered, Cancelled, Failed Delivery, Unserious, No Product, Abandoned, Deferred To Client
+- Terminal (row-level, do **not** cascade): Agent Cancelled (§3.5), Rolled Over (EOD-owned)
 
 **Forward transitions** (free, no special permissions):
 - Pending → anything
@@ -341,7 +342,7 @@ The important section. Please respond to whichever apply:
 
 6. **Rate card structure.** Can Paschal see your current rate card? Confirmed it's keyed by location only?
 
-7. **End-of-day timing.** Do you do the rollover workflow at a fixed time, or whenever you get to it?
+7. ~~**End-of-day timing.** Do you do the rollover workflow at a fixed time, or whenever you get to it?~~ **Resolved:** automatic at **23:59 Lagos** via cron; manual "Roll all forward" remains available. See §3 → End of day.
 
 8. **Permission edge case.** Can a dispatcher mark a delivery Delivered without input from the agent, or must updates come from the agent directly?
 
@@ -449,4 +450,134 @@ Implementation lives in [reda_prd.md §5.17](reda_prd.md) and the migration scri
 
 ---
 
-*Last updated: 2026-05-19. §12 added when voice calling shipped on top of v1.*
+## 13. End-to-end workflow map (canonical)
+
+A single picture of the whole operation — intake → pricing → assignment → the agent's in-day status loop → mark-delivered → EOD rollover → reconciliation. This is the visual companion to the §3 narrative; where they disagree, the code wins (verified against the live DB on 2026-06-05).
+
+```mermaid
+flowchart TD
+  A["Client sends order to Uzo"] --> B{"Intake path?"}
+  B -->|"Bot: Uzo forwards into the agent's WhatsApp group"| C["Contractor bot (in every agent group) POSTs to app — bot_inbound_messages = queued; agent tagged from the group"]
+  B -->|Manual| M1["Ops opens New Delivery form"]
+
+  C --> D["Extract: contractor pre-parse + LLM fills gaps"]
+  D --> E{"Product matched?"}
+  E -->|no / ambiguous| RV["needs_review queue"]
+  E -->|yes| F{"Location matched?"}
+  F -->|no / low confidence| RV
+  F -->|yes| G{"haveAllFields?"}
+  G -->|no| RV
+  G -->|yes| H{"Duplicate for same agent?"}
+  H -->|yes| DUP["mark duplicate, link existing"]
+  H -->|orphan exists| ORP["absorb orphan: assign to named agent"]
+  H -->|no| CREATE["create_delivery"]
+
+  RV --> RVD{"Ops resolves"}
+  RVD -->|fix and create| CREATE
+  RVD -->|discard| X1["discarded: spam / dupe / not real"]
+  M1 --> CREATE
+
+  CREATE --> P{"Location set?"}
+  P -->|no| P0["snapshots NULL — surfaces in review"]
+  P -->|yes| P1["snapshot charged + agent_payment base"]
+  P0 --> AS{"Assigned at create?"}
+  P1 --> AS
+  AS -->|yes| ASM["keep agent — NO bonus re-snapshot"]
+  AS -->|"no (and not a rollover)"| AA["auto_assign_delivery"]
+  AA --> AAE{"Eligible agent?"}
+  AAE -->|yes| ASSIGNED["assign + re-snapshot WITH bonus + push"]
+  AAE -->|no| UNQ["Unassigned queue"]
+  ASM --> WORK
+  ASSIGNED --> WORK
+
+  WORK["Agent works it — status pending"] --> CALL{"Customer reached?"}
+  CALL -->|"available now"| AVA["available / available_evening"]
+  CALL -->|"no answer / busy / off"| SOFT["soft-fail status"]
+  CALL -->|"agent passes row"| AC["agent_cancelled — order stays open"]
+  SOFT --> WORK2{"Retry today?"}
+  WORK2 -->|yes| CALL
+  WORK2 -->|defer| POST["tomorrow / postponed +date"]
+  AVA --> DLV{"Deliver now?"}
+  DLV -->|"customer refuses"| TERM["cancelled / failed_delivery / abandoned / unserious / no_product / deferred_to_client"]
+  DLV -->|deliver| MD["Mark delivered"]
+
+  MD --> MG{"Guards: qty>0, paid>=0, method, location set, stock>=qty"}
+  MG -->|"fail any"| MGF["blocked — error"]
+  MG -->|pass| DONE["delivered"]
+  DONE --> CASC["cascade-cancel open siblings"]
+  DONE --> POSG{"cash and paid>0?"}
+  POSG -->|yes| POS1["cash_pos_fee = 500"]
+  POSG -->|no| POS0["cash_pos_fee = 0"]
+
+  TERM --> EOD
+  POST --> EOD
+  AC --> EOD
+  UNQ --> EOD
+  DONE --> EOD
+  EOD{{"EOD 23:59 rollover"}} --> EODD{"Row terminal?"}
+  EODD -->|yes| SKIP["no-op"]
+  EODD -->|no| ES1{"Sibling already terminal?"}
+  ES1 -->|yes| EC1["cancel in place"]
+  ES1 -->|no| ES2{"Same-agent or race dupe?"}
+  ES2 -->|yes| EC2["dedupe — cancel losers"]
+  ES2 -->|no| ES3{"Client auto_cancel + unreachable?"}
+  ES3 -->|yes| EC3["failed_delivery"]
+  ES3 -->|no| ES4{"rollover_count >= 2 soft-fail?"}
+  ES4 -->|yes| EC4["unserious — stop rolling"]
+  ES4 -->|no| ROLL["rolled_over → new pending next workday, agent=NULL, re-snapshot rates"]
+  ROLL --> UNQ
+
+  DONE --> REC[("Reconciliation — delivered only, live by date range")]
+  REC --> R1["Client remit = paid − charged − cash_pos_fee"]
+  REC --> R2["Rider→Reda remit = paid − agent_payment_snapshot"]
+  REC --> R3["Reda margin = charged − agent_payment"]
+```
+
+**Decision points, by owner:**
+
+| # | Decision | Branches | Decided by |
+|---|---|---|---|
+| 1 | Intake path | bot vs manual | Vendor channel / ops |
+| 2 | Product match | resolve / ambiguous → review | `match_products_by_text` ≥0.4, 0.15 dominance |
+| 3 | Location match | high → use / medium → use + flag / low → review | alias → Maps → Gemini |
+| 4 | `haveAllFields` | create vs `needs_review` | all 7 fields incl. `matched_location_id` |
+| 5 | Duplicate-same-agent | dedupe / absorb orphan / create | fingerprint OR address+qty |
+| 6 | Location at create | snapshot fees vs NULL | `location_id` present? |
+| 7 | Assignment | manual (no bonus) / auto (bonus) / unassigned | `auto_assign_delivery`: stock → workload → stock qty → random |
+| 8 | Customer contact | available / 12 soft-fails / agent_cancelled | Agent |
+| 9 | Mark-delivered guards | pass → delivered / block | qty, paid, method, **location**, **stock** |
+| 10 | Sibling cascade | cancel siblings (order-level terminals) vs not (`rolled_over`, `agent_cancelled`) | trigger on terminal entry |
+| 11 | EOD per row | skip / cancel-in-place / dedupe / policy-cancel / **unserious** / roll | `run_eod_rollover`, 5-way branch |
+| 12 | Reconciliation scope | delivered only, by date range, live | remit RPCs (no period close) |
+
+## 14. Known gaps / backlog
+
+Surfaced by the 2026-06-05 workflow audit; each verified against deployed code and the live DB (not inferred from this doc). Ordered by impact. These are tracked here so they're not lost in chat — none are committed work yet.
+
+**Tier A — active integrity/financial holes**
+
+1. **Partial-delivery leftovers never auto-return to stock.** `current_stock` subtracts only `quantity_delivered`; the unsold `(ordered − delivered)` stays on the agent's books indefinitely. `MarkDeliveredSheet` captures only qty/paid/method — there is no return-to-warehouse step, despite §5 claiming "agent's choice at delivery time." → agent inventory silently inflates; real shrinkage is masked. *Evidence: `current_stock` view def + the mark-delivered sheet fields.*
+
+2. **No reconciliation period-lock — retroactive edits rewrite settled numbers.** No `settled`/`paid_out` concept; every remit report recomputes live by date range. Any post-hoc change to a delivered row (an admin location correction, a `delivered` revert) silently alters what a past, possibly-already-paid period owes, with no record of "what we actually paid vs. what the report now says." *Evidence: all remit RPCs compute live; no flag column exists.*
+
+3. **Customer underpayment has no collection/aging workflow.** `outstanding = customer_price − paid` is computed and displayed, then nothing acts on it — no per-customer debt, no aging, no follow-up task. Reda doesn't absorb it (the vendor does), so chronic underpayers stay invisible. *Evidence: `client_remit_summary` computes `outstanding` and stops.*
+
+4. **An *unassigned* row marked delivered slips every net.** The mark-delivered stock guard runs only `if assigned_agent_id is not null`, and `current_stock`'s decrement requires `assigned_agent_id IS NOT NULL`. So a delivered row with no agent: no stock check, no stock decrement, no rider credited. Ops can do this today. *Evidence: guard clause + view `WHERE assigned_agent_id IS NOT NULL`.*
+
+5. **Agents can't correct location/fields pre-delivery → stuck rows & extra rollovers.** Only admin/dispatcher/rep edit. The agent at the door with a wrong/missing location is blocked at mark-delivered (location is required) and must wait for an ops callback; unresolved rows roll over. *Evidence: `canEditDelivery` is ops-only; `change_delivery_status` requires `location_id` for delivered.* (Post-delivery admin correction now exists; the pre-delivery agent path does not.)
+
+**Tier B — latent / process**
+
+6. **The agent-bonus snapshot is a loaded-but-unloaded gun.** `effective_rate` adds `agent_payment_bonus` only when an agent is passed, and **only `auto_assign` re-snapshots with the agent**. Manual create-assign, `bulk_assign`, `reassign_to_sub_agent`, and post-rollover reassignment skip it. Harmless today — **0 of 21 agents have a non-zero bonus (verified in DB)** — but the moment anyone sets one, every non-auto-assigned delivery underpays, and since rollover forces manual reassignment, that's a large share.
+
+7. **`needs_review` has no aging/SLA/escalation.** A row can sit unresolved; the order just silently goes late. No alert, no "oldest unreviewed" surfacing.
+
+8. **No post-delivery return/refund path.** A customer return after `delivered` has only the blunt admin-revert tool (un-does money + stock wholesale); no partial-refund / RMA concept. (Already flagged out-of-scope for v1 in §8/§10 — noted here for completeness.)
+
+9. **Operational/config brittleness:** cash POS fee hardcoded ₦500 (bank-fee change = code change); warehouse shared login = no per-human shrinkage attribution (acknowledged trade-off, §2); two parallel bot pipelines (`bot_inbound` prod + `mybot_inbound` shadow) to keep in sync.
+
+Suggested first moves: **#1 and #4** corrupt the inventory numbers everything else depends on; **#2** is what turns retroactive corrections risky at scale; **#6** is cheap insurance to apply before anyone ever sets a bonus.
+
+---
+
+*Last updated: 2026-05-19. §12 added when voice calling shipped on top of v1. 2026-06-05: stale-fact pass on §4/§6/§7 (transfer default, remit formula, view-only stock decrement, status categories), plus §13 end-to-end workflow map and §14 known-gaps from the workflow audit.*
