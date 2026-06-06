@@ -22,7 +22,7 @@ import {
   type ClientStockGroup,
 } from '@/services/stock';
 import { listClients, type Client } from '@/services/clients';
-import { listUsers, type AppUser } from '@/services/users';
+import { listUsers, isWarehousePlace, type AppUser } from '@/services/users';
 import { AppBar, Avatar, Button, Card, Empty, Icon, Tabs } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 import {
@@ -64,8 +64,11 @@ export function StockOverview({ basePath }: { basePath: StockBasePath }) {
 
   const [tab, setTab] = useState<Tab>('holder');
   const rows = useMemo(() => stockQ.data ?? [], [stockQ.data]);
+  // Holder sections are pre-populated for warehouse PLACES only. Warehouse
+  // STAFF (warehouse_id set) hold no stock of their own — they act on a
+  // place's books — so they must not show up as empty holder cards.
   const warehouseUsers = useMemo(
-    () => (usersQ.data ?? []).filter((u) => u.is_active && u.role === 'warehouse'),
+    () => (usersQ.data ?? []).filter((u) => u.is_active && isWarehousePlace(u)),
     [usersQ.data],
   );
 

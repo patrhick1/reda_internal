@@ -4,7 +4,18 @@ import type { Role } from '@/lib/permissions';
 
 export type AppUser = Database['public']['Tables']['users']['Row'] & {
   role: Role;
+  /** Lands in the generated Row after scripts/warehouse-staff.sql + gen:types;
+   *  the intersection keeps it typed before regeneration. For role='warehouse':
+   *  NULL = this user IS a place (stock holder); set = staff acting on that place. */
+  warehouse_id: string | null;
 };
+
+/** A warehouse PLACE = a warehouse-role user that holds stock (no link).
+ *  Warehouse staff (warehouse_id set) act on a place but are never holders, so
+ *  holder lists/sections and destination pickers should restrict to places. */
+export function isWarehousePlace(u: AppUser): boolean {
+  return u.role === 'warehouse' && (u.warehouse_id ?? null) === null;
+}
 
 export type AgentStockRow = {
   product_catalog_id: string;
@@ -87,6 +98,9 @@ export type CreateUserInput = {
   role: Role;
   displayName: string;
   phone: string | null;
+  /** Only meaningful when role==='warehouse': the place this staffer acts on.
+   *  null/undefined = this warehouse user IS a place (a stock holder). */
+  warehouseId?: string | null;
 };
 
 export async function createAppUser(input: CreateUserInput): Promise<string> {
@@ -96,6 +110,7 @@ export async function createAppUser(input: CreateUserInput): Promise<string> {
     p_role: input.role,
     p_display_name: input.displayName,
     p_phone: input.phone as unknown as string,
+    p_warehouse_id: (input.warehouseId ?? null) as unknown as string,
   });
   if (error) throw error;
   return data as string;
@@ -105,6 +120,9 @@ export type UpdateUserInput = {
   displayName: string;
   role: Role;
   phone: string | null;
+  /** Only meaningful when role==='warehouse'. Coalesced server-side (omit to
+   *  keep the existing link); a non-warehouse role clears it automatically. */
+  warehouseId?: string | null;
 };
 
 export async function updateUser(
@@ -118,6 +136,7 @@ export async function updateUser(
     p_role: input.role,
     p_phone: input.phone as unknown as string,
     p_reason: reason as unknown as string,
+    p_warehouse_id: (input.warehouseId ?? null) as unknown as string,
   });
   if (error) throw error;
 }

@@ -10,6 +10,7 @@ import {
   deactivateUser,
   getAgentStock,
   getUser,
+  isWarehousePlace,
   listAgentLocations,
   listUsers,
   reactivateUser,
@@ -39,9 +40,11 @@ export default function EditUser() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { account } = useAuth();
   const userQ = useAsync(() => getUser(id), [id]);
+  const placesQ = useAsync(() => listUsers(), []);
 
   const [displayName, setDisplayName] = useState('');
   const [role, setRole] = useState<Role | null>(null);
+  const [warehouseId, setWarehouseId] = useState<string | null>(null);
   const [phone, setPhone] = useState('');
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -53,8 +56,14 @@ export default function EditUser() {
       setDisplayName(userQ.data.display_name);
       setRole(userQ.data.role);
       setPhone(userQ.data.phone ?? '');
+      setWarehouseId(userQ.data.warehouse_id ?? null);
     }
   }, [userQ.data]);
+
+  // Warehouse PLACES this user could belong to (excluding itself).
+  const placeOptions = (placesQ.data ?? [])
+    .filter((p) => isWarehousePlace(p) && p.id !== id)
+    .map((p) => ({ value: p.id, label: p.display_name }));
 
   if (userQ.loading)
     return (
@@ -74,7 +83,10 @@ export default function EditUser() {
   const user = userQ.data;
   const isSelf = account.kind === 'active' && account.userId === user.id;
   const dirty =
-    displayName !== user.display_name || role !== user.role || (phone || null) !== user.phone;
+    displayName !== user.display_name ||
+    role !== user.role ||
+    (phone || null) !== user.phone ||
+    (warehouseId ?? null) !== (user.warehouse_id ?? null);
 
   async function handleSave() {
     if (!displayName.trim()) {
@@ -90,7 +102,12 @@ export default function EditUser() {
     try {
       await updateUser(
         user.id,
-        { displayName: displayName.trim(), role, phone: phone.trim() || null },
+        {
+          displayName: displayName.trim(),
+          role,
+          phone: phone.trim() || null,
+          warehouseId: role === 'warehouse' ? warehouseId : null,
+        },
         reason.trim() || null,
       );
       router.back();
@@ -136,7 +153,25 @@ export default function EditUser() {
         required
         autoCapitalize="words"
       />
-      <Select label="Role" value={role} options={ROLE_OPTIONS} onChange={setRole} required />
+      <Select
+        label="Role"
+        value={role}
+        options={ROLE_OPTIONS}
+        onChange={(v) => {
+          setRole(v as Role | null);
+          if (v !== 'warehouse') setWarehouseId(null);
+        }}
+        required
+      />
+      {role === 'warehouse' ? (
+        <Select
+          label="Belongs to warehouse"
+          value={warehouseId}
+          options={placeOptions}
+          onChange={setWarehouseId}
+          placeholder="Leave empty — this user IS a warehouse (a stock holder)"
+        />
+      ) : null}
       <Field
         label="Phone"
         value={phone}

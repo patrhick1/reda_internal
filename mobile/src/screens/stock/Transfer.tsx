@@ -16,7 +16,7 @@ import { Icon } from '@/components/ui';
 import { useAsync } from '@/hooks/useAsync';
 import { useBulkRows } from '@/hooks/useBulkRows';
 import { useCurrentUser } from '@/hooks/useAuth';
-import { listUsers, type AppUser } from '@/services/users';
+import { listUsers, isWarehousePlace, type AppUser } from '@/services/users';
 import { listClients } from '@/services/clients';
 import { listActiveProductsByClient } from '@/services/products';
 import { PAIRED_REASONS, type PairedReason } from '@/services/stock';
@@ -85,8 +85,10 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
   const [singleQty, setSingleQty] = useState('');
 
   // Bulk state (used for reason === 'warehouse_issue' | 'warehouse_return')
+  // Warehouse scope: the warehouse side is the PLACE — staff act on their
+  // linked warehouse (warehouseId), a place user acts as itself.
   const [warehouseId, setWarehouseId] = useState<string | null>(
-    scope === 'warehouse' ? currentUser.userId : null,
+    scope === 'warehouse' ? (currentUser.warehouseId ?? currentUser.userId) : null,
   );
   // One agent per submission.
   const [bulkAgentId, setBulkAgentId] = useState<string | null>(null);
@@ -122,7 +124,9 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
       setSingleQty('');
       // Warehouse scope: keep warehouseId pinned to caller across reason
       // switches; admin scope: reset to null and let the auto-select rerun.
-      setWarehouseId(scope === 'warehouse' ? currentUser.userId : null);
+      setWarehouseId(
+        scope === 'warehouse' ? (currentUser.warehouseId ?? currentUser.userId) : null,
+      );
       setBulkAgentId(null);
       resetRows();
     };
@@ -157,11 +161,10 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
 
   // Pre-fill warehouseId (admin scope) when bulk and exactly one active
   // warehouse user exists. Warehouse scope is already pinned to caller.
+  // Holders only: agents + warehouse PLACES. Warehouse STAFF are never holders.
   const activeUsers = useMemo(
     () =>
-      (usersQ.data ?? []).filter(
-        (u) => u.is_active && (u.role === 'agent' || u.role === 'warehouse'),
-      ),
+      (usersQ.data ?? []).filter((u) => u.is_active && (u.role === 'agent' || isWarehousePlace(u))),
     [usersQ.data],
   );
   const warehouseUsers = useMemo(
@@ -169,6 +172,14 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
     [activeUsers],
   );
   const agentUsers = useMemo(() => activeUsers.filter((u) => u.role === 'agent'), [activeUsers]);
+  // Place name shown in warehouse scope (the staffer's linked place, or self).
+  const placeName = useMemo(() => {
+    if (scope !== 'warehouse' || !currentUser.warehouseId) return currentUser.displayName;
+    return (
+      (usersQ.data ?? []).find((u) => u.id === currentUser.warehouseId)?.display_name ??
+      'your warehouse'
+    );
+  }, [scope, currentUser.displayName, currentUser.warehouseId, usersQ.data]);
   useEffect(() => {
     if (scope === 'warehouse') return;
     const only = warehouseUsers[0];
@@ -381,7 +392,7 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
               <Text style={styles.lockedDestLabel}>
                 {reason === 'warehouse_issue' ? 'From warehouse' : 'To warehouse'}
               </Text>
-              <Text style={styles.lockedDestValue}>{currentUser.displayName}</Text>
+              <Text style={styles.lockedDestValue}>{placeName}</Text>
             </View>
           ) : (
             <Select

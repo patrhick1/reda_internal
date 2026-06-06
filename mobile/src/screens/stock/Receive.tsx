@@ -8,7 +8,7 @@ import { Icon } from '@/components/ui';
 import { useAsync } from '@/hooks/useAsync';
 import { useBulkRows } from '@/hooks/useBulkRows';
 import { useCurrentUser } from '@/hooks/useAuth';
-import { listUsers } from '@/services/users';
+import { listUsers, isWarehousePlace } from '@/services/users';
 import { listClients } from '@/services/clients';
 import { listActiveProductsByClient } from '@/services/products';
 import { useEnqueueStockAdjustment } from '@/queue/mutations';
@@ -52,11 +52,12 @@ export function StockReceiveScreen({ scope }: StockReceiveScreenProps) {
   const usersQ = useAsync(() => listUsers(), []);
   const clientsQ = useAsync(() => listClients(), []);
 
+  // Holders only: agents + warehouse PLACES. Warehouse STAFF (linked to a
+  // place) are never holders — they act on their place's books — so they're
+  // excluded from destination lists.
   const activeUsers = useMemo(
     () =>
-      (usersQ.data ?? []).filter(
-        (u) => u.is_active && (u.role === 'agent' || u.role === 'warehouse'),
-      ),
+      (usersQ.data ?? []).filter((u) => u.is_active && (u.role === 'agent' || isWarehousePlace(u))),
     [usersQ.data],
   );
   const warehouseUsers = useMemo(
@@ -64,13 +65,25 @@ export function StockReceiveScreen({ scope }: StockReceiveScreenProps) {
     [activeUsers],
   );
 
+  // Warehouse scope: the holder is the PLACE — for staff that's their linked
+  // warehouse (warehouseId); for a place user it's themselves.
   const [destinationId, setDestinationId] = useState<string | null>(
-    scope === 'warehouse' ? currentUser.userId : null,
+    scope === 'warehouse' ? (currentUser.warehouseId ?? currentUser.userId) : null,
   );
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const enqueueAdj = useEnqueueStockAdjustment();
+
+  // Display name of the place stock lands on in warehouse scope (the staffer's
+  // linked place, or themselves when they ARE the place).
+  const placeName = useMemo(() => {
+    if (scope !== 'warehouse' || !currentUser.warehouseId) return currentUser.displayName;
+    return (
+      (usersQ.data ?? []).find((u) => u.id === currentUser.warehouseId)?.display_name ??
+      'your warehouse'
+    );
+  }, [scope, currentUser.displayName, currentUser.warehouseId, usersQ.data]);
 
   // Admin path: auto-select the only active warehouse if there's exactly one.
   // Warehouse path: destination is already locked to caller; no auto-select.
@@ -153,7 +166,7 @@ export function StockReceiveScreen({ scope }: StockReceiveScreenProps) {
     try {
       const destLabel =
         scope === 'warehouse'
-          ? currentUser.displayName
+          ? placeName
           : (activeUsers.find((u) => u.id === destinationId)?.display_name ?? 'destination');
       for (const row of validRows) {
         const product = productsByClient.get(row.clientId)?.find((p) => p.id === row.productId);
@@ -202,7 +215,7 @@ export function StockReceiveScreen({ scope }: StockReceiveScreenProps) {
       {isWarehouseScope ? (
         <View style={styles.lockedDestBox}>
           <Text style={styles.lockedDestLabel}>Receiving into</Text>
-          <Text style={styles.lockedDestValue}>{currentUser.displayName}</Text>
+          <Text style={styles.lockedDestValue}>{placeName}</Text>
           <Text style={styles.hint}>
             Stock arriving at the warehouse. Goes onto your books as soon as you save.
           </Text>

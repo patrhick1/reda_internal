@@ -5,7 +5,8 @@ import { Screen } from '@/components/Screen';
 import { Field } from '@/components/Field';
 import { Button } from '@/components/Button';
 import { Select } from '@/components/Select';
-import { createAppUser } from '@/services/users';
+import { useAsync } from '@/hooks/useAsync';
+import { createAppUser, listUsers, isWarehousePlace } from '@/services/users';
 import type { Role } from '@/lib/permissions';
 import { errorMessage } from '@/lib/errors';
 
@@ -18,17 +19,27 @@ const ROLE_OPTIONS: { value: Role; label: string; sub: string }[] = [
   },
   { value: 'rep', label: 'Rep', sub: 'Same as dispatcher, with no stock access at all.' },
   { value: 'agent', label: 'Agent', sub: 'Rider. Own deliveries only.' },
-  { value: 'warehouse', label: 'Warehouse', sub: 'Stock holder. Used in transfers.' },
+  {
+    value: 'warehouse',
+    label: 'Warehouse',
+    sub: 'A warehouse (stock holder), or staff who manage one.',
+  },
 ];
 
 export default function NewUser() {
+  const placesQ = useAsync(() => listUsers(), []);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<Role | null>(null);
+  const [warehouseId, setWarehouseId] = useState<string | null>(null);
   const [displayName, setDisplayName] = useState('');
   const [phone, setPhone] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const placeOptions = (placesQ.data ?? [])
+    .filter(isWarehousePlace)
+    .map((p) => ({ value: p.id, label: p.display_name }));
 
   async function handleSubmit() {
     setError(null);
@@ -61,6 +72,7 @@ export default function NewUser() {
         role,
         displayName: displayName.trim(),
         phone: phone.trim() || null,
+        warehouseId: role === 'warehouse' ? warehouseId : null,
       });
       router.back();
     } catch (e) {
@@ -91,9 +103,21 @@ export default function NewUser() {
         label="Role"
         value={role}
         options={ROLE_OPTIONS.map((r) => ({ value: r.value, label: r.label, sub: r.sub }))}
-        onChange={setRole}
+        onChange={(v) => {
+          setRole(v as Role | null);
+          if (v !== 'warehouse') setWarehouseId(null);
+        }}
         required
       />
+      {role === 'warehouse' ? (
+        <Select
+          label="Belongs to warehouse"
+          value={warehouseId}
+          options={placeOptions}
+          onChange={setWarehouseId}
+          placeholder="Leave empty — this user IS a warehouse (a stock holder)"
+        />
+      ) : null}
       <Field
         label="Display name"
         value={displayName}

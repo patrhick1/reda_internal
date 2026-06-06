@@ -9,7 +9,17 @@ export type AccountState =
   | { kind: 'signed_out' }
   | { kind: 'incomplete'; userId: string; email: string | null } // auth user exists but no public.users row
   | { kind: 'deactivated'; userId: string; email: string }
-  | { kind: 'active'; userId: string; email: string; role: Role; displayName: string };
+  | {
+      kind: 'active';
+      userId: string;
+      email: string;
+      role: Role;
+      displayName: string;
+      /** For role='warehouse' STAFF, the place (warehouse holder) they act on.
+       *  NULL for everyone else AND for a warehouse user that IS a place.
+       *  Warehouse-scope stock screens use `warehouseId ?? userId` as the holder. */
+      warehouseId: string | null;
+    };
 
 type AuthContextValue = {
   account: AccountState;
@@ -58,7 +68,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     (async () => {
       const { data, error } = await supabase
         .from('users')
-        .select('id, email, display_name, role, is_active')
+        // select('*') so warehouse_id comes back even before it lands in
+        // database.gen.ts (after scripts/warehouse-staff.sql + gen:types);
+        // it's read via a cast below until then.
+        .select('*')
         .eq('id', authUserId)
         .maybeSingle();
 
@@ -85,6 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: data.email,
         role: data.role,
         displayName: data.display_name,
+        warehouseId: (data as { warehouse_id?: string | null }).warehouse_id ?? null,
       });
     })();
 

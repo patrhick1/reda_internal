@@ -66,6 +66,13 @@ export type Database = {
             foreignKeyName: "address_match_log_delivery_id_fkey"
             columns: ["delivery_id"]
             isOneToOne: false
+            referencedRelation: "available_orders_safe"
+            referencedColumns: ["delivery_id"]
+          },
+          {
+            foreignKeyName: "address_match_log_delivery_id_fkey"
+            columns: ["delivery_id"]
+            isOneToOne: false
             referencedRelation: "deliveries"
             referencedColumns: ["id"]
           },
@@ -334,6 +341,13 @@ export type Database = {
             foreignKeyName: "bot_inbound_messages_delivery_id_fkey"
             columns: ["delivery_id"]
             isOneToOne: false
+            referencedRelation: "available_orders_safe"
+            referencedColumns: ["delivery_id"]
+          },
+          {
+            foreignKeyName: "bot_inbound_messages_delivery_id_fkey"
+            columns: ["delivery_id"]
+            isOneToOne: false
             referencedRelation: "deliveries"
             referencedColumns: ["id"]
           },
@@ -422,6 +436,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calls_related_delivery_id_fkey"
+            columns: ["related_delivery_id"]
+            isOneToOne: false
+            referencedRelation: "available_orders_safe"
+            referencedColumns: ["delivery_id"]
           },
           {
             foreignKeyName: "calls_related_delivery_id_fkey"
@@ -616,6 +637,13 @@ export type Database = {
             foreignKeyName: "deliveries_parent_delivery_id_fkey"
             columns: ["parent_delivery_id"]
             isOneToOne: false
+            referencedRelation: "available_orders_safe"
+            referencedColumns: ["delivery_id"]
+          },
+          {
+            foreignKeyName: "deliveries_parent_delivery_id_fkey"
+            columns: ["parent_delivery_id"]
+            isOneToOne: false
             referencedRelation: "deliveries"
             referencedColumns: ["id"]
           },
@@ -662,6 +690,13 @@ export type Database = {
           status_history_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "delivery_client_notifications_delivery_id_fkey"
+            columns: ["delivery_id"]
+            isOneToOne: false
+            referencedRelation: "available_orders_safe"
+            referencedColumns: ["delivery_id"]
+          },
           {
             foreignKeyName: "delivery_client_notifications_delivery_id_fkey"
             columns: ["delivery_id"]
@@ -734,6 +769,13 @@ export type Database = {
             foreignKeyName: "delivery_followups_delivery_id_fkey"
             columns: ["delivery_id"]
             isOneToOne: true
+            referencedRelation: "available_orders_safe"
+            referencedColumns: ["delivery_id"]
+          },
+          {
+            foreignKeyName: "delivery_followups_delivery_id_fkey"
+            columns: ["delivery_id"]
+            isOneToOne: true
             referencedRelation: "deliveries"
             referencedColumns: ["id"]
           },
@@ -801,6 +843,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_messages_delivery_id_fkey"
+            columns: ["delivery_id"]
+            isOneToOne: false
+            referencedRelation: "available_orders_safe"
+            referencedColumns: ["delivery_id"]
           },
           {
             foreignKeyName: "delivery_messages_delivery_id_fkey"
@@ -893,6 +942,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_status_history_delivery_id_fkey"
+            columns: ["delivery_id"]
+            isOneToOne: false
+            referencedRelation: "available_orders_safe"
+            referencedColumns: ["delivery_id"]
           },
           {
             foreignKeyName: "delivery_status_history_delivery_id_fkey"
@@ -1320,6 +1376,7 @@ export type Database = {
           parent_agent_id: string | null
           phone: string | null
           role: string
+          warehouse_id: string | null
         }
         Insert: {
           agent_payment_bonus?: number
@@ -1334,6 +1391,7 @@ export type Database = {
           parent_agent_id?: string | null
           phone?: string | null
           role: string
+          warehouse_id?: string | null
         }
         Update: {
           agent_payment_bonus?: number
@@ -1348,6 +1406,7 @@ export type Database = {
           parent_agent_id?: string | null
           phone?: string | null
           role?: string
+          warehouse_id?: string | null
         }
         Relationships: [
           {
@@ -1357,10 +1416,71 @@ export type Database = {
             referencedRelation: "users"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "users_warehouse_id_fkey"
+            columns: ["warehouse_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
         ]
       }
     }
     Views: {
+      available_orders_safe: {
+        Row: {
+          agent_id: string | null
+          agent_name: string | null
+          client_id: string | null
+          client_name: string | null
+          current_status: string | null
+          customer_name: string | null
+          delivery_id: string | null
+          location_id: string | null
+          location_name: string | null
+          product_catalog_id: string | null
+          product_name: string | null
+          quantity_ordered: number | null
+          scheduled_date: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deliveries_assigned_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deliveries_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deliveries_current_status_fkey"
+            columns: ["current_status"]
+            isOneToOne: false
+            referencedRelation: "delivery_status_defs"
+            referencedColumns: ["status"]
+          },
+          {
+            foreignKeyName: "deliveries_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deliveries_product_catalog_id_fkey"
+            columns: ["product_catalog_id"]
+            isOneToOne: false
+            referencedRelation: "product_catalog"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       current_stock: {
         Row: {
           agent_id: string | null
@@ -1436,6 +1556,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "locations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deliveries_parent_delivery_id_fkey"
+            columns: ["parent_delivery_id"]
+            isOneToOne: false
+            referencedRelation: "available_orders_safe"
+            referencedColumns: ["delivery_id"]
           },
           {
             foreignKeyName: "deliveries_parent_delivery_id_fkey"
@@ -1531,6 +1658,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "locations"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deliveries_parent_delivery_id_fkey"
+            columns: ["parent_delivery_id"]
+            isOneToOne: false
+            referencedRelation: "available_orders_safe"
+            referencedColumns: ["delivery_id"]
           },
           {
             foreignKeyName: "deliveries_parent_delivery_id_fkey"
@@ -1844,6 +1978,7 @@ export type Database = {
           p_password: string
           p_phone?: string
           p_role: string
+          p_warehouse_id?: string
         }
         Returns: string
       }
@@ -2080,6 +2215,7 @@ export type Database = {
       }
       is_admin: { Args: never; Returns: boolean }
       is_admin_or_dispatcher: { Args: never; Returns: boolean }
+      is_warehouse: { Args: never; Returns: boolean }
       mark_client_notified: {
         Args: { p_status_history_id: string }
         Returns: {
@@ -2285,6 +2421,7 @@ export type Database = {
           p_phone: string
           p_reason?: string
           p_role: string
+          p_warehouse_id?: string
         }
         Returns: undefined
       }

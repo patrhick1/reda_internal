@@ -6,7 +6,7 @@ import { Button } from '@/components/Button';
 import { Select } from '@/components/Select';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
-import { listUsers } from '@/services/users';
+import { listUsers, isWarehousePlace } from '@/services/users';
 import { listClients } from '@/services/clients';
 import { listActiveProductsByClient } from '@/services/products';
 import { ADJUSTMENT_REASONS, type SingleReason } from '@/services/stock';
@@ -34,8 +34,10 @@ export function StockAdjustScreen({ scope }: StockAdjustScreenProps) {
   const usersQ = useAsync(() => listUsers(), []);
   const clientsQ = useAsync(() => listClients(), []);
 
+  // Warehouse scope: adjust the PLACE's holdings — staff act on their linked
+  // warehouse (warehouseId); a place user acts on itself.
   const [agentId, setAgentId] = useState<string | null>(
-    scope === 'warehouse' ? currentUser.userId : null,
+    scope === 'warehouse' ? (currentUser.warehouseId ?? currentUser.userId) : null,
   );
   const [clientId, setClientId] = useState<string | null>(null);
   const [productId, setProductId] = useState<string | null>(null);
@@ -57,13 +59,22 @@ export function StockAdjustScreen({ scope }: StockAdjustScreenProps) {
       .catch((e) => setError(errorMessage(e)));
   }, [clientId]);
 
+  // Holders only: agents + warehouse PLACES (staff are never holders).
   const userOptions = useMemo(
     () =>
       (usersQ.data ?? [])
-        .filter((u) => u.is_active && (u.role === 'agent' || u.role === 'warehouse'))
+        .filter((u) => u.is_active && (u.role === 'agent' || isWarehousePlace(u)))
         .map((u) => ({ value: u.id, label: u.display_name, sub: u.role })),
     [usersQ.data],
   );
+  // Place name shown in warehouse scope (the staffer's linked place, or self).
+  const placeName = useMemo(() => {
+    if (scope !== 'warehouse' || !currentUser.warehouseId) return currentUser.displayName;
+    return (
+      (usersQ.data ?? []).find((u) => u.id === currentUser.warehouseId)?.display_name ??
+      'your warehouse'
+    );
+  }, [scope, currentUser.displayName, currentUser.warehouseId, usersQ.data]);
   const clientOptions = useMemo(
     () => (clientsQ.data ?? []).map((c) => ({ value: c.id, label: c.name })),
     [clientsQ.data],
@@ -154,7 +165,7 @@ export function StockAdjustScreen({ scope }: StockAdjustScreenProps) {
       {isWarehouseScope ? (
         <View style={styles.lockedDestBox}>
           <Text style={styles.lockedDestLabel}>Adjusting stock for</Text>
-          <Text style={styles.lockedDestValue}>{currentUser.displayName}</Text>
+          <Text style={styles.lockedDestValue}>{placeName}</Text>
         </View>
       ) : (
         <Select

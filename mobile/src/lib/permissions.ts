@@ -99,25 +99,26 @@ export function canAdjustAnyStock(role: Role): boolean {
   return role === 'admin';
 }
 
-/** Adjust the caller's OWN stock with non-correction reasons. Admin + warehouse.
- *  Warehouse is restricted to their own holdings server-side; admin can
- *  adjust any holder but this helper covers the screen-level "show the
- *  Adjust button at all" decision.
+/** Adjust the warehouse's own stock with non-correction reasons. Admin +
+ *  warehouse (covers both a place AND its staff — staff act on the linked
+ *  place's holdings; server enforces coalesce(warehouse_id, self)). Admin can
+ *  adjust any holder; this helper just gates the screen-level "show Adjust".
  *  Server anchor: create_stock_adjustment v_role='warehouse' branch. */
 export function canAdjustOwnStock(role: Role): boolean {
   return role === 'admin' || role === 'warehouse';
 }
 
-/** Vendor intake (`bulk_intake`) into self. Admin + warehouse.
+/** Vendor intake (`bulk_intake`) into the warehouse. Admin + warehouse
+ *  (place or staff acting on their place).
  *  Server anchor: create_stock_adjustment reason='bulk_intake'. */
 export function canReceiveStock(role: Role): boolean {
   return role === 'admin' || role === 'warehouse';
 }
 
 /** Paired warehouse_issue / warehouse_return transfer. Admin + dispatcher + warehouse.
- *  Warehouse must be a participant (from for issue, to for return) — enforced
- *  server-side; admin + dispatcher have no participant restriction. This helper
- *  just gates the screen.
+ *  Warehouse must be a participant — its PLACE (from for issue, to for return),
+ *  whether the caller is the place or its staff — enforced server-side; admin +
+ *  dispatcher have no participant restriction. This helper just gates the screen.
  *  Server anchor: create_stock_transfer warehouse_issue / warehouse_return branches. */
 export function canDoWarehouseTransfer(role: Role): boolean {
   return role === 'admin' || role === 'dispatcher' || role === 'warehouse';
