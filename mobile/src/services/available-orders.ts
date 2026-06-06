@@ -30,49 +30,52 @@ function todayLagos(): string {
 }
 
 /** Available orders scheduled for today (Lagos), with assigned agent only.
- *  Joins client + product + agent + location names for display. */
+ *  Reads `available_orders_safe`, a dedicated planning view that bakes the
+ *  client / product / agent / location joins server-side and gates visibility
+ *  to admin, dispatcher, rep, warehouse, and the assigned agent — so Martha
+ *  & Shomolu warehouse see the same numbers Mary the dispatcher does. The
+ *  view deliberately omits phone / address / customer_price / payment_method
+ *  / agent_payment_snapshot — warehouse doesn't need them to plan stock. */
 export async function listAvailableOrders(): Promise<AvailableOrderRow[]> {
-  const { data, error } = await supabase
-    .from('deliveries_safe')
-    .select(
-      `
-      id,
-      assigned_agent_id,
-      customer_name,
-      quantity_ordered,
-      scheduled_date,
-      client_id,
-      product_catalog_id,
-      client:clients(name),
-      product:product_catalog(product_name),
-      location:locations(name),
-      assigned_agent:users!deliveries_assigned_agent_id_fkey(display_name)
-    `,
-    )
-    .in('current_status', ['available', 'available_evening'])
-    .eq('scheduled_date', todayLagos())
-    .not('assigned_agent_id', 'is', null);
+  // `available_orders_safe` is a hand-written planning view, not yet in the
+  // generated DB types — cast once so the typed select chain still flows.
+  const { data, error } = await (
+    supabase as unknown as {
+      from: (t: string) => {
+        select: (s: string) => {
+          eq: (
+            col: string,
+            val: string,
+          ) => Promise<{ data: unknown; error: { message: string } | null }>;
+        };
+      };
+    }
+  )
+    .from('available_orders_safe')
+    .select('*')
+    .eq('scheduled_date', todayLagos());
 
   if (error) throw error;
 
-  const rows = (data ?? [])
-    .map((r): AvailableOrderRow | null => {
-      const row = r as unknown as {
-        id: string | null;
-        assigned_agent_id: string | null;
-        customer_name: string | null;
-        quantity_ordered: number | null;
-        scheduled_date: string | null;
-        client_id: string | null;
-        product_catalog_id: string | null;
-        client: { name: string } | null;
-        product: { product_name: string } | null;
-        location: { name: string } | null;
-        assigned_agent: { display_name: string } | null;
-      };
+  const rows = (
+    (data ?? []) as unknown as Array<{
+      delivery_id: string | null;
+      agent_id: string | null;
+      agent_name: string | null;
+      client_id: string | null;
+      client_name: string | null;
+      product_catalog_id: string | null;
+      product_name: string | null;
+      quantity_ordered: number | null;
+      customer_name: string | null;
+      location_name: string | null;
+      scheduled_date: string | null;
+    }>
+  )
+    .map((row): AvailableOrderRow | null => {
       if (
-        !row.id ||
-        !row.assigned_agent_id ||
+        !row.delivery_id ||
+        !row.agent_id ||
         !row.customer_name ||
         !row.client_id ||
         !row.product_catalog_id ||
@@ -82,16 +85,16 @@ export async function listAvailableOrders(): Promise<AvailableOrderRow[]> {
         return null;
       }
       return {
-        delivery_id: row.id,
-        agent_id: row.assigned_agent_id,
-        agent_name: row.assigned_agent?.display_name ?? 'Agent',
+        delivery_id: row.delivery_id,
+        agent_id: row.agent_id,
+        agent_name: row.agent_name ?? 'Agent',
         client_id: row.client_id,
-        client_name: row.client?.name ?? 'Client',
+        client_name: row.client_name ?? 'Client',
         product_catalog_id: row.product_catalog_id,
-        product_name: row.product?.product_name ?? 'Product',
+        product_name: row.product_name ?? 'Product',
         quantity_ordered: row.quantity_ordered,
         customer_name: row.customer_name,
-        location_name: row.location?.name ?? null,
+        location_name: row.location_name ?? null,
         scheduled_date: row.scheduled_date,
       };
     })
