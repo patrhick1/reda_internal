@@ -49,6 +49,10 @@ export default function WarehouseLayout() {
           the card on the Stock home. Read-only here (no /deliveries route
           in this group, so order rows are non-tappable). */}
       <Tabs.Screen name="available" options={{ href: null }} />
+      {/* Per-holder stock movement history — pushed from the Stock home
+          card tap. Auth gate on the server-side RPC limits warehouse staff
+          to their own warehouse place + themselves. */}
+      <Tabs.Screen name="movements/[holderId]" options={{ href: null }} />
     </Tabs>
   );
 }

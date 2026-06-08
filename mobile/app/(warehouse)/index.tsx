@@ -159,7 +159,17 @@ export default function WarehouseHome() {
             </Card>
           </View>
         }
-        renderItem={({ item }) => <GroupCard group={item} />}
+        renderItem={({ item }) => (
+          <GroupCard
+            group={item}
+            onPress={() =>
+              router.push({
+                pathname: '/(warehouse)/movements/[holderId]',
+                params: { holderId: item.user_id },
+              })
+            }
+          />
+        )}
         ListEmptyComponent={
           error ? (
             <Empty icon="alert" title="Could not load" sub={error} />
@@ -180,10 +190,10 @@ export default function WarehouseHome() {
   );
 }
 
-function GroupCard({ group }: { group: Group }) {
+function GroupCard({ group, onPress }: { group: Group; onPress?: () => void }) {
   const isWarehouse = group.user_role === 'warehouse';
   return (
-    <Card dense>
+    <Card dense onPress={onPress}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
         {isWarehouse ? (
           <View

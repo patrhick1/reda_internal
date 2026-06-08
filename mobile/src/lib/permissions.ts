@@ -45,6 +45,15 @@ export function canSeeAuditLog(role: Role): boolean {
   return isOps(role);
 }
 
+/** Drill into a different holder's stock-movement history. Agents always
+ *  have their own surface (no gate); this controls whether a holder-card
+ *  tap-to-history affordance is wired up at all. Mirrors the server-side
+ *  list_stock_movements gate, which itself mirrors stock_adj_select_admin_dispatcher.
+ *  Server anchor: list_stock_movements(...) auth check + stock_adj_select_admin_dispatcher policy. */
+export function canViewOthersStockHistory(role: Role): boolean {
+  return isOps(role) || role === 'warehouse';
+}
+
 /** Address-match log + Needs Review queue. Operational set.
  * Server anchor: aml_select_admin_dispatcher policy → is_admin_or_dispatcher(). */
 export function canSeeAddressMatchLog(role: Role): boolean {

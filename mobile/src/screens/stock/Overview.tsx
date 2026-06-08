@@ -34,6 +34,7 @@ import {
 } from '@/lib/permissions';
 
 type Section = {
+  user_id: string;
   title: string;
   sub: string;
   data: StockMatrixRow[];
@@ -218,7 +219,18 @@ export function StockOverview({ basePath }: { basePath: StockBasePath }) {
               )
             }
             renderSectionHeader={({ section }) => (
-              <View style={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6 }}>
+              <Pressable
+                onPress={
+                  section.user_id
+                    ? () =>
+                        router.push({
+                          pathname: `${basePath}/stock/movements/[holderId]` as const,
+                          params: { holderId: section.user_id },
+                        })
+                    : undefined
+                }
+                style={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6 }}
+              >
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                   {section.isWarehouse ? (
                     <View
@@ -250,8 +262,11 @@ export function StockOverview({ basePath }: { basePath: StockBasePath }) {
                       {section.sub}
                     </Text>
                   </View>
+                  {section.user_id ? (
+                    <Icon name="chevronRight" size={18} color={colors.textTertiary} />
+                  ) : null}
                 </View>
-              </View>
+              </Pressable>
             )}
             ItemSeparatorComponent={() => <View style={{ height: 6 }} />}
             stickySectionHeadersEnabled={false}
@@ -416,6 +431,7 @@ function groupByUser(rows: StockMatrixRow[], warehouseUsers: AppUser[]): Section
 
   for (const w of warehouseUsers) {
     map.set(w.id, {
+      user_id: w.id,
       title: w.display_name,
       sub: `${w.role} · ${w.email}`,
       data: [],
@@ -430,6 +446,7 @@ function groupByUser(rows: StockMatrixRow[], warehouseUsers: AppUser[]): Section
       existing.data.push(r);
     } else {
       map.set(key, {
+        user_id: r.user_id,
         title: r.user_display_name,
         sub: `${r.user_role} · ${r.user_email}`,
         data: [r],

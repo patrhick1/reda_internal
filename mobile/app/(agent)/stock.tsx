@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, Text, View } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { ActivityIndicator, FlatList, RefreshControl, Text, TouchableOpacity, View } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { listMyStock, type StockMatrixRow } from '@/services/stock';
@@ -11,6 +11,7 @@ const LOW_THRESHOLD = 3;
 
 export default function AgentStock() {
   const user = useCurrentUser();
+  const router = useRouter();
   const { data, loading, error, reload } = useAsync(() => listMyStock(user.userId), [user.userId]);
   useFocusEffect(
     useCallback(() => {
@@ -29,6 +30,11 @@ export default function AgentStock() {
       <AppBar
         title="My stock"
         subtitle={`${totals.total} items across ${totals.count} ${totals.count === 1 ? 'product' : 'products'}`}
+        right={
+          <TouchableOpacity onPress={() => router.push('/(agent)/movements')} hitSlop={8}>
+            <Icon name="history" size={22} color={colors.black} />
+          </TouchableOpacity>
+        }
       />
       <FlatList
         data={data ?? []}

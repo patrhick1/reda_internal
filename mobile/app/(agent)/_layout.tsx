@@ -58,6 +58,9 @@ export default function AgentLayout() {
           ),
         }}
       />
+      {/* Stock movement history — pushed from the "history" icon on My
+          stock. Agent's view is always own holder; the server RPC enforces. */}
+      <Tabs.Screen name="movements" options={{ href: null }} />
     </Tabs>
   );
 }
