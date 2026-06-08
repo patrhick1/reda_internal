@@ -154,31 +154,33 @@ export function StockOverview({ basePath }: { basePath: StockBasePath }) {
         />
       </View>
 
-      {/* Search + action row. Transfer is primary (most-used). Overflow `+`
-          opens a sheet with Receive + Adjust (each gated separately). */}
-      <View
-        style={{
-          paddingHorizontal: 16,
-          paddingBottom: 12,
-          flexDirection: 'row',
-          gap: 8,
-          alignItems: 'flex-start',
-        }}
-      >
-        <View style={{ flex: 1 }}>
-          <Input
-            icon="search"
-            value={query}
-            onChange={setQuery}
-            placeholder="Search products or holders"
-            autoCorrect={false}
-            autoCapitalize="none"
-          />
-        </View>
-        {showTransfer ? (
-          <View style={{ marginTop: 2 }}>
+      {/* Search row — full-width input. Action buttons (Transfer primary,
+          `+` overflow) sit on their own row below so the search field
+          doesn't get squeezed on phones. */}
+      <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+        <Input
+          icon="search"
+          value={query}
+          onChange={setQuery}
+          placeholder="Search products or holders"
+          autoCorrect={false}
+          autoCapitalize="none"
+        />
+      </View>
+      {showTransfer || showOverflow ? (
+        <View
+          style={{
+            paddingHorizontal: 16,
+            paddingBottom: 12,
+            flexDirection: 'row',
+            justifyContent: 'flex-end',
+            gap: 8,
+          }}
+        >
+          {showTransfer ? (
             <Button
               variant="primary"
+              size="sm"
               icon="arrowRight"
               onPress={() =>
                 router.push(`${basePath}/stock/transfer` as `${StockBasePath}/stock/transfer`)
@@ -186,21 +188,20 @@ export function StockOverview({ basePath }: { basePath: StockBasePath }) {
             >
               Transfer
             </Button>
-          </View>
-        ) : null}
-        {showOverflow ? (
-          <View style={{ marginTop: 2 }}>
+          ) : null}
+          {showOverflow ? (
             <Button
               variant="secondary"
+              size="sm"
               icon="plus"
               onPress={() => setOverflowOpen(true)}
               accessibilityLabel="More stock actions"
             >
-              {''}
+              More
             </Button>
-          </View>
-        ) : null}
-      </View>
+          ) : null}
+        </View>
+      ) : null}
 
       <Tabs<Tab>
         value={tab}
@@ -354,12 +355,12 @@ function HeroStatsCard({
   onTapLow: () => void;
   onTapNegative: () => void;
 }) {
+  // 4-stat hero — no kicker, no footer breakdown row. The AppBar already
+  // labels the screen "Stock" so a duplicate kicker is just visual noise.
   return (
-    <Card style={{ backgroundColor: colors.black, padding: 18 }}>
-      <Text style={kicker('dark')}>Stock</Text>
+    <Card style={{ backgroundColor: colors.black, padding: 14 }}>
       <View
         style={{
-          marginTop: 12,
           flexDirection: 'row',
           borderRadius: 10,
           overflow: 'hidden',
@@ -368,6 +369,7 @@ function HeroStatsCard({
         }}
       >
         <HeroStat label="Units" value={formatNumber(stats.totalUnits)} accent={colors.white} />
+        <HeroStat label="Holders" value={String(holderCount)} accent={colors.white} />
         <HeroStat
           label="Low"
           value={String(stats.lowCount)}
@@ -380,9 +382,6 @@ function HeroStatsCard({
           accent={colors.red}
           onPress={onTapNegative}
         />
-      </View>
-      <View style={{ marginTop: 14, flexDirection: 'row', gap: 18, paddingHorizontal: 2 }}>
-        <BreakdownItem label="Holders" value={holderCount} />
       </View>
     </Card>
   );
@@ -399,19 +398,23 @@ function HeroStat({
   accent: string;
   onPress?: () => void;
 }) {
+  // Sized for 4 cells on a phone — value font 22px keeps "6,423" inside one
+  // cell's 80-90px width without truncation while staying visually weighty.
   const inner = (
     <View
-      style={{ flex: 1, backgroundColor: colors.black, paddingHorizontal: 12, paddingVertical: 14 }}
+      style={{ flex: 1, backgroundColor: colors.black, paddingHorizontal: 10, paddingVertical: 12 }}
     >
       <Text style={kicker('dark', 'sm')}>{label}</Text>
       <Text
         style={{
           fontFamily: fonts.extrabold,
-          fontSize: 26,
+          fontSize: 22,
           color: accent,
           marginTop: 4,
           letterSpacing: -0.4,
         }}
+        numberOfLines={1}
+        adjustsFontSizeToFit
       >
         {value}
       </Text>
@@ -426,25 +429,6 @@ function HeroStat({
     </Pressable>
   ) : (
     inner
-  );
-}
-
-function BreakdownItem({ label, value }: { label: string; value: number }) {
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
-      <Text
-        style={{
-          fontFamily: fonts.semibold,
-          fontSize: 10,
-          color: colors.textTertiary,
-          letterSpacing: 0.6,
-          textTransform: 'uppercase',
-        }}
-      >
-        {label}
-      </Text>
-      <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.white }}>{value}</Text>
-    </View>
   );
 }
 

@@ -155,42 +155,42 @@ export default function WarehouseHome() {
               </Text>
             </Card>
 
-            {/* Search + actions */}
-            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
-              <View style={{ flex: 1 }}>
-                <Input
-                  icon="search"
-                  value={query}
-                  onChange={setQuery}
-                  placeholder="Search products or clients"
-                  autoCorrect={false}
-                  autoCapitalize="none"
-                />
-              </View>
-              {showTransfer ? (
-                <View style={{ marginTop: 2 }}>
+            {/* Search row — full-width input, action buttons below
+                right-aligned so the search field doesn't get squeezed
+                on phones. */}
+            <Input
+              icon="search"
+              value={query}
+              onChange={setQuery}
+              placeholder="Search products or clients"
+              autoCorrect={false}
+              autoCapitalize="none"
+            />
+            {showTransfer || showOverflow ? (
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8 }}>
+                {showTransfer ? (
                   <Button
                     variant="primary"
+                    size="sm"
                     icon="arrowRight"
                     onPress={() => router.push('/(warehouse)/transfer')}
                   >
                     Transfer
                   </Button>
-                </View>
-              ) : null}
-              {showOverflow ? (
-                <View style={{ marginTop: 2 }}>
+                ) : null}
+                {showOverflow ? (
                   <Button
                     variant="secondary"
+                    size="sm"
                     icon="plus"
                     onPress={() => setOverflowOpen(true)}
                     accessibilityLabel="More stock actions"
                   >
-                    {''}
+                    More
                   </Button>
-                </View>
-              ) : null}
-            </View>
+                ) : null}
+              </View>
+            ) : null}
 
             {/* Available orders shortcut — Mary's main planning surface. */}
             <Card dense onPress={() => router.push('/(warehouse)/available')}>

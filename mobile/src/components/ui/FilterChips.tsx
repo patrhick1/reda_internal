@@ -21,7 +21,7 @@ export function FilterChips<T extends string>({
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 12, gap: 6 }}
+      contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 10, gap: 6 }}
     >
       {options.map((o) => {
         const active = o.id === value;
@@ -35,10 +35,11 @@ export function FilterChips<T extends string>({
                 borderColor: active ? colors.black : colors.border,
                 borderWidth: 1,
                 borderRadius: 999,
-                paddingVertical: 6,
-                paddingHorizontal: 12,
+                paddingVertical: 4,
+                paddingHorizontal: 10,
                 flexDirection: 'row',
                 alignItems: 'center',
+                alignSelf: 'flex-start',
                 gap: 4,
               },
               pressed && { opacity: 0.85 },
