@@ -22,12 +22,15 @@ import {
   listStatusDefs,
   type DeliveryStatusHistoryRow,
 } from '@/services/deliveries';
+import { listSubAgents } from '@/services/users';
+import { canHandoffToSubAgent } from '@/lib/permissions';
 import { AppBar, Button, Card, Empty, Icon, StatusPill } from '@/components/ui';
 import { colors, fonts, TERMINAL_STATUSES } from '@/lib/theme';
 import { formatDateTime, formatNaira } from '@/lib/format';
 import { MarkDeliveredSheet } from '@/components/sheets/MarkDeliveredSheet';
 import { UpdateStatusSheet } from '@/components/sheets/UpdateStatusSheet';
 import { FlagDeliverySheet } from '@/components/sheets/FlagDeliverySheet';
+import { HandoffToSubAgentSheet } from '@/components/sheets/HandoffToSubAgentSheet';
 import { MessageThread } from '@/components/delivery/MessageThread';
 import { BotRawMessageCard } from '@/components/delivery/BotRawMessageCard';
 import { useQueue } from '@/queue/QueueProvider';
@@ -45,6 +48,13 @@ export default function AgentDeliveryDetail() {
   const [markOpen, setMarkOpen] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
   const [flagOpen, setFlagOpen] = useState(false);
+  const [handoffOpen, setHandoffOpen] = useState(false);
+
+  // Team-lead handoff: load this agent's sub-agents on mount so we know
+  // whether to render the "Hand off" button on the action bar. Returns []
+  // for non-leads, which collapses the button via canHandoffToSubAgent.
+  const subAgentsQ = useAsync(() => listSubAgents(user.userId), [user.userId]);
+  const hasSubAgents = (subAgentsQ.data ?? []).length > 0;
   // Optimistic status + (when queued) the job ID to watch. The veil clears
   // when EITHER the server-confirmed status matches (direct-RPC paths) OR
   // the tracked queue job ends — succeeded (removed) or dead-lettered.
@@ -114,6 +124,10 @@ export default function AgentDeliveryDetail() {
   const firstName = (d.customer_name ?? 'customer').split(/\s+/)[0]!;
   // customer_price is per-delivery, not per-unit. Do NOT multiply by quantity.
   const expectedTotal = Number(d.customer_price ?? 0);
+  // Lead can hand off to a sub-agent. Only the current assignee can hand
+  // off (server gate matches); terminal rows hide the option.
+  const canHandoff =
+    canHandoffToSubAgent(user, d.assigned_agent_id, hasSubAgents) && !isTerminal;
 
   const onCommitted = (newStatus: string, jobId: string) => {
     setOptimistic({ status: newStatus, jobId });
@@ -475,7 +489,10 @@ export default function AgentDeliveryDetail() {
       </ScrollView>
 
       {/* "Update status" stays visible on terminal statuses so a mistaken
-          Cancelled can be escalated — the sheet shows the admin-required note. */}
+          Cancelled can be escalated — the sheet shows the admin-required note.
+          "Hand off" appears for team leads (Iya Ayo & co.) when they're the
+          current assignee on a non-terminal row — taps it to push the
+          delivery to one of their sub-agents via reassign_to_sub_agent. */}
       <View
         style={{
           position: 'absolute',
@@ -492,6 +509,13 @@ export default function AgentDeliveryDetail() {
           gap: 8,
         }}
       >
+        {canHandoff ? (
+          <View style={{ flex: 1 }}>
+            <Button variant="secondary" full icon="user" onPress={() => setHandoffOpen(true)}>
+              Hand off
+            </Button>
+          </View>
+        ) : null}
         <View style={{ flex: 1 }}>
           <Button variant="secondary" full onPress={() => setUpdateOpen(true)}>
             Update status
@@ -525,6 +549,19 @@ export default function AgentDeliveryDetail() {
         delivery={d}
         onClose={() => setFlagOpen(false)}
         onCommitted={onFlagged}
+      />
+      <HandoffToSubAgentSheet
+        open={handoffOpen}
+        delivery={d}
+        leadId={user.userId}
+        onClose={() => setHandoffOpen(false)}
+        onCommitted={() => {
+          // After handoff the row is no longer hers; RLS will hide it from
+          // her Today list. Close the sheet and pop back so she doesn't
+          // see a 'Not found' state from the next reload here.
+          setHandoffOpen(false);
+          router.back();
+        }}
       />
     </View>
   );
