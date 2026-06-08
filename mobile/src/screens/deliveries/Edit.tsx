@@ -293,7 +293,7 @@ export default function EditDeliveryScreen() {
                 </Text>
               </Pressable>
               <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary }}>
-                Unsets the zone so this row waits for clarification. It can't be marked delivered
+                Unsets the zone so this row waits for clarification. It cannot be marked delivered
                 until a new location is set; snapshots stay frozen and refresh when you pick again.
               </Text>
             </View>
