@@ -193,74 +193,63 @@ function MovementRow({ row, onPress }: { row: StockMovement; onPress: (() => voi
   return (
     <Card dense onPress={onPress}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <View
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 10,
-              backgroundColor: tint,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
+        <View
+          style={{
+            width: 44,
+            height: 44,
+            borderRadius: 10,
+            backgroundColor: tint,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Icon name={icon} size={20} color={accent} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text
+            style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}
+            numberOfLines={1}
           >
-            <Icon name={icon} size={20} color={accent} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text
-              style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}
-              numberOfLines={1}
-            >
-              {row.product_name}
-            </Text>
+            {row.product_name}
+          </Text>
+          <Text
+            style={{
+              fontFamily: fonts.medium,
+              fontSize: 12,
+              color: colors.textSecondary,
+              marginTop: 2,
+            }}
+            numberOfLines={1}
+          >
+            {sub}
+          </Text>
+          {row.notes ? (
             <Text
               style={{
                 fontFamily: fonts.medium,
-                fontSize: 12,
-                color: colors.textSecondary,
+                fontSize: 11,
+                color: colors.textTertiary,
                 marginTop: 2,
               }}
               numberOfLines={1}
             >
-              {sub}
+              {row.notes}
             </Text>
-            {row.notes ? (
-              <Text
-                style={{
-                  fontFamily: fonts.medium,
-                  fontSize: 11,
-                  color: colors.textTertiary,
-                  marginTop: 2,
-                }}
-                numberOfLines={1}
-              >
-                {row.notes}
-              </Text>
-            ) : null}
-          </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            <Text
-              style={{
-                fontFamily: fonts.extrabold,
-                fontSize: 20,
-                letterSpacing: -0.4,
-                color: accent,
-              }}
-            >
-              {positive ? '+' : ''}
-              {row.quantity_delta}
-            </Text>
-            {partial ? (
-              <Text
-                style={{
-                  fontFamily: fonts.medium,
-                  fontSize: 10,
-                  color: colors.textTertiary,
-                  marginTop: 1,
-                }}
-              >
-                {Math.abs(row.quantity_delta)} of {row.quantity_ordered}
-              </Text>
-            ) : null}
+          ) : null}
+        </View>
+        <View style={{ alignItems: 'flex-end' }}>
+          <Text
+            style={{
+              fontFamily: fonts.extrabold,
+              fontSize: 20,
+              letterSpacing: -0.4,
+              color: accent,
+            }}
+          >
+            {positive ? '+' : ''}
+            {row.quantity_delta}
+          </Text>
+          {partial ? (
             <Text
               style={{
                 fontFamily: fonts.medium,
@@ -269,10 +258,21 @@ function MovementRow({ row, onPress }: { row: StockMovement; onPress: (() => voi
                 marginTop: 1,
               }}
             >
-              {shortWhen(row.event_at)}
+              {Math.abs(row.quantity_delta)} of {row.quantity_ordered}
             </Text>
-          </View>
+          ) : null}
+          <Text
+            style={{
+              fontFamily: fonts.medium,
+              fontSize: 10,
+              color: colors.textTertiary,
+              marginTop: 1,
+            }}
+          >
+            {shortWhen(row.event_at)}
+          </Text>
         </View>
+      </View>
     </Card>
   );
 }
@@ -302,9 +302,7 @@ function iconFor(kind: MovementEventKind): IconName {
 
 function subtitleFor(row: StockMovement): string {
   const counterpartyLabel =
-    row.counterparty_holder_id != null
-      ? row.counterparty_holder_name ?? 'Unknown party'
-      : null;
+    row.counterparty_holder_id != null ? (row.counterparty_holder_name ?? 'Unknown party') : null;
   switch (row.event_kind) {
     case 'bulk_intake':
       return row.actor_name ? `Received · by ${row.actor_name}` : 'Received';
