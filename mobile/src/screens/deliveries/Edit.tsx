@@ -18,7 +18,7 @@ import {
   updateDeliveryFields,
   type UpdateDeliveryFieldsPatch,
 } from '@/services/deliveries';
-import { canEditDelivery, canUnassignDelivery } from '@/lib/permissions';
+import { canClearDeliveryLocation, canEditDelivery, canUnassignDelivery } from '@/lib/permissions';
 import { AppBar, Avatar, Banner, Button, Card, Empty, Icon } from '@/components/ui';
 import {
   DeliveryFieldsForm,
@@ -27,6 +27,7 @@ import {
   type FormValidation,
 } from './DeliveryFieldsForm';
 import { UnassignAgentSheet } from '@/components/sheets/UnassignAgentSheet';
+import { ClearLocationSheet } from '@/components/sheets/ClearLocationSheet';
 import { colors, fonts } from '@/lib/theme';
 import { errorMessage } from '@/lib/errors';
 
@@ -55,6 +56,7 @@ export default function EditDeliveryScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [unassignSheetOpen, setUnassignSheetOpen] = useState(false);
+  const [clearLocationSheetOpen, setClearLocationSheetOpen] = useState(false);
 
   const handleFormChange = useCallback((s: DeliveryFormState, v: FormValidation) => {
     setState(s);
@@ -245,6 +247,58 @@ export default function EditDeliveryScreen() {
             backed by the dedicated `unassign_delivery` RPC (audit-logged with
             a required reason). Hidden when there's nothing to unassign or the
             viewer lacks permission. */}
+        {/* Explicit clear-location action. The form's location picker drives
+            update_delivery_fields, which uses coalesce(p_x, v_old.x) — passing
+            null there means "don't change", so there's no path to put the row
+            back to "no zone yet" via the normal Save flow. This card calls the
+            dedicated `clear_delivery_location` RPC (audit-logged with required
+            reason). Hidden when there's nothing to clear or the viewer lacks
+            permission. */}
+        {canClearDeliveryLocation(user.role, d.current_status, d.location_id ?? null) ? (
+          <Card>
+            <Text style={kicker}>Location</Text>
+            <View style={{ marginTop: 8, gap: 10 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Icon name="mapPin" size={16} color={colors.textSecondary} />
+                <Text
+                  style={{ flex: 1, fontFamily: fonts.bold, fontSize: 14, color: colors.black }}
+                >
+                  {d.location_name ?? 'Set'}
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => setClearLocationSheetOpen(true)}
+                disabled={submitting}
+                accessibilityRole="button"
+                accessibilityLabel="Clear delivery location"
+                style={({ pressed }) => [
+                  {
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    paddingVertical: 12,
+                    paddingHorizontal: 16,
+                    borderRadius: 999,
+                    borderWidth: 1.5,
+                    borderColor: colors.red,
+                    backgroundColor: colors.white,
+                  },
+                  pressed && !submitting && { opacity: 0.85 },
+                ]}
+              >
+                <Icon name="x" size={16} color={colors.red} />
+                <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.red }}>
+                  Clear location
+                </Text>
+              </Pressable>
+              <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary }}>
+                Unsets the zone so this row waits for clarification. It can't be marked delivered
+                until a new location is set; snapshots stay frozen and refresh when you pick again.
+              </Text>
+            </View>
+          </Card>
+        ) : null}
         {d.assigned_agent_id && canUnassignDelivery(user.role, d.current_status) ? (
           <Card>
             <Text style={kicker}>Assignment</Text>
@@ -345,6 +399,23 @@ export default function EditDeliveryScreen() {
           // the save flow: drop the lock, navigate back. Admin can re-open if
           // they need to fix other fields; the row will reload with
           // assigned_agent_id=null and the assignment card will hide.
+          void lock.release().catch(() => {
+            /* swallow — server expires the lock either way */
+          });
+          router.back();
+        }}
+      />
+
+      <ClearLocationSheet
+        open={clearLocationSheetOpen}
+        deliveryId={d.id ?? null}
+        customerName={d.customer_name ?? null}
+        onClose={() => setClearLocationSheetOpen(false)}
+        onCleared={() => {
+          setClearLocationSheetOpen(false);
+          // Same rationale as the unassign flow: the form captured location_id
+          // at mount and a Save would re-set it from the stale `initial`.
+          // Drop the lock and pop back; admin re-opens to pick a new location.
           void lock.release().catch(() => {
             /* swallow — server expires the lock either way */
           });

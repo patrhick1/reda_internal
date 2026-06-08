@@ -309,6 +309,24 @@ export function canUnassignDelivery(role: Role, currentStatus: string | null): b
   return PRE_DELIVERY_STATUSES.has(currentStatus ?? 'pending');
 }
 
+/** Clear `location_id` on a non-terminal delivery — closes the "can't blank
+ *  location once it's set" gap left by update_delivery_fields' coalesce
+ *  contract (see scripts/clear-delivery-location.sql header). Same role +
+ *  status gate as canUnassignDelivery: ops set (admin + dispatcher + rep),
+ *  non-terminal rows only. The button is also hidden when the row's
+ *  location_id is already null (the RPC would raise) — callers should pass
+ *  the live row's location_id and short-circuit at the UI level. Server
+ *  anchor: `clear_delivery_location` RPC. */
+export function canClearDeliveryLocation(
+  role: Role,
+  currentStatus: string | null,
+  locationId: string | null,
+): boolean {
+  if (!isOps(role)) return false;
+  if (locationId == null) return false;
+  return PRE_DELIVERY_STATUSES.has(currentStatus ?? 'pending');
+}
+
 /** Correct the `location_id` on an already-DELIVERED row — re-snapshots
  *  charged_snapshot + agent_payment_snapshot from the new location's rate.
  *  Admin only (it mutates frozen money on a closed row, so it sits tighter

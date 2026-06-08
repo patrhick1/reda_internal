@@ -516,6 +516,26 @@ export async function revertDeliveryToPending(deliveryId: string, reason: string
   if (error) throw error;
 }
 
+/** Admin/dispatcher/rep: clear `location_id` on a non-terminal delivery so
+ *  admin can wait for clarification. Snapshots stay intact and will
+ *  refresh when a new location is set via update_delivery_fields. Server
+ *  raises 42501 on agent callers, 22023 on terminal / deleted / empty-
+ *  reason / already-null. SQL: scripts/clear-delivery-location.sql. */
+export async function clearDeliveryLocation(deliveryId: string, reason: string): Promise<void> {
+  const { error } = await (
+    supabase as unknown as {
+      rpc: (
+        fn: string,
+        args: Record<string, unknown>,
+      ) => Promise<{ data: unknown; error: { message: string } | null }>;
+    }
+  ).rpc('clear_delivery_location', {
+    p_delivery_id: deliveryId,
+    p_reason: reason,
+  });
+  if (error) throw error;
+}
+
 /** Admin/dispatcher bulk reassign: set the assigned agent on every supplied
  *  delivery in a single round-trip. Terminal / deleted rows and rows already
  *  on the target agent are silently skipped server-side. Returns the count
