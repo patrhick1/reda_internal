@@ -79,7 +79,20 @@ export default function AdminHome() {
             <HeroStat label="Completed" value={String(stats.delivered)} accent={colors.success} />
             <HeroStat label="Rate" value={stats.rateLabel} accent={colors.red} />
           </View>
-          <View style={{ marginTop: 14, flexDirection: 'row', gap: 18, paddingHorizontal: 2 }}>
+          {/* The four chips sum to ORDERS so the hero card double-acts as a
+              budget: Completed + Active + Unassigned + Closed = total.
+              Completed is listed first to mirror the HeroStat focus order. */}
+          <View
+            style={{
+              marginTop: 14,
+              flexDirection: 'row',
+              flexWrap: 'wrap',
+              rowGap: 8,
+              columnGap: 18,
+              paddingHorizontal: 2,
+            }}
+          >
+            <BreakdownItem label="Completed" value={stats.delivered} />
             <BreakdownItem label="Active" value={stats.active} />
             <BreakdownItem label="Unassigned" value={stats.unassigned} />
             <BreakdownItem label="Closed" value={stats.closed} />
