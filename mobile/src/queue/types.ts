@@ -9,7 +9,8 @@ export type JobKind =
   | 'change_delivery_status'
   | 'flag_delivery'
   | 'create_stock_adjustment'
-  | 'create_stock_transfer';
+  | 'create_stock_transfer'
+  | 'return_delivery_leftover';
 
 export type ChangeDeliveryStatusArgs = {
   deliveryId: string;
@@ -52,11 +53,23 @@ export type CreateStockTransferArgs = {
   notes: string | null;
 };
 
+/** Args for `return_delivery_leftover` — hands a partial delivery's leftover
+ *  (quantity_ordered − quantity_delivered) back to the warehouse. Enqueued
+ *  right after the mark-delivered job; the queue drains FIFO so the delivery
+ *  is already 'delivered' by the time this runs (and the RPC retries if not). */
+export type ReturnDeliveryLeftoverArgs = {
+  deliveryId: string;
+  /** null => return the full leftover the server computes. */
+  quantity: number | null;
+  notes: string | null;
+};
+
 export type JobArgs =
   | { kind: 'change_delivery_status'; args: ChangeDeliveryStatusArgs }
   | { kind: 'flag_delivery'; args: FlagDeliveryArgs }
   | { kind: 'create_stock_adjustment'; args: CreateStockAdjustmentArgs }
-  | { kind: 'create_stock_transfer'; args: CreateStockTransferArgs };
+  | { kind: 'create_stock_transfer'; args: CreateStockTransferArgs }
+  | { kind: 'return_delivery_leftover'; args: ReturnDeliveryLeftoverArgs };
 
 export type JobStatus = 'pending' | 'in_flight' | 'failed_retrying' | 'dead_letter';
 

@@ -2307,6 +2307,15 @@ export type Database = {
         Args: { p_delivery_id: string; p_inbound_id: string }
         Returns: undefined
       }
+      return_delivery_leftover: {
+        Args: {
+          p_client_uuid: string
+          p_delivery_id: string
+          p_notes?: string
+          p_quantity?: number
+        }
+        Returns: string
+      }
       rollover_delivery: {
         Args: {
           p_client_uuid: string

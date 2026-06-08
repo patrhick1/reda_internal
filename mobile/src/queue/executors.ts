@@ -15,6 +15,7 @@ import type {
   FlagDeliveryArgs,
   Job,
   JobKind,
+  ReturnDeliveryLeftoverArgs,
 } from './types';
 
 export type Executor = (clientUuid: string, args: unknown) => Promise<void>;
@@ -67,6 +68,16 @@ const EXECUTORS: Record<JobKind, Executor> = {
       p_product_catalog_id: args.productCatalogId,
       p_quantity: args.quantity,
       p_reason: args.reason,
+      p_notes: args.notes as unknown as string,
+    });
+    if (error) throw classifyRpcError(error);
+  },
+  async return_delivery_leftover(clientUuid, raw) {
+    const args = raw as ReturnDeliveryLeftoverArgs;
+    const { error } = await supabase.rpc('return_delivery_leftover', {
+      p_client_uuid: clientUuid,
+      p_delivery_id: args.deliveryId,
+      p_quantity: args.quantity as unknown as number,
       p_notes: args.notes as unknown as string,
     });
     if (error) throw classifyRpcError(error);

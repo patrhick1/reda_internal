@@ -3,7 +3,7 @@ import { Pressable, Text, View } from 'react-native';
 import { Banner, Button, Icon, Input, Sheet } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 import { getAgentProductStock, type DeliveryRow } from '@/services/deliveries';
-import { useEnqueueChangeStatus } from '@/queue/mutations';
+import { useEnqueueChangeStatus, useEnqueueReturnLeftover } from '@/queue/mutations';
 import { formatNaira } from '@/lib/format';
 import { errorMessage } from '@/lib/errors';
 
@@ -29,7 +29,9 @@ export function MarkDeliveredSheet({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [onHand, setOnHand] = useState<number | null>(null);
+  const [returnLeftover, setReturnLeftover] = useState(false);
   const enqueueStatus = useEnqueueChangeStatus();
+  const enqueueReturnLeftover = useEnqueueReturnLeftover();
 
   // Reset form + fetch stock when the sheet OPENS, not on every delivery
   // reference change. The parent's reload() returns a new `delivery` object
@@ -45,6 +47,7 @@ export function MarkDeliveredSheet({
     // customer for this trip, flat — not the product unit price).
     setPaid(String(delivery.customer_price ?? 0));
     setMethod('transfer');
+    setReturnLeftover(false);
     setError(null);
     setOnHand(null);
     const agentId = delivery.assigned_agent_id;
@@ -69,6 +72,16 @@ export function MarkDeliveredSheet({
     Number.isInteger(qtyNum) &&
     qtyNum > delivery.quantity_ordered
       ? qtyNum - delivery.quantity_ordered
+      : 0;
+  // Partial delivery: units the customer didn't take. current_stock only
+  // subtracts quantity_delivered, so without an explicit return these stay on
+  // the agent's books (§14-1). Offer to hand them back to the warehouse.
+  const leftover =
+    delivery.quantity_ordered != null &&
+    Number.isInteger(qtyNum) &&
+    qtyNum > 0 &&
+    qtyNum < delivery.quantity_ordered
+      ? delivery.quantity_ordered - qtyNum
       : 0;
   // All three money fields below are per-delivery. quantity_delivered tracks
   // stock movement and partial-delivery state; it does NOT scale the money.
@@ -112,6 +125,14 @@ export function MarkDeliveredSheet({
         },
         `Mark delivered · ${delivery!.customer_name ?? ''}`,
       );
+      // Queued AFTER the delivered job; the queue drains FIFO so the row is
+      // already 'delivered' by the time this runs (and the RPC retries if not).
+      if (returnLeftover && leftover > 0) {
+        await enqueueReturnLeftover(
+          { deliveryId: delivery!.id ?? '', quantity: leftover, notes: null },
+          `Return ${leftover} to warehouse · ${delivery!.customer_name ?? ''}`,
+        );
+      }
       onConfirmed('delivered', jobId);
     } catch (e) {
       setError(errorMessage(e));
@@ -220,6 +241,48 @@ export function MarkDeliveredSheet({
           <Banner tone="info" icon="cash" title="POS fee on cash">
             {`${formatNaira(cashPosFee)} will be deducted from the client's remit (POS charge for banking the cash). Doesn't change what you hand over.`}
           </Banner>
+        ) : null}
+
+        {leftover > 0 ? (
+          <Pressable
+            onPress={() => setReturnLeftover((v) => !v)}
+            style={({ pressed }) => [
+              {
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                padding: 14,
+                borderRadius: 12,
+                borderWidth: 2,
+                borderColor: returnLeftover ? colors.black : colors.border,
+                backgroundColor: returnLeftover ? colors.surface : colors.white,
+              },
+              pressed && { opacity: 0.85 },
+            ]}
+          >
+            <View
+              style={{
+                width: 24,
+                height: 24,
+                borderRadius: 6,
+                borderWidth: 2,
+                borderColor: returnLeftover ? colors.black : colors.border,
+                backgroundColor: returnLeftover ? colors.black : colors.white,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              {returnLeftover ? <Icon name="check" size={16} color={colors.white} /> : null}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontFamily: fonts.semibold, fontSize: 14, color: colors.black }}>
+                {`Return ${leftover} to warehouse`}
+              </Text>
+              <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary }}>
+                {`You're delivering ${qtyNum} of ${delivery.quantity_ordered}. Leave this off to keep the ${leftover} with you.`}
+              </Text>
+            </View>
+          </Pressable>
         ) : null}
 
         <View style={{ backgroundColor: colors.surface, borderRadius: 12, padding: 12, gap: 6 }}>

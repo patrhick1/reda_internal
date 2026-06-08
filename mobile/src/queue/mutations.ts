@@ -15,6 +15,7 @@ import type {
   CreateStockAdjustmentArgs,
   CreateStockTransferArgs,
   FlagDeliveryArgs,
+  ReturnDeliveryLeftoverArgs,
 } from './types';
 
 // Each hook returns the queue job ID so callers (e.g. the delivery detail
@@ -57,6 +58,16 @@ export function useEnqueueStockTransfer() {
   return useCallback(
     async (args: CreateStockTransferArgs, label: string): Promise<string> => {
       return await enqueue({ kind: 'create_stock_transfer', args, label });
+    },
+    [enqueue],
+  );
+}
+
+export function useEnqueueReturnLeftover() {
+  const { enqueue } = useQueue();
+  return useCallback(
+    async (args: ReturnDeliveryLeftoverArgs, label: string): Promise<string> => {
+      return await enqueue({ kind: 'return_delivery_leftover', args, label });
     },
     [enqueue],
   );
