@@ -143,12 +143,13 @@ export const TERMINAL_STATUSES = new Set<string>([...STATUS_GROUPS.done, ...STAT
 /** Terminal statuses whose entry fires side effects: `delivered` triggers
  *  the sibling auto-cancel cascade + stock decrement via current_stock,
  *  `rolled_over` is set by EOD bookkeeping. The UpdateStatusSheet refuses
- *  these for everyone — agents get told to contact admin. Admin can revert
- *  a wrongly-`delivered` row via the dedicated `revert_delivery_to_pending`
- *  RPC, surfaced as a "Revert delivered" button on the Detail screen's
- *  Address card (nulls qty / paid / payment_method / cash POS fee, flips
- *  to pending, stock auto-recovers; cascade-cancelled siblings stay
- *  cancelled and admin reviews separately). Reverting `rolled_over` is
+ *  these for everyone — agents get told to contact admin. Admin and
+ *  dispatcher can revert a wrongly-`delivered` row via the dedicated
+ *  `revert_delivery_to_pending` RPC, surfaced as a "Revert delivered"
+ *  button on the Detail screen's Address card (nulls qty / paid /
+ *  payment_method / cash POS fee, flips to pending, stock auto-recovers;
+ *  cascade-cancelled siblings stay cancelled and the caller reviews
+ *  separately). Rep is excluded by design. Reverting `rolled_over` is
  *  still unimplemented — EOD machinery owns that lifecycle. SQL anchor:
  *  scripts/revert-delivered.sql. */
 export const FINAL_STATUSES = new Set<string>(['delivered', 'rolled_over']);

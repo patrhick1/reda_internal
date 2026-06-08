@@ -5,12 +5,12 @@ import { colors, fonts } from '@/lib/theme';
 import { revertDeliveryToPending } from '@/services/deliveries';
 import { errorMessage } from '@/lib/errors';
 
-/** Admin-only confirm sheet for reverting a wrongly-`delivered` row back to
- *  `pending`. Required reason is prefixed with 'revert_delivered:' in the
- *  audit_log on the server. The assigned agent gets a status-change push
- *  (via the existing tg_notify_delivery_status_change trigger) — desirable
- *  UX so they know their fat-fingered delivered was undone. The parent
- *  screen is responsible for refreshing its query on `onReverted`. */
+/** Admin + dispatcher confirm sheet for reverting a wrongly-`delivered` row
+ *  back to `pending`. Required reason is prefixed with 'revert_delivered:'
+ *  in the audit_log on the server. The assigned agent gets a status-change
+ *  push (via the existing tg_notify_delivery_status_change trigger) —
+ *  desirable UX so they know their fat-fingered delivered was undone. The
+ *  parent screen is responsible for refreshing its query on `onReverted`. */
 export function RevertDeliveredSheet({
   open,
   deliveryId,

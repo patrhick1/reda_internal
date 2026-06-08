@@ -320,15 +320,17 @@ export function canCorrectDeliveryLocation(role: Role, currentStatus: string | n
   return role === 'admin' && currentStatus === 'delivered';
 }
 
-/** Revert a wrongly-`delivered` row back to `pending`. Strictly admin
- *  (matches the server gate — dispatchers don't get this; too easy to
- *  corrupt remit / reconciliation reports) and `delivered` only — other
- *  terminal states (cancelled, failed_delivery, rolled_over) don't have
- *  the same fat-finger recovery story and are out of scope for this RPC.
- *  Server anchor: `revert_delivery_to_pending` RPC checks is_admin() and
- *  current_status = 'delivered'. */
+/** Revert a wrongly-`delivered` row back to `pending`. Admin + dispatcher
+ *  (widened 2026-06-08 — dispatcher is the manager and Uzo asked that it
+ *  not bottleneck on him alone). Rep deliberately excluded because this
+ *  mutates frozen money on a closed row that fed reconciliation; reps are
+ *  the vendor-coordination layer, not the dispatch decision-maker.
+ *  `delivered` only — other terminal states (cancelled, failed_delivery,
+ *  rolled_over) don't have the same fat-finger recovery story and are out
+ *  of scope for this RPC. Server anchor: `revert_delivery_to_pending` RPC
+ *  inline-checks role IN ('admin','dispatcher') and current_status='delivered'. */
 export function canRevertDelivered(role: Role, currentStatus: string | null): boolean {
-  return role === 'admin' && currentStatus === 'delivered';
+  return (role === 'admin' || role === 'dispatcher') && currentStatus === 'delivered';
 }
 
 /** Resolve (fix-and-create or discard) a needs_review bot inbound row.
