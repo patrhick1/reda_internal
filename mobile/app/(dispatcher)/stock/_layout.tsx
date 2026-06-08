@@ -16,6 +16,7 @@ export default function DispatcherStockLayout() {
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="client/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="transfer" options={{ title: 'New transfer' }} />
+      <Stack.Screen name="holder/[holderId]" options={{ headerShown: false }} />
       <Stack.Screen name="movements/[holderId]" options={{ headerShown: false }} />
     </Stack>
   );

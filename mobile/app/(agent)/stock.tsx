@@ -13,8 +13,7 @@ import { useCurrentUser } from '@/hooks/useAuth';
 import { listMyStock, type StockMatrixRow } from '@/services/stock';
 import { AppBar, Card, Empty, Icon } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
-
-const LOW_THRESHOLD = 3;
+import { isLow, isNegative } from '@/lib/stock-helpers';
 
 export default function AgentStock() {
   const user = useCurrentUser();
@@ -77,8 +76,8 @@ export default function AgentStock() {
 }
 
 function StockRow({ row }: { row: StockMatrixRow }) {
-  const negative = row.quantity_on_hand < 0;
-  const low = !negative && row.quantity_on_hand <= LOW_THRESHOLD;
+  const negative = isNegative(row.quantity_on_hand);
+  const low = isLow(row.quantity_on_hand);
   return (
     <Card dense>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
