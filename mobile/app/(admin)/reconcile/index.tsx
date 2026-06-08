@@ -12,12 +12,18 @@ import {
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
+import { useCurrentUser } from '@/hooks/useAuth';
 import {
   listAgentEarningsSummary,
   listClientRemit,
+  listSettlementsForDate,
   runEodRollover,
+  settlePeriod,
+  voidSettlement,
   type AgentEarningsRow,
   type ClientRemitRow,
+  type SettlementRow,
+  type SubjectType,
 } from '@/services/reconciliation';
 import {
   AppBar,
@@ -35,10 +41,14 @@ import { HINTS } from '@/hints/registry';
 import { colors, fonts } from '@/lib/theme';
 import { formatNaira } from '@/lib/format';
 import { errorMessage } from '@/lib/errors';
-import { daysAgoLagos, formatRangeLagos, todayLagos, yesterdayLagos } from '@/lib/date';
+import { daysAgoLagos, formatRangeLagos, isYmd, todayLagos, yesterdayLagos } from '@/lib/date';
 
 type Tab = 'clients' | 'agents' | 'summary';
 type Preset = 'today' | 'yesterday' | 'last7' | 'custom';
+
+// Stable empty map so a missing settlements query doesn't allocate a new Map
+// each render (which would churn the list props).
+const EMPTY_SETTLEMENTS: Map<string, SettlementRow> = new Map();
 
 function presetRange(p: Preset): { from: string; to: string } | null {
   switch (p) {
@@ -65,20 +75,98 @@ function detectPreset(from: string, to: string): Preset {
 
 export default function AdminReconcile() {
   const router = useRouter();
+  const user = useCurrentUser();
   const [tab, setTab] = useState<Tab>('clients');
   const [from, setFrom] = useState<string>(todayLagos());
   const [to, setTo] = useState<string>(todayLagos());
   const [openId, setOpenId] = useState<string | null>(null);
 
-  const clientsQ = useAsync(() => listClientRemit(from, to), [from, to]);
-  const agentsQ = useAsync(() => listAgentEarningsSummary(from, to), [from, to]);
+  // Gate the RPC fires behind YMD validation: the From/To Inputs call
+  // setFrom/setTo on every keystroke, and the underlying RPCs take `date`
+  // params — without this guard, typing "2026-06-0" hits PostgREST with
+  // 22007 invalid-date-syntax and the network tab fills with 400s.
+  const rangeValid = isYmd(from) && isYmd(to);
+  const clientsQ = useAsync(
+    () => (rangeValid ? listClientRemit(from, to) : Promise.resolve<ClientRemitRow[]>([])),
+    [from, to, rangeValid],
+  );
+  const agentsQ = useAsync(
+    () =>
+      rangeValid ? listAgentEarningsSummary(from, to) : Promise.resolve<AgentEarningsRow[]>([]),
+    [from, to, rangeValid],
+  );
+
+  // Settlement (§14-2) is a per-DAY action, so it only applies when the range
+  // is a single day (the daily-reconcile default). In multi-day ranges the
+  // settle affordances are hidden — you pick a single day to settle it.
+  const isSingleDay = rangeValid && from === to;
+  const canSettle = user.role === 'admin' && isSingleDay;
+  const settlementsQ = useAsync(
+    () =>
+      isSingleDay ? listSettlementsForDate(to) : Promise.resolve(new Map<string, SettlementRow>()),
+    [from, to, isSingleDay],
+  );
 
   useFocusEffect(
     useCallback(() => {
+      if (!rangeValid) return;
       clientsQ.reload();
       agentsQ.reload();
+      settlementsQ.reload();
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [from, to]),
+    }, [from, to, rangeValid]),
+  );
+
+  const notifyErr = useCallback((title: string, msg: string) => {
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined') window.alert(`${title}\n\n${msg}`);
+    } else {
+      Alert.alert(title, msg);
+    }
+  }, []);
+
+  const handleSettle = useCallback(
+    async (subjectType: SubjectType, subjectId: string, note: string | null) => {
+      try {
+        await settlePeriod(subjectType, subjectId, to, note);
+        settlementsQ.reload();
+      } catch (e) {
+        notifyErr('Could not settle', errorMessage(e));
+      }
+    },
+    [to, settlementsQ, notifyErr],
+  );
+
+  const handleVoid = useCallback(
+    (settlementId: string) => {
+      const run = async () => {
+        try {
+          await voidSettlement(settlementId, 'un-settled from reconcile');
+          settlementsQ.reload();
+        } catch (e) {
+          notifyErr('Could not un-settle', errorMessage(e));
+        }
+      };
+      if (Platform.OS === 'web') {
+        if (
+          typeof window !== 'undefined' &&
+          window.confirm(
+            'Un-settle this day? The frozen record is removed (kept in the audit log).',
+          )
+        )
+          run();
+        return;
+      }
+      Alert.alert(
+        'Un-settle?',
+        'The frozen settlement record will be removed (kept in the audit log).',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Un-settle', style: 'destructive', onPress: run },
+        ],
+      );
+    },
+    [settlementsQ, notifyErr],
   );
 
   const applyPreset = useCallback((p: Preset) => {
@@ -195,6 +283,10 @@ export default function AdminReconcile() {
           state={clientsQ}
           openId={openId}
           setOpenId={setOpenId}
+          settlements={settlementsQ.data ?? EMPTY_SETTLEMENTS}
+          canSettle={canSettle}
+          onSettle={(id, note) => handleSettle('client', id, note)}
+          onVoid={handleVoid}
           onOpenClient={(c) =>
             router.push({
               pathname: '/(admin)/reconcile/client/[id]',
@@ -203,7 +295,15 @@ export default function AdminReconcile() {
           }
         />
       ) : tab === 'agents' ? (
-        <AgentsList state={agentsQ} openId={openId} setOpenId={setOpenId} />
+        <AgentsList
+          state={agentsQ}
+          openId={openId}
+          setOpenId={setOpenId}
+          settlements={settlementsQ.data ?? EMPTY_SETTLEMENTS}
+          canSettle={canSettle}
+          onSettle={(id, note) => handleSettle('agent', id, note)}
+          onVoid={handleVoid}
+        />
       ) : (
         <SummaryTab
           clients={clientsQ.data ?? []}
@@ -235,11 +335,19 @@ function ClientsList({
   openId,
   setOpenId,
   onOpenClient,
+  settlements,
+  canSettle,
+  onSettle,
+  onVoid,
 }: {
   state: ReturnType<typeof useAsync<ClientRemitRow[]>>;
   openId: string | null;
   setOpenId: (id: string | null) => void;
   onOpenClient: (c: ClientRemitRow) => void;
+  settlements: Map<string, SettlementRow>;
+  canSettle: boolean;
+  onSettle: (subjectId: string, note: string | null) => void;
+  onVoid: (settlementId: string) => void;
 }) {
   // Headline = total Reda owes back to clients across the period.
   const totalRemit = useMemo(
@@ -302,6 +410,11 @@ function ClientsList({
           amount={Number(item.total_remit)}
           amountLabel="Remit"
           amountColor={Number(item.total_remit) >= 0 ? colors.success : colors.red}
+          settlement={settlements.get(`client:${item.client_id}`) ?? null}
+          canSettle={canSettle}
+          settleLabel="Mark transferred"
+          onSettle={(note) => onSettle(item.client_id, note)}
+          onVoid={onVoid}
           extra={[
             { label: 'Customer owed', value: formatNaira(item.total_customer_price) },
             { label: 'Customer paid', value: formatNaira(item.total_paid) },
@@ -334,10 +447,18 @@ function AgentsList({
   state,
   openId,
   setOpenId,
+  settlements,
+  canSettle,
+  onSettle,
+  onVoid,
 }: {
   state: ReturnType<typeof useAsync<AgentEarningsRow[]>>;
   openId: string | null;
   setOpenId: (id: string | null) => void;
+  settlements: Map<string, SettlementRow>;
+  canSettle: boolean;
+  onSettle: (subjectId: string, note: string | null) => void;
+  onVoid: (settlementId: string) => void;
 }) {
   // Headline = total cash the riders owe Reda for the period (net of their own
   // delivery pay). This is collection-from-riders, NOT agent payroll.
@@ -401,6 +522,11 @@ function AgentsList({
           amount={Number(item.total_remit)}
           amountLabel="To remit"
           amountColor={Number(item.total_remit) >= 0 ? colors.success : colors.red}
+          settlement={settlements.get(`agent:${item.agent_id}`) ?? null}
+          canSettle={canSettle}
+          settleLabel="Mark handed over"
+          onSettle={(note) => onSettle(item.agent_id, note)}
+          onVoid={onVoid}
           extra={[
             { label: 'Collected from customers', value: formatNaira(Number(item.total_collected)) },
             { label: 'Rider pay (kept)', value: formatNaira(Number(item.total_earnings)) },
@@ -578,6 +704,11 @@ function ExpandableRow({
   amountLabel,
   amountColor,
   extra,
+  settlement,
+  canSettle,
+  settleLabel,
+  onSettle,
+  onVoid,
 }: {
   isOpen: boolean;
   onToggle: () => void;
@@ -590,7 +721,17 @@ function ExpandableRow({
   amountLabel: string;
   amountColor: string;
   extra: { label: string; value: string }[];
+  settlement?: SettlementRow | null;
+  canSettle?: boolean;
+  settleLabel?: string;
+  onSettle?: (note: string | null) => void;
+  onVoid?: (settlementId: string) => void;
 }) {
+  const [note, setNote] = useState('');
+  // amount = the live remit figure. Drift = live − the amount frozen at settle.
+  const settledAmount = settlement ? Number(settlement.expected_amount) : null;
+  const drift = settledAmount != null ? amount - settledAmount : 0;
+  const hasDrift = settledAmount != null && Math.abs(drift) > 0.005;
   return (
     <Card dense style={{ padding: 0 }}>
       <Pressable
@@ -666,6 +807,20 @@ function ExpandableRow({
           >
             {amountLabel}
           </Text>
+          {settlement ? (
+            <Text
+              style={{
+                fontFamily: fonts.bold,
+                fontSize: 10,
+                letterSpacing: 0.4,
+                textTransform: 'uppercase',
+                marginTop: 3,
+                color: hasDrift ? colors.warning : colors.success,
+              }}
+            >
+              {hasDrift ? '⚠ changed' : '✓ settled'}
+            </Text>
+          ) : null}
         </View>
         <View style={{ transform: [{ rotate: isOpen ? '90deg' : '0deg' }] }}>
           <Icon name="chevronRight" size={18} color={colors.textSecondary} />
@@ -693,6 +848,104 @@ function ExpandableRow({
               </Text>
             </View>
           ))}
+          {/* Settlement (§14-2): freeze this subject-day, or show the frozen
+              record + any drift since it was settled. Single-day mode only. */}
+          {settlement ? (
+            <View
+              style={{
+                marginTop: 12,
+                paddingTop: 12,
+                borderTopWidth: 1,
+                borderTopColor: colors.border,
+              }}
+            >
+              <Text
+                style={{ fontFamily: fonts.semibold, fontSize: 12, color: colors.textSecondary }}
+              >
+                {`Settled ${formatNaira(settledAmount ?? 0)}${
+                  settlement.settled_by_name ? ` · ${settlement.settled_by_name}` : ''
+                }`}
+              </Text>
+              {settlement.note ? (
+                <Text
+                  style={{
+                    fontFamily: fonts.medium,
+                    fontSize: 12,
+                    color: colors.textSecondary,
+                    marginTop: 2,
+                  }}
+                >
+                  {`Ref: ${settlement.note}`}
+                </Text>
+              ) : null}
+              {hasDrift ? (
+                <View
+                  style={{
+                    marginTop: 8,
+                    backgroundColor: colors.warningSoft,
+                    borderRadius: 10,
+                    padding: 10,
+                  }}
+                >
+                  <Text style={{ fontFamily: fonts.bold, fontSize: 12, color: colors.warningDark }}>
+                    Changed since settled
+                  </Text>
+                  <Text
+                    style={{
+                      fontFamily: fonts.medium,
+                      fontSize: 12,
+                      color: colors.warningDarker,
+                      marginTop: 2,
+                    }}
+                  >
+                    {`Was ${formatNaira(settledAmount ?? 0)} when settled · now ${formatNaira(
+                      amount,
+                    )} (${drift > 0 ? '+' : ''}${formatNaira(
+                      drift,
+                    )}). Reconcile the difference on the next transfer.`}
+                  </Text>
+                </View>
+              ) : null}
+              {canSettle && onVoid ? (
+                <View style={{ marginTop: 10 }}>
+                  <Button
+                    variant="secondary"
+                    full
+                    icon="x"
+                    onPress={() => onVoid(settlement.settlement_id)}
+                  >
+                    Un-settle
+                  </Button>
+                </View>
+              ) : null}
+            </View>
+          ) : canSettle && onSettle ? (
+            <View
+              style={{
+                marginTop: 12,
+                paddingTop: 12,
+                borderTopWidth: 1,
+                borderTopColor: colors.border,
+                gap: 10,
+              }}
+            >
+              <Input
+                label={subjectKind === 'client' ? 'Bank ref / note (optional)' : 'Note (optional)'}
+                value={note}
+                onChange={setNote}
+                autoCapitalize="none"
+                placeholder={subjectKind === 'client' ? 'e.g. GTB transfer 14:32' : 'optional'}
+              />
+              <Button
+                variant="emphasis"
+                full
+                icon="check"
+                onPress={() => onSettle(note.trim() || null)}
+              >
+                {settleLabel ?? 'Mark settled'}
+              </Button>
+            </View>
+          ) : null}
           {onActionPress ? (
             <View style={{ marginTop: 10 }}>
               <Button variant="secondary" full icon="chevronRight" onPress={onActionPress}>

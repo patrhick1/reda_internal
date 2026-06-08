@@ -97,3 +97,67 @@ export async function runEodRollover(forDate: string): Promise<number> {
   if (error) throw error;
   return (data ?? 0) as number;
 }
+
+// ---------------------------------------------------------------------------
+// Settlement / period-lock (§14-2). Freezes one subject-day's figures so a
+// later edit can't silently rewrite a period that was already paid out.
+//   * client settlement = Uzo's manual bank transfer of `total_remit`.
+//   * agent settlement  = rider handed over `total_remit` (paid − their pay).
+// The RPCs snapshot the numbers; the reconcile page compares the snapshot
+// `expected_amount` to its own live total to flag drift.
+// ---------------------------------------------------------------------------
+
+export type SubjectType = 'client' | 'agent';
+
+export type SettlementRow = {
+  settlement_id: string;
+  subject_type: SubjectType;
+  subject_id: string;
+  /** The total frozen at settle time. Drift = live total − expected_amount. */
+  expected_amount: number;
+  deliveries_count: number;
+  settled_at: string;
+  settled_by_name: string | null;
+  note: string | null;
+};
+
+/** Freeze one (subject, day). Admin only. Returns the settlement id. */
+export async function settlePeriod(
+  subjectType: SubjectType,
+  subjectId: string,
+  periodDate: string,
+  note: string | null,
+): Promise<string> {
+  const { data, error } = await supabase.rpc('settle_period', {
+    p_subject_type: subjectType,
+    p_subject_id: subjectId,
+    p_period_date: periodDate,
+    p_note: note as unknown as string,
+  });
+  if (error) throw error;
+  return data as string;
+}
+
+/** Soft-undo a settlement (admin only, reason required). */
+export async function voidSettlement(settlementId: string, reason: string): Promise<void> {
+  const { error } = await supabase.rpc('void_settlement', {
+    p_settlement_id: settlementId,
+    p_reason: reason,
+  });
+  if (error) throw error;
+}
+
+/** Active settlements for a single day, keyed `${subject_type}:${subject_id}`. */
+export async function listSettlementsForDate(
+  periodDate: string,
+): Promise<Map<string, SettlementRow>> {
+  const { data, error } = await supabase.rpc('list_settlements_for_date', {
+    p_period_date: periodDate,
+  });
+  if (error) throw error;
+  const map = new Map<string, SettlementRow>();
+  for (const row of (data ?? []) as SettlementRow[]) {
+    map.set(`${row.subject_type}:${row.subject_id}`, row);
+  }
+  return map;
+}

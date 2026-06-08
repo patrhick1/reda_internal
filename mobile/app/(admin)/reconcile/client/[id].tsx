@@ -6,7 +6,7 @@ import { listClientRemitDetail, type ClientRemitDetailRow } from '@/services/rec
 import { AppBar, Button, Card, Empty } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 import { formatNaira } from '@/lib/format';
-import { formatDateLagos, formatRangeLagos } from '@/lib/date';
+import { formatDateLagos, formatRangeLagos, isYmd } from '@/lib/date';
 
 export default function ClientReconcileDetail() {
   const router = useRouter();
@@ -17,16 +17,20 @@ export default function ClientReconcileDetail() {
     to: string;
   }>();
 
+  // Defensive YMD gate — same reason as the reconcile index: PostgREST 22007
+  // when an invalid `from`/`to` URL param reaches the date-typed RPC.
+  const rangeValid = !!id && isYmd(from) && isYmd(to);
   const detailQ = useAsync<ClientRemitDetailRow[]>(
-    () => listClientRemitDetail(id, from, to),
-    [id, from, to],
+    () => (rangeValid ? listClientRemitDetail(id, from, to) : Promise.resolve([])),
+    [id, from, to, rangeValid],
   );
 
   useFocusEffect(
     useCallback(() => {
+      if (!rangeValid) return;
       detailQ.reload();
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [id, from, to]),
+    }, [id, from, to, rangeValid]),
   );
 
   const rows = useMemo(() => detailQ.data ?? [], [detailQ.data]);

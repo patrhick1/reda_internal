@@ -2216,6 +2216,19 @@ export type Database = {
       is_admin: { Args: never; Returns: boolean }
       is_admin_or_dispatcher: { Args: never; Returns: boolean }
       is_warehouse: { Args: never; Returns: boolean }
+      list_settlements_for_date: {
+        Args: { p_period_date: string }
+        Returns: {
+          deliveries_count: number
+          expected_amount: number
+          note: string | null
+          settled_at: string
+          settled_by_name: string | null
+          settlement_id: string
+          subject_id: string
+          subject_type: string
+        }[]
+      }
       mark_client_notified: {
         Args: { p_status_history_id: string }
         Returns: {
@@ -2351,6 +2364,15 @@ export type Database = {
         Args: { p_device_label?: string; p_platform?: string; p_token: string }
         Returns: undefined
       }
+      settle_period: {
+        Args: {
+          p_note?: string
+          p_period_date: string
+          p_subject_id: string
+          p_subject_type: string
+        }
+        Returns: string
+      }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
       unassign_delivery: {
@@ -2442,6 +2464,10 @@ export type Database = {
           p_reason?: string
         }
         Returns: string
+      }
+      void_settlement: {
+        Args: { p_reason: string; p_settlement_id: string }
+        Returns: undefined
       }
       write_audit: {
         Args: {
