@@ -4,6 +4,7 @@ import { useFocusEffect } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { listAgentEarnings, type AgentEarningRow } from '@/services/deliveries';
+import { listAgentEarningsSummary } from '@/services/reconciliation';
 import { formatNaira } from '@/lib/format';
 import { AppBar, Card, Empty, SectionHeader } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
@@ -14,13 +15,32 @@ export default function AgentEarnings() {
     () => listAgentEarnings(user.userId),
     [user.userId],
   );
+
+  // "Paid every Friday" → the period that matters for remit is the current
+  // work week (Mon → today, Lagos). agent_earnings_summary already gates on
+  // is_admin_or_dispatcher() OR u.id = auth.uid(), so this returns a single
+  // row — the caller's own — with collected / earnings / remit aggregated.
+  const week = useMemo(() => lagosWeekRange(), []);
+  const remitQ = useAsync(
+    () => listAgentEarningsSummary(week.start, week.today),
+    [week.start, week.today],
+  );
+
   useFocusEffect(
     useCallback(() => {
       reload();
+      remitQ.reload();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [reload]),
   );
 
   const buckets = useMemo(() => bucketize(data ?? []), [data]);
+  // Single-row response keyed to the caller; defensive fallbacks keep the
+  // card rendering during the first load and on the rare empty-week case.
+  const remit = remitQ.data?.[0];
+  const collected = Number(remit?.total_collected ?? 0);
+  const youKeep = Number(remit?.total_earnings ?? 0);
+  const toRemit = Number(remit?.total_remit ?? 0);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -69,6 +89,52 @@ export default function AgentEarnings() {
                 <SubStat label="This month" value={formatNaira(buckets.thisMonth)} />
               </View>
             </Card>
+            <Card>
+              <Text
+                style={{
+                  fontFamily: fonts.bold,
+                  fontSize: 11,
+                  color: colors.textSecondary,
+                  letterSpacing: 0.8,
+                  textTransform: 'uppercase',
+                }}
+              >
+                Remit this week
+              </Text>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  marginTop: 10,
+                  alignItems: 'flex-start',
+                }}
+              >
+                <RemitTile label="Collected" value={formatNaira(collected)} />
+                <View style={{ width: 1, backgroundColor: colors.border, marginHorizontal: 12 }} />
+                <RemitTile
+                  label="You keep"
+                  value={formatNaira(youKeep)}
+                  valueColor={colors.success}
+                />
+                <View style={{ width: 1, backgroundColor: colors.border, marginHorizontal: 12 }} />
+                <RemitTile
+                  label="To remit"
+                  value={formatNaira(toRemit)}
+                  valueColor={colors.red}
+                />
+              </View>
+              <Text
+                style={{
+                  fontFamily: fonts.medium,
+                  fontSize: 11,
+                  color: colors.textTertiary,
+                  marginTop: 10,
+                }}
+              >
+                {remitQ.loading && !remit
+                  ? 'Loading…'
+                  : 'Cash + transfer you collected, minus your delivery pay.'}
+              </Text>
+            </Card>
             <SectionHeader>Recent deliveries</SectionHeader>
           </View>
         }
@@ -99,6 +165,42 @@ function SubStat({ label, value }: { label: string; value: string }) {
         {label}
       </Text>
       <Text style={{ fontFamily: fonts.bold, fontSize: 16, color: colors.white, marginTop: 2 }}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+function RemitTile({
+  label,
+  value,
+  valueColor = colors.black,
+}: {
+  label: string;
+  value: string;
+  valueColor?: string;
+}) {
+  return (
+    <View style={{ flex: 1 }}>
+      <Text
+        style={{
+          fontFamily: fonts.medium,
+          fontSize: 10,
+          color: colors.textSecondary,
+          letterSpacing: 0.6,
+          textTransform: 'uppercase',
+        }}
+      >
+        {label}
+      </Text>
+      <Text
+        style={{
+          fontFamily: fonts.extrabold,
+          fontSize: 16,
+          color: valueColor,
+          marginTop: 4,
+        }}
+      >
         {value}
       </Text>
     </View>
@@ -150,26 +252,35 @@ function EarningRow({ row }: { row: AgentEarningRow }) {
   );
 }
 
-function bucketize(rows: AgentEarningRow[]) {
+/** Lagos work-week (Mon → today, inclusive) as YYYY-MM-DD strings. Reused by
+ *  the per-row bucketizer and by the remit RPC call so they always agree on
+ *  what "this week" means. */
+function lagosWeekRange(): { start: string; today: string; startOfMonth: string } {
   const lagos = new Date(new Date().getTime() + 60 * 60 * 1000);
-  const todayStr = lagos.toISOString().slice(0, 10);
+  const today = lagos.toISOString().slice(0, 10);
   const day = lagos.getUTCDay();
   const daysToMonday = day === 0 ? 6 : day - 1;
-  const startOfWeek = new Date(lagos);
-  startOfWeek.setUTCDate(lagos.getUTCDate() - daysToMonday);
-  const startOfWeekStr = startOfWeek.toISOString().slice(0, 10);
+  const monday = new Date(lagos);
+  monday.setUTCDate(lagos.getUTCDate() - daysToMonday);
   const startOfMonth = new Date(lagos);
   startOfMonth.setUTCDate(1);
-  const startOfMonthStr = startOfMonth.toISOString().slice(0, 10);
+  return {
+    start: monday.toISOString().slice(0, 10),
+    today,
+    startOfMonth: startOfMonth.toISOString().slice(0, 10),
+  };
+}
 
+function bucketize(rows: AgentEarningRow[]) {
+  const r = lagosWeekRange();
   let today = 0,
     thisWeek = 0,
     thisMonth = 0;
-  for (const r of rows) {
-    const amount = Number(r.agent_payment_snapshot);
-    if (r.scheduled_date === todayStr) today += amount;
-    if (r.scheduled_date >= startOfWeekStr) thisWeek += amount;
-    if (r.scheduled_date >= startOfMonthStr) thisMonth += amount;
+  for (const row of rows) {
+    const amount = Number(row.agent_payment_snapshot);
+    if (row.scheduled_date === r.today) today += amount;
+    if (row.scheduled_date >= r.start) thisWeek += amount;
+    if (row.scheduled_date >= r.startOfMonth) thisMonth += amount;
   }
   return { today, thisWeek, thisMonth };
 }
