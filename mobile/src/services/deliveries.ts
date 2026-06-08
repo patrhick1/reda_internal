@@ -483,6 +483,39 @@ export async function correctDeliveryLocation(
   if (error) throw error;
 }
 
+/** Admin: revert a wrongly-`delivered` row back to `pending`. The server
+ *  nulls quantity_delivered / paid / payment_method / cash_pos_fee_snapshot
+ *  on the row and inserts a status_history entry. Stock auto-recovers via
+ *  the current_stock view (delivered_decrements CTE filters on
+ *  current_status='delivered'); no stock_adjustments row is written — that
+ *  would double-count. Siblings cancelled by the original delivered's
+ *  cascade STAY cancelled — admin reviews and reopens those separately if
+ *  needed (the cascade trigger only fires on transitions INTO terminal so
+ *  the revert doesn't re-fire it). agent_payment_snapshot and
+ *  charged_snapshot are unchanged — they're set at create time from the
+ *  rate card and remain valid. Reason prefixed with 'revert_delivered:' in
+ *  audit_log. Server raises 42501 on non-admin callers, 22023 on
+ *  non-delivered / deleted / empty-reason; the caller surfaces the raise
+ *  text via the sheet's error banner. */
+export async function revertDeliveryToPending(deliveryId: string, reason: string): Promise<void> {
+  // `revert_delivery_to_pending` is a hand-written RPC not yet in the
+  // generated DB types — cast once so the typed rpc chain still flows,
+  // same pattern as mobile/src/services/available-orders.ts for the
+  // available_orders_safe view.
+  const { error } = await (
+    supabase as unknown as {
+      rpc: (
+        fn: string,
+        args: Record<string, unknown>,
+      ) => Promise<{ data: unknown; error: { message: string } | null }>;
+    }
+  ).rpc('revert_delivery_to_pending', {
+    p_delivery_id: deliveryId,
+    p_reason: reason,
+  });
+  if (error) throw error;
+}
+
 /** Admin/dispatcher bulk reassign: set the assigned agent on every supplied
  *  delivery in a single round-trip. Terminal / deleted rows and rows already
  *  on the target agent are silently skipped server-side. Returns the count

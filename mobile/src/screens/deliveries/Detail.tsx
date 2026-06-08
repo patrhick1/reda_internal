@@ -29,6 +29,7 @@ import { colors, fonts, TERMINAL_STATUSES } from '@/lib/theme';
 import {
   canClaimFollowup,
   canCorrectDeliveryLocation,
+  canRevertDelivered,
   canDeleteDelivery,
   canDeleteDeliveryByStatus,
   canEditDelivery,
@@ -51,6 +52,7 @@ import { HINTS } from '@/hints/registry';
 import { formatDateTime, formatNaira } from '@/lib/format';
 import { MarkDeliveredSheet } from '@/components/sheets/MarkDeliveredSheet';
 import { CorrectLocationSheet } from '@/components/sheets/CorrectLocationSheet';
+import { RevertDeliveredSheet } from '@/components/sheets/RevertDeliveredSheet';
 import { UpdateStatusSheet } from '@/components/sheets/UpdateStatusSheet';
 import { HandoffToSubAgentSheet } from '@/components/sheets/HandoffToSubAgentSheet';
 import { DeleteDeliverySheet } from '@/components/sheets/DeleteDeliverySheet';
@@ -75,6 +77,7 @@ export function DeliveryDetail() {
   const [handoffOpen, setHandoffOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [correctLocOpen, setCorrectLocOpen] = useState(false);
+  const [revertOpen, setRevertOpen] = useState(false);
   const [callBusy, setCallBusy] = useState(false);
   // Optimistic status + (when queued) the job ID to watch. The veil clears
   // when EITHER the server-confirmed status matches (direct-RPC paths) OR
@@ -479,6 +482,36 @@ export function DeliveryDetail() {
               </Text>
             </TouchableOpacity>
           ) : null}
+          {/* Admin escape hatch for a wrongly-marked Delivered. Nulls the
+              delivered-only columns (qty, paid, payment_method, cash POS
+              fee) and flips status back to pending; stock auto-recovers.
+              Same admin+delivered gate as Correct location, but distinct
+              concern, so they sit as sibling buttons rather than merging. */}
+          {canRevertDelivered(user.role, status) ? (
+            <TouchableOpacity
+              onPress={() => setRevertOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Revert delivered status"
+              style={{
+                marginTop: 8,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+                paddingVertical: 10,
+                paddingHorizontal: 14,
+                borderRadius: 999,
+                borderWidth: 1.5,
+                borderColor: colors.red,
+                backgroundColor: colors.white,
+              }}
+            >
+              <Icon name="alert" size={15} color={colors.red} />
+              <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.red }}>
+                Revert delivered
+              </Text>
+            </TouchableOpacity>
+          ) : null}
         </Card>
 
         {/* Original WhatsApp message (collapsed by default; renders nothing
@@ -808,6 +841,17 @@ export function DeliveryDetail() {
         onClose={() => setCorrectLocOpen(false)}
         onCorrected={() => {
           setCorrectLocOpen(false);
+          deliveryQ.reload();
+          historyQ.reload();
+        }}
+      />
+      <RevertDeliveredSheet
+        open={revertOpen}
+        deliveryId={d.id ?? null}
+        customerName={d.customer_name ?? null}
+        onClose={() => setRevertOpen(false)}
+        onReverted={() => {
+          setRevertOpen(false);
           deliveryQ.reload();
           historyQ.reload();
         }}

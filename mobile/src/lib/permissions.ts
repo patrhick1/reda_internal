@@ -320,6 +320,17 @@ export function canCorrectDeliveryLocation(role: Role, currentStatus: string | n
   return role === 'admin' && currentStatus === 'delivered';
 }
 
+/** Revert a wrongly-`delivered` row back to `pending`. Strictly admin
+ *  (matches the server gate — dispatchers don't get this; too easy to
+ *  corrupt remit / reconciliation reports) and `delivered` only — other
+ *  terminal states (cancelled, failed_delivery, rolled_over) don't have
+ *  the same fat-finger recovery story and are out of scope for this RPC.
+ *  Server anchor: `revert_delivery_to_pending` RPC checks is_admin() and
+ *  current_status = 'delivered'. */
+export function canRevertDelivered(role: Role, currentStatus: string | null): boolean {
+  return role === 'admin' && currentStatus === 'delivered';
+}
+
 /** Resolve (fix-and-create or discard) a needs_review bot inbound row.
  *  Operational set.
  *  Server anchor: `resolve_inbound_to_delivery` / `discard_inbound` RPCs. */
