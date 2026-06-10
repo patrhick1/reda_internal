@@ -14,10 +14,13 @@ import { countNeedsReview } from '@/services/bot';
 
 const POLL_MS = 30_000;
 
-export function useNeedsReviewCount(): number {
+// `enabled` lets callers skip the poll entirely for roles that have no Review
+// surface (reps, since 2026-06-10). Disabled → stays 0, no network.
+export function useNeedsReviewCount(enabled: boolean = true): number {
   const [count, setCount] = useState(0);
 
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
 
     async function refresh() {
@@ -41,7 +44,7 @@ export function useNeedsReviewCount(): number {
       clearInterval(timer);
       sub.remove();
     };
-  }, []);
+  }, [enabled]);
 
   return count;
 }

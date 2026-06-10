@@ -25,6 +25,14 @@ export function isRole(value: unknown): value is Role {
 const OPS_ROLES: ReadonlySet<Role> = new Set(['admin', 'dispatcher', 'rep']);
 const isOps = (role: Role): boolean => OPS_ROLES.has(role);
 
+// Operational MANAGERS — admin + dispatcher only. Mirrors the server-side
+// public.is_manager(). Reps are deliberately excluded: per Uzo (2026-06-10)
+// the needs-review queue and all order-mutation (edit fields, assign/reassign,
+// unassign, clear-location) are manager-only. Reps keep the rest of the ops
+// surface (deliveries read, follow-ups, comms, audit) via isOps above.
+const MANAGER_ROLES: ReadonlySet<Role> = new Set(['admin', 'dispatcher']);
+const isManager = (role: Role): boolean => MANAGER_ROLES.has(role);
+
 // --- Read permissions ---------------------------------------------------------
 
 /** Margin (charged − agent_payment). Admin-only.
@@ -160,10 +168,14 @@ export function canCreateDelivery(role: Role): boolean {
   return role === 'admin' || role === 'dispatcher';
 }
 
-/** Assign/reassign delivery to an agent. Operational set.
- * Server anchor: deliveries_update_own_or_admin (agent can update own, ops roles can reassign). */
+/** Assign/reassign delivery to an agent. Managers only (admin + dispatcher).
+ *  Assignment is an order-mutation, restricted to managers per Uzo
+ *  (2026-06-10) — reps lost the single-row reassign affordance along with
+ *  the rest of order editing.
+ *  Server anchor: update_delivery_fields / unassign_delivery gate on is_manager();
+ *  deliveries_update_admin_dispatcher policy tightened to is_manager(). */
 export function canAssignDelivery(role: Role): boolean {
-  return isOps(role);
+  return isManager(role);
 }
 
 /** Bulk-reassign N deliveries to one agent in one shot — the Uzo morning-
@@ -289,40 +301,42 @@ const PRE_DELIVERY_STATUSES = new Set<string>([...STATUS_GROUPS.active, ...STATU
 
 /** Edit customer-facing fields on an existing delivery (name, phone, address,
  *  product, quantity, customer price, location, assigned agent). Operational
- *  set (admin + dispatcher + rep), pre-delivery statuses only.
- *  Server anchor: `update_delivery_fields` RPC enforces both. */
+ *  managers (admin + dispatcher), pre-delivery statuses only. Reps excluded
+ *  per Uzo (2026-06-10) — order editing is a manager job.
+ *  Server anchor: `update_delivery_fields` RPC gates on is_manager(). */
 export function canEditDelivery(role: Role, currentStatus: string | null): boolean {
-  if (!isOps(role)) return false;
+  if (!isManager(role)) return false;
   return PRE_DELIVERY_STATUSES.has(currentStatus ?? 'pending');
 }
 
 /** Clear `assigned_agent_id` on an existing delivery — moves it back to the
- *  Unassigned bucket. Same role + status gate as `canEditDelivery`: ops set
- *  (admin + dispatcher + rep), non-terminal rows only. Reps already manage
- *  one-off assignment via the Edit screen so they get unassign too. Server
- *  also raises on already-unassigned rows; the UI hides the button when
- *  `assigned_agent_id is null` so the RPC is never reached for that case.
- *  Server anchor: `unassign_delivery` RPC checks is_admin_or_dispatcher() and
+ *  Unassigned bucket. Same role + status gate as `canEditDelivery`: managers
+ *  (admin + dispatcher), non-terminal rows only. Reps excluded per Uzo
+ *  (2026-06-10) along with the rest of order editing. Server also raises on
+ *  already-unassigned rows; the UI hides the button when `assigned_agent_id is
+ *  null` so the RPC is never reached for that case.
+ *  Server anchor: `unassign_delivery` RPC checks is_manager() and
  *  delivery_status_defs.category <> 'terminal'. */
 export function canUnassignDelivery(role: Role, currentStatus: string | null): boolean {
-  if (!isOps(role)) return false;
+  if (!isManager(role)) return false;
   return PRE_DELIVERY_STATUSES.has(currentStatus ?? 'pending');
 }
 
 /** Clear `location_id` on a non-terminal delivery — closes the "can't blank
  *  location once it's set" gap left by update_delivery_fields' coalesce
  *  contract (see scripts/clear-delivery-location.sql header). Same role +
- *  status gate as canUnassignDelivery: ops set (admin + dispatcher + rep),
- *  non-terminal rows only. The button is also hidden when the row's
- *  location_id is already null (the RPC would raise) — callers should pass
- *  the live row's location_id and short-circuit at the UI level. Server
- *  anchor: `clear_delivery_location` RPC. */
+ *  status gate as canUnassignDelivery: managers (admin + dispatcher),
+ *  non-terminal rows only. Reps excluded per Uzo (2026-06-10). The button is
+ *  also hidden when the row's location_id is already null (the RPC would
+ *  raise) — callers should pass the live row's location_id and short-circuit
+ *  at the UI level. Server anchor: `clear_delivery_location` RPC gates on
+ *  is_manager(). */
 export function canClearDeliveryLocation(
   role: Role,
   currentStatus: string | null,
   locationId: string | null,
 ): boolean {
-  if (!isOps(role)) return false;
+  if (!isManager(role)) return false;
   if (locationId == null) return false;
   return PRE_DELIVERY_STATUSES.has(currentStatus ?? 'pending');
 }
@@ -351,11 +365,15 @@ export function canRevertDelivered(role: Role, currentStatus: string | null): bo
   return (role === 'admin' || role === 'dispatcher') && currentStatus === 'delivered';
 }
 
-/** Resolve (fix-and-create or discard) a needs_review bot inbound row.
- *  Operational set.
- *  Server anchor: `resolve_inbound_to_delivery` / `discard_inbound` RPCs. */
+/** See AND resolve (fix-and-create or discard) the needs_review bot inbound
+ *  queue. Managers only (admin + dispatcher) per Uzo (2026-06-10) — reps no
+ *  longer get the Review tab at all. Also gates the Review-tab visibility in
+ *  OpsTabsLayout and the needs-review reads on the dashboards.
+ *  Server anchor: `resolve_inbound_to_delivery` / `discard_inbound` RPCs gate
+ *  on is_manager(); bot_inbound_select_admin_dispatcher policy tightened to
+ *  is_manager() so reps can't even read the queue. */
 export function canResolveReview(role: Role): boolean {
-  return isOps(role);
+  return isManager(role);
 }
 
 /** Can this user claim the customer follow-up on this delivery? Operational

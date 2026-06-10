@@ -10,12 +10,11 @@
 // shared building blocks then.
 import { useCallback, useMemo } from 'react';
 import { ScrollView, Text, View } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { listDeliveries, siblingGroupKey, type DeliveryRow } from '@/services/deliveries';
 import { listUsers } from '@/services/users';
-import { listBotInbound } from '@/services/bot';
 import { AppBar, Card, Icon } from '@/components/ui';
 import { AgentWorkloadCard } from '@/components/delivery/AgentWorkloadCard';
 import { RecentActivityCard } from '@/components/delivery/RecentActivityCard';
@@ -35,15 +34,12 @@ function shortDate(): string {
 
 export function RepDashboard() {
   const user = useCurrentUser();
-  const router = useRouter();
   const deliveriesQ = useAsync(() => listDeliveries(user.role), [user.role]);
   const usersQ = useAsync(() => listUsers(), []);
-  const reviewQ = useAsync(() => listBotInbound('needs_review', 100), []);
 
   useFocusEffect(
     useCallback(() => {
       deliveriesQ.reload();
-      reviewQ.reload();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []),
   );
@@ -55,8 +51,6 @@ export function RepDashboard() {
   );
 
   const stats = useMemo(() => bucketCounts(deliveries), [deliveries]);
-  const reviewCount = (reviewQ.data ?? []).length;
-  const unassignedCount = deliveries.filter((d) => !d.assigned_agent_id).length;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -117,70 +111,6 @@ export function RepDashboard() {
             <Legend label="Closed" n={stats.closed} color={colors.closed} />
           </View>
         </Card>
-
-        {/* Needs review (black CTA) */}
-        {reviewCount > 0 || unassignedCount > 0 ? (
-          <Card
-            style={{ backgroundColor: colors.black }}
-            onPress={() => router.push(`${REP_BASE}/review`)}
-          >
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={{
-                    fontFamily: fonts.bold,
-                    fontSize: 11,
-                    color: colors.textTertiary,
-                    letterSpacing: 0.8,
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  Needs review
-                </Text>
-                <Text
-                  style={{
-                    fontFamily: fonts.extrabold,
-                    fontSize: 24,
-                    color: colors.white,
-                    letterSpacing: -0.4,
-                    marginTop: 4,
-                  }}
-                >
-                  {reviewCount + unassignedCount}{' '}
-                  {reviewCount + unassignedCount === 1 ? 'item' : 'items'}
-                </Text>
-                <Text
-                  style={{
-                    fontFamily: fonts.medium,
-                    fontSize: 12,
-                    color: colors.textTertiary,
-                    marginTop: 4,
-                  }}
-                >
-                  {reviewCount} unmatched · {unassignedCount} unassigned
-                </Text>
-              </View>
-              <View
-                style={{
-                  backgroundColor: colors.red,
-                  width: 40,
-                  height: 40,
-                  borderRadius: 20,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Icon name="chevronRight" size={22} color={colors.white} />
-              </View>
-            </View>
-          </Card>
-        ) : null}
 
         {/* Recent activity — shared with admin */}
         <RecentActivityCard rows={deliveries} loading={deliveriesQ.loading} basePath={REP_BASE} />

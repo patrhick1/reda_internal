@@ -1,8 +1,9 @@
 // Tab-bar configuration shared by the dispatcher and rep route groups.
-// Both roles get the same 4 visible tabs (Dashboard / Deliveries / Review /
-// Profile). Dispatchers additionally have a hidden Stock route (no tab in
-// the bar — entered from the dashboard Quick action) so they can monitor
-// inventory; reps remain stockless.
+// Dispatchers get Dashboard / Deliveries / Review / Profile (plus a hidden
+// Stock route entered from the dashboard Quick action). Reps get only
+// Dashboard / Deliveries / Profile — the needs-review queue is manager-only
+// per Uzo (2026-06-10), so reps neither see the Review tab nor declare the
+// (rep)/review directory (it was removed). Reps remain stockless.
 import { Tabs } from 'expo-router';
 import { Icon } from '@/components/ui';
 import { useCurrentUser } from '@/hooks/useAuth';
@@ -11,9 +12,11 @@ import { RedaTabBar } from '@/queue/RedaTabBar';
 import { useNeedsReviewCount } from '@/hooks/useNeedsReviewCount';
 
 export function OpsTabsLayout() {
-  const needsReviewCount = useNeedsReviewCount();
   const user = useCurrentUser();
   const showStock = user.role === 'dispatcher';
+  // Review queue is manager-only; reps don't declare a (rep)/review directory.
+  const showReview = user.role !== 'rep';
+  const needsReviewCount = useNeedsReviewCount(showReview);
   return (
     <Tabs
       tabBar={(props) => <RedaTabBar {...props} />}
@@ -49,25 +52,27 @@ export function OpsTabsLayout() {
           ),
         }}
       />
-      <Tabs.Screen
-        name="review"
-        options={{
-          title: 'Review',
-          tabBarIcon: ({ color, focused }) => (
-            <Icon name="alert" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
-          ),
-          tabBarBadge: needsReviewCount > 0 ? needsReviewCount : undefined,
-          tabBarBadgeStyle: {
-            backgroundColor: colors.red,
-            color: colors.white,
-            fontFamily: fonts.bold,
-            fontSize: 11,
-            minWidth: 18,
-            height: 18,
-            lineHeight: 18,
-          },
-        }}
-      />
+      {showReview ? (
+        <Tabs.Screen
+          name="review"
+          options={{
+            title: 'Review',
+            tabBarIcon: ({ color, focused }) => (
+              <Icon name="alert" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
+            ),
+            tabBarBadge: needsReviewCount > 0 ? needsReviewCount : undefined,
+            tabBarBadgeStyle: {
+              backgroundColor: colors.red,
+              color: colors.white,
+              fontFamily: fonts.bold,
+              fontSize: 11,
+              minWidth: 18,
+              height: 18,
+              lineHeight: 18,
+            },
+          }}
+        />
+      ) : null}
       <Tabs.Screen
         name="profile"
         options={{
