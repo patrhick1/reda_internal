@@ -126,8 +126,7 @@ export default function AgentDeliveryDetail() {
   const expectedTotal = Number(d.customer_price ?? 0);
   // Lead can hand off to a sub-agent. Only the current assignee can hand
   // off (server gate matches); terminal rows hide the option.
-  const canHandoff =
-    canHandoffToSubAgent(user, d.assigned_agent_id, hasSubAgents) && !isTerminal;
+  const canHandoff = canHandoffToSubAgent(user, d.assigned_agent_id, hasSubAgents) && !isTerminal;
 
   const onCommitted = (newStatus: string, jobId: string) => {
     setOptimistic({ status: newStatus, jobId });

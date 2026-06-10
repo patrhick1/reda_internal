@@ -116,11 +116,7 @@ export default function AgentEarnings() {
                   valueColor={colors.success}
                 />
                 <View style={{ width: 1, backgroundColor: colors.border, marginHorizontal: 12 }} />
-                <RemitTile
-                  label="To remit"
-                  value={formatNaira(toRemit)}
-                  valueColor={colors.red}
-                />
+                <RemitTile label="To remit" value={formatNaira(toRemit)} valueColor={colors.red} />
               </View>
               <Text
                 style={{
