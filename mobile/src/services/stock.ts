@@ -57,8 +57,14 @@ export async function listCurrentStock(): Promise<StockMatrixRow[]> {
   const [usersRes, prodsRes] = await Promise.all([
     supabase.from('users').select('id, email, display_name, role').in('id', userIds),
     supabase
+      // LEFT embed on clients (NOT clients!inner): agents can't read the
+      // clients table (anti-poaching RLS), and an inner join would drop every
+      // product row for them — silently emptying their My Stock. With a left
+      // embed the product rows survive; `clients` just comes back null for
+      // agents (ops/warehouse still get the name). Agent My Stock doesn't
+      // render the vendor name anyway, so nothing leaks.
       .from('product_catalog')
-      .select('id, product_name, client_id, clients!inner(name)')
+      .select('id, product_name, client_id, clients(name)')
       .in('id', prodIds),
   ]);
   if (usersRes.error) throw usersRes.error;
@@ -71,11 +77,18 @@ export async function listCurrentStock(): Promise<StockMatrixRow[]> {
         id: string;
         product_name: string;
         client_id: string;
-        clients: { name: string };
+        clients: { name: string } | null;
       };
       return [
         row.id,
-        { product_name: row.product_name, client_id: row.client_id, client_name: row.clients.name },
+        {
+          product_name: row.product_name,
+          client_id: row.client_id,
+          // null when the caller can't read clients (agents) — see the LEFT
+          // embed note above. Empty string keeps StockMatrixRow.client_name a
+          // plain string for the ops/warehouse screens that do show it.
+          client_name: row.clients?.name ?? '',
+        },
       ];
     }),
   );
