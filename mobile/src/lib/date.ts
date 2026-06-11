@@ -62,3 +62,33 @@ export function formatRangeLagos(from: string, to: string): string {
   if (from === to) return formatDateLagos(from);
   return `${formatDateLagos(from)} → ${formatDateLagos(to)}`;
 }
+
+/** The Lagos calendar day (`YYYY-MM-DD`) an instant falls on. Used to bucket a
+ *  timestamped event stream into day sections. Shifts the instant by the fixed
+ *  Lagos offset, then takes the UTC date — same trick as {@link todayLagos}. */
+export function lagosDayKey(iso: string): string {
+  return new Date(new Date(iso).getTime() + LAGOS_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/** Section-header label for a Lagos day key: `Today` / `Yesterday` / `14 May 2026`. */
+export function lagosDayLabel(iso: string): string {
+  const key = lagosDayKey(iso);
+  if (key === todayLagos()) return 'Today';
+  if (key === yesterdayLagos()) return 'Yesterday';
+  return formatDateLagos(key);
+}
+
+/** Compact relative time for an event row: `just now`, `5m ago`, `2h ago`,
+ *  `3d ago`, then a short calendar date (`14 May`) for anything older than a
+ *  week. Shared across the stock-history surfaces. */
+export function relativeTime(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+}

@@ -10,6 +10,21 @@
 // The mobile side never grants more visibility than the RPC.
 import { supabase } from '@/lib/supabase';
 
+/** Call an RPC that isn't in the generated DB types. `list_stock_movements`
+ *  and `list_movement_actors` are hand-written SQL functions, so the typed
+ *  `supabase.rpc` chain rejects their names — cast through this one helper
+ *  instead of repeating the assertion at each call site. */
+function rpcUntyped(fn: string, args: Record<string, unknown>) {
+  return (
+    supabase as unknown as {
+      rpc: (
+        fn: string,
+        args: Record<string, unknown>,
+      ) => Promise<{ data: unknown; error: { message: string } | null }>;
+    }
+  ).rpc(fn, args);
+}
+
 export type MovementSource = 'adjustment' | 'delivery';
 
 /** All kinds the RPC can emit. Schema-bound: `stock_adjustments.reason` is
@@ -56,6 +71,17 @@ export type StockMovement = {
 
 export type MovementCursor = { event_at: string; event_id: string } | null;
 
+/** Server-side filters. Both are pushed into the RPC (not applied client-side)
+ *  because the list is infinite-history + keyset-paginated — a client filter
+ *  would only narrow already-loaded pages and silently miss older matches.
+ *    actorId — only this performer's movements (the staff/actor filter)
+ *    kinds   — only these event kinds (e.g. ['transfer'] or the adjustments
+ *              group ['correction','loss','theft','damaged','found']) */
+export type MovementFilters = {
+  actorId?: string | null;
+  kinds?: MovementEventKind[] | null;
+};
+
 /** Fetch one page of movement events for a holder. Pass `cursor = null` for
  *  the newest page; for the next page, pass the last row of the previous
  *  page (use {@link nextCursor}). Returns up to `limit` rows; if the result
@@ -64,22 +90,15 @@ export async function listStockMovements(
   holderId: string,
   cursor: MovementCursor,
   limit = 50,
+  filters?: MovementFilters,
 ): Promise<StockMovement[]> {
-  // The RPC is hand-written and not in the generated DB types — cast once
-  // so the typed rpc chain still flows. Mirrors the available-orders
-  // ungenerated-view pattern.
-  const { data, error } = await (
-    supabase as unknown as {
-      rpc: (
-        fn: string,
-        args: Record<string, unknown>,
-      ) => Promise<{ data: unknown; error: { message: string } | null }>;
-    }
-  ).rpc('list_stock_movements', {
+  const { data, error } = await rpcUntyped('list_stock_movements', {
     p_holder_id: holderId,
     p_before_at: cursor?.event_at ?? null,
     p_before_event_id: cursor?.event_id ?? null,
     p_limit: limit,
+    p_actor_id: filters?.actorId ?? null,
+    p_kinds: filters?.kinds && filters.kinds.length > 0 ? filters.kinds : null,
   });
 
   if (error) throw error;
@@ -144,4 +163,21 @@ export function nextCursor(rows: StockMovement[]): MovementCursor {
   const last = rows[rows.length - 1];
   if (!last) return null;
   return { event_at: last.event_at, event_id: last.event_id };
+}
+
+export type MovementActor = { actor_id: string; actor_name: string };
+
+/** The distinct set of performers (actors) who appear in a holder's history —
+ *  the COMPLETE set across all of history, not just the loaded page, so the
+ *  staff-filter chips are exhaustive. Backed by the `list_movement_actors`
+ *  RPC, which shares list_stock_movements' auth gate. */
+export async function listMovementActors(holderId: string): Promise<MovementActor[]> {
+  const { data, error } = await rpcUntyped('list_movement_actors', { p_holder_id: holderId });
+
+  if (error) throw error;
+
+  const rows = (data ?? []) as Array<{ actor_id: string | null; actor_name: string | null }>;
+  return rows
+    .filter((r): r is MovementActor => r.actor_id != null && r.actor_name != null)
+    .map((r) => ({ actor_id: r.actor_id, actor_name: r.actor_name }));
 }
