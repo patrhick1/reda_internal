@@ -675,6 +675,10 @@ The grouping key (`sib_key`) inside `run_eod_rollover` is computed as `md5(_norm
 
 **User story:** Uzo deliberately creates the same customer/product/day delivery for multiple agents so whoever gets there first delivers it. The system needs to coordinate this without forcing Uzo to change his workflow.
 
+**Duplicate vs race — the core distinction.** A true **duplicate** is the *same order assigned to the **same agent*** (same `customer_phone_normalized` + `product_catalog_id` + effective `scheduled_date`, matching the two-tier rule below). It is an error and is **rejected at creation**. The *same order on a **different** agent* is a **race** — Uzo's intentional "whoever gets there first" workflow — and is **allowed**, then coordinated by the stand-by / auto-cancel triggers and rollover collapse. The matchers never block across agents.
+
+**Enforcement at creation.** Both create paths reject a same-agent duplicate up front: the **manual** path (`create_delivery`, `created_via='manual'`) raises `23505`; the **bot** path (`bot_create_delivery`) raises `P0001` `duplicate_same_agent`. Both key the lookup off the **effective (post-bump) `scheduled_date`** via `_effective_scheduled_date` ([scripts/fix-bot-dup-date-bump.sql](scripts/fix-bot-dup-date-bump.sql), 2026-06-11) — so a re-forward that crosses the 22:00 after-hours / midnight clock-skew boundary can no longer slip a duplicate through. (Root cause of the 2026-06-10 Esther Ikechukwu / Chika same-agent pairs: the bot guard had checked the *pre*-bump date while the stored row held the *post*-bump date; `audit_log` shows `original_scheduled_date` ≠ `scheduled_date` on the leaked rows.)
+
 **The pattern in live data.** A duplicate-probe in May 2026 found 15+ groups: customers like Emmanuel Umukoro × 4 agents, Joel FBM × 3, Yetunde × 3, all sharing identical phone + product + scheduled_date. Some were bot-pipeline forwards (same WhatsApp text reaching the bot multiple times under different `wasender_message_id`); others were manual New-Delivery copies.
 
 **Two-tier sibling match** (see [scripts/sibling-coordination.sql](scripts/sibling-coordination.sql)):
