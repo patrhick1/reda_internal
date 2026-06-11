@@ -120,8 +120,6 @@ export const STATUS_GROUPS: Record<'active' | 'soft' | 'done' | 'closed', string
     'tomorrow',
     'postponed',
     'follow_up',
-    'picked_up',
-    'waybilled',
   ],
   done: ['delivered'],
   closed: [
@@ -133,6 +131,11 @@ export const STATUS_GROUPS: Record<'active' | 'soft' | 'done' | 'closed', string
     'abandoned',
     'deferred_to_client',
     'rolled_over',
+    // Special terminal hand-off states (goods already with agent/courier) —
+    // reclassified terminal in delivery_status_defs (Uzo, 2026-06-11). Closed,
+    // not editable, excluded from rollover. Still hidden from the status picker.
+    'picked_up',
+    'waybilled',
   ],
 };
 
