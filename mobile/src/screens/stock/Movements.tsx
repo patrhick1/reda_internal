@@ -209,23 +209,29 @@ export function Movements({
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <AppBar title="Stock history" subtitle={subtitle} onBack={() => router.back()} />
 
-      <FilterChips
-        options={KIND_CATEGORIES.map((c) => ({ id: c.id, label: c.label }))}
-        value={kindCat}
-        onChange={setKindCat}
-      />
-      {/* Staff filter is for whoever oversees a holder's stock (ops / warehouse).
-          On an agent's own history (the only thing the agent route shows) it's
-          just noise — they're filtering "who did what" on their own shelf. */}
-      {basePath !== '/(agent)' && actors.length > 1 ? (
+      {/* Non-flex header so the chip ScrollViews keep their intrinsic height;
+          the SectionList below is pinned with flex:1 to take the rest. Without
+          that, the list's huge intrinsic height starves the chips to ~0px. */}
+      <View>
         <FilterChips
-          options={actorChips}
-          value={actorId ?? ALL_ACTORS}
-          onChange={(v) => setActorId(v === ALL_ACTORS ? null : v)}
+          options={KIND_CATEGORIES.map((c) => ({ id: c.id, label: c.label }))}
+          value={kindCat}
+          onChange={setKindCat}
         />
-      ) : null}
+        {/* Staff filter is for whoever oversees a holder's stock (ops / warehouse).
+            On an agent's own history (the only thing the agent route shows) it's
+            just noise — they're filtering "who did what" on their own shelf. */}
+        {basePath !== '/(agent)' && actors.length > 1 ? (
+          <FilterChips
+            options={actorChips}
+            value={actorId ?? ALL_ACTORS}
+            onChange={(v) => setActorId(v === ALL_ACTORS ? null : v)}
+          />
+        ) : null}
+      </View>
 
       <SectionList
+        style={{ flex: 1 }}
         sections={sections}
         keyExtractor={(r) => `${r.source}:${r.event_id}`}
         ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
