@@ -80,6 +80,9 @@ export type MovementCursor = { event_at: string; event_id: string } | null;
 export type MovementFilters = {
   actorId?: string | null;
   kinds?: MovementEventKind[] | null;
+  /** Only movements whose paired recipient is this holder — i.e. stock
+   *  issued/transferred/returned TO this agent ("To agent" filter). */
+  counterpartyId?: string | null;
 };
 
 /** Fetch one page of movement events for a holder. Pass `cursor = null` for
@@ -99,6 +102,7 @@ export async function listStockMovements(
     p_limit: limit,
     p_actor_id: filters?.actorId ?? null,
     p_kinds: filters?.kinds && filters.kinds.length > 0 ? filters.kinds : null,
+    p_counterparty_id: filters?.counterpartyId ?? null,
   });
 
   if (error) throw error;
@@ -180,4 +184,29 @@ export async function listMovementActors(holderId: string): Promise<MovementActo
   return rows
     .filter((r): r is MovementActor => r.actor_id != null && r.actor_name != null)
     .map((r) => ({ actor_id: r.actor_id, actor_name: r.actor_name }));
+}
+
+export type MovementCounterparty = { counterparty_id: string; counterparty_name: string };
+
+/** The distinct recipient agents in a holder's history — who stock was
+ *  issued/transferred/returned TO. Feeds the "To agent" dropdown. Complete set
+ *  across all history (not just the loaded page); shares the auth gate. */
+export async function listMovementCounterparties(
+  holderId: string,
+): Promise<MovementCounterparty[]> {
+  const { data, error } = await rpcUntyped('list_movement_counterparties', {
+    p_holder_id: holderId,
+  });
+
+  if (error) throw error;
+
+  const rows = (data ?? []) as Array<{
+    counterparty_id: string | null;
+    counterparty_name: string | null;
+  }>;
+  return rows
+    .filter(
+      (r): r is MovementCounterparty => r.counterparty_id != null && r.counterparty_name != null,
+    )
+    .map((r) => ({ counterparty_id: r.counterparty_id, counterparty_name: r.counterparty_name }));
 }

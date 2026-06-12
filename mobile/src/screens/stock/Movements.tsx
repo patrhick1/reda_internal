@@ -14,20 +14,31 @@
 // last page returned `LIMIT` rows; once a partial page comes back we know we
 // hit end-of-history and switch to a caption.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { SectionList, Text, View } from 'react-native';
+import { Pressable, SectionList, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
   listMovementActors,
+  listMovementCounterparties,
   listStockMovements,
   nextCursor,
   type MovementActor,
+  type MovementCounterparty,
   type MovementCursor,
   type MovementEventKind,
   type StockMovement,
 } from '@/services/stock-movements';
 import { getUser, type AppUser } from '@/services/users';
 import { lagosDayKey, lagosDayLabel, relativeTime } from '@/lib/date';
-import { AppBar, Button, Card, Empty, FilterChips, Icon, SectionHeader } from '@/components/ui';
+import {
+  AppBar,
+  Button,
+  Card,
+  Empty,
+  FilterChips,
+  Icon,
+  SectionHeader,
+  Sheet,
+} from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 import { type IconName } from '@/components/ui';
 
@@ -73,13 +84,17 @@ export function Movements({
   const [error, setError] = useState<string | null>(null);
   const [endOfHistory, setEndOfHistory] = useState(false);
 
-  // Filters. `kindCat` is a category id from KIND_CATEGORIES; `actorId` is a
-  // user id or null (everyone). Both feed the RPC via the filters arg.
+  // Filters, all server-side via the RPC. `kindCat` = a KIND_CATEGORIES id;
+  // `actorId` = who performed it (staff); `counterpartyId` = who it went TO
+  // (recipient agent). null = no filter on that axis.
   const [kindCat, setKindCat] = useState('all');
   const [actorId, setActorId] = useState<string | null>(null);
   const [actors, setActors] = useState<MovementActor[]>([]);
+  const [counterpartyId, setCounterpartyId] = useState<string | null>(null);
+  const [counterparties, setCounterparties] = useState<MovementCounterparty[]>([]);
+  const [recipientSheetOpen, setRecipientSheetOpen] = useState(false);
 
-  const filtersActive = kindCat !== 'all' || actorId !== null;
+  const filtersActive = kindCat !== 'all' || actorId !== null || counterpartyId !== null;
 
   // Monotonic request id. Tapping filter chips quickly (or a "Load older" still
   // in flight when a filter changes) fires overlapping fetches; only the latest
@@ -120,6 +135,24 @@ export function Movements({
     };
   }, [holderId]);
 
+  // Load the recipient agents (who stock was issued/transferred TO) for the
+  // "To agent" dropdown. Reset the filter when the holder changes.
+  useEffect(() => {
+    let cancelled = false;
+    setCounterpartyId(null);
+    setCounterparties([]);
+    listMovementCounterparties(holderId)
+      .then((c) => {
+        if (!cancelled) setCounterparties(c);
+      })
+      .catch(() => {
+        // Same posture as the staff filter — non-critical enhancement.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [holderId]);
+
   const kindsFor = useCallback(
     (cat: string) => KIND_CATEGORIES.find((c) => c.id === cat)?.kinds ?? null,
     [],
@@ -133,6 +166,7 @@ export function Movements({
       const page = await listStockMovements(holderId, null, PAGE_SIZE, {
         actorId,
         kinds: kindsFor(kindCat),
+        counterpartyId,
       });
       if (reqRef.current !== req) return; // superseded by a newer load
       setRows(page);
@@ -144,7 +178,7 @@ export function Movements({
     } finally {
       if (reqRef.current === req) setLoading(false);
     }
-  }, [holderId, actorId, kindCat, kindsFor]);
+  }, [holderId, actorId, kindCat, kindsFor, counterpartyId]);
 
   const loadOlder = useCallback(async () => {
     if (!cursor || loading || endOfHistory) return;
@@ -155,6 +189,7 @@ export function Movements({
       const page = await listStockMovements(holderId, cursor, PAGE_SIZE, {
         actorId,
         kinds: kindsFor(kindCat),
+        counterpartyId,
       });
       if (reqRef.current !== req) return; // a filter change superseded this page
       setRows((prev) => [...prev, ...page]);
@@ -166,7 +201,7 @@ export function Movements({
     } finally {
       if (reqRef.current === req) setLoading(false);
     }
-  }, [holderId, cursor, loading, endOfHistory, actorId, kindCat, kindsFor]);
+  }, [holderId, cursor, loading, endOfHistory, actorId, kindCat, kindsFor, counterpartyId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -205,6 +240,12 @@ export function Movements({
     [actors],
   );
 
+  const selectedCounterpartyName = useMemo(
+    () =>
+      counterparties.find((c) => c.counterparty_id === counterpartyId)?.counterparty_name ?? null,
+    [counterparties, counterpartyId],
+  );
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <AppBar title="Stock history" subtitle={subtitle} onBack={() => router.back()} />
@@ -227,6 +268,47 @@ export function Movements({
             value={actorId ?? ALL_ACTORS}
             onChange={(v) => setActorId(v === ALL_ACTORS ? null : v)}
           />
+        ) : null}
+        {/* "To agent" recipient dropdown — only where stock was actually
+            issued/transferred onward (warehouse / ops views). */}
+        {counterparties.length > 0 ? (
+          <View style={{ paddingHorizontal: 16, paddingTop: 2, paddingBottom: 10 }}>
+            <Pressable
+              onPress={() => setRecipientSheetOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Filter by recipient agent"
+              style={({ pressed }) => [
+                {
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  alignSelf: 'flex-start',
+                  gap: 8,
+                  borderWidth: 1,
+                  borderColor: counterpartyId ? colors.black : colors.border,
+                  backgroundColor: counterpartyId ? colors.black : colors.white,
+                  borderRadius: 999,
+                  paddingVertical: 6,
+                  paddingHorizontal: 12,
+                },
+                pressed && { opacity: 0.85 },
+              ]}
+            >
+              <Text
+                style={{
+                  fontFamily: fonts.bold,
+                  fontSize: 12,
+                  color: counterpartyId ? colors.white : colors.black,
+                }}
+              >
+                To agent: {selectedCounterpartyName ?? 'All'}
+              </Text>
+              <Icon
+                name="chevronDown"
+                size={15}
+                color={counterpartyId ? colors.white : colors.textSecondary}
+              />
+            </Pressable>
+          </View>
         ) : null}
       </View>
 
@@ -258,7 +340,7 @@ export function Movements({
             <Empty
               icon="filter"
               title="No matching movements"
-              sub="Try a different type or staff member."
+              sub="Try a different type, staff member, or recipient."
             />
           ) : (
             <Empty
@@ -292,7 +374,72 @@ export function Movements({
           )
         }
       />
+
+      <Sheet
+        open={recipientSheetOpen}
+        onClose={() => setRecipientSheetOpen(false)}
+        title="Filter by recipient agent"
+        subtitle="Show only stock issued or transferred to this agent"
+      >
+        <RecipientOption
+          label="All agents"
+          selected={counterpartyId === null}
+          onPress={() => {
+            setCounterpartyId(null);
+            setRecipientSheetOpen(false);
+          }}
+        />
+        {counterparties.map((c) => (
+          <RecipientOption
+            key={c.counterparty_id}
+            label={c.counterparty_name}
+            selected={counterpartyId === c.counterparty_id}
+            onPress={() => {
+              setCounterpartyId(c.counterparty_id);
+              setRecipientSheetOpen(false);
+            }}
+          />
+        ))}
+      </Sheet>
     </View>
+  );
+}
+
+function RecipientOption({
+  label,
+  selected,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingHorizontal: 20,
+          paddingVertical: 14,
+          backgroundColor: selected ? colors.surface : colors.white,
+        },
+        pressed && { opacity: 0.7 },
+      ]}
+    >
+      <Text
+        style={{
+          fontFamily: selected ? fonts.bold : fonts.medium,
+          fontSize: 15,
+          color: colors.black,
+        }}
+      >
+        {label}
+      </Text>
+      {selected ? <Icon name="check" size={18} color={colors.red} /> : null}
+    </Pressable>
   );
 }
 
