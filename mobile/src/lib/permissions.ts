@@ -82,6 +82,17 @@ export function canSeeClientName(role: Role): boolean {
   return isOps(role);
 }
 
+/** Narrow the shared deliveries list by agent and/or customer-name. Operational
+ *  set (admin + dispatcher + rep). These are pure CLIENT-SIDE filters over the
+ *  ops-wide list every ops role already loads — no mutation, no extra data
+ *  exposure (reps already read the full list + the agent roster), so they ride
+ *  on the read audience, not the manager-only assign gate. Agents are excluded:
+ *  their own screen shows at most a handful of rows, so narrowing has no work.
+ *  No server anchor — read-only UI affordance. */
+export function canFilterDeliveriesList(role: Role): boolean {
+  return isOps(role);
+}
+
 // --- Write permissions --------------------------------------------------------
 
 /** Manage catalog: clients, products, locations, rate card. Admin-only.

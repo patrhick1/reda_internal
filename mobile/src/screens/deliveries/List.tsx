@@ -19,11 +19,11 @@ import { listActiveFollowups, type ActiveFollowup } from '@/services/followups';
 import { useSupabaseChannel } from '@/hooks/useSupabaseChannel';
 import { listUsers, type AppUser } from '@/services/users';
 import {
-  canAssignDelivery,
   canBulkAssignDelivery,
   canBulkChangeStatus,
   canBulkDeleteDeliveries,
   canCreateDelivery,
+  canFilterDeliveriesList,
   canSeeClientName,
 } from '@/lib/permissions';
 import { formatNaira } from '@/lib/format';
@@ -63,7 +63,11 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   // null = "All agents". Agents see only their own deliveries server-side,
   // so the picker stays hidden for them — narrowing has no work to do.
   const [agentId, setAgentId] = useState<string | null>(null);
-  const showAgentPicker = canAssignDelivery(user.role);
+  // Read-only narrowing affordance, open to the full ops set (admin +
+  // dispatcher + rep). Reps coordinate with vendors and asked to scan
+  // "show me Tunde's queue" the same way managers do — it's a client-side
+  // filter, not the manager-only assign action.
+  const showAgentPicker = canFilterDeliveriesList(user.role);
   // Multi-select bulk reassign — Uzo's morning queue flow. Admin + dispatcher
   // only (canBulkAssignDelivery). Long-press a row to enter select mode; in
   // select mode rows toggle selection on tap and the bottom action bar
@@ -84,7 +88,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   // Customer-name substring filter. Ops roles (admin / dispatcher / rep) —
   // agents have at most a handful of rows on screen and don't need it. Plain
   // client-side narrow over the already-fetched list; no extra round-trip.
-  const showNameSearch = canAssignDelivery(user.role);
+  const showNameSearch = canFilterDeliveriesList(user.role);
   const [nameQuery, setNameQuery] = useState('');
   const nameNeedle = nameQuery.trim().toLowerCase();
 
@@ -775,10 +779,10 @@ function emptySubtitle(
 }
 
 /** Compact dropdown that opens a bottom-sheet list of active agents.
- *  Admin + dispatcher only — gated by `canAssignDelivery(role)` at the call
- *  site. `value=null` means "All agents". No "Unassigned" entry — that's the
- *  status segment's job; keeping them orthogonal avoids two paths to the
- *  same filter. */
+ *  Ops set (admin + dispatcher + rep) — gated by `canFilterDeliveriesList(role)`
+ *  at the call site. `value=null` means "All agents". No "Unassigned" entry —
+ *  that's the status segment's job; keeping them orthogonal avoids two paths to
+ *  the same filter. */
 function AgentPicker({
   value,
   agents,
