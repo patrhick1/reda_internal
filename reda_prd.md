@@ -417,6 +417,12 @@ Rules:
 - A trigger on `deliveries.current_status` auto-deletes the claim on any status change (even soft→soft). Manual **Release** is also available.
 - **Live across peers (since 2026-05-27).** Both the per-delivery banner ([FollowupClaimBanner](mobile/src/components/delivery/FollowupClaimBanner.tsx)) and the screen-level avatar pill on the deliveries list subscribe via `postgres_changes` on `delivery_followups` (added to `supabase_realtime` publication the same day). Peers see a claim / take-over / release within ~100–300 ms without refocusing. Subscription plumbing is the [`useSupabaseChannel`](mobile/src/hooks/useSupabaseChannel.ts) hook, which uses `useId()` to suffix the channel topic per mount and side-step a supabase-js singleton race during Fast Refresh / strict-mode double-mount. Followup statuses are derived from `delivery_status_defs.needs_followup` so SQL gate (`claim_followup`) and UI gate (`canClaimFollowup`) read from one source.
 
+**Team-lead handoff (agent, lead → sub only).** A **team lead** is an agent with at least one active sub-agent (`users.parent_agent_id` self-FK on the `users` table). The canonical case is **Iya Ayo** with three subs — Mr Austin / Funke / Jerry. When the lead opens a delivery currently assigned to them on their own *Today* detail, a third **Hand off** button appears on the bottom action bar alongside *Update status* and *Mark delivered*. Tapping it opens [HandoffToSubAgentSheet](mobile/src/components/sheets/HandoffToSubAgentSheet.tsx) listing only the caller's direct active subs (`parent_agent_id = auth.uid() AND is_active`). One tap → `reassign_to_sub_agent(p_client_uuid, p_delivery_id, p_sub_agent_id)` RPC → `assigned_agent_id` flips → the sub-agent gets the assignment push → the row disappears from the lead's Today list on next refresh (RLS hides it; `deliveries_safe` filters on `is_admin_or_dispatcher() OR d.assigned_agent_id = auth.uid()`).
+- **Gates** (matched on server and client): caller is currently assigned to the row (or is the parent of whoever currently holds it, so a lead can reshuffle within her team), target is the caller's active direct sub, the row is non-terminal. Hidden for agents with no subs — `hasSubAgents` collapses to false via `listSubAgents(user.userId)`. UI helper: [`canHandoffToSubAgent`](mobile/src/lib/permissions.ts).
+- **Initial bug shipped 2026-06-08, fixed 2026-06-10**: the handoff button was only wired into the ops `Detail.tsx` (mounted by admin/dispatcher/rep routes), not the agent's own `(agent)/today/[id].tsx`. Iya Ayo never saw it. Fix imported the gate + sheet into the agent detail and inserted the button as a third `flex: 1` slot on the left of the bottom action bar. Solo agents still see the two-button layout because `hasSubAgents` stays false for them.
+- **Not yet built**: a lead-side view of HER team's queues (Iya Ayo seeing what Mr Austin is on). Today she can only see her OWN assigned rows; for sub visibility she'd open admin's by-agent reconcile view, which she doesn't have access to. Flagged as future work; not on the roadmap.
+- **Snapshots note**: `reassign_to_sub_agent` does NOT re-snapshot `agent_payment_snapshot` when the row moves between the lead and a sub. Today no agent has a non-zero per-agent bonus so the snapshot derived from the rate-card location remains valid for either rider. If a lead and her subs ever get differential bonuses this would need patching — see [reda_system_design_doc.md §14](reda_system_design_doc.md) Tier-L latent risks.
+
 **Post-delivered corrections (manager-level: admin + dispatcher).** Once a delivery is `delivered` (or any terminal status), [`update_delivery_fields`](mobile/src/services/deliveries.ts) refuses — the row is locked to protect the snapshots, stock decrement, and audit trail. The three legitimate fix paths are surfaced as dedicated buttons on the Detail screen's Address card, each backed by its own purpose-built RPC instead of widening the generic edit path:
 
 - **Unassign agent** ([scripts/unassign-delivery.sql](scripts/unassign-delivery.sql), shipped 2026-06-01) — clears `assigned_agent_id` so the row drops into the Unassigned queue; used when the wrong agent was credited but the delivery itself stands. Gated by `canUnassignAgent` (admin/dispatcher, any non-terminal **or** delivered status).
@@ -773,7 +779,7 @@ The grouping key (`sib_key`) inside `run_eod_rollover` is computed as `md5(_norm
 
 ### 5.13 Agent earnings view (agent)
 
-**User story:** As an agent, I see my per-delivery and per-period earnings.
+**User story:** As an agent, I see my per-delivery and per-period earnings — and at-a-glance, the cash I'm holding that I owe Reda. As a sub-agent on a team lead's roster, I see NOTHING about my own pay — my lead handles my settlement off-platform.
 
 **Screens:**
 - "My earnings" tab on agent app
@@ -782,17 +788,52 @@ The grouping key (`sib_key`) inside `run_eod_rollover` is computed as `md5(_norm
 - Today: sum of agent_payment_snapshot for delivered today
 - This week: same, for week to date
 - This month: same, month to date
+- **Remit this week card (since 2026-06-08).** Three tiles below the "This week" hero — **Collected** (gross `sum(paid)` from customers, green-on-white card), **You keep** (`sum(agent_payment_snapshot)` for the same set, green text), **To remit** (`Collected − You keep`, red text). Closes the long-standing gap where the rider could see what they earned but not what they owed Reda at handover. Backed by the existing `agent_earnings_summary(p_from, p_to)` RPC, which already gates `is_admin_or_dispatcher() OR u.id = auth.uid()` so an agent calling it gets exactly one row — their own. The period is the **Lagos work-week (Mon → today)** to align with "Paid every Friday" in the AppBar subtitle. Helper `lagosWeekRange()` is shared with the per-row bucketizer so they always agree on the week boundary.
 - List view: each delivered delivery with its agent_payment_snapshot
 
 **Logic:**
 - Filter to current user's deliveries only (RLS)
 - Only count delivered status
 
-**Client (vendor) identity is hidden from agents (since 2026-05-27).** The earnings list shows only product + customer + amount — never the client/vendor name. Same redaction applies on the agent Today list, the agent delivery-detail screen, and *My Stock*. `listAgentEarnings` doesn't even fetch `clients(name)` from the wire. Canonical write-up in [reda_system_design_doc.md §2 Key access rules](reda_system_design_doc.md).
+**Client (vendor) identity is hidden from agents (since 2026-05-27).** The earnings list shows only product + customer + amount — never the client/vendor name. Same redaction applies on the agent Today list, the agent delivery-detail screen, and *My Stock*. `listAgentEarnings` doesn't even fetch `clients(name)` from the wire. Canonical write-up in [reda_system_design_doc.md §2 Key access rules](reda_system_design_doc.md). The DB-side tightening (2026-06-08 — `clients_select_all` policy replaced by `clients_select_admin_dispatcher`, see §6 Security) makes this enforceable end-to-end rather than UI-only.
+
+**Sub-agent earnings redaction (policy captured 2026-06-10; scope finalised 2026-06-13, implementation pending).**
+
+> **[Updated 2026-06-13 — see [reda_scope_multiproduct_and_subagent_earnings.md](reda_scope_multiproduct_and_subagent_earnings.md)]** Two decisions supersede the original v1 framing below: **(1) the hide is server-enforced**, not UI-only — a sub-agent's pay never leaves the database to their device, so it can't be read off the app traffic; and **(2) the team-lead earnings rollup is in scope**, not deferred — the lead gets an in-app view of each of her riders' deliveries + earnings. The paragraphs marked **[superseded]** below record the original UI-only / deferred posture for history; the **[updated]** notes carry the current design.
+
+When a user has `users.parent_agent_id IS NOT NULL` (i.e. they're on a team lead's roster), **every monetary surface on the agent app is blanked**:
+- *My earnings* tab — no This week / Today / This month buckets, no Remit-this-week card, no per-delivery `+₦` strip on the recent-deliveries list. Replace the whole list-header content with a one-line note: *"Your lead handles your payment. Speak to them about your earnings."* The Today / List rows still show product, customer, address, status — the agent does the work; what they hide is **the money** attached to that work.
+- *Today* delivery detail (`(agent)/today/[id].tsx`) — the green *"You earned ₦X"* callout on the delivered-row card is hidden. The Mark-Delivered flow itself is unchanged: sub-agents still tap Mark delivered, still enter `paid` + payment method (because customers do hand over cash/transfer to them and the row's `paid` has to be the true number); they just don't see the slice that's attributed to their own pay.
+- *Profile* — no earnings-shaped summary (none today, but flag as future).
+
+The reason is operational: **the lead agent handles their team's settlement off-platform.** Reda pays the lead a single agreed amount for the team's combined output; the lead distributes to each rider on her own schedule and terms. Showing each sub-agent what each delivery earned them creates leakage incentive — "Iya Ayo paid me ₦3,000 for this but the app says ₦4,000" — which undermines the lead's arrangement and her ability to retain riders on her own pay structure.
+
+The canonical case is **Iya Ayo's team**: Mr Austin / Funke / Jerry all carry `parent_agent_id = d4f229d0-…` (Iya Ayo). She is the **only** team lead in production today (2026-06-10) and there is no second on the roadmap. This is **a one-off arrangement Uzo has chosen to underwrite** — Reda pays Iya Ayo for the team's combined output and Uzo absorbs the lead-margin internally. The redaction protects the integrity of that arrangement. If a second lead joins later the same rules apply with zero further work.
+
+**What stays unchanged** under this policy:
+- **Lead-side My Earnings**: Iya Ayo continues to see her OWN per-delivery pay + Remit-this-week card normally. She is NOT a sub-agent (`parent_agent_id IS NULL`); the redaction is keyed on the column, not on whether she has subs.
+  - **[updated 2026-06-13]** She *also* gets a new **Team earnings** view: for each of her direct active riders, their deliveries + earnings for the Lagos work-week, so she can drive her own payouts in-app. **[superseded]** ~~Per-sub breakdowns are out of scope for v1 — she runs her settlement on WhatsApp and notes today.~~
+- **Admin / dispatcher reconciliation**: the By-agent view at /(admin)/reconcile keeps showing every agent (lead AND subs) as separate rows with their `total_collected` / `total_earnings` / `total_remit`, because admin still needs per-rider accounting for audit + remit collection. The redaction is **strictly the sub-agent's own view of their own pay**.
+  - **[updated 2026-06-13]** **[superseded]** ~~"it's UI-only, the same posture as `canSeeClientName`."~~ The hide is now **server-enforced** (view + RPC gate below), not UI-only.
+- **Stock**: each sub-agent still holds their own `current_stock` rows and the *My stock* tab is unchanged. Stock isn't money.
+- **Hand off button**: unchanged — Iya Ayo can still hand off to her subs from her own Today detail (see §5.8 "Team-lead handoff" / scripts/sub-agent-reassignment.sql).
+- **The `agent_earnings_summary` RPC**: **[updated 2026-06-13]** now **gated** so a sub-agent calling it for themselves gets nothing back (refuse / empty when the caller's `parent_agent_id IS NOT NULL`); the lead + admin/dispatcher paths are unaffected. **[superseded]** ~~Unchanged for v1; it returns sub-agents' own rows under the `u.id = auth.uid()` branch and the client-side hide is the v1 scope.~~
+
+**Implementation entry points** (for when this work is picked up):
+- New permission helper `canSeeOwnEarnings(role, parentAgentId)` returning `role === 'agent' && parentAgentId == null`. Same shape as the other `canSee*` helpers.
+- `useCurrentUser()` already returns the `users` row; extend the `active` shape to carry `parentAgentId: string | null`.
+- `mobile/app/(agent)/earnings.tsx` short-circuits the FlatList content to the one-liner card; keep the AppBar so the tab still feels navigable.
+- `mobile/app/(agent)/today/[id].tsx` wraps the "You earned ₦X" sub-block in `canSeeOwnEarnings(user.role, user.parentAgentId)`.
+- **[updated 2026-06-13] Server-side gate (now required):** `deliveries_safe` must NULL `agent_payment_snapshot` when the viewer's `parent_agent_id IS NOT NULL`, so the figure never reaches a sub-agent's device (the UI hide alone is bypassable — a sub is the assigned agent on their own rows and can read the column off the wire). `agent_earnings_summary` refuses / returns empty for a caller whose `parent_agent_id IS NOT NULL`. **[superseded]** ~~No SQL change required for v1.~~
+- **[updated 2026-06-13] Team-lead rollup (new):** a new SECURITY DEFINER function returning per-rider deliveries + earnings for the **caller's own direct active sub-agents** (gated: caller is the rider's `parent_agent_id`, or admin/dispatcher), plus a new lead-side **Team earnings** screen/section consuming it. Mirrors the `agent_earnings_summary` shape per rider.
 
 **Acceptance:**
-- Agent sees own earnings only
+- Solo agent sees own earnings (buckets + Remit-this-week + list + delivered-row "You earned")
 - Numbers match admin's per-agent view for same agent + same date range
+- **Sub-agent sees ZERO money** anywhere on their app — the one-liner card replaces the earnings UI; the delivered-row callout is gone; otherwise the agent app functions identically
+- **[updated 2026-06-13] Sub-agent's pay is unreadable at the server** — `agent_payment_snapshot` comes back NULL in `deliveries_safe` for a sub, and `agent_earnings_summary` returns nothing for a sub asking about themselves (verified by inspecting the network, not just the UI)
+- Lead agent (Iya Ayo) sees her own earnings normally + can hand off rows + **[updated 2026-06-13] sees a Team earnings view of each direct rider's deliveries + earnings**
+- Admin's reconciliation is unaffected
 - No vendor/client name visible on any agent surface
 
 ---
