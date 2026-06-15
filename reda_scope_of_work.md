@@ -1,13 +1,16 @@
 # Reda — Scope of Work & Use-Case Design
 
-**Two features:** (A) Multi-product orders (one delivery, several products) · (B) Sub-agent earnings privacy + team-lead earnings view.
+**Three features:** (A) Multi-product orders (one delivery, several products) · (B) Sub-agent earnings privacy + team-lead earnings view · (C) Founding-agents pricing (per-group agent pay by location).
 
 **Prepared for:** Uzo · **Status:** proposal for sign-off · **Date:** 2026-06-13
 
-> This is the client-facing scope. The deep technical migration detail lives in
+> This is the client-facing scope. The deep technical migration detail for (A) lives in
 > [reda_multi_product_migration_plan.md](reda_multi_product_migration_plan.md); the earnings-privacy
 > policy origin is [reda_prd.md §5.13](reda_prd.md). Decisions confirmed on 2026-06-13 are baked in below
 > and, where they change an earlier write-up, flagged **[updated]**.
+>
+> **Pricing note:** the figures below are **non-premium / family rates**, set deliberately under the
+> value-based number. They're a starting point — tune any line to whatever feels right.
 
 ---
 
@@ -17,8 +20,9 @@
 |---|---|---|
 | **A. Multi-product orders** | One delivery can hold several products (real SKUs), instead of being forced into one generic "Perfume" line. Stock finally reflects what each rider actually holds. | Fixes inventory fiction. **Fees, remit and reconciliation are untouched.** |
 | **B. Sub-agent earnings** | A rider on a team lead's roster sees **no money** on their app; the value is hidden at the server, not just on screen. The **team lead gets a dashboard** of each of her riders' deliveries + earnings to run her own payouts. | Protects the lead's pay arrangement and closes a quiet data leak. |
+| **C. Founding-agents pricing** | A small set of agents (the "Founding agents") can earn a **different per-location rate** than the standard one; everyone else stays on the default. | Expresses a real pay arrangement the rate card can't hold today. |
 
-Both are independently shippable. Recommended order and combined pricing in §4.
+All three are independently shippable. Recommended order and combined pricing in §5.
 
 ---
 
@@ -65,7 +69,8 @@ per-delivery by location, never × quantity, never per product — which is exac
 delivery**. Line items may optionally carry a per-line price for record-keeping, but **that never feeds any
 fee math**. Therefore:
 - Reda's charge per delivery — **unchanged**.
-- Agent pay per delivery — **unchanged**.
+- Agent pay per delivery — **unchanged** (subject only to Feature C, below, which changes *which rate* an
+  agent is on — never how many times it's counted).
 - Remit ("collected − you keep"), client reconciliation, agent earnings — **unchanged numbers**, asserted
   identical pre/post for a fixed date range before we finish.
 
@@ -84,10 +89,10 @@ flag-gated minutes** during the intake cutover, when new-order parsing is paused
 plan: [reda_multi_product_migration_plan.md](reda_multi_product_migration_plan.md).
 
 ### 2.7 Price
-Priced fixed on **value and scope**. The proven extraction logic (already working in the study bot) and the
-untouched fee model keep both the risk and the price at the lower end.
+Priced fixed on value/scope, at a non-premium rate. The proven extraction logic (already working in the
+study bot) and the untouched fee model keep the risk low.
 
-> **Fixed price: ₦700k–₦1.1M (target ~₦900k).**
+> **₦450k.**
 
 ---
 
@@ -117,9 +122,9 @@ screen-level hide that a technically-minded rider could see straight through.
   view: for each of her active riders, their deliveries and earnings for the period, so she can drive her own
   payouts **inside the app** instead of reconstructing it on WhatsApp. She continues to see **her own**
   earnings normally (she is not a sub-agent herself).
-- **Admin / dispatcher.** Unchanged — the reconciliation screens keep showing **every** rider (lead and subs)
-  as separate rows for audit and remit collection. The privacy change is strictly about a sub-agent's view of
-  *their own* app.
+- **Admin / dispatcher.** Unchanged on the *detail* side — the reconciliation screens keep showing **every**
+  rider as separate rows for audit. **Payout** rolls up: Reda pays the **lead** the combined total for her +
+  her riders (she settles her riders herself) — see §3.4.
 
 ### 3.3 What's included
 - Server-side enforcement so a sub-agent's earnings are **unreadable**, not merely hidden (the delivery feed
@@ -130,36 +135,112 @@ screen-level hide that a technically-minded rider could see straight through.
   riders' figures — and only hers).
 - The lead's existing **Hand off to sub-agent** flow is unchanged.
 
-### 3.4 Out of scope
-- Differential per-agent **bonuses** between a lead and her subs. (There's a known edge — moving a row
-  between a lead and a sub does not re-snapshot pay — but it is harmless while bonuses are zero, which they are
-  today. Called out so it's on record; fixing it is only needed if you introduce differential bonuses.)
-- Any change to admin/dispatcher reconciliation (it already shows everyone correctly).
+### 3.4 Payout rollup (how Reda settles a team)
+A sub-agent's delivery earnings are **owed by Reda to the lead**, not to the sub directly — Reda pays the lead
+for her *and* her team's deliveries, and the lead pays each rider herself. So on the **payout / remit** side,
+a sub-agent's earnings **roll up into the lead's total**. Admin can still see per-rider detail for audit; the
+money goes to the lead. (This is the same arrangement that drives sub-agent pricing in Feature C.)
 
-### 3.5 Price
-Smaller in scope than Feature A — the server-side privacy gate is contained; the team-lead dashboard (new
-screen + gated data function + tests) is the bulk. Priced fixed on value/scope; estimate fresh for this
-scope (not carried from a prior doc).
+### 3.5 Out of scope
+- Differential per-agent **bonuses** between a lead and her subs (the per-agent flat bonus is being retired;
+  Feature C is the real per-rate mechanism).
+- Any change to how admin sees per-rider detail (it already shows everyone correctly).
 
-> **Estimated fixed price: ₦300k–₦500k (target ~₦400k).** Refine on sign-off.
+### 3.6 Price
+Smaller in scope than A. **Tightly coupled to Feature C** (both run on the same sub-agent / team-lead
+plumbing) — best built together.
 
----
-
-## 4. Combined pricing & recommended sequencing
-
-| Item | Price band | Target |
-|---|---|---|
-| A — Multi-product orders | ₦700k – ₦1.1M | ~₦900k |
-| B — Sub-agent earnings + lead view | ₦300k – ₦500k | ~₦400k |
-| **Both** | **₦1.0M – ₦1.6M** | **~₦1.3M** |
-
-**Recommended order: ship B first, then A.** B is smaller, lower-risk, needs no data migration, and the
-earnings leak is live today — it's a quick, self-contained win. A is the larger migration and benefits from
-being scheduled deliberately around the few-minute intake cutover.
+> **₦200k.**
 
 ---
 
-## 5. Assumptions baked in (flag any you disagree with)
+## 4. Feature C — Founding-agents pricing (per-group agent pay by location)
+
+### 4.1 The need
+A handful of agents — the **Founding agents** — are on a different pay arrangement: at some locations they
+earn **more per delivery** than the standard rate. Today the rate card holds **one rate per location for
+everyone**, so there's no clean way to express this — it would mean hand-editing individual deliveries, which
+doesn't scale and isn't auditable. **For now there is exactly one group (Founding agents), a few agents;
+everyone else stays on the default per-location rates.** The design supports more groups later at no extra
+cost, but we seed one.
+
+### 4.2 How it works
+- An agent can be marked a **Founding agent** (a named pay **group**).
+- You set the Founding-agent pay **only at the locations where it differs**; everywhere else it **falls back
+  to the default location rate** automatically — no need to fill every cell.
+- When a Founding agent is assigned a delivery, the pay snapshot uses the **Founding rate**; everyone else
+  uses the default. **Reda's charge to the customer never changes** — only *agent pay* varies by group.
+- A rare **one-off per-agent override** is available for the odd exception on top of the group.
+
+### 4.3 Sub-agents inherit their lead's rate
+Because Reda pays a **team lead** for her *and* her riders' deliveries (Feature B), a **sub-agent is priced as
+their lead**: if Iya Ayo is a Founding agent, a delivery done by Mr Austin earns at **Iya Ayo's** Founding
+rate, that money is owed by Reda **to Iya Ayo**, Austin sees nothing (Feature B), and Iya Ayo pays Austin
+herself. A team lead is otherwise **priced like any other agent** — on whatever group she's on. This is why
+B and C ship together.
+
+### 4.4 Use cases
+- **Admin** marks an agent as a Founding agent and enters the Founding pay for the locations that differ.
+- **Founding agent delivers** → earns the Founding rate for that location (or the default where none is set).
+- **Standard agent delivers** → earns the default location rate, exactly as today.
+- **Sub-agent of a Founding lead delivers** → earns the lead's Founding rate; it rolls up to the lead.
+
+### 4.5 What's included
+- A rate-group concept seeded with **one** group (Founding agents); agent → group membership on the user
+  record (admin-set).
+- A **sparse per-(group, location) agent-pay override**, with automatic fall-back to the default location
+  rate; plus an optional **per-agent override** for exceptions.
+- Pricing resolution updated everywhere a delivery's pay is stamped, including the **sub-agent → lead**
+  inheritance above.
+- The **re-snapshot cleanup** (§4.7).
+- Admin UI: mark an agent's group; enter group rates on the rate-card screen.
+
+### 4.6 What stays the same
+- **Reda's charge to the customer** — unchanged (charged stays per-location; only agent pay gets the group
+  dimension).
+- **Reconciliation math** — still sums per-delivery snapshots; no new multiply, no per-product pay.
+- **Historical delivered orders** — frozen; never retro-repriced. Only new/in-flight deliveries use the new
+  rates.
+
+### 4.7 The cleanup it forces (worth knowing)
+Several reassignment paths today **don't re-stamp agent pay** when a delivery moves between agents. That's
+harmless *now* because no agent has a special rate — but the moment Founding rates exist, moving a delivery
+between a Founding and a standard agent must re-price. This feature closes that gap on **bulk reassign**,
+**post-rollover reassignment**, and the **edit-screen agent change**. (A **lead → sub handoff correctly keeps
+the lead's rate** — same principal — so that path needs no change.)
+
+### 4.8 Out of scope
+- More than one pay group (architecture supports it; we seed Founding agents only).
+- Per-group variation of **Reda's customer charge** (only agent pay varies by group).
+- Group rates varying by **product** (pay stays per-delivery, per-location).
+
+### 4.9 Price
+Most of the work is the pricing-resolution update + the re-snapshot cleanup (needed regardless of group
+count); the one-group admin UI is light.
+
+> **₦250k.**
+
+---
+
+## 5. Pricing & recommended sequencing
+
+**Non-premium / family rates** — set under the value figure on purpose. Tune any line freely.
+
+| Item | Price |
+|---|---|
+| A — Multi-product orders | ₦450k |
+| B — Sub-agent earnings + team-lead view | ₦200k |
+| C — Founding-agents pricing | ₦250k |
+| **All three (bundle)** | **₦800k** |
+
+**Recommended order: B + C together, then A.**
+- **B + C** share the same sub-agent / team-lead plumbing (sub-agents priced at and rolled up to their lead),
+  carry **no data migration**, and the earnings leak is live today — a contained first ship.
+- **A** is the larger migration; best scheduled deliberately around its few-minute intake cutover.
+
+---
+
+## 6. Assumptions baked in (flag any you disagree with)
 
 These are low-stakes calls already assumed in the detailed plans — listed so nothing is a surprise:
 
@@ -169,17 +250,24 @@ These are low-stakes calls already assumed in the detailed plans — listed so n
 2. **A multi-client bundle goes to Needs Review** — if one message's products resolve to *different* vendors,
    it's flagged for a human rather than guessed.
 3. **Rollover moves the whole order** to one next-day child — never split per product.
-4. **The lead's Team-earnings view covers her direct active riders only**, for the same Lagos work-week the
-   rest of earnings already uses.
-5. **The generic "Perfume" SKU stays alive** until its historical orders are migrated, then is retired — no
+4. **One pay group for now (Founding agents), a handful of agents; everyone else default** — more groups are
+   supported but not seeded.
+5. **A sub-agent is priced at their lead's rate**, and a sub-agent's earnings **roll up to the lead** for
+   Reda's payout (the lead settles her riders herself).
+6. **Reda's customer charge never varies by agent/group** — only agent pay does.
+7. **One group per agent**; the team lead is priced like any other agent, on her own group.
+8. **The generic "Perfume" SKU stays alive** until its historical orders are migrated, then is retired — no
    history is rewritten.
 
 ---
 
-## 6. Net effect on the existing docs (for the build)
+## 7. Net effect on the existing docs (for the build)
 
-- **PRD §5.13** changes from *UI-only, lead-rollup-deferred* to **server-enforced, lead-rollup-included**.
-  The PRD will be updated to match on build.
+- **PRD §5.13** changes from *UI-only, lead-rollup-deferred* to **server-enforced, lead-rollup-included**, and
+  gains the **payout-rollup** note. The PRD will be updated to match on build.
+- **A new pricing section** (rate groups + sub-agent inheritance + the re-snapshot cleanup) will be added to
+  the PRD / system design on build; the `rate_card` table itself is **untouched** (groups are an additive
+  override + fall-back).
 - The two multi-product docs are reconciled: the **migration plan** is the source of truth for *how*; the old
   `multi_product_delivery_scope.md` price/scope is carried here with the **one-order-total** price model
   confirmed (superseding its "per-line subtotal" line).

@@ -7,7 +7,7 @@ delivery with several items.
 **Status:** scoped 2026-06-10, grounded in the actual codebase. Not yet started.
 
 > **[Updated 2026-06-13]** Consolidated, client-facing scope now lives in
-> [reda_scope_multiproduct_and_subagent_earnings.md](reda_scope_multiproduct_and_subagent_earnings.md);
+> [reda_scope_of_work.md](reda_scope_of_work.md);
 > the rigorous migration detail is in [reda_multi_product_migration_plan.md](reda_multi_product_migration_plan.md).
 > **Price model resolved:** the customer-facing total stays a **single order total on `deliveries.customer_price`**;
 > `delivery_items.customer_price` is **optional per-line, record-fidelity only, and never feeds fees** — this
