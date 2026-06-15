@@ -155,9 +155,8 @@ record fidelity only — it never feeds fees or the order total.)
 
 ---
 
-## Effort & price (MVP)
-- Hand-coded equivalent ~60–90 hrs; **less with an AI coding assistant**, but priced **fixed on
-  value/scope**, not hours.
+## Price (MVP)
+- Priced **fixed on value/scope**, not hours.
 - **Recommended fixed price: ₦700k–₦1.1M** (target ~₦900k). The mybot head-start + unchanged fee
   model put this at the lower-risk end.
 - Phase 2 (partial delivery, web, product-level reporting) quoted separately when wanted.

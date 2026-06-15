@@ -41,8 +41,9 @@ per-delivery by location, never × quantity, never per product — which is exac
   each matched to a **real SKU**. The multi-product reading logic already exists in the study bot
   (`mybot-parse-message`) and is ported into the live pipeline. Any line that can't be confidently matched
   routes to **Needs Review** — never silently collapsed into a junk product again.
-- **Create / edit (admin + dispatcher).** The product picker becomes an **add/remove list of line-item rows**
-  (product + quantity per row). Per-line stock shortfall is shown as you build the order.
+- **Create / edit (admin + dispatcher).** The product picker becomes an **add/remove list of line-item rows**,
+  **each row carrying its own quantity** (product + quantity per line — so `2 Opulent Oud + 4 atomizer` is two
+  lines, qty 2 and qty 4). Per-line stock shortfall is shown as you build the order.
 - **Mark delivered (agent).** The rider sees each line and confirms **quantity delivered per line** (so the
   existing "delivered fewer than ordered / leftover" behaviour survives per product). The delivery still
   resolves **as a whole** — one status, one fee, one payment.
@@ -82,9 +83,9 @@ flag-gated minutes** during the intake cutover, when new-order parsing is paused
 **queue and replay**, so nothing is lost — while riders keep using the app normally throughout. Full phase
 plan: [reda_multi_product_migration_plan.md](reda_multi_product_migration_plan.md).
 
-### 2.7 Effort & price
-Hand-coded equivalent ≈ **60–90 hrs**; priced fixed on value/scope, not hours. The proven extraction logic
-and the untouched fee model keep this at the lower-risk end.
+### 2.7 Price
+Priced fixed on **value and scope**. The proven extraction logic (already working in the study bot) and the
+untouched fee model keep both the risk and the price at the lower end.
 
 > **Fixed price: ₦700k–₦1.1M (target ~₦900k).**
 
@@ -135,9 +136,10 @@ screen-level hide that a technically-minded rider could see straight through.
   today. Called out so it's on record; fixing it is only needed if you introduce differential bonuses.)
 - Any change to admin/dispatcher reconciliation (it already shows everyone correctly).
 
-### 3.5 Effort & price
-Smaller than Feature A. The server-side privacy gate is modest; the team-lead dashboard (new screen + gated
-data function + tests) is the bulk. Estimate provided fresh for this scope (not from a prior doc).
+### 3.5 Price
+Smaller in scope than Feature A — the server-side privacy gate is contained; the team-lead dashboard (new
+screen + gated data function + tests) is the bulk. Priced fixed on value/scope; estimate fresh for this
+scope (not carried from a prior doc).
 
 > **Estimated fixed price: ₦300k–₦500k (target ~₦400k).** Refine on sign-off.
 
