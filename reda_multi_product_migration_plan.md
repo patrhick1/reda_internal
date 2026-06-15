@@ -87,6 +87,7 @@ grouped by `(deliveries.assigned_agent_id, delivery_items.product_catalog_id)` f
 
 - **Stock:** `create or replace view current_stock` to aggregate from `delivery_items` (atomic; identical post-backfill numbers — assert parity immediately before/after).
 - **Intake cutover (the only interruption):** flip `enable_bot_pipeline` **off** (inbound rows queue in `bot_inbound_messages`, nothing lost) → deploy the updated `bot-parse-message` (extracts `products[]`, per-line `match_products_by_text`, calls `bot_create_delivery` with `p_items`; any unmatched line → `needs_review`) and the dual-write RPCs → flip `enable_bot_pipeline` **on** → queued messages drain through the multi-item path. **Agents keep using the app throughout; only new-order intake pauses for minutes.** Flags are read at `bot-parse-message/index.ts:256-261`.
+  - **The contractor merge (don't lose the envelope):** today `extractContractorParse()` sets `needsLlm=false` and **skips our LLM entirely** when the contractor's `parsed` block has `product_name + raw_address + customer_phone` (`bot-parse-message/index.ts:99-113, 279-282`), then merges contractor-wins-LLM-fills at `:310-317`. The contractor only ever sends **one** product, so for multi-product we **decouple the product dimension from that gate**: always run our own extraction on `raw_text` for `products[]` (port mybot's array schema/prompt + the duplicated `pickMatch` disambiguation), while **keeping the contractor's per-delivery envelope** — `customer_name`, `customer_phone`, `raw_address`, plus the `location` and `assigned_agent` / `client_hint` hints — merged exactly as today. The contractor's single `product_name` is kept only as a first-line sanity hint. Store the new `parse_result` in mybot's shape (`extracted.products[]`, `product_matches[]`, `client_id_conflict`).
 - `npm run gen:types` to surface `delivery_items` + new RPC params.
 - **Mobile (`eas update --branch preview`, OTA, instant):** old JS bundles still work because dual-write maintains the legacy columns and the RPCs accept both shapes; the new bundle adds multi-item. Surfaces to change:
   - `services/deliveries.ts`: add `DeliveryItem[]` to the row type + joins; `siblingGroupKey` (lines 284–301) keys on `items_fingerprint`; create/update/changeStatus inputs carry `items` / per-item delivered.
@@ -114,6 +115,7 @@ grouped by `(deliveries.assigned_agent_id, delivery_items.product_catalog_id)` f
 - **`available_orders_safe`** view + mobile `available-orders.ts` aggregate by product/qty per delivery. → aggregate from items.
 - **Indexes:** `deliveries_sibling_lookup_idx (phone, product_catalog_id, date)` → re-base on `items_fingerprint`.
 - **Soft-delete / terminal locks** (`delete_delivery`, post-delivered locks): `on delete cascade` from `delivery_items` keeps them coherent; delivered rows stay locked.
+- **Push / notification copy + per-product shortfall** (previously un-listed): `send-assignment-push/index.ts:66,90` builds `"${productName} × ${quantity_ordered}"` from a single join; `send-notification/index.ts:196-223` (assignment) and `:358-406` (warehouse-pickup) do the same **and compute stock shortfall against one product** (`quantity_ordered − onHand`); `:233-296` (status-change) reads a single `quantity_delivered`. → all must take a **products summary** (e.g. `"Opulent Oud ×2, Atomizer ×4"` or `"3 items"`) and loop shortfall **per item**.
 
 ## Verification (end-to-end, no shortcuts)
 
@@ -127,7 +129,7 @@ grouped by `(deliveries.assigned_agent_id, delivery_items.product_catalog_id)` f
 ## Files touched
 
 - **New SQL:** `scripts/multi-product-0{0..4}-*.sql` (catalog seed, schema+backfill, dual-write, cutover, contract).
-- **Edge:** `supabase/functions/bot-parse-message/index.ts` (extract `products[]`, per-line match, `p_items`); reuse logic from `supabase/functions/mybot-parse-message/index.ts`.
+- **Edge:** `supabase/functions/bot-parse-message/index.ts` (extract `products[]`, per-line match, `p_items`, decouple the LLM-skip gate from the product dimension while keeping the contractor envelope merge); reuse logic from `supabase/functions/mybot-parse-message/index.ts`. **Notifications:** `supabase/functions/send-assignment-push/index.ts` + `supabase/functions/send-notification/index.ts` (multi-product summary string + per-item stock shortfall).
 - **Mobile:** `services/{deliveries,available-orders,reconciliation}.ts`, `types/database.gen.ts`; `screens/deliveries/{DeliveryFieldsForm,New,Edit,Detail,List,StatusUpdatePanel}.tsx`; `components/sheets/{MarkDeliveredSheet,BulkMarkDeliveredSheet}.tsx`; `components/delivery/RecentActivityCard.tsx`; `screens/available/*`, `screens/stock/Movements.tsx`, `screens/ops/OpsDashboard.tsx`.
 
 ## Downtime summary

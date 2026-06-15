@@ -45,6 +45,12 @@ per-delivery by location, never × quantity, never per product — which is exac
   each matched to a **real SKU**. The multi-product reading logic already exists in the study bot
   (`mybot-parse-message`) and is ported into the live pipeline. Any line that can't be confidently matched
   routes to **Needs Review** — never silently collapsed into a junk product again.
+- **Contractor data + our AI (the merge).** The contractor's bot keeps running unchanged — we **keep the
+  fields it's good at** (customer name, phone, address, and the location/agent hints) and run **our own AI on
+  the raw message text** to pull out the **full product list + per-line quantities** (the contractor only ever
+  sends one product). The two are stitched into one delivery: contractor for the *envelope*, our model for the
+  *line items*. *(Today the pipeline skips our AI whenever the contractor's parse looks "complete" — that
+  shortcut is removed for the product list, so a multi-line order is always read in full.)*
 - **Create / edit (admin + dispatcher).** The product picker becomes an **add/remove list of line-item rows**,
   **each row carrying its own quantity** (product + quantity per line — so `2 Opulent Oud + 4 atomizer` is two
   lines, qty 2 and qty 4). Per-line stock shortfall is shown as you build the order.
@@ -58,9 +64,17 @@ per-delivery by location, never × quantity, never per product — which is exac
 - New `delivery_items` table (one delivery → many product lines).
 - Order creation, editing, mark-delivered, and end-of-day rollover all understand line items
   (rollover always moves the **whole** order together — never splits products).
-- Live bot intake extracts the product list itself and matches each line to a real SKU; unmatched → Needs Review.
+- **Live bot intake reworked**: extract the product list from the raw message (our AI), merge with the
+  contractor's envelope fields, match each line to a real SKU, and store the line items on the new create
+  path; any unmatched line, or lines that resolve to different vendors → Needs Review.
+- **Duplicate / sibling / rollover detection re-keyed** off the *set of products* (an order's "fingerprint")
+  instead of the single product, so multi-item repeats are still caught and EOD rollover doesn't fragment.
+- **Stock checks loop per product line** at create, auto-assign, and mark-delivered.
+- **Assignment & status push notifications updated** to summarise multiple products and compute stock
+  shortfall **per line** (today they show one "Product × Qty" and check one product).
 - Real perfume SKUs seeded for *Original Buy* (replacing the generic "Perfume" bucket).
-- Mobile screens updated end-to-end: create, edit, detail, list summary, mark-delivered, Needs Review.
+- Mobile screens updated end-to-end: create, edit, detail, list summary, mark-delivered, Needs Review,
+  plus the available-orders / warehouse-planning aggregations (now per line).
 - One-time data backfill of every existing order into a single line item, with a **stock-parity guarantee**
   (on-hand numbers are byte-identical before and after).
 
