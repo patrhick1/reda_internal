@@ -46,6 +46,8 @@ export type ClientRemitDetailRow = {
   customer_name: string;
   product_name: string | null;
   location_name: string | null;
+  /** Units originally ordered. Used to derive a "delivered fewer than ordered" note. */
+  quantity_ordered: number;
   quantity_delivered: number;
   /** What the customer was supposed to pay for this delivery. */
   customer_price: number;

@@ -61,41 +61,38 @@ export default function ClientReconcileDetail() {
   const clientName = name ?? 'Client';
 
   const onShare = useCallback(async () => {
-    const header = [
-      `Reda Logistics — ${clientName}`,
-      `Period: ${rangeLabel}`,
-      ``,
-      `Deliveries:        ${totals.count}`,
-      `Customer owed:     ${formatNaira(totals.customerOwed)}`,
-      `Customer paid:     ${formatNaira(totals.paid)}`,
-      `Outstanding:       ${formatNaira(totals.outstanding)}`,
-      ``,
-      `Reda delivery fee: ${formatNaira(totals.redaFee)}`,
-      `Cash POS fee:      ${formatNaira(totals.cashPosFee)}`,
-      `Remit to you:      ${formatNaira(totals.remit)}`,
-    ].join('\n');
+    // Per-delivery blocks in Uzo's preferred shape: Name / Product / Qty /
+    // To Remit / Note. The note is auto-derived from the row (short delivery
+    // and/or unpaid balance); "—" when there's nothing notable.
+    const blocks = rows.map((r) => {
+      const customer = r.customer_name ?? 'Customer';
+      const product = r.product_name ?? 'Product';
+      const qty = r.quantity_delivered ?? 0;
+      const remit = formatNaira(Number(r.remit ?? 0));
+      return [
+        `Name: ${customer}`,
+        `Product: ${product}`,
+        `Qty: ${qty}`,
+        `To Remit: ${remit}`,
+        `Note: ${deriveNote(r)}`,
+      ].join('\n');
+    });
 
-    const lines =
-      rows.length === 0
-        ? '(no deliveries in this range)'
-        : rows
-            .map((r) => {
-              const qty = r.quantity_delivered != null ? `${r.quantity_delivered}× ` : '';
-              const product = r.product_name ?? 'product';
-              const loc = r.location_name ?? 'no location';
-              const customer = r.customer_name ?? 'customer';
-              const paid = formatNaira(Number(r.paid ?? 0));
-              const fee = formatNaira(Number(r.reda_fee ?? 0));
-              const posFee = Number(r.cash_pos_fee ?? 0);
-              const posPart = posFee > 0 ? ` · POS ${formatNaira(posFee)}` : '';
-              const remit = formatNaira(Number(r.remit ?? 0));
-              const agent = r.agent_name ? ` (${r.agent_name.split(/\s+/)[0]})` : '';
-              const date = formatDateLagos(r.scheduled_date);
-              return `• ${date} · ${customer} · ${loc} · ${qty}${product}\n  collected ${paid} · Reda fee ${fee}${posPart} · remit ${remit}${agent}`;
-            })
-            .join('\n');
+    // Period totals per product (delivered units), then the single remit total.
+    const byProduct = new Map<string, number>();
+    for (const r of rows) {
+      const name = r.product_name ?? 'Product';
+      byProduct.set(name, (byProduct.get(name) ?? 0) + Number(r.quantity_delivered ?? 0));
+    }
+    const productLines = [...byProduct.entries()].map(([name, qty]) => `${name}: ${qty}`);
 
-    const message = `${header}\n\nDetails:\n${lines}\n\nSent from Reda Logistics`;
+    const header = `Reda Logistics — ${clientName}\n${rangeLabel}`;
+    const body = rows.length === 0 ? '(no deliveries in this range)' : blocks.join('\n\n');
+    const totalBlock = ['Total', ...productLines, `To Remit: ${formatNaira(totals.remit)}`].join(
+      '\n',
+    );
+
+    const message = `${header}\n\n${body}\n\n\n${totalBlock}\n\n\nThank you for choosing REDA 🥂`;
 
     try {
       await Share.share({ message });
@@ -192,6 +189,20 @@ export default function ClientReconcileDetail() {
       </View>
     </View>
   );
+}
+
+// Auto-fill the report's per-delivery Note from data we already have:
+//   • short delivery  → "1 of 2 delivered"
+//   • customer balance → "balance ₦X" (customer ↔ vendor; informational)
+// "—" when there's nothing notable, so Uzo's Note: line is never blank.
+function deriveNote(r: ClientRemitDetailRow): string {
+  const ordered = Number(r.quantity_ordered ?? 0);
+  const delivered = Number(r.quantity_delivered ?? 0);
+  const outstanding = Number(r.customer_price ?? 0) - Number(r.paid ?? 0);
+  const parts: string[] = [];
+  if (ordered > 0 && delivered < ordered) parts.push(`${delivered} of ${ordered} delivered`);
+  if (outstanding > 0.005) parts.push(`balance ${formatNaira(outstanding)}`);
+  return parts.length > 0 ? parts.join(' · ') : '—';
 }
 
 function DeliveryRow({ row }: { row: ClientRemitDetailRow }) {

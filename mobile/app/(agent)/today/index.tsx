@@ -222,7 +222,7 @@ export default function AgentToday() {
             <Empty
               icon="package"
               title="No deliveries today"
-              sub="Anything Uzo assigns to you shows up here. Pull down to refresh if you're expecting one."
+              sub="Anything Reda assigns to you shows up here. Pull down to refresh if you're expecting one."
             />
           )
         }

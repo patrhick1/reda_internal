@@ -243,10 +243,10 @@ const AGENT = [
 
 ### Stand by + Delivery closed pushes
 
-Sometimes Uzo assigns the same delivery to a few of you so whoever gets there first delivers it. The app coordinates:
+Sometimes Reda assigns the same delivery to a few of you so whoever gets there first delivers it. The app coordinates:
 
 - **Stand by — Funke is on Emmanuel. Hold for now.** Another agent just marked en-route. Don't call the customer yet; wait. Your row stays open in case Funke can't make it.
-- **Delivery closed — Funke delivered to Emmanuel. Your row is closed.** Another agent already delivered. You don't need to do anything — the row is now cancelled in your list and Uzo knows.
+- **Delivery closed — Funke delivered to Emmanuel. Your row is closed.** Another agent already delivered. You don't need to do anything — the row is now cancelled in your list and Reda knows.
 
 Treat both as "stand down" signals. You'll still see the row in your Today, just with the appropriate status pill (still open after Stand by; cancelled after Delivery closed).`,
   },
@@ -261,7 +261,7 @@ Treat both as "stand down" signals. You'll still see the row in your Today, just
 3. Pick **Cash** or **Transfer**.
 4. Submit.
 
-The delivery turns green and your **Earned today** ticks up. You can't change a delivered delivery — if you made a mistake, message Uzo and he'll fix it.`,
+The delivery turns green and your **Earned today** ticks up. You can't change a delivered delivery — if you made a mistake, message Reda to get it fixed.`,
   },
   {
     id: 'report-issue',
@@ -273,11 +273,11 @@ The delivery turns green and your **Earned today** ticks up. You can't change a 
 - **Tomorrow / Postponed / Follow up** — customer rescheduled. The delivery stays open but moves down your list.
 - **Failed delivery** — you went, customer refused or wasn't there. Closed.
 - **Unserious** — customer wasted your time. Closed.
-- **No product** — you don't have the product. Tell Uzo so he can re-assign or send stock.
+- **No product** — you don't have the product. Tell Reda so they can re-assign or send stock.
 
-Every status change is recorded. Uzo sees it on his phone straight away.
+Every status change is recorded. Reda sees it straight away.
 
-### Flag something specific for Uzo or a dispatcher
+### Flag something specific for Reda or a dispatcher
 
 The red **alert** icon in the top-right of a delivery is for when you need ops to step in — wrong address, can't reach the customer, payment dispute, etc.
 
@@ -285,7 +285,7 @@ The red **alert** icon in the top-right of a delivery is for when you need ops t
 2. Pick the issue chip (e.g. *Wrong address*, *Can't reach client*, *Payment dispute*, *Product issue*, *Other*) → optional note ("address is in Lekki not VI, customer said over the phone").
 3. **Send to ops** — one tap does two things: opens a chat thread on this delivery AND sets the status (e.g. *Can't reach client* → *Not answering*). You don't need to also tap Update status.
 
-Uzo and the dispatchers get a push, see the issue at the top of their list, and reply right inside the delivery — you get a push back. The thread stays visible on the delivery detail until the delivery is delivered/cancelled/etc.; then it closes automatically.`,
+Reda and the dispatchers get a push, see the issue at the top of their list, and reply right inside the delivery — you get a push back. The thread stays visible on the delivery detail until the delivery is delivered/cancelled/etc.; then it closes automatically.`,
   },
   {
     id: 'end-of-day-return',
@@ -293,8 +293,8 @@ Uzo and the dispatchers get a push, see the issue at the top of their list, and 
     icon: 'arrowDown',
     body: `When you're done for the day:
 
-- If you have unsold stock from the warehouse, drop it back at Shomolu and tell Uzo so he can record the **Warehouse return** in the app.
-- Open deliveries you couldn't finish stay on your list for tomorrow (Uzo will roll them forward).
+- If you have unsold stock from the warehouse, drop it back at Shomolu and tell Reda so they can record the **Warehouse return** in the app.
+- Open deliveries you couldn't finish stay on your list for tomorrow (Reda will roll them forward).
 - If you want, check your **Earnings** tab to see what you'll be paid today.`,
   },
 ] as const satisfies readonly HelpSection[];
