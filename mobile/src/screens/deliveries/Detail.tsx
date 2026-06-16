@@ -21,7 +21,7 @@ import {
   listStatusDefs,
   type DeliveryStatusHistoryRow,
 } from '@/services/deliveries';
-import { initiateCall } from '@/services/calls';
+import { initiateCall, initiateTeamCall } from '@/services/calls';
 import { ensureMicPermission } from '@/lib/calls/permissions';
 import { canPlaceCall } from '@/lib/calls/availability';
 import { AppBar, Avatar, Button, Card, Empty, Hint, Icon, StatusPill } from '@/components/ui';
@@ -188,8 +188,11 @@ export function DeliveryDetail() {
   // `deliveryQ.data?.id` instead of capturing the post-guard `d.id` so the
   // dep array works whether or not the data has loaded yet.
   const deliveryId = deliveryQ.data?.id;
-  const callTeammate = useCallback(
-    async (calleeId: string) => {
+  // Shared call plumbing: mic-permission gate → run the initiator → navigate to
+  // the live call screen. `begin` is whichever call this is (1:1 agent, or the
+  // ops-team ring), so the busy/permission/error handling lives in one place.
+  const startCall = useCallback(
+    async (begin: () => Promise<{ id: string }>) => {
       if (callBusy) return;
       setCallBusy(true);
       try {
@@ -212,7 +215,7 @@ export function DeliveryDetail() {
           );
           return;
         }
-        const call = await initiateCall({ calleeId, relatedDeliveryId: deliveryId });
+        const call = await begin();
         router.push(`/call/${call.id}`);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -225,7 +228,19 @@ export function DeliveryDetail() {
         setCallBusy(false);
       }
     },
-    [callBusy, deliveryId, router],
+    [callBusy, router],
+  );
+
+  // Ops (admin/dispatcher/rep) → call the delivery's assigned agent directly.
+  const callTeammate = useCallback(
+    (calleeId: string) => startCall(() => initiateCall({ calleeId, relatedDeliveryId: deliveryId })),
+    [startCall, deliveryId],
+  );
+
+  // Agent → ring the whole ops team (first responder wins, server-side).
+  const callOps = useCallback(
+    () => startCall(() => initiateTeamCall({ relatedDeliveryId: deliveryId })),
+    [startCall, deliveryId],
   );
 
   if (deliveryQ.loading && !deliveryQ.data) {
@@ -668,35 +683,8 @@ export function DeliveryDetail() {
                   <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.black }}>
                     {d.assigned_agent_name}
                   </Text>
-                  {/* Quick-call the assigned agent. Hidden when the agent IS
-                      the one viewing (calling yourself is pointless and the
-                      DB-side RPC would reject anyway) and on web (no Agora
-                      bridge — see canPlaceCall). */}
-                  {d.assigned_agent_id && d.assigned_agent_id !== user.userId && canPlaceCall() ? (
-                    <TouchableOpacity
-                      onPress={() => callTeammate(d.assigned_agent_id as string)}
-                      disabled={callBusy}
-                      hitSlop={8}
-                      style={{
-                        marginLeft: 4,
-                        width: 28,
-                        height: 28,
-                        borderRadius: 14,
-                        backgroundColor: colors.success,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        opacity: callBusy ? 0.5 : 1,
-                      }}
-                      accessibilityLabel={`Call ${d.assigned_agent_name}`}
-                      accessibilityRole="button"
-                    >
-                      {callBusy ? (
-                        <ActivityIndicator color={colors.white} size="small" />
-                      ) : (
-                        <Icon name="phone" size={14} color={colors.white} />
-                      )}
-                    </TouchableOpacity>
-                  ) : null}
+                  {/* Calling the assigned agent lives in the role-aware
+                      "Call agent" button below the card. */}
                 </View>
               ) : (
                 <Text
@@ -715,36 +703,42 @@ export function DeliveryDetail() {
             <MoneyRow label="Scheduled date" value={d.scheduled_date ?? '—'} />
             <MoneyRow label="Created" value={formatDateTime(d.created_at)} />
           </View>
-          {/* Quick entry to call a teammate about THIS delivery. Opens the
-              Team directory with related_delivery_id so the call gets linked
-              for audit. Agents typically use this to ring admin/dispatch;
-              admins/dispatchers can also use it to call someone other than
-              the assigned agent. Hidden on web (no Agora bridge). */}
+          {/* One-tap call about THIS delivery, role-aware:
+              • Agent  → rings the whole ops team (admin/dispatcher/rep); first
+                         responder wins. Linked to the delivery for audit.
+              • Ops     → calls the delivery's assigned agent directly. When the
+                         delivery is unassigned there's no agent to ring, so we
+                         show a muted hint instead of a button.
+              Hidden on web (no Agora bridge — see canPlaceCall). */}
           {canPlaceCall() ? (
-            <TouchableOpacity
-              onPress={() => router.push(`/(call)/team?related_delivery_id=${d.id}`)}
-              style={{
-                marginTop: 12,
-                paddingTop: 12,
-                borderTopWidth: 1,
-                borderTopColor: colors.border,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-              accessibilityLabel="Call a teammate about this delivery"
-              accessibilityRole="button"
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Icon name="phone" size={16} color={colors.success} />
+            user.role === 'agent' ? (
+              <CallActionRow label="Call admin / dispatch" onPress={callOps} busy={callBusy} />
+            ) : d.assigned_agent_id && d.assigned_agent_id !== user.userId ? (
+              <CallActionRow
+                label="Call agent"
+                onPress={() => callTeammate(d.assigned_agent_id as string)}
+                busy={callBusy}
+              />
+            ) : (
+              <View
+                style={{
+                  marginTop: 12,
+                  paddingTop: 12,
+                  borderTopWidth: 1,
+                  borderTopColor: colors.border,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
+                <Icon name="phone" size={16} color={colors.textTertiary} />
                 <Text
-                  style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.textPrimary }}
+                  style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary }}
                 >
-                  {user.role === 'agent' ? 'Call admin / dispatch' : 'Call a teammate'}
+                  No agent assigned to call
                 </Text>
               </View>
-              <Icon name="chevronRight" size={16} color={colors.textSecondary} />
-            </TouchableOpacity>
+            )
           ) : null}
         </Card>
 
@@ -879,6 +873,45 @@ export function DeliveryDetail() {
         }}
       />
     </View>
+  );
+}
+
+// Role-aware one-tap call row at the bottom of the delivery card (ops → agent,
+// agent → ops). Shows a spinner while a call is being placed.
+function CallActionRow({
+  label,
+  onPress,
+  busy,
+}: {
+  label: string;
+  onPress: () => void;
+  busy: boolean;
+}) {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      disabled={busy}
+      style={{
+        marginTop: 12,
+        paddingTop: 12,
+        borderTopWidth: 1,
+        borderTopColor: colors.border,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        opacity: busy ? 0.5 : 1,
+      }}
+      accessibilityLabel={label}
+      accessibilityRole="button"
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Icon name="phone" size={16} color={colors.success} />
+        <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.textPrimary }}>
+          {label}
+        </Text>
+      </View>
+      {busy ? <ActivityIndicator color={colors.success} size="small" /> : null}
+    </TouchableOpacity>
   );
 }
 
