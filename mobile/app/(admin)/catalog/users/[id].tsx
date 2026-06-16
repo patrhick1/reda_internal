@@ -15,6 +15,7 @@ import {
   listUsers,
   reactivateUser,
   setAgentLocations,
+  setUserCredentials,
   updateUser,
   type AgentStockRow,
   type AppUser,
@@ -50,6 +51,8 @@ export default function EditUser() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deactivating, setDeactivating] = useState(false);
+  const [editingCreds, setEditingCreds] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (userQ.data) {
@@ -146,6 +149,37 @@ export default function EditUser() {
         <Text style={styles.emailValue}>{user.email}</Text>
       </View>
 
+      {notice ? (
+        <View style={styles.noticeBox}>
+          <Text style={styles.noticeText}>{notice}</Text>
+        </View>
+      ) : null}
+
+      {!editingCreds ? (
+        <Button
+          title="Change email / password"
+          variant="secondary"
+          onPress={() => {
+            setNotice(null);
+            setError(null);
+            setEditingCreds(true);
+          }}
+          style={styles.credToggle}
+          disabled={submitting}
+        />
+      ) : (
+        <CredentialsPanel
+          user={user}
+          onCancel={() => setEditingCreds(false)}
+          onError={setError}
+          onDone={() => {
+            setEditingCreds(false);
+            setNotice('Sign-in details updated. The user must log in with the new details.');
+            userQ.reload();
+          }}
+        />
+      )}
+
       <Field
         label="Display name"
         value={displayName}
@@ -230,6 +264,93 @@ export default function EditUser() {
         />
       )}
     </ScrollView>
+  );
+}
+
+function CredentialsPanel({
+  user,
+  onCancel,
+  onDone,
+  onError,
+}: {
+  user: AppUser;
+  onCancel: () => void;
+  onDone: () => void;
+  onError: (msg: string | null) => void;
+}) {
+  const [email, setEmail] = useState(user.email ?? '');
+  const [password, setPassword] = useState('');
+  const [reason, setReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const emailChanged = email.trim().toLowerCase() !== (user.email ?? '').toLowerCase();
+  const wantsPassword = password.length > 0;
+
+  async function submit() {
+    onError(null);
+    const newEmail = email.trim().toLowerCase();
+    if (!emailChanged && !wantsPassword) {
+      onError('Change the email or enter a new password.');
+      return;
+    }
+    if (emailChanged && !/^[^@]+@[^@]+\.[^@]+$/.test(newEmail)) {
+      onError('Enter a valid email address.');
+      return;
+    }
+    if (wantsPassword && password.length < 8) {
+      onError('Password must be at least 8 characters.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await setUserCredentials(
+        user.id,
+        { email: emailChanged ? newEmail : null, password: wantsPassword ? password : null },
+        reason.trim() || null,
+      );
+      onDone();
+    } catch (e) {
+      onError(errorMessage(e));
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <View style={styles.credPanel}>
+      <Text style={styles.credTitle}>Change email / password</Text>
+      <Text style={styles.panelHelper}>
+        Sets new sign-in details for {user.display_name}. They’ll be signed out and must log in with
+        the new details. Leave the password blank to change only the email.
+      </Text>
+      <Field
+        label="Email"
+        value={email}
+        onChangeText={setEmail}
+        keyboardType="email-address"
+        autoCapitalize="none"
+      />
+      <Field
+        label="New password"
+        value={password}
+        onChangeText={setPassword}
+        autoCapitalize="none"
+        placeholder="Leave blank to keep current. 8+ characters; share securely."
+      />
+      <Field
+        label="Reason"
+        value={reason}
+        onChangeText={setReason}
+        placeholder="Optional, for audit log"
+      />
+      <Button title="Update credentials" onPress={submit} loading={submitting} />
+      <Button
+        title="Cancel"
+        variant="secondary"
+        onPress={onCancel}
+        style={styles.bottom}
+        disabled={submitting}
+      />
+    </View>
   );
 }
 
@@ -628,6 +749,18 @@ const styles = StyleSheet.create({
   emailValue: { fontSize: 14, color: '#111' },
   bottom: { marginTop: 12 },
   helper: { fontSize: 12, color: '#888', marginTop: 24, textAlign: 'center' },
+  credToggle: { marginBottom: 16 },
+  noticeBox: { backgroundColor: '#e6f4ec', padding: 12, borderRadius: 8, marginBottom: 16 },
+  noticeText: { color: '#16704a', fontSize: 14, textAlign: 'center' },
+  credPanel: {
+    marginBottom: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#e2e2e2',
+    borderRadius: 8,
+    backgroundColor: '#fafafa',
+  },
+  credTitle: { fontSize: 16, fontWeight: '700', color: '#111', marginBottom: 8 },
 
   panel: {
     marginTop: 24,

@@ -159,6 +159,23 @@ export async function reactivateUser(id: string): Promise<void> {
   if (error) throw error;
 }
 
+/** Admin-only: set another user's sign-in email and/or password. Pass either
+ *  or both (omit/blank to leave that one unchanged). Server-gated by is_admin()
+ *  and audited; the target is signed out and must log in with the new details. */
+export async function setUserCredentials(
+  id: string,
+  input: { email?: string | null; password?: string | null },
+  reason: string | null = null,
+): Promise<void> {
+  const { error } = await supabase.rpc('admin_set_user_credentials', {
+    p_id: id,
+    p_email: (input.email ?? null) as unknown as string,
+    p_password: (input.password ?? null) as unknown as string,
+    p_reason: reason as unknown as string,
+  });
+  if (error) throw error;
+}
+
 /** Agent → zone preferences. Two independent lists per agent:
  *   preferred = zones where auto-assign favours this agent (tier 1)
  *   avoided   = zones where auto-assign deprioritises this agent (tier 3,

@@ -1719,6 +1719,10 @@ export type Database = {
       }
     }
     Functions: {
+      admin_set_user_credentials: {
+        Args: { p_id: string; p_email?: string; p_password?: string; p_reason?: string }
+        Returns: undefined
+      }
       _assert_holds_lock: {
         Args: { p_entity_id: string; p_entity_type: string }
         Returns: undefined
