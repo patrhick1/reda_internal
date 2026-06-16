@@ -87,7 +87,7 @@ export const STATUS_META: Record<
   picked_up: { label: 'Picked up', tone: 'blue', desc: 'Customer collected order' },
   waybilled: { label: 'Waybilled', tone: 'blue', desc: 'Shipped via waybill' },
   delivered: { label: 'Delivered', tone: 'green', desc: 'Done' },
-  cancelled: { label: 'Cancelled', tone: 'gray', desc: 'Closed' },
+  cancelled: { label: 'Customer Cancelled', tone: 'gray', desc: 'Customer cancelled the order' },
   agent_cancelled: {
     label: 'Not my delivery',
     tone: 'gray',
