@@ -665,8 +665,7 @@ function DeactivatePanel({
           />
 
           <Text style={styles.panelHelper}>
-            Stock movement is recorded now and the actual adjustments are applied in Phase 4
-            (Stock).
+            The chosen stock movement is applied immediately when you deactivate.
           </Text>
         </>
       ) : user.role === 'agent' ? (
@@ -720,12 +719,21 @@ function DispositionRow({
   onPress: () => void;
 }) {
   return (
-    <View style={[styles.dispoRow, selected && styles.dispoRowActive]} onTouchEnd={onPress}>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="radio"
+      accessibilityState={{ selected }}
+      style={({ pressed }) => [
+        styles.dispoRow,
+        selected && styles.dispoRowActive,
+        pressed && { opacity: 0.7 },
+      ]}
+    >
       <View style={[styles.radio, selected && styles.radioActive]}>
         {selected ? <View style={styles.radioInner} /> : null}
       </View>
       <Text style={styles.dispoLabel}>{label}</Text>
-    </View>
+    </Pressable>
   );
 }
 
