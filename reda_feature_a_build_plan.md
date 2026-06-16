@@ -1,7 +1,7 @@
 # Feature A — Multi-Product Orders · Comprehensive Build Plan
 
 **Scope:** Feature A only (the ₦450k engagement Uzo signed for). Features B and C are out of scope here.
-**Status:** Build plan — ready to execute. Greenfield against a verified design.
+**Status:** **SHIPPED to production 2026-06-16** (Phases 0–3 live; multi-product intake + app surfaces in prod). Go-live verification in progress — see §11b. Phase 4 (contract) deferred ~1–2 weeks. Two production incidents surfaced during go-live verification and were fixed (webhook auth + mobile OTA channel) — both logged in §11b.
 **Owner:** Reda dev · **Date:** 2026-06-16
 **Source docs:** [reda_scope_of_work.md §2](reda_scope_of_work.md) (client-facing) · [reda_multi_product_migration_plan.md](reda_multi_product_migration_plan.md) (technical origin).
 
@@ -328,6 +328,49 @@ Feature A is complete when **all** hold:
 - ✅ **Phase 3c** — done + deno-check clean (see row above). Cutover runbook: `scripts/multi-product-03-cutover-runbook.md`.
 - **Phase 3d** — mobile surfaces (services + create/edit/mark-delivered/list/detail). Type-checkable, not DB-verifiable. **← next**
 - **Phase 4** — contract: drop legacy columns, retire generic "Perfume", final `gen:types`.
+
+## 11b. Production cutover + go-live verification (2026-06-16)
+
+The full cutover was executed: Phase 3b/3d SQL applied in Supabase, the three edge
+functions deployed (`bot-parse-message`, `send-assignment-push`, `send-notification`),
+mobile bundle pushed to the `preview` channel, `enable_bot_pipeline=true` /
+`bot_shadow_mode=false`. Multi-product intake + app surfaces are live in prod.
+
+Go-live verification (driving simulated contractor payloads through the **real**
+pipeline, assigned to the **Test Agent** `a181dfa2-…`) surfaced **two production
+incidents** that the initial "cutover healthy" check missed. Both fixed.
+
+### Incident 1 — bot intake was DOWN since the cutover deploy (webhook 401)
+- **Symptom:** every inbound message after the deploy stuck in `bot_inbound_messages.status='queued'`; last successful parse was 19:39, deploy ~19:40. No order *lost* only because the evening was quiet.
+- **Root cause:** the cutover added the `denyIfNotInternal` gate (from `_shared/internal-auth.ts`) to `bot-parse-message`, but the `bot_parse_on_insert` DB webhook still authenticated with a **stale service-role JWT** that matched neither branch of the gate (`INTERNAL_FUNCTION_SECRET` was **never set** in this project, and the embedded JWT ≠ the function's `SUPABASE_SERVICE_ROLE_KEY`). So the webhook 401'd on every call. Function-to-function calls kept working only because the supabase-js client auto-attaches the *current* service-role bearer; the hard-coded trigger was the one caller that didn't.
+- **Fix:** `scripts/fix-bot-webhook-internal-secret.sql` — recreate the trigger to send an `x-internal-secret` header; user **created `INTERNAL_FUNCTION_SECRET`** in Edge Function secrets (it didn't exist before). Verified: re-fired test rows → `created_delivery` in ~4s.
+- **Blast radius:** only `bot_parse_on_insert → bot-parse-message`. `scheduled-eod-check` is ungated (fine); notifications authenticate via the service-role bearer (fine). The **`mybot-*` study trigger + cron still carry the stale bearer** — non-prod (0 rows), fix later if those comparisons are rerun. **Contractor unaffected** — they POST to `inbound-message` with `BOT_INBOUND_SECRET` (a different door), still 200/stored.
+
+### End-to-end intake proof (`scripts/test-multiproduct-intake.sql`)
+Simulated the contractor by inserting the same `raw_payload` envelope `inbound-message`
+stores, letting the real webhook fire. Results:
+- **3-item bundle** → ONE delivery, 3 `delivery_items` (**Khamrah Dukhan ×2, Opulent Oud ×1, Perfume Oil ×1**), client Original Buy, agent **Test Agent** (agent-hint resolved), location **Agege** (location-hint high-confidence, skipped Maps).
+- **Single-product** (Oud Al Layl ×1) → one line item (back-compat intact).
+- **Golden invariant CONFIRMED live:** both deliveries show identical **₦6,000 charge / ₦4,000 agent pay** (Agege per-delivery rate) despite 3 products/4 units vs 1 product/1 unit. Fee is per-delivery, never ×qty, never ×product.
+
+### Incident 2 — Feature A mobile bundle wasn't reaching the phone (OTA)
+- **Symptom:** preview build (v1.1.1 · `019ed1e1`) reported "up to date" but kept running the pre-Feature-A bundle.
+- **Root cause (two layers):** (a) the `preview` **channel was not linked** to the `preview` **branch**; (b) a **"rollback preview to pre-WIP state"** update was suppressing Feature A even after linking — the EAS manifest endpoint (channel=preview, runtime=1.1.1, android) was serving update `019ed1e1` (the rolled-back pre-WIP state), exactly the phone's hash. Build/runtime/channel were otherwise all correct (all preview, runtime 1.1.1).
+- **Fix:** `eas channel:edit preview --branch preview`, then **republished Feature A over the rollback** (`eas update --branch preview --message "Feature A: multi-product (republish over rollback)"` — HEAD `33f13d0`, the real Feature A bundle). Phone pulls it on the next 2 full relaunches.
+- **Note on blast radius:** the `preview` channel is what **real agents** run on, so the republish reaches them — which is correct, since the DB is already multi-product and stale-bundle agents are otherwise blocked by the `multi_item_needs_app_update` safety guard on multi-item orders.
+
+### Stock seed for the mark-delivered test (`scripts/test-seed-test-agent-stock.sql`)
+Test Agent granted **5 each** of Khamrah Dukhan / Opulent Oud / Perfume Oil / Oud Al Layl
+via positive `stock_adjustments` (reason `bulk_intake`), so the bundle can be marked
+delivered per-item (needs 2/1/1) and the single (needs 1).
+
+### Still open (loop NOT complete)
+- [ ] **Confirm on the phone** the multi-product UI renders (Detail itemizes 3 lines) after the republish.
+- [ ] **Per-item mark-delivered E2E** as Test Agent → verify stock decrements per-SKU (expect Khamrah 3 / Opulent 4 / Perfume Oil 4 / Oud Al Layl 5).
+- [ ] **Make the webhook fix permanent** — commit `scripts/fix-bot-webhook-internal-secret.sql` + the test scripts; ensure any future redeploy that touches auth also updates the trigger (the gate and the webhook credential must stay in sync).
+- [ ] **Update the PRD** (`reda_prd.md` §5.5 + data-model) for Feature A + the webhook→`x-internal-secret` requirement.
+- [ ] **Clean up** the 2 test deliveries + test seed when verification is done.
+- [ ] **Phase 4 (contract)** — after ~1–2 week soak.
 
 ## 11. Recommended first move
 

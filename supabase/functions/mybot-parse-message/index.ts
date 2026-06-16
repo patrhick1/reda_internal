@@ -45,6 +45,7 @@
 
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { denyIfNotInternal } from '../_shared/internal-auth.ts';
 
 const EXTRACTION_PROMPT_VERSION = 'mybot-parse-v8-kimi-effort-high';
 const DEFAULT_EXTRACTION_MODEL = 'moonshotai/kimi-k2.5';
@@ -325,6 +326,10 @@ Deno.serve(async (req) => {
     return new Response('method not allowed', { status: 405 });
   }
 
+  // Internal-only: fired by the mybot_inbound_messages DB webhook / manual replay.
+  const denied = denyIfNotInternal(req);
+  if (denied) return denied;
+
   let body: any;
   try {
     body = await req.json();
@@ -527,6 +532,7 @@ Deno.serve(async (req) => {
   if (rawAddress) {
     const { data: addrData, error: addrErr } = await supabase.functions.invoke('normalize-address', {
       body: { raw_address: rawAddress },
+      headers: { 'x-internal-secret': Deno.env.get('INTERNAL_FUNCTION_SECRET') ?? '' },
     });
     if (addrErr) {
       console.error('normalize-address invoke error', addrErr);

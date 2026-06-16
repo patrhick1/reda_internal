@@ -24,6 +24,7 @@
 
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { denyIfNotInternal } from '../_shared/internal-auth.ts';
 
 const PROMPT_VERSION = 'enumerate-corridor-aliases-v1';
 
@@ -126,6 +127,10 @@ async function verifyInLagos(name: string, mapsKey: string): Promise<boolean> {
 
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 });
+
+  // Internal/admin-only: no public caller. Avoids API-cost abuse + location enumeration.
+  const denied = denyIfNotInternal(req);
+  if (denied) return denied;
 
   let body: any = {};
   try { body = await req.json(); } catch { /* empty body is fine */ }

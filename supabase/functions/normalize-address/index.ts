@@ -22,6 +22,7 @@
 
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { denyIfNotInternal } from '../_shared/internal-auth.ts';
 
 const PROMPT_VERSION    = 'normalize-address-v2-gemini-2.5-flash-via-openrouter';
 const LLM_MODEL         = 'google/gemini-2.5-flash';
@@ -189,17 +190,28 @@ Deno.serve(async (req) => {
     return new Response('Method not allowed', { status: 405 });
   }
 
+  // Internal-only: called by bot-parse-message / mybot-parse-message.
+  const denied = denyIfNotInternal(req);
+  if (denied) return denied;
+
   let body: any;
   try { body = await req.json(); } catch { return new Response('invalid json', { status: 400 }); }
 
   const rawAddress: string = String(body.raw_address ?? '').trim();
-  const deliveryId: string | null = body.delivery_id ?? null;
+  let deliveryId: string | null = body.delivery_id ?? null;
   if (!rawAddress) return new Response('raw_address required', { status: 400 });
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if (!supabaseUrl || !serviceKey) return new Response('server misconfigured', { status: 500 });
   const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+
+  // Don't trust a caller-supplied delivery_id — only log against it if it exists.
+  if (deliveryId) {
+    const { data: dRow } = await supabase
+      .from('deliveries').select('id').eq('id', deliveryId).maybeSingle();
+    if (!dRow) deliveryId = null;
+  }
 
   // Flag check.
   const { data: flagRow } = await supabase.rpc('get_flag', { p_key: 'enable_address_normalization' });

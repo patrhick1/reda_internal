@@ -4,7 +4,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
-import { listDeliveries, type DeliveryRow } from '@/services/deliveries';
+import { listDeliveries, deliveryProductsLabel, type DeliveryRow } from '@/services/deliveries';
 import { formatNaira } from '@/lib/format';
 import { Button, Card, Empty, Icon, RedaMark, SectionHeader, StatusPill } from '@/components/ui';
 import { BulkMarkDeliveredSheet } from '@/components/sheets/BulkMarkDeliveredSheet';
@@ -475,10 +475,7 @@ const DeliveryCard = memo(function DeliveryCard({
               style={{ flex: 1, fontFamily: fonts.medium, fontSize: 13, color: colors.black }}
               numberOfLines={1}
             >
-              <Text style={{ fontFamily: fonts.semibold }}>{delivery.product_name ?? '—'}</Text>
-              {delivery.quantity_ordered && delivery.quantity_ordered > 1 ? (
-                <Text style={{ color: colors.textSecondary }}> × {delivery.quantity_ordered}</Text>
-              ) : null}
+              <Text style={{ fontFamily: fonts.semibold }}>{deliveryProductsLabel(delivery)}</Text>
             </Text>
             <Text
               style={{

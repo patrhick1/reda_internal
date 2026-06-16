@@ -289,38 +289,71 @@ export default function AgentDeliveryDetail() {
             }}
           >
             <View style={{ flex: 1 }}>
-              <Text style={kicker}>Product</Text>
-              <Text
-                style={{ fontFamily: fonts.bold, fontSize: 16, color: colors.black, marginTop: 4 }}
-              >
-                {d.product_name}
-              </Text>
-              <Text
-                style={{
-                  fontFamily: fonts.medium,
-                  fontSize: 13,
-                  color: colors.textSecondary,
-                  marginTop: 2,
-                }}
-              >
-                Quantity: {d.quantity_ordered}
-                {d.quantity_delivered != null ? (
-                  <>
-                    {' · delivered '}
-                    <Text
-                      style={{
-                        fontFamily: fonts.bold,
-                        color:
-                          d.quantity_ordered != null && d.quantity_delivered !== d.quantity_ordered
-                            ? colors.warningDark
-                            : colors.textSecondary,
-                      }}
-                    >
-                      {d.quantity_delivered}
-                    </Text>
-                  </>
-                ) : null}
-              </Text>
+              <Text style={kicker}>{(d.items?.length ?? 0) > 1 ? 'Products' : 'Product'}</Text>
+              {d.items && d.items.length > 0 ? (
+                // [Feature A] itemized — one block per product line
+                <View style={{ marginTop: 4, gap: 6 }}>
+                  {d.items.map((it) => {
+                    const partial =
+                      it.quantity_delivered != null &&
+                      it.quantity_delivered !== it.quantity_ordered;
+                    return (
+                      <View key={it.id}>
+                        <Text style={{ fontFamily: fonts.bold, fontSize: 15, color: colors.black }}>
+                          {it.product_name ?? 'Product'}
+                        </Text>
+                        <Text
+                          style={{
+                            fontFamily: fonts.medium,
+                            fontSize: 12,
+                            color: colors.textSecondary,
+                          }}
+                        >
+                          Qty {it.quantity_ordered}
+                          {it.quantity_delivered != null ? (
+                            <>
+                              {' · delivered '}
+                              <Text
+                                style={{
+                                  fontFamily: fonts.bold,
+                                  color: partial ? colors.warningDark : colors.textSecondary,
+                                }}
+                              >
+                                {it.quantity_delivered}
+                              </Text>
+                            </>
+                          ) : null}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : (
+                // legacy fallback (row predates the items backfill)
+                <>
+                  <Text
+                    style={{
+                      fontFamily: fonts.bold,
+                      fontSize: 16,
+                      color: colors.black,
+                      marginTop: 4,
+                    }}
+                  >
+                    {d.product_name}
+                  </Text>
+                  <Text
+                    style={{
+                      fontFamily: fonts.medium,
+                      fontSize: 13,
+                      color: colors.textSecondary,
+                      marginTop: 2,
+                    }}
+                  >
+                    Quantity: {d.quantity_ordered}
+                    {d.quantity_delivered != null ? ` · delivered ${d.quantity_delivered}` : null}
+                  </Text>
+                </>
+              )}
             </View>
             <View style={{ alignItems: 'flex-end' }}>
               <Text style={kicker}>To collect</Text>
