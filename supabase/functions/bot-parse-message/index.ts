@@ -27,6 +27,17 @@
 
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { denyIfNotInternal } from '../_shared/internal-auth.ts';
+import {
+  PRODUCT_EXTRACTION_SCHEMA,
+  PRODUCT_EXTRACTION_PROMPT,
+  coerceExtractedProducts,
+  stripJsonFences as stripFencesShared,
+  pickMatch,
+  type ExtractedProducts,
+  type LineItem,
+  type ProductMatch,
+} from '../_shared/product-extract.ts';
 
 const EXTRACTION_PROMPT_VERSION = 'bot-parse-v3-gpt-4.1-mini';
 const EXTRACTION_MODEL          = 'openai/gpt-4.1-mini';
@@ -202,6 +213,75 @@ async function openrouterExtract(text: string, model: string, apiKey: string): P
   return { parsed, raw: { ...json, _prompt_version: EXTRACTION_PROMPT_VERSION, _model: model } };
 }
 
+// [Feature A] Multi-product extraction. Same OpenRouter call as the single
+// version, but uses the shared ARRAY schema/prompt so one message yields N line
+// items. Envelope fields (name/phone/address) still come back too, used only to
+// FILL gaps the contractor left — the contractor envelope still wins where set.
+async function openrouterExtractProducts(text: string, model: string, apiKey: string): Promise<{ parsed: ExtractedProducts | null; raw: any }> {
+  const url = 'https://openrouter.ai/api/v1/chat/completions';
+  const prompt = PRODUCT_EXTRACTION_PROMPT.replace('{{TEXT}}', text);
+  const body = {
+    model,
+    messages:        [{ role: 'user', content: prompt }],
+    temperature:     0,
+    response_format: { type: 'json_schema', json_schema: PRODUCT_EXTRACTION_SCHEMA },
+  };
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'HTTP-Referer':  'https://reda.app',
+        'X-Title':       'Reda bot-parse-message (multi-product)',
+      },
+      body:   JSON.stringify(body),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'TimeoutError') {
+      console.error('openrouter products extract timeout', { timeout_ms: REQUEST_TIMEOUT_MS, model });
+      return { parsed: null, raw: { error: 'request timeout', timeout_ms: REQUEST_TIMEOUT_MS, model, _prompt_version: EXTRACTION_PROMPT_VERSION } };
+    }
+    console.error('openrouter products extract network error', err, { model });
+    return { parsed: null, raw: { error: String(err), model, _prompt_version: EXTRACTION_PROMPT_VERSION } };
+  }
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error('openrouter products extract error', res.status, errText);
+    return { parsed: null, raw: { error: errText, status: res.status, model, _prompt_version: EXTRACTION_PROMPT_VERSION } };
+  }
+  const json = await res.json();
+  const textOut = json?.choices?.[0]?.message?.content;
+  let parsed: ExtractedProducts | null = null;
+  if (typeof textOut === 'string' && textOut.length > 0) {
+    try {
+      parsed = coerceExtractedProducts(JSON.parse(stripFencesShared(textOut)));
+    } catch { /* fall through — parsed stays null */ }
+  }
+  return { parsed, raw: { ...json, _prompt_version: EXTRACTION_PROMPT_VERSION, _model: model } };
+}
+
+// [Feature A] Read a contractor-supplied products[] array if one is ever present
+// in raw_payload.parsed.products. Today the contractor sends only a single
+// product_name; this is forward-compat for when/if they emit an array.
+function extractContractorProducts(raw_payload: any): LineItem[] | null {
+  const arr = raw_payload?.parsed?.products;
+  if (!Array.isArray(arr) || arr.length === 0) return null;
+  const items: LineItem[] = [];
+  for (const e of arr) {
+    const name = (typeof e?.product_name === 'string' ? e.product_name.trim() : '') || null;
+    if (!name) continue;
+    items.push({
+      product_name:   name,
+      quantity:       typeof e?.quantity === 'number' && e.quantity > 0 ? Math.round(e.quantity) : null,
+      customer_price: typeof e?.customer_price === 'number' && e.customer_price >= 0 ? e.customer_price : null,
+    });
+  }
+  return items.length > 0 ? items : null;
+}
+
 function normalizePhone(p: string | null | undefined): string | null {
   if (!p) return null;
   const digits = p.replace(/[^\d+]/g, '');
@@ -216,6 +296,10 @@ async function resolveInboundId(body: any, supabase: any): Promise<string | null
 
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 });
+
+  // Internal-only: fired by the bot_inbound_messages DB webhook / manual replay.
+  const denied = denyIfNotInternal(req);
+  if (denied) return denied;
 
   let body: any;
   try { body = await req.json(); } catch { return new Response('invalid json', { status: 400 }); }
@@ -260,68 +344,85 @@ Deno.serve(async (req) => {
   const pipelineEnabled = !!pipelineFlag?.enabled;
   const shadowMode      = !!shadowFlag?.enabled;
 
-  // 2a. Read whatever the contractor's bot pre-parsed. If they populated all
-  //     three load-bearing fields (product_name, raw_address, customer_phone)
-  //     we skip the LLM entirely. Otherwise we call OpenRouter and MERGE —
-  //     contractor's fields stay, LLM fills only the gaps. Product + location
-  //     matching still run against our own tables — the contractor doesn't
-  //     have our UUIDs.
-  const { fields: contractorFields, needsLlm } = extractContractorParse(row.raw_payload);
-  let parsed: Extracted;
+  // 2a. [Feature A] Read the contractor's pre-parse for the ENVELOPE
+  //     (customer_name, customer_phone, raw_address — and its single
+  //     product_name as a fallback hint). The envelope merge is unchanged:
+  //     contractor's fields win, the LLM only fills gaps.
+  //
+  // 2b. [Feature A] The PRODUCT dimension is decoupled from the envelope gate:
+  //     we ALWAYS extract a products[] array from raw_text (the contractor only
+  //     ever sends one product, so we self-extract the full list), UNLESS the
+  //     contractor already emitted a products[] array AND the envelope is
+  //     complete (then no LLM call is needed at all). Each line is matched to a
+  //     real SKU below; unmatched or multi-vendor → needs_review.
+  const { fields: contractorFields, needsLlm: envelopeNeedsLlm } = extractContractorParse(row.raw_payload);
+  const contractorProducts = extractContractorProducts(row.raw_payload);
+
   let extractionRaw: any = null;
   let source: 'contractor' | 'contractor+openrouter' | 'openrouter';
 
-  if (!needsLlm) {
-    // All load-bearing fields present in contractor's parse — trust it.
-    parsed = contractorFields as Extracted;
+  // Envelope (start from contractor; LLM fills gaps below).
+  let customerNameRaw  = contractorFields.customer_name  ?? null;
+  let customerPhoneRaw = contractorFields.customer_phone ?? null;
+  let rawAddressRaw    = contractorFields.raw_address    ?? null;
+  let lineItems: LineItem[] = contractorProducts ?? [];
+  let orderTotal: number | null =
+    typeof contractorFields.customer_price === 'number' ? contractorFields.customer_price : null;
+
+  // Call the LLM unless the contractor gave us BOTH a complete envelope AND a
+  // products[] array. In practice (single product_name today) we always call.
+  const needLlm = envelopeNeedsLlm || !contractorProducts;
+  if (!needLlm) {
     source = 'contractor';
   } else {
-    // 2b. Fall through to OpenRouter / openai/gpt-4.1-mini. The merge below
-    //     takes contractor's value when present, LLM's otherwise.
     const apiKey = Deno.env.get('OPENROUTER_API_KEY');
     if (!apiKey) {
       await supabase.rpc('mark_inbound_processed', {
-        p_inbound_id:  inboundId,
-        p_status:      'error',
-        p_parse:       null,
-        p_delivery_id: null,
-        p_error:       'OPENROUTER_API_KEY not configured',
+        p_inbound_id: inboundId, p_status: 'error', p_parse: null,
+        p_delivery_id: null, p_error: 'OPENROUTER_API_KEY not configured',
       });
       return new Response('OPENROUTER_API_KEY missing', { status: 500 });
     }
-    const out = await openrouterExtract(row.raw_text, EXTRACTION_MODEL, apiKey);
+    const out = await openrouterExtractProducts(row.raw_text, EXTRACTION_MODEL, apiKey);
     extractionRaw = out.raw;
     if (!out.parsed) {
       await supabase.rpc('mark_inbound_processed', {
-        p_inbound_id:  inboundId,
-        p_status:      'error',
-        p_parse:       { extraction_raw: extractionRaw, extraction_model: EXTRACTION_MODEL, contractor_fields: contractorFields },
-        p_delivery_id: null,
-        p_error:       'openrouter extraction failed',
+        p_inbound_id: inboundId, p_status: 'error',
+        p_parse: { extraction_raw: extractionRaw, extraction_model: EXTRACTION_MODEL, contractor_fields: contractorFields },
+        p_delivery_id: null, p_error: 'openrouter extraction failed',
       });
       return new Response('extraction failed', { status: 200 });
     }
-    // Merge: contractor's value wins where present, LLM fills the rest.
-    parsed = {
-      customer_name:  contractorFields.customer_name  ?? out.parsed.customer_name,
-      customer_phone: contractorFields.customer_phone ?? out.parsed.customer_phone,
-      raw_address:    contractorFields.raw_address    ?? out.parsed.raw_address,
-      product_name:   contractorFields.product_name   ?? out.parsed.product_name,
-      quantity:       contractorFields.quantity       ?? out.parsed.quantity,
-      customer_price: contractorFields.customer_price ?? out.parsed.customer_price,
-    };
+    // Envelope: contractor wins, LLM fills the gaps.
+    customerNameRaw  = customerNameRaw  ?? out.parsed.customer_name;
+    customerPhoneRaw = customerPhoneRaw ?? out.parsed.customer_phone;
+    rawAddressRaw    = rawAddressRaw    ?? out.parsed.raw_address;
+    // Products: prefer a contractor-supplied array, else the LLM's array.
+    if (lineItems.length === 0) lineItems = out.parsed.products ?? [];
+    // Order total: LLM's Total line, else sum of line prices, else contractor's.
+    if (orderTotal === null) {
+      const lineSum = lineItems.reduce((s, li) => s + (li.customer_price ?? 0), 0);
+      orderTotal = typeof out.parsed.total_amount === 'number' ? out.parsed.total_amount
+                 : (lineSum > 0 ? lineSum : null);
+    }
     source = Object.keys(contractorFields).length > 0 ? 'contractor+openrouter' : 'openrouter';
   }
 
-  // `parsed` is now fully populated (contractor-only, merged, or LLM-only).
-  // The OpenRouter branch returned early on extraction failure.
-  const p = parsed;
-  const customerName  = p.customer_name?.trim() || null;
-  const customerPhone = normalizePhone(p.customer_phone);
-  const rawAddress    = p.raw_address?.trim() || null;
-  const productName   = p.product_name?.trim() || null;
-  const quantity      = p.quantity && p.quantity > 0 ? p.quantity : 1;
-  const customerPrice = p.customer_price && p.customer_price >= 0 ? p.customer_price : null;
+  // Final fallback: no array surfaced but we have the contractor's single
+  // product_name — wrap it into a 1-item array so a legacy single-product
+  // message still flows (never silently dropped).
+  if (lineItems.length === 0 && contractorFields.product_name) {
+    lineItems = [{
+      product_name:   contractorFields.product_name,
+      quantity:       contractorFields.quantity ?? 1,
+      customer_price: contractorFields.customer_price ?? null,
+    }];
+  }
+
+  const customerName  = customerNameRaw?.trim() || null;
+  const customerPhone = normalizePhone(customerPhoneRaw);
+  const rawAddress    = rawAddressRaw?.trim() || null;
+  const customerPrice = orderTotal !== null && orderTotal >= 0 ? orderTotal : null;
 
   // Optional client hint from contractor — disambiguates "same product name,
   // different client" cases by restricting product matching to one client.
@@ -345,42 +446,45 @@ Deno.serve(async (req) => {
     ? (row.raw_payload as any).parsed.assigned_agent.trim()
     : null;
 
-  // 3. Product match → client_id.
-  let productMatch: { id: string; client_id: string; client_name: string; product_name: string; score: number } | null = null;
-  let productCandidates: any[] = [];
-  if (productName) {
+  // 3. [Feature A] Per-line product match. Each extracted line resolves to a
+  //    real SKU via match_products_by_text + the shared pickMatch rules. The
+  //    whole order must resolve to ONE client (all matched lines agree); a
+  //    bundle whose lines span clients → multi-vendor → needs_review. Any
+  //    unmatched line also forces needs_review — never silently collapse.
+  const lineMatches: Array<{ line: LineItem; match: ProductMatch | null; candidates: any[] }> = [];
+  for (const li of lineItems) {
+    const name = li.product_name?.trim();
+    if (!name) { lineMatches.push({ line: li, match: null, candidates: [] }); continue; }
     const { data: matches } = await supabase.rpc('match_products_by_text', {
-      p_text: productName,
+      p_text: name,
       p_min_similarity: 0.4,
     });
-    productCandidates = matches ?? [];
-
-    // If the contractor supplied a client hint, filter candidates to that
-    // client only. Lets one client win when two clients share a product name.
-    let pool = productCandidates;
+    let pool: any[] = matches ?? [];
+    // Contractor client hint narrows candidates so one client wins when two
+    // clients share a product name (applied per line).
     if (clientHint) {
-      const hinted = productCandidates.filter(
+      const hinted = pool.filter(
         (m) => typeof m.client_name === 'string' && m.client_name.trim().toLowerCase() === clientHint,
       );
       if (hinted.length > 0) pool = hinted;
     }
-
-    if (pool.length === 1) {
-      productMatch = pool[0];
-    } else if (pool.length > 1) {
-      // Multiple matches. If top score dominates AND all top matches are the same client_id, take it.
-      const top = pool[0];
-      const sameClient = pool.every((m) => m.client_id === top.client_id);
-      if (sameClient) {
-        // Same client, multiple product spellings — take the top.
-        productMatch = top;
-      } else if ((pool[1]?.score ?? 0) + 0.15 <= top.score) {
-        // Clear winner across clients.
-        productMatch = top;
-      }
-      // else: ambiguous, leave for review.
-    }
+    lineMatches.push({ line: li, match: pickMatch(pool as ProductMatch[]), candidates: pool });
   }
+
+  const matchedLines     = lineMatches.filter((r) => r.match);
+  const unmatchedLines   = lineMatches.filter((r) => !r.match);
+  const matchedClientIds = [...new Set(matchedLines.map((r) => r.match!.client_id))];
+  const multiVendor      = matchedClientIds.length > 1;
+  const orderClientId    = matchedClientIds.length === 1 ? matchedClientIds[0] : null;
+
+  // p_items for bot_create_delivery (the RPC aggregates duplicate products).
+  const resolvedItems = matchedLines.map((r) => ({
+    product_catalog_id: r.match!.id,
+    quantity_ordered:   r.line.quantity && r.line.quantity > 0 ? r.line.quantity : 1,
+    customer_price:     r.line.customer_price ?? null,
+  }));
+  // Legacy single-product fields (dual-write): the first resolved line stands in.
+  const primaryItem = resolvedItems[0] ?? null;
 
   // 4. Address normalization.
   let address: { match_log_id: string | null; matched_location_id: string | null; confidence: string } = {
@@ -420,6 +524,7 @@ Deno.serve(async (req) => {
   if (!address.matched_location_id && rawAddress) {
     const { data: addrData, error: addrErr } = await supabase.functions.invoke('normalize-address', {
       body: { raw_address: rawAddress },
+      headers: { 'x-internal-secret': Deno.env.get('INTERNAL_FUNCTION_SECRET') ?? '' },
     });
     if (!addrErr && addrData) {
       address = {
@@ -454,11 +559,25 @@ Deno.serve(async (req) => {
 
   // 5. Outcome decision.
   const parseResult = {
-    extracted: parsed,
-    product:   productMatch,
-    product_candidates: productCandidates,
+    extracted: {
+      customer_name:  customerNameRaw,
+      customer_phone: customerPhoneRaw,
+      raw_address:    rawAddressRaw,
+      total_amount:   orderTotal,
+      products:       lineItems,        // [Feature A] the full extracted line set
+    },
+    // [Feature A] per-line resolution: each line, its chosen SKU, and candidates.
+    product_matches: lineMatches.map((r) => ({
+      line:       r.line,
+      matched:    r.match,
+      candidates: r.candidates,
+    })),
+    items:             resolvedItems,                 // what we'll store as delivery_items
+    client_id_conflict: multiVendor,                  // true → bundle spans clients
+    unmatched_count:    unmatchedLines.length,
+    order_client_id:    orderClientId,
     address,
-    source,                  // "contractor" | "contractor+openrouter" | "openrouter" — which pipeline produced `extracted`
+    source,                  // "contractor" | "contractor+openrouter" | "openrouter"
     client_hint:   clientHint,    // null if contractor didn't supply one
     location_hint: locationHint,  // null if contractor didn't supply one
     agent_hint:    agentHintRaw,  // raw string from contractor, null if none
@@ -467,10 +586,13 @@ Deno.serve(async (req) => {
     extraction_model: source === 'contractor' ? null : EXTRACTION_MODEL,
   };
 
+  // Every line must match, all to ONE client, plus the usual envelope fields.
+  // Unmatched line OR multi-vendor bundle → needs_review (never collapse).
   const haveAllFields =
     !!customerName && !!customerPhone && !!rawAddress &&
-    !!productMatch && customerPrice !== null && quantity > 0 &&
-    !!address.matched_location_id;
+    !!address.matched_location_id && customerPrice !== null &&
+    resolvedItems.length > 0 && unmatchedLines.length === 0 &&
+    !multiVendor && !!orderClientId;
 
   // Pipeline gating.
   if (!pipelineEnabled || shadowMode) {
@@ -499,17 +621,18 @@ Deno.serve(async (req) => {
   const clientUuid = `bot:${inboundId}`;
   const { data: deliveryIdData, error: createErr } = await supabase.rpc('bot_create_delivery', {
     p_client_uuid:        clientUuid,
-    p_client_id:          productMatch!.client_id,
-    p_product_catalog_id: productMatch!.id,
+    p_client_id:          orderClientId!,
+    p_product_catalog_id: primaryItem!.product_catalog_id,  // legacy primary (dual-write)
     p_customer_name:      customerName,
     p_customer_phone:     customerPhone,
     p_raw_address:        rawAddress,
-    p_quantity_ordered:   quantity,
-    p_customer_price:     customerPrice,
+    p_quantity_ordered:   primaryItem!.quantity_ordered,    // legacy primary qty
+    p_customer_price:     customerPrice,                    // single order total
     p_location_id:        address.matched_location_id,
     p_scheduled_date:     new Date().toISOString().slice(0, 10),
     p_bot_raw_message:    row.raw_text,
     p_assigned_agent_id:  agentResolution.agent_id,
+    p_items:              resolvedItems,                    // [Feature A] line items
   });
 
   if (createErr) {

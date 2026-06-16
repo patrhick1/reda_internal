@@ -10,6 +10,7 @@
 
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { denyIfNotInternal } from '../_shared/internal-auth.ts';
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
 
@@ -17,6 +18,10 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 });
   }
+
+  // Internal-only: DB trigger / cron, never the public.
+  const denied = denyIfNotInternal(req);
+  if (denied) return denied;
 
   let body: any;
   try {
@@ -61,6 +66,7 @@ Deno.serve(async (req) => {
       id, customer_name, quantity_ordered, assigned_agent_id,
       location:locations(name),
       product:product_catalog(product_name),
+      items:delivery_items(quantity_ordered, product:product_catalog(product_name)),
       assignee:users!deliveries_assigned_agent_id_fkey(expo_push_token, display_name)
     `)
     .eq('id', deliveryId)
@@ -79,10 +85,17 @@ Deno.serve(async (req) => {
     return new Response('no push token for assignee', { status: 200 });
   }
 
-  // PRD §5.14 notification copy: "Customer name — Location — Product × Qty"
+  // PRD §5.14 notification copy: "Customer name — Location — <products>".
+  // [Feature A] Summarize ALL line items ("Opulent Oud ×2, Atomizer ×4"); fall
+  // back to the legacy single product when no items rows exist (pre-Phase-1).
   const locationName = (delivery as any).location?.name ?? 'location TBD';
-  const productName  = (delivery as any).product?.product_name ?? 'product TBD';
-  const body_text = `${delivery.customer_name} — ${locationName} — ${productName} × ${delivery.quantity_ordered}`;
+  const items = ((delivery as any).items ?? []) as Array<{ quantity_ordered: number; product?: { product_name?: string } }>;
+  const productSummary = items.length > 0
+    ? items
+        .map((i) => `${i.product?.product_name ?? 'product'} ×${i.quantity_ordered}`)
+        .join(', ')
+    : `${(delivery as any).product?.product_name ?? 'product TBD'} ×${delivery.quantity_ordered}`;
+  const body_text = `${delivery.customer_name} — ${locationName} — ${productSummary}`;
 
   const pushRes = await fetch(EXPO_PUSH_URL, {
     method: 'POST',

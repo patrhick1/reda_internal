@@ -14,7 +14,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
-import { listDeliveries, type DeliveryRow } from '@/services/deliveries';
+import { listDeliveries, deliveryProductsLabel, type DeliveryRow } from '@/services/deliveries';
 import { listActiveFollowups, type ActiveFollowup } from '@/services/followups';
 import { opsUnreadAgentCounts } from '@/services/delivery-messages';
 import { useSupabaseChannel } from '@/hooks/useSupabaseChannel';
@@ -729,7 +729,7 @@ const DeliveryListRow = memo(function DeliveryListRow({
             }}
             numberOfLines={1}
           >
-            {delivery.product_name ?? '—'}
+            {deliveryProductsLabel(delivery)}
             {delivery.location_name ? ` · ${delivery.location_name}` : ` · `}
             {!delivery.location_name ? (
               <Text style={{ color: colors.red, fontFamily: fonts.bold }}>Unmatched</Text>

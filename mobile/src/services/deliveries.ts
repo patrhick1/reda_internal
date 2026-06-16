@@ -32,13 +32,131 @@ export type DeliveryDisplayJoins = {
    *  communicated. Embedded via LEFT JOIN to delivery_client_notifications
    *  in the deliveries views since 2026-06-04. */
   latest_notified: boolean;
+  /** Most recent delivery_messages.created_at for this delivery (from the
+   *  view's LATERAL join). Folded into the list sort alongside
+   *  latest_changed_at so a new thread message bubbles the row to the top the
+   *  same way a status change does. Null if the delivery has no messages.
+   *  See scripts/embed-latest-message-in-deliveries-views.sql. */
+  latest_message_at: string | null;
+};
+
+/** [Feature A] One product line of a delivery (from delivery_items, joined to
+ *  product_catalog for the name). A delivery is an envelope of N of these. */
+export type DeliveryItem = {
+  id: string;
+  product_catalog_id: string;
+  product_name: string | null;
+  quantity_ordered: number;
+  quantity_delivered: number | null;
+  customer_price: number | null;
+};
+
+/** Line-item input for create / edit. customer_price is record-keeping only. */
+export type DeliveryItemInput = {
+  productCatalogId: string;
+  quantityOrdered: number;
+  customerPrice?: number | null;
+};
+
+/** Per-line delivered quantity, captured at mark-delivered. */
+export type DeliveryItemDelivered = {
+  productCatalogId: string;
+  quantityDelivered: number;
 };
 
 export type DeliveryRow = (DeliveryAdminRow | DeliverySafeRow) &
   DeliveryDisplayJoins & {
     // deliveries_admin contributes `margin`; deliveries_safe contributes null
     margin: number | null;
+    /** [Feature A] The delivery's line items, attached via a batched second
+     *  query (see attachItemsToRows). Empty array if none resolved. The legacy
+     *  product_name / quantity_ordered columns remain for back-compat display
+     *  until the contract phase drops them. */
+    items: DeliveryItem[];
   };
+
+/** [Feature A] Fetch line items for a set of deliveries in one query and group
+ *  by delivery_id. Done as a separate query (not a PostgREST view-embed) so it
+ *  works regardless of whether the deliveries_* views expose the relationship.
+ *  delivery_items isn't in database.gen.ts until `npm run gen:types` runs at
+ *  cutover, so the table name is cast. */
+export async function fetchDeliveryItemsFor(
+  deliveryIds: string[],
+): Promise<Record<string, DeliveryItem[]>> {
+  const ids = deliveryIds.filter(Boolean);
+  if (ids.length === 0) return {};
+  // delivery_items isn't in database.gen.ts until `npm run gen:types` runs at
+  // cutover, so we reach it through an untyped client handle and assert the row
+  // shape ourselves.
+  type RawItemRow = {
+    id: string;
+    delivery_id: string;
+    product_catalog_id: string;
+    quantity_ordered: number;
+    quantity_delivered: number | null;
+    customer_price: number | null;
+    product: { product_name: string } | null;
+  };
+  const untyped = supabase as unknown as {
+    from: (table: string) => ReturnType<typeof supabase.from>;
+  };
+  const { data, error } = await untyped
+    .from('delivery_items')
+    .select(
+      'id, delivery_id, product_catalog_id, quantity_ordered, quantity_delivered, customer_price, product:product_catalog(product_name)',
+    )
+    .in('delivery_id', ids);
+  if (error) throw error;
+  const map: Record<string, DeliveryItem[]> = {};
+  for (const r of (data ?? []) as unknown as RawItemRow[]) {
+    (map[r.delivery_id] ??= []).push({
+      id: r.id,
+      product_catalog_id: r.product_catalog_id,
+      product_name: r.product?.product_name ?? null,
+      quantity_ordered: r.quantity_ordered,
+      quantity_delivered: r.quantity_delivered,
+      customer_price: r.customer_price,
+    });
+  }
+  return map;
+}
+
+/** [Feature A] Itemized product summary for display:
+ *  "Opulent Oud ×2, Atomizer ×4". Falls back to the legacy single product when
+ *  items aren't attached (older rows / partial loads). */
+export function deliveryProductsSummary(row: {
+  items?: DeliveryItem[] | null;
+  product_name?: string | null;
+  quantity_ordered?: number | null;
+}): string {
+  if (row.items && row.items.length > 0) {
+    return row.items.map((i) => `${i.product_name ?? 'Product'} ×${i.quantity_ordered}`).join(', ');
+  }
+  const name = row.product_name ?? '—';
+  return row.quantity_ordered != null ? `${name} ×${row.quantity_ordered}` : name;
+}
+
+/** [Feature A] Compact product label for tight list rows: "3 items" for a
+ *  bundle, the product name for a single line. */
+export function deliveryProductsLabel(row: {
+  items?: DeliveryItem[] | null;
+  product_name?: string | null;
+}): string {
+  if (row.items && row.items.length > 1) return `${row.items.length} items`;
+  if (row.items && row.items.length === 1) return row.items[0]?.product_name ?? 'Product';
+  return row.product_name ?? '—';
+}
+
+/** Attach an `items` array to each delivery row (one batched query). Rows with
+ *  no items get []. Used by listDeliveries / getDelivery. */
+async function attachItemsToRows<T extends { id: string | null }>(
+  rows: (T & { items?: DeliveryItem[] })[],
+): Promise<(T & { items: DeliveryItem[] })[]> {
+  const byDelivery = await fetchDeliveryItemsFor(
+    rows.map((r) => r.id).filter((x): x is string => !!x),
+  );
+  return rows.map((r) => ({ ...r, items: (r.id && byDelivery[r.id]) || [] }));
+}
 
 export type AgentEarningRow = {
   id: string;
@@ -155,6 +273,10 @@ function attachJoins<T extends object>(
       'latest_changed_at' in rest && typeof rest.latest_changed_at === 'string'
         ? rest.latest_changed_at
         : null,
+    latest_message_at:
+      'latest_message_at' in rest && typeof rest.latest_message_at === 'string'
+        ? rest.latest_message_at
+        : null,
     latest_notified:
       'latest_notified' in rest && typeof rest.latest_notified === 'boolean'
         ? rest.latest_notified
@@ -193,23 +315,36 @@ export async function listDeliveries(
   }
   const { data, error } = await query;
   if (error) throw error;
-  const rows = (data ?? []).map((row) =>
+  const joined = (data ?? []).map((row) =>
     attachJoins(row as unknown as JoinShape & object),
-  ) as DeliveryRow[];
+  ) as Omit<DeliveryRow, 'items'>[];
+  // [Feature A] attach line items (one batched query).
+  const rows = (await attachItemsToRows(joined)) as DeliveryRow[];
 
-  // Sort by most recent status change DESC — a row cancelled 30s ago sits
-  // above a pending row untouched all day. Both the sort key
-  // (latest_changed_at) and the Notified pill (latest_notified) are now
-  // embedded in deliveries_admin / deliveries_safe via a LATERAL join to
-  // delivery_status_history + LEFT JOIN to delivery_client_notifications,
-  // so this whole function is a single PostgREST round trip. Falls back to
-  // created_at when a row has no history rows yet.
-  // See scripts/embed-latest-history-in-deliveries-views.sql.
-  return rows.sort((a, b) => {
-    const aT = a.latest_changed_at ?? a.created_at ?? '';
-    const bT = b.latest_changed_at ?? b.created_at ?? '';
-    return bT.localeCompare(aT);
-  });
+  // Sort by most recent ACTIVITY DESC — a row touched 30s ago sits above one
+  // untouched all day. "Activity" = the latest of a status change
+  // (latest_changed_at), a thread message (latest_message_at), or creation
+  // (created_at). Folding in latest_message_at means a new message bubbles the
+  // row to the top exactly like a status change does. All three timestamps are
+  // embedded on the deliveries views via LATERAL joins, so this whole function
+  // is a single PostgREST round trip.
+  // See scripts/embed-latest-history-in-deliveries-views.sql and
+  //     scripts/embed-latest-message-in-deliveries-views.sql.
+  return rows.sort((a, b) => latestActivityAt(b).localeCompare(latestActivityAt(a)));
+}
+
+/** Most recent activity timestamp for list ordering: the max of the row's last
+ *  status change, last thread message, and creation time. ISO timestamptz
+ *  strings share one format, so lexical comparison is chronological. */
+function latestActivityAt(r: {
+  latest_changed_at: string | null;
+  latest_message_at: string | null;
+  created_at: string | null;
+}): string {
+  let t = r.created_at ?? '';
+  if ((r.latest_changed_at ?? '') > t) t = r.latest_changed_at as string;
+  if ((r.latest_message_at ?? '') > t) t = r.latest_message_at as string;
+  return t;
 }
 
 /** A handful of fields per row — used by the New Delivery screen's pre-submit
@@ -285,19 +420,32 @@ export function siblingGroupKey(
     | 'scheduled_date'
     | 'raw_address'
     | 'quantity_ordered'
+    | 'items'
   >,
 ): string {
   const phone = normalizePhoneForGrouping(r.customer_phone);
-  if (!phone || !r.product_catalog_id || !r.scheduled_date) {
+  if (!phone || !r.scheduled_date) {
     return `solo:${r.id}`;
   }
+  // [Feature A] Identity is the ITEM SET, mirroring the server's
+  // _delivery_items_sig (sorted product:qty). Falls back to the legacy single
+  // product+qty for rows whose items haven't been attached.
+  const itemSig =
+    r.items && r.items.length > 0
+      ? r.items
+          .map((i) => `${i.product_catalog_id}:${i.quantity_ordered}`)
+          .sort()
+          .join('|')
+      : r.product_catalog_id
+        ? `${r.product_catalog_id}:${r.quantity_ordered ?? 0}`
+        : null;
+  if (!itemSig) return `solo:${r.id}`;
   const addr = (r.raw_address ?? '')
     .toLowerCase()
     .replace(/[^a-z0-9 ]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  const qty = r.quantity_ordered ?? 0;
-  return `${phone}|${r.product_catalog_id}|${r.scheduled_date}|${addr}|${qty}`;
+  return `${phone}|${itemSig}|${r.scheduled_date}|${addr}`;
 }
 
 export async function getDelivery(role: Role, id: string): Promise<DeliveryRow | null> {
@@ -309,23 +457,41 @@ export async function getDelivery(role: Role, id: string): Promise<DeliveryRow |
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
-  return attachJoins(data as unknown as JoinShape & object) as DeliveryRow;
+  const joined = attachJoins(data as unknown as JoinShape & object) as Omit<DeliveryRow, 'items'>;
+  const [row] = await attachItemsToRows([joined]);
+  return row as DeliveryRow;
 }
 
 export type CreateDeliveryInput = {
   clientUuid: string; // client-generated idempotency key
   clientId: string;
+  /** Legacy primary product (the first line). Kept for back-compat / dual-write. */
   productCatalogId: string;
   customerName: string;
   customerPhone: string;
   customerPhoneAlt?: string | null;
   rawAddress: string;
+  /** Legacy primary quantity (the first line). */
   quantityOrdered: number;
+  /** The single order total on the delivery. */
   customerPrice: number;
   locationId: string | null;
   scheduledDate: string; // YYYY-MM-DD
   assignedAgentId: string | null;
+  /** [Feature A] The full line-item set. When omitted, the server derives a
+   *  1-item array from productCatalogId/quantityOrdered (old callers unaffected). */
+  items?: DeliveryItemInput[];
 };
+
+/** Maps a DeliveryItemInput[] to the p_items jsonb shape the RPCs expect. */
+function toItemsJsonb(items: DeliveryItemInput[] | undefined): unknown {
+  if (!items || items.length === 0) return undefined;
+  return items.map((i) => ({
+    product_catalog_id: i.productCatalogId,
+    quantity_ordered: i.quantityOrdered,
+    customer_price: i.customerPrice ?? null,
+  }));
+}
 
 export async function createDelivery(input: CreateDeliveryInput): Promise<string> {
   const { data, error } = await supabase.rpc('create_delivery', {
@@ -342,6 +508,7 @@ export async function createDelivery(input: CreateDeliveryInput): Promise<string
     p_scheduled_date: input.scheduledDate,
     p_assigned_agent_id: input.assignedAgentId as unknown as string,
     p_created_via: 'manual',
+    p_items: toItemsJsonb(input.items) as unknown as undefined, // [Feature A]
   });
   if (error) throw error;
   return data as string;
@@ -359,6 +526,9 @@ export type UpdateDeliveryFieldsPatch = {
   quantityOrdered?: number;
   customerPrice?: number;
   assignedAgentId?: string | null;
+  /** [Feature A] Replace the full line-item set. Omit to leave items unchanged
+   *  (the server keeps them in sync with any legacy single-product edit). */
+  items?: DeliveryItemInput[];
 };
 
 /** Edits customer-facing fields on a pre-delivery row. Server-side guards:
@@ -381,6 +551,7 @@ export async function updateDeliveryFields(
     p_quantity_ordered: patch.quantityOrdered,
     p_customer_price: patch.customerPrice,
     p_assigned_agent_id: patch.assignedAgentId as unknown as string | undefined,
+    p_items: toItemsJsonb(patch.items) as unknown as undefined, // [Feature A]
   });
   if (error) throw error;
 }
@@ -403,6 +574,28 @@ export async function getAgentProductStock(
   return Number(data?.quantity_on_hand ?? 0);
 }
 
+/** [Feature A] Batched per-line stock: the agent's on-hand for a set of
+ *  products in one query → map of productCatalogId → on-hand (0 when absent).
+ *  Used by the line-items form + mark-delivered sheet to validate every line. */
+export async function getAgentProductsStock(
+  agentId: string,
+  productCatalogIds: string[],
+): Promise<Record<string, number>> {
+  const ids = [...new Set(productCatalogIds.filter(Boolean))];
+  if (!agentId || ids.length === 0) return {};
+  const { data, error } = await supabase
+    .from('current_stock')
+    .select('product_catalog_id, quantity_on_hand')
+    .eq('agent_id', agentId)
+    .in('product_catalog_id', ids);
+  if (error) throw error;
+  const map: Record<string, number> = {};
+  for (const r of data ?? []) {
+    if (r.product_catalog_id) map[r.product_catalog_id] = Number(r.quantity_on_hand ?? 0);
+  }
+  return map;
+}
+
 export type ChangeStatusInput = {
   clientUuid: string;
   deliveryId: string;
@@ -410,14 +603,25 @@ export type ChangeStatusInput = {
   reason: string | null;
   notes: string | null;
   // For 'delivered' only:
+  /** Order-total delivered quantity (sum of the per-line quantities). */
   quantityDelivered: number | null;
   paid: number | null;
   paymentMethod: 'cash' | 'transfer' | null;
   // For 'postponed' only — YYYY-MM-DD; server ignores otherwise.
   newScheduledDate: string | null;
+  /** [Feature A] Per-line delivered quantities. When omitted on a delivered
+   *  transition, the server fans quantityDelivered onto the order's lone item. */
+  itemQuantities?: DeliveryItemDelivered[];
 };
 
 export async function changeDeliveryStatus(input: ChangeStatusInput): Promise<void> {
+  const itemQuantities =
+    input.itemQuantities && input.itemQuantities.length > 0
+      ? input.itemQuantities.map((i) => ({
+          product_catalog_id: i.productCatalogId,
+          quantity_delivered: i.quantityDelivered,
+        }))
+      : undefined;
   const { error } = await supabase.rpc('change_delivery_status', {
     p_client_uuid: input.clientUuid,
     p_delivery_id: input.deliveryId,
@@ -428,6 +632,7 @@ export async function changeDeliveryStatus(input: ChangeStatusInput): Promise<vo
     p_paid: input.paid as unknown as number,
     p_payment_method: input.paymentMethod as unknown as string,
     p_new_scheduled_date: input.newScheduledDate as unknown as string,
+    p_item_quantities: itemQuantities as unknown as undefined, // [Feature A]
   });
   if (error) throw error;
 }

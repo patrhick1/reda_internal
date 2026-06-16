@@ -7,7 +7,7 @@
 // so admin and rep land on their own delivery detail screens.
 import { ActivityIndicator, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { type DeliveryRow } from '@/services/deliveries';
+import { deliveryProductsLabel, type DeliveryRow } from '@/services/deliveries';
 import { Card, SectionHeader, StatusPill } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 import { formatNaira } from '@/lib/format';
@@ -88,7 +88,7 @@ export function RecentActivityCard({ rows, loading, basePath, limit = 4 }: Props
                     }}
                     numberOfLines={1}
                   >
-                    {d.product_name ?? '—'} · {d.assigned_agent_name ?? 'Unassigned'}
+                    {deliveryProductsLabel(d)} · {d.assigned_agent_name ?? 'Unassigned'}
                   </Text>
                 </View>
                 <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.black }}>

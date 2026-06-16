@@ -23,6 +23,7 @@ import { AppBar, Avatar, Banner, Button, Card, Empty, Icon } from '@/components/
 import {
   DeliveryFieldsForm,
   MissingFieldsBanner,
+  completeLines,
   type DeliveryFormState,
   type FormValidation,
 } from './DeliveryFieldsForm';
@@ -67,8 +68,25 @@ export default function EditDeliveryScreen() {
   const initial = useMemo<Partial<DeliveryFormState>>(() => {
     const d = deliveryQ.data;
     if (!d) return {};
+    // [Feature A] seed the line-items editor from delivery_items; fall back to
+    // the legacy single product for rows that predate the backfill.
+    const items =
+      d.items && d.items.length > 0
+        ? d.items.map((it) => ({
+            productCatalogId: it.product_catalog_id,
+            quantityOrdered: it.quantity_ordered,
+          }))
+        : d.product_catalog_id
+          ? [
+              {
+                productCatalogId: d.product_catalog_id,
+                quantityOrdered: d.quantity_ordered ?? null,
+              },
+            ]
+          : undefined;
     return {
       clientId: d.client_id ?? null,
+      items,
       productCatalogId: d.product_catalog_id ?? null,
       customerName: d.customer_name ?? '',
       customerPhone: d.customer_phone ?? '',
@@ -208,6 +226,24 @@ export default function EditDeliveryScreen() {
       patch.customerPrice = state.customerPrice ?? undefined;
     if (state.assignedAgentId !== (d.assigned_agent_id ?? null))
       patch.assignedAgentId = state.assignedAgentId;
+
+    // [Feature A] Send the full item set when it changed (sorted-set compare).
+    const newLines = completeLines(state.items);
+    const sig = (xs: { productCatalogId: string; quantityOrdered: number }[]) =>
+      xs
+        .map((l) => `${l.productCatalogId}:${l.quantityOrdered}`)
+        .sort()
+        .join('|');
+    const origSig = (d.items ?? [])
+      .map((it) => `${it.product_catalog_id}:${it.quantity_ordered}`)
+      .sort()
+      .join('|');
+    if (sig(newLines) !== origSig) {
+      patch.items = newLines.map((l) => ({
+        productCatalogId: l.productCatalogId,
+        quantityOrdered: l.quantityOrdered,
+      }));
+    }
 
     if (Object.keys(patch).length === 0) {
       // Nothing changed; treat as cancel.

@@ -33,6 +33,14 @@ const EXECUTORS: Record<JobKind, Executor> = {
       p_paid: args.paid as unknown as number,
       p_payment_method: args.paymentMethod as unknown as string,
       p_new_scheduled_date: args.newScheduledDate as unknown as string,
+      // [Feature A] per-line delivered quantities (jsonb). Mapped to the RPC's
+      // p_item_quantities; undefined for single-product / non-delivered jobs.
+      p_item_quantities: (args.itemQuantities
+        ? args.itemQuantities.map((i) => ({
+            product_catalog_id: i.productCatalogId,
+            quantity_delivered: i.quantityDelivered,
+          }))
+        : undefined) as unknown as undefined,
     });
     if (error) throw classifyRpcError(error);
   },

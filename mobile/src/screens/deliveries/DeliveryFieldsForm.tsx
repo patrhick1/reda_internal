@@ -6,26 +6,62 @@ import { listClients, type Client } from '@/services/clients';
 import { listActiveProductsByClient, type Product } from '@/services/products';
 import { listLocations, type Location } from '@/services/locations';
 import { listUsers, type AppUser } from '@/services/users';
-import { getAgentProductStock } from '@/services/deliveries';
+import { getAgentProductsStock } from '@/services/deliveries';
 import { Avatar, Banner, Card, Empty, Input } from '@/components/ui';
 import { Select } from '@/components/Select';
 import { colors, fonts } from '@/lib/theme';
 import { errorMessage } from '@/lib/errors';
 
+/** [Feature A] One editable product line. */
+export type DeliveryLineDraft = {
+  productCatalogId: string | null;
+  quantityOrdered: number | null; // null when blank or NaN
+};
+
 /** Form values emitted by `<DeliveryFieldsForm>` on every change. */
 export type DeliveryFormState = {
   clientId: string | null;
+  /** [Feature A] The full line-item set (≥1 row). */
+  items: DeliveryLineDraft[];
+  /** Legacy primary = items[0], kept in sync so existing callers and the RPC's
+   *  dual-write legacy columns keep working. */
   productCatalogId: string | null;
+  quantityOrdered: number | null;
   customerName: string;
   customerPhone: string;
   customerPhoneAlt: string;
   rawAddress: string;
-  quantityOrdered: number | null; // null when blank or NaN
   customerPrice: number | null;
   locationId: string | null;
   assignedAgentId: string | null;
   scheduledDate: string; // YYYY-MM-DD (empty allowed; parent validates)
 };
+
+/** Drop incomplete lines and keep the legacy primary (productCatalogId /
+ *  quantityOrdered) pointed at the first complete line. */
+function withDerivedPrimary(s: DeliveryFormState): DeliveryFormState {
+  const firstComplete = s.items.find(
+    (li) => li.productCatalogId && li.quantityOrdered != null && li.quantityOrdered > 0,
+  );
+  return {
+    ...s,
+    productCatalogId: firstComplete?.productCatalogId ?? s.items[0]?.productCatalogId ?? null,
+    quantityOrdered: firstComplete?.quantityOrdered ?? s.items[0]?.quantityOrdered ?? null,
+  };
+}
+
+/** The complete, submittable line items (product set + positive qty). */
+export function completeLines(items: DeliveryLineDraft[]): {
+  productCatalogId: string;
+  quantityOrdered: number;
+}[] {
+  return items
+    .filter(
+      (li): li is { productCatalogId: string; quantityOrdered: number } =>
+        !!li.productCatalogId && li.quantityOrdered != null && li.quantityOrdered > 0,
+    )
+    .map((li) => ({ productCatalogId: li.productCatalogId, quantityOrdered: li.quantityOrdered }));
+}
 
 export type DeliveryFormInitial = Partial<DeliveryFormState>;
 
@@ -60,8 +96,6 @@ const REQUIRED_FIELDS: { key: keyof DeliveryFormState; label: string }[] = [
   { key: 'customerPhone', label: 'Phone' },
   { key: 'rawAddress', label: 'Address' },
   { key: 'clientId', label: 'Client' },
-  { key: 'productCatalogId', label: 'Product' },
-  { key: 'quantityOrdered', label: 'Quantity' },
   { key: 'customerPrice', label: 'Customer price' },
 ];
 
@@ -112,13 +146,25 @@ function validateState(s: DeliveryFormState): FormValidation {
       missing.push(label);
       continue;
     }
-    if (key === 'quantityOrdered') {
-      if (!Number.isInteger(v) || (v as number) <= 0)
-        missing.push('Quantity (positive whole number)');
-    } else if (key === 'customerPrice') {
+    if (key === 'customerPrice') {
       if (!Number.isFinite(v as number) || (v as number) < 0) missing.push('Customer price');
     }
   }
+  // [Feature A] At least one complete product line. A line is incomplete if it
+  // has a product without a positive qty, or a qty without a product.
+  const lines = completeLines(s.items);
+  if (lines.length === 0) {
+    missing.push('At least one product line');
+  }
+  const partial = s.items.some(
+    (li) =>
+      (li.productCatalogId && (li.quantityOrdered == null || li.quantityOrdered <= 0)) ||
+      (!li.productCatalogId && li.quantityOrdered != null && li.quantityOrdered > 0),
+  );
+  if (partial) missing.push('Complete every product line (product + qty)');
+  // Duplicate product lines aren't allowed (the server unions them anyway).
+  const ids = lines.map((l) => l.productCatalogId);
+  if (new Set(ids).size !== ids.length) missing.push('Remove duplicate product lines');
   return { isValid: missing.length === 0, missing };
 }
 
@@ -145,14 +191,27 @@ export function DeliveryFieldsForm({
     [],
   );
 
+  const initialItems: DeliveryLineDraft[] =
+    initial?.items && initial.items.length > 0
+      ? initial.items
+      : initial?.productCatalogId
+        ? [
+            {
+              productCatalogId: initial.productCatalogId,
+              quantityOrdered: initial.quantityOrdered ?? null,
+            },
+          ]
+        : [{ productCatalogId: null, quantityOrdered: null }];
+
   const [state, setState] = useState<DeliveryFormState>({
     clientId: initial?.clientId ?? null,
-    productCatalogId: initial?.productCatalogId ?? null,
+    items: initialItems,
+    productCatalogId: initialItems[0]?.productCatalogId ?? null,
     customerName: initial?.customerName ?? '',
     customerPhone: initial?.customerPhone ?? '',
     customerPhoneAlt: initial?.customerPhoneAlt ?? '',
     rawAddress: initial?.rawAddress ?? '',
-    quantityOrdered: initial?.quantityOrdered ?? null,
+    quantityOrdered: initialItems[0]?.quantityOrdered ?? null,
     customerPrice: initial?.customerPrice ?? null,
     locationId: initial?.locationId ?? null,
     assignedAgentId: initial?.assignedAgentId ?? null,
@@ -177,10 +236,15 @@ export function DeliveryFieldsForm({
       .then((list) => {
         if (cancelled) return;
         setProducts(list);
-        // If the current product isn't in the new list, drop it.
-        if (state.productCatalogId && !list.find((p) => p.id === state.productCatalogId)) {
-          patch({ productCatalogId: null });
-        }
+        // Drop any line whose product isn't in the new client's catalog.
+        setState((s) => ({
+          ...s,
+          items: s.items.map((li) =>
+            li.productCatalogId && !list.find((p) => p.id === li.productCatalogId)
+              ? { ...li, productCatalogId: null }
+              : li,
+          ),
+        }));
       })
       .catch((e) => {
         if (!cancelled) setProductsError(errorMessage(e));
@@ -194,34 +258,36 @@ export function DeliveryFieldsForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.clientId]);
 
-  // Per-agent stock for the selected product, so the picker can show "X in
-  // stock" inline and we can render the pickup-needed banner.
-  const [stockByAgent, setStockByAgent] = useState<Map<string, number> | null>(null);
+  // [Feature A] On-hand for the SELECTED agent across every line product, so we
+  // can render a per-line pickup-needed warning. Map of productCatalogId → qty.
+  const [agentStock, setAgentStock] = useState<Record<string, number> | null>(null);
+  const lineProductIds = useMemo(
+    () => state.items.map((li) => li.productCatalogId).filter((x): x is string => !!x),
+    [state.items],
+  );
   useEffect(() => {
-    const productId = state.productCatalogId;
-    const agents = agentsQ.data ?? [];
-    if (!productId || agents.length === 0) {
-      setStockByAgent(null);
+    const agentId = state.assignedAgentId;
+    if (!agentId || lineProductIds.length === 0) {
+      setAgentStock(null);
       return;
     }
     let cancelled = false;
-    Promise.all(
-      agents.map((a) =>
-        getAgentProductStock(a.id, productId)
-          .then((qty) => [a.id, qty] as const)
-          .catch(() => [a.id, 0] as const),
-      ),
-    ).then((pairs) => {
-      if (!cancelled) setStockByAgent(new Map(pairs));
-    });
+    getAgentProductsStock(agentId, lineProductIds)
+      .then((m) => {
+        if (!cancelled) setAgentStock(m);
+      })
+      .catch(() => {
+        if (!cancelled) setAgentStock({});
+      });
     return () => {
       cancelled = true;
     };
-  }, [state.productCatalogId, agentsQ.data]);
+  }, [state.assignedAgentId, lineProductIds]);
 
-  // Emit the latest state on every change.
+  // Emit the latest state on every change, with the legacy primary derived.
   useEffect(() => {
-    onChange(state, validateState(state));
+    const emitted = withDerivedPrimary(state);
+    onChange(emitted, validateState(emitted));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
 
@@ -229,35 +295,59 @@ export function DeliveryFieldsForm({
     setState((s) => ({ ...s, ...p }));
   }
 
+  // [Feature A] line-item editors
+  function updateLine(i: number, p: Partial<DeliveryLineDraft>) {
+    setState((s) => ({
+      ...s,
+      items: s.items.map((li, idx) => (idx === i ? { ...li, ...p } : li)),
+    }));
+  }
+  function addLine() {
+    setState((s) => ({
+      ...s,
+      items: [...s.items, { productCatalogId: null, quantityOrdered: null }],
+    }));
+  }
+  function removeLine(i: number) {
+    setState((s) => ({
+      ...s,
+      items: s.items.length <= 1 ? s.items : s.items.filter((_, idx) => idx !== i),
+    }));
+  }
+
   const locationOptions = useMemo(
     () => (locationsQ.data ?? []).map((l) => ({ value: l.id, label: l.name })),
     [locationsQ.data],
   );
+  const productOptions = useMemo(
+    () => products.map((p) => ({ value: p.id, label: p.product_name })),
+    [products],
+  );
   const agentOptions = useMemo(
     () =>
-      (agentsQ.data ?? []).map((a) => {
-        const stock = stockByAgent?.get(a.id);
-        const label =
-          stockByAgent == null ? a.display_name : `${a.display_name} · ${stock ?? 0} in stock`;
-        return { value: a.id, label, sub: a.email ?? undefined };
-      }),
-    [agentsQ.data, stockByAgent],
+      (agentsQ.data ?? []).map((a) => ({
+        value: a.id,
+        label: a.display_name,
+        sub: a.email ?? undefined,
+      })),
+    [agentsQ.data],
   );
 
   const selectedAgent = state.assignedAgentId
     ? (agentsQ.data ?? []).find((u) => u.id === state.assignedAgentId)
     : null;
-  const selectedProductName = state.productCatalogId
-    ? products.find((p) => p.id === state.productCatalogId)?.product_name
-    : null;
-  const stockShortfall = (() => {
-    if (state.assignedAgentId == null) return null;
-    if (stockByAgent == null) return null;
-    const onHand = stockByAgent.get(state.assignedAgentId) ?? 0;
-    const needed = state.quantityOrdered;
-    if (needed == null || !Number.isInteger(needed) || needed <= 0) return null;
-    return onHand < needed ? { onHand, needed } : null;
-  })();
+
+  // [Feature A] Per-line stock shortfall for the assigned agent.
+  const lineShortfalls = useMemo(() => {
+    if (state.assignedAgentId == null || agentStock == null) return [];
+    return completeLines(state.items)
+      .map((l) => ({
+        name: products.find((p) => p.id === l.productCatalogId)?.product_name ?? 'product',
+        onHand: agentStock[l.productCatalogId] ?? 0,
+        needed: l.quantityOrdered,
+      }))
+      .filter((s) => s.onHand < s.needed);
+  }, [state.assignedAgentId, agentStock, state.items, products]);
 
   if (clientsQ.loading || locationsQ.loading || agentsQ.loading) {
     return (
@@ -344,11 +434,20 @@ export function DeliveryFieldsForm({
           </Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
             {productCandidates.map((c) => {
-              const active = state.productCatalogId === c.id && state.clientId === c.client_id;
+              const active =
+                state.items[0]?.productCatalogId === c.id && state.clientId === c.client_id;
               return (
                 <Pressable
                   key={c.id}
-                  onPress={() => patch({ clientId: c.client_id, productCatalogId: c.id })}
+                  onPress={() =>
+                    setState((s) => ({
+                      ...s,
+                      clientId: c.client_id,
+                      items: s.items.map((li, idx) =>
+                        idx === 0 ? { ...li, productCatalogId: c.id } : li,
+                      ),
+                    }))
+                  }
                   style={({ pressed }) => [
                     {
                       paddingHorizontal: 12,
@@ -414,11 +513,35 @@ export function DeliveryFieldsForm({
         </View>
       </Card>
 
-      {/* Product picker */}
+      {/* Product line items */}
       {state.clientId ? (
         <Card>
-          <Text style={kicker}>Product</Text>
-          <View style={{ marginTop: 10, gap: 6 }}>
+          <View
+            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+          >
+            <Text style={kicker}>Products</Text>
+            {!loadingProducts && !productsError && products.length > 0 ? (
+              <Pressable
+                onPress={addLine}
+                style={({ pressed }) => [
+                  {
+                    paddingHorizontal: 12,
+                    paddingVertical: 6,
+                    borderRadius: 999,
+                    borderWidth: 1.5,
+                    borderColor: colors.black,
+                    backgroundColor: colors.white,
+                  },
+                  pressed && { opacity: 0.85 },
+                ]}
+              >
+                <Text style={{ fontFamily: fonts.bold, fontSize: 12, color: colors.black }}>
+                  + Add line
+                </Text>
+              </Pressable>
+            ) : null}
+          </View>
+          <View style={{ marginTop: 10, gap: 10 }}>
             {loadingProducts ? (
               <ActivityIndicator color={colors.black} />
             ) : productsError ? (
@@ -430,50 +553,74 @@ export function DeliveryFieldsForm({
                 This client has no active products yet.
               </Text>
             ) : (
-              products.map((p) => {
-                const active = state.productCatalogId === p.id;
+              state.items.map((li, i) => {
+                const onHand =
+                  li.productCatalogId && agentStock ? agentStock[li.productCatalogId] : undefined;
+                const needed = li.quantityOrdered;
+                const short =
+                  state.assignedAgentId != null &&
+                  onHand != null &&
+                  needed != null &&
+                  needed > 0 &&
+                  onHand < needed;
                 return (
-                  <Pressable
-                    key={p.id}
-                    onPress={() => patch({ productCatalogId: p.id })}
-                    style={({ pressed }) => [
-                      {
-                        flexDirection: 'row',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        paddingHorizontal: 14,
-                        paddingVertical: 12,
-                        borderRadius: 12,
-                        backgroundColor: active ? colors.surface : 'transparent',
-                        borderWidth: 1.5,
-                        borderColor: active ? colors.black : colors.border,
-                      },
-                      pressed && { opacity: 0.85 },
-                    ]}
-                  >
-                    <Text
-                      style={{
-                        flex: 1,
-                        fontFamily: fonts.semibold,
-                        fontSize: 14,
-                        color: colors.black,
-                      }}
-                    >
-                      {p.product_name}
-                    </Text>
-                    {p.description ? (
+                  <View key={i} style={{ gap: 4 }}>
+                    <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-end' }}>
+                      <View style={{ flex: 1 }}>
+                        <Select
+                          label={i === 0 ? 'Product' : ''}
+                          value={li.productCatalogId}
+                          options={productOptions}
+                          onChange={(v) => updateLine(i, { productCatalogId: v })}
+                          placeholder="Select product"
+                        />
+                      </View>
+                      <View style={{ width: 64 }}>
+                        <Input
+                          label={i === 0 ? 'Qty' : ''}
+                          value={li.quantityOrdered == null ? '' : String(li.quantityOrdered)}
+                          onChange={(v) =>
+                            updateLine(i, { quantityOrdered: v === '' ? null : Number(v) })
+                          }
+                          keyboardType="numeric"
+                        />
+                      </View>
+                      {state.items.length > 1 ? (
+                        <Pressable
+                          onPress={() => removeLine(i)}
+                          accessibilityLabel={`Remove line ${i + 1}`}
+                          style={({ pressed }) => [
+                            {
+                              width: 40,
+                              height: 40,
+                              borderRadius: 12,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              borderWidth: 1.5,
+                              borderColor: colors.border,
+                            },
+                            pressed && { opacity: 0.6 },
+                          ]}
+                        >
+                          <Text style={{ fontFamily: fonts.bold, fontSize: 18, color: colors.red }}>
+                            ×
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
+                    {short ? (
                       <Text
                         style={{
                           fontFamily: fonts.medium,
-                          fontSize: 12,
-                          color: colors.textSecondary,
-                          marginLeft: 8,
+                          fontSize: 11,
+                          color: colors.warningDark,
                         }}
                       >
-                        {p.description}
+                        {selectedAgent?.display_name ?? 'Agent'} has {onHand} — pickup of{' '}
+                        {needed! - onHand!} needed.
                       </Text>
                     ) : null}
-                  </Pressable>
+                  </View>
                 );
               })
             )}
@@ -484,17 +631,9 @@ export function DeliveryFieldsForm({
       {/* Numbers */}
       <Card>
         <View style={{ flexDirection: 'row', gap: 12 }}>
-          <View style={{ width: 90 }}>
-            <Input
-              label="Qty"
-              value={state.quantityOrdered == null ? '' : String(state.quantityOrdered)}
-              onChange={(v) => patch({ quantityOrdered: v === '' ? null : Number(v) })}
-              keyboardType="numeric"
-            />
-          </View>
           <View style={{ flex: 1 }}>
             <Input
-              label="Customer price (₦)"
+              label="Customer price (₦) — order total"
               value={state.customerPrice == null ? '' : String(state.customerPrice)}
               onChange={(v) => patch({ customerPrice: v === '' ? null : Number(v) })}
               keyboardType="numeric"
@@ -551,7 +690,7 @@ export function DeliveryFieldsForm({
                 </View>
               </Banner>
             ) : null}
-            {stockShortfall ? (
+            {lineShortfalls.length > 0 ? (
               <Banner tone="warn" icon="alert" title="Stock pickup needed">
                 <Text
                   style={{
@@ -561,10 +700,10 @@ export function DeliveryFieldsForm({
                     lineHeight: 19,
                   }}
                 >
-                  {selectedAgent?.display_name ?? 'Selected agent'} has {stockShortfall.onHand}
-                  {selectedProductName ? ` ${selectedProductName}` : ''} but the delivery is for{' '}
-                  {stockShortfall.needed}. We&apos;ll prompt them to pick up from the warehouse and
-                  ping dispatch to issue a transfer.
+                  {selectedAgent?.display_name ?? 'Selected agent'} is short on{' '}
+                  {lineShortfalls.map((s) => `${s.needed - s.onHand} ${s.name}`).join(', ')}.
+                  We&apos;ll prompt them to pick up from the warehouse and ping dispatch to issue a
+                  transfer.
                 </Text>
               </Banner>
             ) : null}

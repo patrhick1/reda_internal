@@ -123,14 +123,17 @@ export type AgentGroup = {
 /** Group available orders by agent. Each agent's products list is sorted by
  *  qty_needed DESC (biggest first). Agents are sorted alphabetically. */
 export function groupByAgent(rows: AvailableOrderRow[]): AgentGroup[] {
+  // [Feature A] rows are now one-per-line-item (available_orders_safe is
+  // itemized), so total_orders counts DISTINCT delivery_id, not row count.
+  // total_units / qty_needed sum the per-line quantities (correct for bundles).
   const byAgent = new Map<
     string,
     {
       agent_id: string;
       agent_name: string;
-      total_orders: number;
+      deliveryIds: Set<string>;
       total_units: number;
-      products: Map<string, AgentProductSummary>;
+      products: Map<string, AgentProductSummary & { _deliveries: Set<string> }>;
     }
   >();
 
@@ -140,13 +143,13 @@ export function groupByAgent(rows: AvailableOrderRow[]): AgentGroup[] {
       g = {
         agent_id: r.agent_id,
         agent_name: r.agent_name,
-        total_orders: 0,
+        deliveryIds: new Set(),
         total_units: 0,
         products: new Map(),
       };
       byAgent.set(r.agent_id, g);
     }
-    g.total_orders += 1;
+    g.deliveryIds.add(r.delivery_id);
     g.total_units += r.quantity_ordered;
     let p = g.products.get(r.product_catalog_id);
     if (!p) {
@@ -155,20 +158,23 @@ export function groupByAgent(rows: AvailableOrderRow[]): AgentGroup[] {
         product_name: r.product_name,
         qty_needed: 0,
         deliveries_count: 0,
+        _deliveries: new Set(),
       };
       g.products.set(r.product_catalog_id, p);
     }
     p.qty_needed += r.quantity_ordered;
-    p.deliveries_count += 1;
+    p._deliveries.add(r.delivery_id);
   }
 
   return Array.from(byAgent.values())
     .map((g) => ({
       agent_id: g.agent_id,
       agent_name: g.agent_name,
-      total_orders: g.total_orders,
+      total_orders: g.deliveryIds.size,
       total_units: g.total_units,
-      products: Array.from(g.products.values()).sort((a, b) => b.qty_needed - a.qty_needed),
+      products: Array.from(g.products.values())
+        .map(({ _deliveries, ...p }) => ({ ...p, deliveries_count: _deliveries.size }))
+        .sort((a, b) => b.qty_needed - a.qty_needed),
     }))
     .sort((a, b) => a.agent_name.localeCompare(b.agent_name));
 }
@@ -193,14 +199,15 @@ export type ClientAggregate = {
  *  much of each product to surface, broken down by vendor. Clients sorted
  *  alphabetically; products within a client sorted by qty_needed DESC. */
 export function aggregateByClientProduct(rows: AvailableOrderRow[]): ClientAggregate[] {
+  // [Feature A] Itemized rows → total_orders counts DISTINCT delivery_id.
   const byClient = new Map<
     string,
     {
       client_id: string;
       client_name: string;
       total_units: number;
-      total_orders: number;
-      products: Map<string, ClientProductTotal>;
+      deliveryIds: Set<string>;
+      products: Map<string, ClientProductTotal & { _deliveries: Set<string> }>;
     }
   >();
 
@@ -211,13 +218,13 @@ export function aggregateByClientProduct(rows: AvailableOrderRow[]): ClientAggre
         client_id: r.client_id,
         client_name: r.client_name,
         total_units: 0,
-        total_orders: 0,
+        deliveryIds: new Set(),
         products: new Map(),
       };
       byClient.set(r.client_id, c);
     }
     c.total_units += r.quantity_ordered;
-    c.total_orders += 1;
+    c.deliveryIds.add(r.delivery_id);
     let p = c.products.get(r.product_catalog_id);
     if (!p) {
       p = {
@@ -225,11 +232,12 @@ export function aggregateByClientProduct(rows: AvailableOrderRow[]): ClientAggre
         product_name: r.product_name,
         qty_needed: 0,
         deliveries_count: 0,
+        _deliveries: new Set(),
       };
       c.products.set(r.product_catalog_id, p);
     }
     p.qty_needed += r.quantity_ordered;
-    p.deliveries_count += 1;
+    p._deliveries.add(r.delivery_id);
   }
 
   return Array.from(byClient.values())
@@ -237,8 +245,10 @@ export function aggregateByClientProduct(rows: AvailableOrderRow[]): ClientAggre
       client_id: c.client_id,
       client_name: c.client_name,
       total_units: c.total_units,
-      total_orders: c.total_orders,
-      products: Array.from(c.products.values()).sort((a, b) => b.qty_needed - a.qty_needed),
+      total_orders: c.deliveryIds.size,
+      products: Array.from(c.products.values())
+        .map(({ _deliveries, ...p }) => ({ ...p, deliveries_count: _deliveries.size }))
+        .sort((a, b) => b.qty_needed - a.qty_needed),
     }))
     .sort((a, b) => a.client_name.localeCompare(b.client_name));
 }

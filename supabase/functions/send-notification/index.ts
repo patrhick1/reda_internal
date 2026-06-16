@@ -20,8 +20,45 @@
 
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { denyIfNotInternal } from '../_shared/internal-auth.ts';
 
 const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
+
+// [Feature A] Shared multi-product helpers for notification composition.
+type NotifLine = { product_catalog_id: string; name: string; qty: number };
+
+// Normalize a delivery's lines: use delivery_items when present, else fall back
+// to the legacy single product (pre-Phase-1 rows / safety).
+function lineItemsOrLegacy(delivery: any): NotifLine[] {
+  const items = Array.isArray(delivery?.items) ? delivery.items : [];
+  if (items.length > 0) {
+    return items.map((i: any) => ({
+      product_catalog_id: i.product_catalog_id,
+      name: i.product?.product_name ?? 'product',
+      qty:  Number(i.quantity_ordered ?? 0),
+    }));
+  }
+  return [{
+    product_catalog_id: delivery?.product_catalog_id,
+    name: delivery?.product?.product_name ?? 'product',
+    qty:  Number(delivery?.quantity_ordered ?? 0),
+  }];
+}
+
+// One current_stock query for a set of products for a single agent → map of
+// product_catalog_id → on-hand.
+async function onHandByProduct(supabase: any, agentId: string, productIds: string[]): Promise<Record<string, number>> {
+  const ids = productIds.filter(Boolean);
+  if (!agentId || ids.length === 0) return {};
+  const { data } = await supabase
+    .from('current_stock')
+    .select('product_catalog_id, quantity_on_hand')
+    .eq('agent_id', agentId)
+    .in('product_catalog_id', ids);
+  const out: Record<string, number> = {};
+  for (const r of (data ?? []) as any[]) out[r.product_catalog_id as string] = Number(r.quantity_on_hand ?? 0);
+  return out;
+}
 
 type Audience =
   | { kind: 'user';                 userId: string }
@@ -34,6 +71,10 @@ type Audience =
 
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return new Response('method not allowed', { status: 405 });
+
+  // Internal-only: callable by DB webhooks / cron / other functions, never the public.
+  const denied = denyIfNotInternal(req);
+  if (denied) return denied;
 
   let body: any;
   try { body = await req.json(); }
@@ -190,7 +231,8 @@ async function resolve(
       .select(`
         id, customer_name, quantity_ordered, assigned_agent_id, product_catalog_id,
         location:locations(name),
-        product:product_catalog(product_name)
+        product:product_catalog(product_name),
+        items:delivery_items(quantity_ordered, product_catalog_id, product:product_catalog(product_name))
       `)
       .eq('id', audience.deliveryId)
       .maybeSingle();
@@ -199,22 +241,21 @@ async function resolve(
       return { title: '', body: '', data: undefined, userIds: [] };
     }
     const locationName = (delivery as any).location?.name ?? 'location TBD';
-    const productName  = (delivery as any).product?.product_name ?? 'product TBD';
-    let bodyText = `${delivery.customer_name} — ${locationName} — ${productName} × ${delivery.quantity_ordered}`;
 
-    // If the assigned agent doesn't have enough stock yet, append a pickup
-    // hint so they read the notification body and know to swing by the
-    // warehouse first. Dispatch gets a separate push via tg_notify_pickup_needed.
-    const { data: stockRow } = await supabase
-      .from('current_stock')
-      .select('quantity_on_hand')
-      .eq('agent_id', delivery.assigned_agent_id)
-      .eq('product_catalog_id', delivery.product_catalog_id)
-      .maybeSingle();
-    const onHand = Number(stockRow?.quantity_on_hand ?? 0);
-    const shortfall = Number(delivery.quantity_ordered) - onHand;
-    if (shortfall > 0) {
-      bodyText += ` — pick up ${shortfall} from warehouse first`;
+    // [Feature A] Build the per-line list. Fall back to the legacy single
+    // product when no delivery_items rows exist (pre-Phase-1 row).
+    const aItems = lineItemsOrLegacy(delivery);
+    const productSummary = aItems.map((i) => `${i.name} ×${i.qty}`).join(', ');
+    let bodyText = `${delivery.customer_name} — ${locationName} — ${productSummary}`;
+
+    // Per-item warehouse-pickup hint: check the agent's on-hand for EVERY line,
+    // list the products short. One stock query for all line products.
+    const aStock = await onHandByProduct(supabase, delivery.assigned_agent_id as string, aItems.map((i) => i.product_catalog_id));
+    const aShort = aItems
+      .map((i) => ({ name: i.name, short: i.qty - (aStock[i.product_catalog_id] ?? 0) }))
+      .filter((s) => s.short > 0);
+    if (aShort.length > 0) {
+      bodyText += ` — pick up ${aShort.map((s) => `${s.short} ${s.name}`).join(', ')} from warehouse first`;
     }
 
     return {
@@ -231,9 +272,10 @@ async function resolve(
     const { data: delivery, error } = await supabase
       .from('deliveries')
       .select(`
-        id, customer_name, quantity_delivered, paid,
+        id, customer_name, quantity_ordered, quantity_delivered, paid, product_catalog_id,
         location:locations(name),
         product:product_catalog(product_name),
+        items:delivery_items(quantity_ordered, product_catalog_id, product:product_catalog(product_name)),
         agent:users!deliveries_assigned_agent_id_fkey(display_name)
       `)
       .eq('id', audience.deliveryId)
@@ -248,7 +290,8 @@ async function resolve(
 
     const customer = delivery.customer_name ?? 'Customer';
     const location = (delivery as any).location?.name ?? '—';
-    const product  = (delivery as any).product?.product_name ?? '—';
+    // [Feature A] Summarize all products ("Opulent Oud ×2, Atomizer ×4").
+    const product  = lineItemsOrLegacy(delivery).map((i) => `${i.name} ×${i.qty}`).join(', ') || '—';
     const agent    = (delivery as any).agent?.display_name?.split(/\s+/)[0] ?? 'Agent';
     const paid     = Number(delivery.paid ?? 0);
     const qty      = delivery.quantity_delivered;
@@ -358,6 +401,7 @@ async function resolve(
         client:clients(name, contact_phone),
         product:product_catalog(product_name),
         location:locations(name),
+        items:delivery_items(quantity_ordered, product_catalog_id, product:product_catalog(product_name)),
         agent:users!deliveries_assigned_agent_id_fkey(display_name)
       `)
       .eq('id', audience.deliveryId)
@@ -365,53 +409,50 @@ async function resolve(
     if (error) return { error: 'delivery lookup failed', status: 500 };
     if (!delivery) return { title: '', body: '', data: undefined, userIds: [] };
 
-    // Recompute the shortfall so the body number is correct (trigger only
-    // tells us "fire", not "by how much"). Mirrors the trigger's math.
+    // [Feature A] Per-line shortfall. Recompute so the body numbers are correct
+    // (trigger only says "fire", not "by how much"). Mirrors the trigger's math
+    // per product instead of against the single legacy product.
+    const wpItems = lineItemsOrLegacy(delivery);
+    const productIds = wpItems.map((i) => i.product_catalog_id).filter(Boolean);
     const agentId = (delivery as any).assigned_agent_id as string | null;
-    let agentOnHand = 0;
-    if (agentId) {
-      const { data: agentStock } = await supabase
-        .from('current_stock')
-        .select('quantity_on_hand')
-        .eq('agent_id', agentId)
-        .eq('product_catalog_id', delivery.product_catalog_id)
-        .maybeSingle();
-      agentOnHand = Number(agentStock?.quantity_on_hand ?? 0);
-    }
-    const agentShortfall = Math.max(0, Number(delivery.quantity_ordered) - agentOnHand);
+    const agentStock = agentId ? await onHandByProduct(supabase, agentId, productIds) : {};
 
-    // Resolve warehouse user audience first, then sum their stock for this
-    // product. current_stock is a view with no FK exposed to PostgREST, so we
-    // pull warehouse user IDs first and filter the stock query by those IDs.
+    // Warehouse audience first, then their on-hand per product (one query).
     const { data: warehouseUsers, error: whErr } = await supabase
       .from('users').select('id').eq('role', 'warehouse').eq('is_active', true);
     if (whErr) return { error: 'warehouse lookup failed', status: 500 };
     const userIds = (warehouseUsers ?? []).map((u) => u.id as string);
 
-    let warehouseOnHand = 0;
-    if (userIds.length > 0) {
-      const { data: warehouseStockRows } = await supabase
+    const warehouseStock: Record<string, number> = {};
+    if (userIds.length > 0 && productIds.length > 0) {
+      const { data: rows } = await supabase
         .from('current_stock')
-        .select('quantity_on_hand')
-        .eq('product_catalog_id', delivery.product_catalog_id)
+        .select('product_catalog_id, quantity_on_hand')
+        .in('product_catalog_id', productIds)
         .in('agent_id', userIds);
-      warehouseOnHand = (warehouseStockRows ?? [])
-        .reduce((acc: number, r: any) => acc + Number(r.quantity_on_hand ?? 0), 0);
+      for (const r of (rows ?? []) as any[]) {
+        const pid = r.product_catalog_id as string;
+        warehouseStock[pid] = (warehouseStock[pid] ?? 0) + Number(r.quantity_on_hand ?? 0);
+      }
     }
-    const warehouseShortfall = Math.max(0, agentShortfall - warehouseOnHand);
+
+    // Per product: warehouse must cover what the agent still lacks.
+    const wpShort = wpItems
+      .map((i) => {
+        const agentShortfall = Math.max(0, i.qty - (agentStock[i.product_catalog_id] ?? 0));
+        return { name: i.name, short: Math.max(0, agentShortfall - (warehouseStock[i.product_catalog_id] ?? 0)) };
+      })
+      .filter((s) => s.short > 0);
 
     const clientName  = (delivery as any).client?.name ?? 'the client';
     const clientPhone = (delivery as any).client?.contact_phone ?? null;
-    const productName = (delivery as any).product?.product_name ?? 'product';
     const locationName = (delivery as any).location?.name ?? '—';
     const agentFirst  = ((delivery as any).agent?.display_name ?? 'Agent').split(/\s+/)[0];
     const customer    = delivery.customer_name ?? 'customer';
-
-    const fromClause = clientPhone
-      ? `${clientName} (☎ ${clientPhone})`
-      : clientName;
+    const fromClause = clientPhone ? `${clientName} (☎ ${clientPhone})` : clientName;
+    const pickupList = wpShort.length > 0 ? wpShort.map((s) => `${s.short} ${s.name}`).join(', ') : 'stock';
     const bodyText =
-      `Pick up ${warehouseShortfall} ${productName} from ${fromClause}. ` +
+      `Pick up ${pickupList} from ${fromClause}. ` +
       `Needed for ${agentFirst}'s delivery to ${customer} · ${locationName}.`;
 
     return {

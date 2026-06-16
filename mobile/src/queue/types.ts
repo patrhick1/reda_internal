@@ -24,6 +24,10 @@ export type ChangeDeliveryStatusArgs = {
    *  ignores it otherwise. Required by the UI for postponed transitions;
    *  null for every other status. */
   newScheduledDate: string | null;
+  /** [Feature A] Per-line delivered quantities for 'delivered' on multi-product
+   *  orders. Omitted on single-product / non-delivered transitions; the server
+   *  then fans quantityDelivered onto the order's lone line. */
+  itemQuantities?: { productCatalogId: string; quantityDelivered: number }[];
 };
 
 /** Args for the `flag_delivery_issue` RPC. Used when UpdateStatusSheet

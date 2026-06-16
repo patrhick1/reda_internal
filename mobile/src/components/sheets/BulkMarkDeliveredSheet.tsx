@@ -72,6 +72,19 @@ export function BulkMarkDeliveredSheet({
     let enqueued = 0;
     try {
       for (const d of eligible) {
+        // [Feature A] Bulk = deliver every line in full. Build per-item
+        // quantities from delivery_items (each delivered at its ordered qty);
+        // fall back to the legacy single quantity for rows without items.
+        const hasItems = !!d.items && d.items.length > 0;
+        const itemQuantities = hasItems
+          ? d.items.map((it) => ({
+              productCatalogId: it.product_catalog_id,
+              quantityDelivered: it.quantity_ordered,
+            }))
+          : undefined;
+        const totalQty = hasItems
+          ? d.items.reduce((s, it) => s + it.quantity_ordered, 0)
+          : (d.quantity_ordered ?? 1);
         // Each enqueue() mints its own clientUuid, so the N jobs are
         // independently idempotent on retry / re-drain.
         await enqueueStatus(
@@ -80,10 +93,11 @@ export function BulkMarkDeliveredSheet({
             toStatus: 'delivered',
             reason: null,
             notes: null,
-            quantityDelivered: d.quantity_ordered ?? 1,
+            quantityDelivered: totalQty,
             paid: Number(d.customer_price ?? 0),
             paymentMethod: method,
             newScheduledDate: null,
+            itemQuantities,
           },
           `Mark delivered · ${d.customer_name ?? ''}`,
         );

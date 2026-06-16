@@ -19,6 +19,7 @@ import {
   DeliveryFieldsForm,
   MissingFieldsBanner,
   missingFieldsMessage,
+  completeLines,
   type DeliveryFormState,
   type FormValidation,
 } from './DeliveryFieldsForm';
@@ -186,6 +187,11 @@ export function NewDelivery() {
         locationId: state.locationId,
         scheduledDate: finalScheduledDate,
         assignedAgentId: state.assignedAgentId,
+        // [Feature A] the full line-item set
+        items: completeLines(state.items).map((l) => ({
+          productCatalogId: l.productCatalogId,
+          quantityOrdered: l.quantityOrdered,
+        })),
       });
       router.back();
     } catch (e) {

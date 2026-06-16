@@ -81,16 +81,33 @@ export function StatusUpdatePanel({
     let qty: number | null = null;
     let paidNum: number | null = null;
     let method: PaymentMethod | null = null;
+    // [Feature A] line items: multi-item orders deliver all lines in full here
+    // (the per-line editor is the agent's MarkDeliveredSheet); single-item keeps
+    // the editable quantity field.
+    const items = delivery.items ?? [];
+    const isMulti = items.length > 1;
+    let itemQuantities: { productCatalogId: string; quantityDelivered: number }[] | undefined;
     if (deliveredFieldsRequired) {
-      qty = Number(quantityDelivered);
       paidNum = Number(paid);
-      if (!Number.isInteger(qty) || qty <= 0) {
-        setError('Quantity delivered must be a positive whole number');
-        return;
-      }
-      if (delivery.quantity_ordered !== null && qty > delivery.quantity_ordered) {
-        setError(`Quantity delivered cannot exceed ordered (${delivery.quantity_ordered})`);
-        return;
+      if (isMulti) {
+        qty = items.reduce((s, it) => s + it.quantity_ordered, 0);
+        itemQuantities = items.map((it) => ({
+          productCatalogId: it.product_catalog_id,
+          quantityDelivered: it.quantity_ordered,
+        }));
+      } else {
+        qty = Number(quantityDelivered);
+        if (!Number.isInteger(qty) || qty <= 0) {
+          setError('Quantity delivered must be a positive whole number');
+          return;
+        }
+        if (delivery.quantity_ordered !== null && qty > delivery.quantity_ordered) {
+          setError(`Quantity delivered cannot exceed ordered (${delivery.quantity_ordered})`);
+          return;
+        }
+        itemQuantities = items[0]
+          ? [{ productCatalogId: items[0].product_catalog_id, quantityDelivered: qty }]
+          : undefined;
       }
       if (!Number.isFinite(paidNum) || paidNum < 0) {
         setError('Paid must be ≥ 0');
@@ -115,6 +132,7 @@ export function StatusUpdatePanel({
           paid: paidNum,
           paymentMethod: method,
           newScheduledDate: null,
+          itemQuantities,
         },
         `Status → ${toStatus} · ${delivery.customer_name ?? ''}`,
       );
@@ -174,14 +192,22 @@ export function StatusUpdatePanel({
 
       {deliveredFieldsRequired ? (
         <>
-          <Field
-            label="Quantity delivered"
-            required
-            value={quantityDelivered}
-            onChangeText={setQuantityDelivered}
-            keyboardType="numeric"
-            autoCapitalize="none"
-          />
+          {(delivery.items?.length ?? 0) > 1 ? (
+            <Text style={styles.panelSub}>
+              This order has {delivery.items!.length} products — marking delivered records every
+              line as delivered in full. Use the agent&apos;s “Mark delivered” sheet to deliver
+              partial quantities per product.
+            </Text>
+          ) : (
+            <Field
+              label="Quantity delivered"
+              required
+              value={quantityDelivered}
+              onChangeText={setQuantityDelivered}
+              keyboardType="numeric"
+              autoCapitalize="none"
+            />
+          )}
           <Field
             label="Paid (₦)"
             required
