@@ -23,7 +23,7 @@ export function isRole(value: unknown): value is Role {
 // stock screens via the (rep) route group + the canAdjustAnyStock /
 // canAdjustOwnStock helpers below.
 const OPS_ROLES: ReadonlySet<Role> = new Set(['admin', 'dispatcher', 'rep']);
-const isOps = (role: Role): boolean => OPS_ROLES.has(role);
+export const isOps = (role: Role): boolean => OPS_ROLES.has(role);
 
 // Operational MANAGERS — admin + dispatcher only. Mirrors the server-side
 // public.is_manager(). Reps are deliberately excluded: per Uzo (2026-06-10)

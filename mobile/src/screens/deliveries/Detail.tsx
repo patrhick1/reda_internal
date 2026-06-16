@@ -40,6 +40,7 @@ import {
   canSeeCharged,
   canSeeMargin,
   canUpdateStatus,
+  isOps,
 } from '@/lib/permissions';
 import {
   listClientNotificationsForDelivery,
@@ -232,7 +233,7 @@ export function DeliveryDetail() {
   );
 
   // Ops (admin/dispatcher/rep) → call the delivery's assigned agent directly.
-  const callTeammate = useCallback(
+  const callAgent = useCallback(
     (calleeId: string) => startCall(() => initiateCall({ calleeId, relatedDeliveryId: deliveryId })),
     [startCall, deliveryId],
   );
@@ -704,19 +705,20 @@ export function DeliveryDetail() {
             <MoneyRow label="Created" value={formatDateTime(d.created_at)} />
           </View>
           {/* One-tap call about THIS delivery, role-aware:
-              • Agent  → rings the whole ops team (admin/dispatcher/rep); first
-                         responder wins. Linked to the delivery for audit.
-              • Ops     → calls the delivery's assigned agent directly. When the
-                         delivery is unassigned there's no agent to ring, so we
-                         show a muted hint instead of a button.
+              • Agent → rings the whole ops team (admin/dispatcher/rep); first
+                        responder wins. Linked to the delivery for audit.
+              • Ops   → calls the delivery's assigned agent directly. When the
+                        delivery is unassigned there's no agent to ring, so we
+                        show a muted hint instead of a button.
+              Other roles (warehouse) get no call control here.
               Hidden on web (no Agora bridge — see canPlaceCall). */}
-          {canPlaceCall() ? (
-            user.role === 'agent' ? (
-              <CallActionRow label="Call admin / dispatch" onPress={callOps} busy={callBusy} />
-            ) : d.assigned_agent_id && d.assigned_agent_id !== user.userId ? (
+          {!canPlaceCall() ? null : user.role === 'agent' ? (
+            <CallActionRow label="Call admin / dispatch" onPress={callOps} busy={callBusy} />
+          ) : isOps(user.role) ? (
+            d.assigned_agent_id && d.assigned_agent_id !== user.userId ? (
               <CallActionRow
                 label="Call agent"
-                onPress={() => callTeammate(d.assigned_agent_id as string)}
+                onPress={() => callAgent(d.assigned_agent_id as string)}
                 busy={callBusy}
               />
             ) : (
