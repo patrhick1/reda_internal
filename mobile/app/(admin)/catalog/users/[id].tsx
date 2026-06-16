@@ -155,7 +155,11 @@ export default function EditUser() {
         </View>
       ) : null}
 
-      {!editingCreds ? (
+      {isSelf ? (
+        <Text style={styles.helper}>
+          To change your own email or password, use Profile → security.
+        </Text>
+      ) : !editingCreds ? (
         <Button
           title="Change email / password"
           variant="secondary"
@@ -171,7 +175,6 @@ export default function EditUser() {
         <CredentialsPanel
           user={user}
           onCancel={() => setEditingCreds(false)}
-          onError={setError}
           onDone={() => {
             setEditingCreds(false);
             setNotice('Sign-in details updated. The user must log in with the new details.');
@@ -271,34 +274,35 @@ function CredentialsPanel({
   user,
   onCancel,
   onDone,
-  onError,
 }: {
   user: AppUser;
   onCancel: () => void;
   onDone: () => void;
-  onError: (msg: string | null) => void;
 }) {
   const [email, setEmail] = useState(user.email ?? '');
   const [password, setPassword] = useState('');
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Local error so failures render inside the panel, next to the button the
+  // admin just tapped — the parent error box sits far below the form.
+  const [error, setError] = useState<string | null>(null);
 
   const emailChanged = email.trim().toLowerCase() !== (user.email ?? '').toLowerCase();
   const wantsPassword = password.length > 0;
 
   async function submit() {
-    onError(null);
+    setError(null);
     const newEmail = email.trim().toLowerCase();
     if (!emailChanged && !wantsPassword) {
-      onError('Change the email or enter a new password.');
+      setError('Change the email or enter a new password.');
       return;
     }
     if (emailChanged && !/^[^@]+@[^@]+\.[^@]+$/.test(newEmail)) {
-      onError('Enter a valid email address.');
+      setError('Enter a valid email address.');
       return;
     }
     if (wantsPassword && password.length < 8) {
-      onError('Password must be at least 8 characters.');
+      setError('Password must be at least 8 characters.');
       return;
     }
     setSubmitting(true);
@@ -310,7 +314,7 @@ function CredentialsPanel({
       );
       onDone();
     } catch (e) {
-      onError(errorMessage(e));
+      setError(errorMessage(e));
       setSubmitting(false);
     }
   }
@@ -342,6 +346,11 @@ function CredentialsPanel({
         onChangeText={setReason}
         placeholder="Optional, for audit log"
       />
+      {error ? (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      ) : null}
       <Button title="Update credentials" onPress={submit} loading={submitting} />
       <Button
         title="Cancel"
