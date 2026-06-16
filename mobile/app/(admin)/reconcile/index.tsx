@@ -41,37 +41,14 @@ import { HINTS } from '@/hints/registry';
 import { colors, fonts } from '@/lib/theme';
 import { formatNaira } from '@/lib/format';
 import { errorMessage } from '@/lib/errors';
-import { daysAgoLagos, formatRangeLagos, isYmd, todayLagos, yesterdayLagos } from '@/lib/date';
+import { formatRangeLagos, isYmd, todayLagos } from '@/lib/date';
+import { detectPreset, presetRange, type Preset } from '@/lib/reconcile';
 
 type Tab = 'clients' | 'agents' | 'summary';
-type Preset = 'today' | 'yesterday' | 'last7' | 'custom';
 
 // Stable empty map so a missing settlements query doesn't allocate a new Map
 // each render (which would churn the list props).
 const EMPTY_SETTLEMENTS: Map<string, SettlementRow> = new Map();
-
-function presetRange(p: Preset): { from: string; to: string } | null {
-  switch (p) {
-    case 'today':
-      return { from: todayLagos(), to: todayLagos() };
-    case 'yesterday':
-      return { from: yesterdayLagos(), to: yesterdayLagos() };
-    case 'last7':
-      return { from: daysAgoLagos(6), to: todayLagos() };
-    case 'custom':
-      return null;
-  }
-}
-
-function detectPreset(from: string, to: string): Preset {
-  const today = todayLagos();
-  const yesterday = yesterdayLagos();
-  const last7 = daysAgoLagos(6);
-  if (from === today && to === today) return 'today';
-  if (from === yesterday && to === yesterday) return 'yesterday';
-  if (from === last7 && to === today) return 'last7';
-  return 'custom';
-}
 
 export default function AdminReconcile() {
   const router = useRouter();

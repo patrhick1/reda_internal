@@ -93,6 +93,62 @@ export async function listClientRemitDetail(
   return (data ?? []) as ClientRemitDetailRow[];
 }
 
+// ---------------------------------------------------------------------------
+// Rep-facing reconcile. Reps give clients delivered-updates but must not see
+// the Reda fee. These call the rep-safe RPCs (client_remit_summary_rep /
+// client_remit_detail_rep) which return ONLY client-facing figures — the fee,
+// cash POS fee, customer paid and customer price never leave the server, so
+// the Reda cut can't be seen or back-calculated on the device. `outstanding`
+// (customer balance) is client-facing and feeds the share Note.
+// ---------------------------------------------------------------------------
+
+export type RepClientRemitRow = {
+  client_id: string;
+  client_name: string;
+  deliveries_count: number;
+  total_quantity: number;
+  /** What Reda owes the client (sum of net remit). */
+  total_remit: number;
+};
+
+export type RepClientRemitDetailRow = {
+  delivery_id: string;
+  scheduled_date: string;
+  customer_name: string;
+  product_name: string | null;
+  location_name: string | null;
+  quantity_ordered: number;
+  quantity_delivered: number;
+  /** Customer balance = customer_price − paid (customer ↔ vendor; informational). */
+  outstanding: number;
+  /** What Reda remits the client for this delivery (net of Reda fee). */
+  remit: number;
+  agent_name: string | null;
+};
+
+export async function listRepClientRemit(from: string, to: string): Promise<RepClientRemitRow[]> {
+  const { data, error } = await supabase.rpc('client_remit_summary_rep', {
+    p_from: from,
+    p_to: to,
+  });
+  if (error) throw error;
+  return (data ?? []) as RepClientRemitRow[];
+}
+
+export async function listRepClientRemitDetail(
+  clientId: string,
+  from: string,
+  to: string,
+): Promise<RepClientRemitDetailRow[]> {
+  const { data, error } = await supabase.rpc('client_remit_detail_rep', {
+    p_client_id: clientId,
+    p_from: from,
+    p_to: to,
+  });
+  if (error) throw error;
+  return (data ?? []) as RepClientRemitDetailRow[];
+}
+
 /** Roll every non-terminal delivery for the given date forward one day. */
 export async function runEodRollover(forDate: string): Promise<number> {
   const { data, error } = await supabase.rpc('run_eod_rollover', { p_for_date: forDate });

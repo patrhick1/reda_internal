@@ -392,10 +392,25 @@ For an agent bringing unused stock back at end of day, use **Warehouse return** 
  * `scripts/build-runbook.mjs` — do not edit the .md by hand.
  */
 // `rep` is a dispatcher variant with no stock access — the operational
-// workflow is identical, so the help content reuses DISPATCHER verbatim.
-// If rep-specific copy becomes necessary, swap this alias for a dedicated
-// constant.
-const REP = DISPATCHER;
+// workflow is identical, so the help content reuses DISPATCHER, plus a
+// rep-only reconcile topic. The rep reconcile screen is deliberately
+// fee-free, so this copy must NOT mention the Reda fee, margin, agent
+// payroll or the by-agent / summary views (which reps don't have).
+const REP = [
+  ...DISPATCHER,
+  {
+    id: 'reconcile',
+    title: 'Client updates — what was delivered',
+    icon: 'wallet',
+    body: `Send a client the list of what was delivered for them and what Reda will remit.
+
+- Tap **Reconcile** (wallet icon in the tab bar). Defaults to **Today**.
+- Use the chip row to switch to **Yesterday** / **Last 7 days** / **Custom** for a different window.
+- The big number is *Total to remit* — what Reda will send across all clients for the period.
+- Tap any client row → opens that client's per-delivery list: each delivery's customer, product, quantity delivered, and the amount to remit. A note flags a short delivery or an outstanding customer balance.
+- Tap **Share with client** → pick WhatsApp and send the report straight to the client.`,
+  },
+] as const satisfies readonly HelpSection[];
 
 export const HELP_BY_ROLE = {
   admin: ADMIN,

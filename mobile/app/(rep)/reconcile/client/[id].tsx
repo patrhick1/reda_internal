@@ -2,14 +2,18 @@ import { useCallback, useMemo } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, Share, Text, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
-import { listClientRemitDetail, type ClientRemitDetailRow } from '@/services/reconciliation';
+import { listRepClientRemitDetail, type RepClientRemitDetailRow } from '@/services/reconciliation';
 import { AppBar, Button, Card, Empty } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 import { formatNaira } from '@/lib/format';
 import { formatDateLagos, formatRangeLagos, isYmd } from '@/lib/date';
 import { buildClientShareMessage, deriveDeliveryNote } from '@/lib/reconcile';
 
-export default function ClientReconcileDetail() {
+// Rep-facing per-client detail. Mirrors the admin client report but with NO fee
+// breakdown — only the client-facing delivered figures and the remit owed. The
+// "Share with client" message is built by the shared helper, identical to the
+// admin one.
+export default function RepClientReconcileDetail() {
   const router = useRouter();
   const { id, name, from, to } = useLocalSearchParams<{
     id: string;
@@ -18,18 +22,15 @@ export default function ClientReconcileDetail() {
     to: string;
   }>();
 
-  // Defensive YMD gate — same reason as the reconcile index: PostgREST 22007
-  // when an invalid `from`/`to` URL param reaches the date-typed RPC.
   const rangeValid = !!id && isYmd(from) && isYmd(to);
-  const detailQ = useAsync<ClientRemitDetailRow[]>(
-    () => (rangeValid ? listClientRemitDetail(id, from, to) : Promise.resolve([])),
+  const detailQ = useAsync<RepClientRemitDetailRow[]>(
+    () => (rangeValid ? listRepClientRemitDetail(id, from, to) : Promise.resolve([])),
     [id, from, to, rangeValid],
   );
 
   useFocusEffect(
     useCallback(() => {
-      if (!rangeValid) return;
-      detailQ.reload();
+      if (rangeValid) detailQ.reload();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id, from, to, rangeValid]),
   );
@@ -37,33 +38,15 @@ export default function ClientReconcileDetail() {
   const rows = useMemo(() => detailQ.data ?? [], [detailQ.data]);
 
   const totals = useMemo(() => {
-    let customerOwed = 0,
-      paid = 0,
-      redaFee = 0,
-      cashPosFee = 0;
-    for (const r of rows) {
-      customerOwed += Number(r.customer_price ?? 0);
-      paid += Number(r.paid ?? 0);
-      redaFee += Number(r.reda_fee ?? 0);
-      cashPosFee += Number(r.cash_pos_fee ?? 0);
-    }
-    return {
-      count: rows.length,
-      customerOwed,
-      paid,
-      outstanding: customerOwed - paid,
-      redaFee,
-      cashPosFee,
-      remit: paid - redaFee - cashPosFee,
-    };
+    let remit = 0;
+    for (const r of rows) remit += Number(r.remit ?? 0);
+    return { count: rows.length, remit };
   }, [rows]);
 
   const rangeLabel = formatRangeLagos(from, to);
   const clientName = name ?? 'Client';
 
   const onShare = useCallback(async () => {
-    // Per-delivery blocks + Total in Uzo's preferred shape, built by the shared
-    // helper so the admin and rep "Share with client" output stays identical.
     const message = buildClientShareMessage({
       clientName,
       rangeLabel,
@@ -75,11 +58,10 @@ export default function ClientReconcileDetail() {
         note: deriveDeliveryNote({
           quantityOrdered: r.quantity_ordered,
           quantityDelivered: r.quantity_delivered,
-          outstanding: Number(r.customer_price ?? 0) - Number(r.paid ?? 0),
+          outstanding: r.outstanding,
         }),
       })),
     });
-
     try {
       await Share.share({ message });
     } catch {
@@ -124,22 +106,8 @@ export default function ClientReconcileDetail() {
                 marginTop: 4,
               }}
             >
-              {totals.count} {totals.count === 1 ? 'delivery' : 'deliveries'} · paid − Reda fee −
-              cash POS fee
+              {totals.count} {totals.count === 1 ? 'delivery' : 'deliveries'}
             </Text>
-
-            <View style={{ marginTop: 14, gap: 6 }}>
-              <SmallRow label="Customer owed" value={formatNaira(totals.customerOwed)} />
-              <SmallRow label="Customer paid" value={formatNaira(totals.paid)} />
-              <SmallRow
-                label="Outstanding"
-                value={formatNaira(totals.outstanding)}
-                accent={totals.outstanding > 0 ? colors.red : undefined}
-              />
-              <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 4 }} />
-              <SmallRow label="Reda delivery fee" value={formatNaira(totals.redaFee)} />
-              <SmallRow label="Cash POS fee" value={formatNaira(totals.cashPosFee)} />
-            </View>
           </Card>
         }
         renderItem={({ item }) => <DeliveryRow row={item} />}
@@ -154,7 +122,7 @@ export default function ClientReconcileDetail() {
             <Empty
               icon="wallet"
               title="No deliveries"
-              sub="No delivered rows for this client in this date range."
+              sub="No delivered orders for this client in this date range."
             />
           )
         }
@@ -177,7 +145,7 @@ export default function ClientReconcileDetail() {
   );
 }
 
-function DeliveryRow({ row }: { row: ClientRemitDetailRow }) {
+function DeliveryRow({ row }: { row: RepClientRemitDetailRow }) {
   const customer = row.customer_name ?? 'Customer';
   const product = row.product_name ?? '—';
   const loc = row.location_name ?? '—';
@@ -185,6 +153,11 @@ function DeliveryRow({ row }: { row: ClientRemitDetailRow }) {
   const qty = row.quantity_delivered;
   const date = formatDateLagos(row.scheduled_date);
   const remit = Number(row.remit ?? 0);
+  const note = deriveDeliveryNote({
+    quantityOrdered: row.quantity_ordered,
+    quantityDelivered: row.quantity_delivered,
+    outstanding: row.outstanding,
+  });
   return (
     <Card>
       <View
@@ -250,48 +223,21 @@ function DeliveryRow({ row }: { row: ClientRemitDetailRow }) {
         </View>
       </View>
 
-      <View
-        style={{
-          marginTop: 10,
-          borderTopWidth: 1,
-          borderTopColor: colors.border,
-          paddingTop: 8,
-          gap: 4,
-        }}
-      >
-        <MicroRow label="Customer paid" value={formatNaira(row.paid)} />
-        <MicroRow label="Reda fee" value={formatNaira(row.reda_fee)} />
-        {Number(row.cash_pos_fee ?? 0) > 0 ? (
-          <MicroRow label="Cash POS fee" value={formatNaira(row.cash_pos_fee)} />
-        ) : null}
-      </View>
+      {note !== '—' ? (
+        <View
+          style={{
+            marginTop: 10,
+            borderTopWidth: 1,
+            borderTopColor: colors.border,
+            paddingTop: 8,
+          }}
+        >
+          <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary }}>
+            {note}
+          </Text>
+        </View>
+      ) : null}
     </Card>
-  );
-}
-
-function SmallRow({ label, value, accent }: { label: string; value: string; accent?: string }) {
-  return (
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-      <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary }}>
-        {label}
-      </Text>
-      <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: accent ?? colors.black }}>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
-function MicroRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-      <Text style={{ fontFamily: fonts.medium, fontSize: 11, color: colors.textTertiary }}>
-        {label}
-      </Text>
-      <Text style={{ fontFamily: fonts.semibold, fontSize: 11, color: colors.textSecondary }}>
-        {value}
-      </Text>
-    </View>
   );
 }
 

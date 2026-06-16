@@ -16,6 +16,10 @@ export function OpsTabsLayout() {
   const showStock = user.role === 'dispatcher';
   // Review queue is manager-only; reps don't declare a (rep)/review directory.
   const showReview = user.role !== 'rep';
+  // Reps get a fee-free client-reconcile tab to send delivered-updates. Only
+  // the (rep) group declares a reconcile directory, so the tab is rep-only —
+  // declaring it for dispatchers would demand a (dispatcher)/reconcile route.
+  const showReconcile = user.role === 'rep';
   const needsReviewCount = useNeedsReviewCount(showReview);
   return (
     <Tabs
@@ -70,6 +74,17 @@ export function OpsTabsLayout() {
               height: 18,
               lineHeight: 18,
             },
+          }}
+        />
+      ) : null}
+      {showReconcile ? (
+        <Tabs.Screen
+          name="reconcile"
+          options={{
+            title: 'Reconcile',
+            tabBarIcon: ({ color, focused }) => (
+              <Icon name="wallet" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
+            ),
           }}
         />
       ) : null}

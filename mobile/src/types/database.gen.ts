@@ -1953,7 +1953,23 @@ export type Database = {
           payment_method: string
           product_name: string
           quantity_delivered: number
+          quantity_ordered: number
           reda_fee: number
+          remit: number
+          scheduled_date: string
+        }[]
+      }
+      client_remit_detail_rep: {
+        Args: { p_client_id: string; p_from: string; p_to: string }
+        Returns: {
+          agent_name: string
+          customer_name: string
+          delivery_id: string
+          location_name: string
+          outstanding: number
+          product_name: string
+          quantity_delivered: number
+          quantity_ordered: number
           remit: number
           scheduled_date: string
         }[]
@@ -1970,6 +1986,16 @@ export type Database = {
           total_paid: number
           total_quantity: number
           total_reda_fee: number
+          total_remit: number
+        }[]
+      }
+      client_remit_summary_rep: {
+        Args: { p_from: string; p_to: string }
+        Returns: {
+          client_id: string
+          client_name: string
+          deliveries_count: number
+          total_quantity: number
           total_remit: number
         }[]
       }
