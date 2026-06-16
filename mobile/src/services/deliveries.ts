@@ -318,6 +318,7 @@ export type CreateDeliveryInput = {
   productCatalogId: string;
   customerName: string;
   customerPhone: string;
+  customerPhoneAlt?: string | null;
   rawAddress: string;
   quantityOrdered: number;
   customerPrice: number;
@@ -333,6 +334,7 @@ export async function createDelivery(input: CreateDeliveryInput): Promise<string
     p_product_catalog_id: input.productCatalogId,
     p_customer_name: input.customerName,
     p_customer_phone: input.customerPhone,
+    p_customer_phone_alt: input.customerPhoneAlt as unknown as string | undefined,
     p_raw_address: input.rawAddress,
     p_quantity_ordered: input.quantityOrdered,
     p_customer_price: input.customerPrice,
@@ -348,6 +350,8 @@ export async function createDelivery(input: CreateDeliveryInput): Promise<string
 export type UpdateDeliveryFieldsPatch = {
   customerName?: string;
   customerPhone?: string;
+  /** '' clears the alt phone; a value sets it; omit to leave unchanged. */
+  customerPhoneAlt?: string;
   rawAddress?: string;
   locationId?: string | null;
   clientId?: string;
@@ -369,6 +373,7 @@ export async function updateDeliveryFields(
     p_delivery_id: deliveryId,
     p_customer_name: patch.customerName,
     p_customer_phone: patch.customerPhone,
+    p_customer_phone_alt: patch.customerPhoneAlt,
     p_raw_address: patch.rawAddress,
     p_location_id: patch.locationId as unknown as string | undefined,
     p_client_id: patch.clientId,

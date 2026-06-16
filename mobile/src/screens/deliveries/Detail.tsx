@@ -395,6 +395,18 @@ export function DeliveryDetail() {
                   {d.customer_phone}
                 </Text>
               ) : null}
+              {d.customer_phone_alt ? (
+                <Text
+                  style={{
+                    fontFamily: fonts.mono,
+                    fontSize: 12,
+                    color: colors.textSecondary,
+                    marginTop: 2,
+                  }}
+                >
+                  Alt: {d.customer_phone_alt}
+                </Text>
+              ) : null}
             </View>
             <StatusPill status={status} />
           </View>
@@ -410,6 +422,19 @@ export function DeliveryDetail() {
             >
               Call
             </Button>
+            {d.customer_phone_alt ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                icon="phone"
+                onPress={() =>
+                  d.customer_phone_alt &&
+                  Linking.openURL(`tel:${d.customer_phone_alt.replace(/\s+/g, '')}`)
+                }
+              >
+                Call alt
+              </Button>
+            ) : null}
             <Button
               variant="secondary"
               size="sm"

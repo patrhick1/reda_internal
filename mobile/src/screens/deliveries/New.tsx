@@ -179,6 +179,7 @@ export function NewDelivery() {
         productCatalogId: state.productCatalogId!,
         customerName: state.customerName.trim(),
         customerPhone: state.customerPhone.trim(),
+        customerPhoneAlt: state.customerPhoneAlt.trim() || null,
         rawAddress: state.rawAddress.trim(),
         quantityOrdered: state.quantityOrdered!,
         customerPrice: state.customerPrice!,

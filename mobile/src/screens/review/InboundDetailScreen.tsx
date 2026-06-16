@@ -71,6 +71,8 @@ export default function InboundDetailScreen() {
       productCatalogId: parse.product?.id ?? null,
       customerName: extracted.customer_name ?? '',
       customerPhone: phoneSplit.primary,
+      // A parsed "0803… or 0815…" now persists: primary + alternate both land.
+      customerPhoneAlt: phoneSplit.alternate ?? '',
       rawAddress: extracted.raw_address ?? '',
       locationId: parse.address?.matched_location_id ?? null,
       assignedAgentId: parse.agent_resolution?.agent_id ?? null,
@@ -340,7 +342,6 @@ export default function InboundDetailScreen() {
           initial={initial}
           hideFields={['scheduledDate']}
           productCandidates={parse.product_candidates ?? null}
-          alternatePhone={phoneSplit.alternate}
           onChange={handleFormChange}
         />
 

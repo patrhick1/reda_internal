@@ -1503,6 +1503,7 @@ export type Database = {
           current_status: string | null
           customer_name: string | null
           customer_phone: string | null
+          customer_phone_alt: string | null
           customer_price: number | null
           deleted_at: string | null
           id: string | null
@@ -1607,6 +1608,7 @@ export type Database = {
           current_status: string | null
           customer_name: string | null
           customer_phone: string | null
+          customer_phone_alt: string | null
           customer_price: number | null
           id: string | null
           latest_changed_at: string | null
@@ -2004,6 +2006,7 @@ export type Database = {
           p_created_via?: string
           p_customer_name: string
           p_customer_phone: string
+          p_customer_phone_alt?: string
           p_customer_price: number
           p_location_id?: string
           p_product_catalog_id: string
@@ -2415,6 +2418,7 @@ export type Database = {
           p_client_id?: string
           p_customer_name?: string
           p_customer_phone?: string
+          p_customer_phone_alt?: string
           p_customer_price?: number
           p_delivery_id: string
           p_location_id?: string

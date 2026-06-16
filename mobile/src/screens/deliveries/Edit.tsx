@@ -72,6 +72,7 @@ export default function EditDeliveryScreen() {
       productCatalogId: d.product_catalog_id ?? null,
       customerName: d.customer_name ?? '',
       customerPhone: d.customer_phone ?? '',
+      customerPhoneAlt: d.customer_phone_alt ?? '',
       rawAddress: d.raw_address ?? '',
       locationId: d.location_id ?? null,
       assignedAgentId: d.assigned_agent_id ?? null,
@@ -192,6 +193,9 @@ export default function EditDeliveryScreen() {
       patch.customerName = state.customerName.trim();
     if (state.customerPhone.trim() !== (d.customer_phone ?? ''))
       patch.customerPhone = state.customerPhone.trim();
+    // '' is sent intentionally to CLEAR the alt (RPC: null=unchanged, ''=clear).
+    if (state.customerPhoneAlt.trim() !== (d.customer_phone_alt ?? ''))
+      patch.customerPhoneAlt = state.customerPhoneAlt.trim();
     if (state.rawAddress.trim() !== (d.raw_address ?? ''))
       patch.rawAddress = state.rawAddress.trim();
     if (state.locationId !== (d.location_id ?? null)) patch.locationId = state.locationId;

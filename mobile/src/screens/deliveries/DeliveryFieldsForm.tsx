@@ -18,6 +18,7 @@ export type DeliveryFormState = {
   productCatalogId: string | null;
   customerName: string;
   customerPhone: string;
+  customerPhoneAlt: string;
   rawAddress: string;
   quantityOrdered: number | null; // null when blank or NaN
   customerPrice: number | null;
@@ -44,9 +45,6 @@ export type DeliveryFieldsFormProps = {
    *  chips above the product picker. Tapping a chip selects both client +
    *  product. Pass null when there's no ambiguity to surface. */
   productCandidates?: ProductCandidate[] | null;
-  /** When the contractor sent "x or y" as the phone, pass the *other* number
-   *  here. We render a one-tap "Use 080... instead" link under the phone. */
-  alternatePhone?: string | null;
   /** Fired on every field change with the latest state + a validation summary.
    *  `missing` lists the human-readable labels of fields the operator still
    *  needs to fill or correct. `isValid` is `missing.length === 0`. */
@@ -136,7 +134,6 @@ export function DeliveryFieldsForm({
   initial,
   hideFields,
   productCandidates,
-  alternatePhone,
   onChange,
 }: DeliveryFieldsFormProps) {
   const hide = useMemo(() => new Set(hideFields ?? []), [hideFields]);
@@ -153,6 +150,7 @@ export function DeliveryFieldsForm({
     productCatalogId: initial?.productCatalogId ?? null,
     customerName: initial?.customerName ?? '',
     customerPhone: initial?.customerPhone ?? '',
+    customerPhoneAlt: initial?.customerPhoneAlt ?? '',
     rawAddress: initial?.rawAddress ?? '',
     quantityOrdered: initial?.quantityOrdered ?? null,
     customerPrice: initial?.customerPrice ?? null,
@@ -307,15 +305,16 @@ export function DeliveryFieldsForm({
           autoCapitalize="none"
           placeholder="+234 805…"
         />
-        {alternatePhone ? (
-          <View style={{ marginTop: 6 }}>
-            <Pressable onPress={() => patch({ customerPhone: alternatePhone })}>
-              <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.red }}>
-                Use {alternatePhone} instead
-              </Text>
-            </Pressable>
-          </View>
-        ) : null}
+        <View style={{ height: 16 }} />
+        <Input
+          label="Alternative phone (optional)"
+          value={state.customerPhoneAlt}
+          onChange={(v) => patch({ customerPhoneAlt: v })}
+          icon="phone"
+          keyboardType="phone-pad"
+          autoCapitalize="none"
+          placeholder="Backup number, if any"
+        />
         <View style={{ height: 16 }} />
         <Input
           label="Address"
