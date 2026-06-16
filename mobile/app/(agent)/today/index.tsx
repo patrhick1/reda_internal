@@ -1,12 +1,30 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, RefreshControl, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Pressable,
+  RefreshControl,
+  Text,
+  View,
+} from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { listDeliveries, deliveryProductsLabel, type DeliveryRow } from '@/services/deliveries';
 import { formatNaira } from '@/lib/format';
-import { Button, Card, Empty, Icon, RedaMark, SectionHeader, StatusPill } from '@/components/ui';
+import {
+  Button,
+  Card,
+  Empty,
+  FilterChips,
+  Icon,
+  Input,
+  RedaMark,
+  SectionHeader,
+  StatusPill,
+} from '@/components/ui';
 import { BulkMarkDeliveredSheet } from '@/components/sheets/BulkMarkDeliveredSheet';
 import { canBulkDeliverRow, canBulkMarkDelivered } from '@/lib/permissions';
 import { useAgentUnread } from '@/hooks/useAgentUnreadMessages';
@@ -19,6 +37,11 @@ const BUCKET_ACCENT: Record<keyof typeof STATUS_GROUPS, string> = {
   done: colors.success,
   closed: colors.closed,
 };
+
+// Status segments for the agent's Today list. No date filter — the screen only
+// ever shows today's own deliveries — and no "Unassigned" (every row here is
+// already assigned to this agent). Mirrors the ops list's bucket definitions.
+type Filter = 'all' | 'active' | 'available' | 'soft' | 'done' | 'closed';
 
 function todayLagosLabel(): string {
   const lagos = new Date(new Date().getTime() + 60 * 60 * 1000);
@@ -43,6 +66,12 @@ export default function AgentToday() {
       reload();
     }, [reload]),
   );
+
+  // Status segment + customer-name search. Both are client-side narrows over the
+  // already-fetched today list — no extra round trip.
+  const [filter, setFilter] = useState<Filter>('all');
+  const [nameQuery, setNameQuery] = useState('');
+  const nameNeedle = nameQuery.trim().toLowerCase();
 
   const canBulk = canBulkMarkDelivered(user.role);
   const [selectMode, setSelectMode] = useState(false);
@@ -112,8 +141,41 @@ export default function AgentToday() {
     });
   }, [data]);
 
+  // Hero stats stay GLOBAL (whole day), independent of the active filter/search.
   const stats = useMemo(() => summarize(data ?? []), [data]);
   const dateLabel = todayLagosLabel();
+
+  // Apply the name search first so the segment counts reflect the slice on
+  // screen, then bucket by status. "Available" overlaps "Active" by design (an
+  // available row is still open work) — same as the ops list.
+  const all = useMemo(() => {
+    const rows = data ?? [];
+    return nameNeedle
+      ? rows.filter((d) => (d.customer_name ?? '').toLowerCase().includes(nameNeedle))
+      : rows;
+  }, [data, nameNeedle]);
+  const buckets = useMemo(
+    () => ({
+      all,
+      active: all.filter((d) => statusBucket(d.current_status) === 'active'),
+      available: all.filter(
+        (d) => d.current_status === 'available' || d.current_status === 'available_evening',
+      ),
+      soft: all.filter((d) => statusBucket(d.current_status) === 'soft'),
+      done: all.filter((d) => statusBucket(d.current_status) === 'done'),
+      closed: all.filter((d) => statusBucket(d.current_status) === 'closed'),
+    }),
+    [all],
+  );
+  const list = buckets[filter];
+  const filterOptions = [
+    { id: 'all' as const, label: 'All', count: buckets.all.length },
+    { id: 'active' as const, label: 'Active', count: buckets.active.length },
+    { id: 'available' as const, label: 'Available', count: buckets.available.length },
+    { id: 'soft' as const, label: 'Soft fail', count: buckets.soft.length },
+    { id: 'done' as const, label: 'Done', count: buckets.done.length },
+    { id: 'closed' as const, label: 'Closed', count: buckets.closed.length },
+  ];
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -199,9 +261,44 @@ export default function AgentToday() {
         </View>
       </View>
 
+      {/* Filter + search. No date filter (today only) and no Unassigned
+          segment — mirrors the ops deliveries list otherwise. */}
+      <View
+        style={{
+          backgroundColor: colors.white,
+          borderBottomWidth: 1,
+          borderBottomColor: colors.border,
+          paddingTop: 8,
+        }}
+      >
+        <FilterChips options={filterOptions} value={filter} onChange={setFilter} />
+        <View style={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 8 }}>
+          <Input
+            icon="search"
+            value={nameQuery}
+            onChange={setNameQuery}
+            placeholder="Search customer name"
+            autoCapitalize="none"
+            autoCorrect={false}
+            rightAdornment={
+              nameQuery ? (
+                <Pressable
+                  onPress={() => setNameQuery('')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear search"
+                  hitSlop={8}
+                >
+                  <Icon name="x" size={16} color={colors.textSecondary} />
+                </Pressable>
+              ) : null
+            }
+          />
+        </View>
+      </View>
+
       {/* List */}
       <FlatList
-        data={data ?? []}
+        data={list}
         keyExtractor={keyForDelivery}
         renderItem={({ item }) => {
           const itemId = item.id ?? null;
@@ -235,7 +332,7 @@ export default function AgentToday() {
         ItemSeparatorComponent={SeparatorH12}
         ListHeaderComponent={
           <SectionHeader>
-            Today · {stats.total} {stats.total === 1 ? 'stop' : 'stops'}
+            Today · {list.length} {list.length === 1 ? 'stop' : 'stops'}
           </SectionHeader>
         }
         ListEmptyComponent={
@@ -245,6 +342,17 @@ export default function AgentToday() {
             <View style={{ padding: 60 }}>
               <ActivityIndicator color={colors.black} />
             </View>
+          ) : (data?.length ?? 0) > 0 ? (
+            // Has deliveries today, just none in the current filter/search.
+            <Empty
+              icon="search"
+              title="Nothing matches"
+              sub={
+                nameNeedle
+                  ? `No deliveries matching "${nameQuery.trim()}"${filter !== 'all' ? ' in this filter' : ''}. Clear the search or tap All.`
+                  : 'No deliveries in this filter. Tap All to see everything.'
+              }
+            />
           ) : (
             <Empty
               icon="package"
