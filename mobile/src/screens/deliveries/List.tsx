@@ -16,6 +16,7 @@ import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { listDeliveries, type DeliveryRow } from '@/services/deliveries';
 import { listActiveFollowups, type ActiveFollowup } from '@/services/followups';
+import { opsUnreadAgentCounts } from '@/services/delivery-messages';
 import { useSupabaseChannel } from '@/hooks/useSupabaseChannel';
 import { listUsers, type AppUser } from '@/services/users';
 import {
@@ -46,6 +47,9 @@ import { colors, fonts, statusBucket, isAssignedActive, STATUS_GROUPS } from '@/
 import { todayLagos, yesterdayLagos } from '@/lib/date';
 
 const SOFT_STATUSES = new Set<string>(STATUS_GROUPS.soft);
+// Stable empty map so rows don't see a fresh object (→ re-render) before the
+// unread query resolves.
+const EMPTY_UNREAD: ReadonlyMap<string, number> = new Map();
 
 type BasePath = '/(admin)' | '/(dispatcher)' | '/(rep)';
 type Filter = 'all' | 'active' | 'available' | 'soft' | 'done' | 'unassigned';
@@ -117,6 +121,17 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   const canSeeClaims = user.role === 'admin' || user.role === 'dispatcher' || user.role === 'rep';
   const followupsQ = useAsync<ActiveFollowup[]>(
     () => (canSeeClaims ? listActiveFollowups() : Promise.resolve([])),
+    [canSeeClaims],
+  );
+
+  // Per-row "agent replied" indicator for the ops set. Unread agent-authored
+  // messages keyed by delivery_id; a row shows a red message chip when an agent
+  // has responded and no ops user has opened the thread yet. Shared across ops
+  // (read_at is a single column — see opsUnreadAgentCounts). Kept in lock-step
+  // with the deliveries reload (focus + pull-to-refresh) plus a realtime sub
+  // below so the chip clears the moment someone opens the thread.
+  const unreadQ = useAsync<Map<string, number>>(
+    () => (canSeeClaims ? opsUnreadAgentCounts() : Promise.resolve(new Map())),
     [canSeeClaims],
   );
 
@@ -213,7 +228,10 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   useFocusEffect(
     useCallback(() => {
       reload();
-      if (canSeeClaims) followupsQ.reload();
+      if (canSeeClaims) {
+        followupsQ.reload();
+        unreadQ.reload();
+      }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [reload, canSeeClaims]),
   );
@@ -236,11 +254,30 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     [canSeeClaims],
   );
 
+  // Realtime: any delivery_messages change (an agent reply lands, or read_at
+  // flips when an ops user opens the thread) → refetch the unread map so the
+  // per-row chip appears/clears live. delivery_messages is already in the
+  // supabase_realtime publication (added for the agent badge).
+  useSupabaseChannel(
+    canSeeClaims ? 'deliveries-list-unread' : null,
+    (ch) =>
+      ch.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'delivery_messages' },
+        () => {
+          unreadQ.reload();
+        },
+      ),
+    [canSeeClaims],
+  );
+
   const followupByDelivery = useMemo(() => {
     const m = new Map<string, ActiveFollowup>();
     for (const f of followupsQ.data ?? []) m.set(f.delivery_id, f);
     return m;
   }, [followupsQ.data]);
+
+  const unreadByDelivery = unreadQ.data ?? EMPTY_UNREAD;
 
   // Narrow by agent + customer-name FIRST so the status segment counts
   // (Active/Soft/Done/Unassigned) reflect just the slice the user is looking
@@ -391,6 +428,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
               delivery={item}
               followup={claim}
               showClient={showClient}
+              unreadCount={itemId ? (unreadByDelivery.get(itemId) ?? 0) : 0}
               selectMode={selectMode}
               selected={selected}
               onPress={() => {
@@ -557,6 +595,7 @@ const DeliveryListRow = memo(function DeliveryListRow({
   onLongPress,
   followup,
   showClient,
+  unreadCount,
   selectMode,
   selected,
 }: {
@@ -565,6 +604,9 @@ const DeliveryListRow = memo(function DeliveryListRow({
   onLongPress?: () => void;
   followup?: ActiveFollowup;
   showClient: boolean;
+  /** Unread agent-authored messages on this delivery — drives the red "agent
+   *  replied" chip. 0 = no chip. Ops set only (the parent passes 0 otherwise). */
+  unreadCount: number;
   /** When true, the screen is in multi-select mode — render the checkbox and
    *  let tap toggle selection. The actual selection logic lives in the parent. */
   selectMode: boolean;
@@ -617,6 +659,25 @@ const DeliveryListRow = memo(function DeliveryListRow({
             >
               {delivery.customer_name}
             </Text>
+            {unreadCount > 0 ? (
+              <View
+                accessibilityLabel={`${unreadCount} unread message${unreadCount === 1 ? '' : 's'} from the agent`}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 3,
+                  paddingHorizontal: 7,
+                  paddingVertical: 3,
+                  borderRadius: 999,
+                  backgroundColor: colors.red,
+                }}
+              >
+                <Icon name="message" size={11} color={colors.white} />
+                <Text style={{ fontFamily: fonts.bold, fontSize: 11, color: colors.white }}>
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </Text>
+              </View>
+            ) : null}
             {showFollowup ? (
               <View
                 accessibilityLabel={`${followup!.holder_name} is handling the follow-up`}

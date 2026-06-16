@@ -144,6 +144,35 @@ export async function agentUnreadCounts(): Promise<Map<string, number>> {
   return map;
 }
 
+/** Unread AGENT-authored messages keyed by delivery_id → count — the ops-side
+ *  mirror of agentUnreadCounts(). Powers the per-row "agent replied" icon on the
+ *  shared deliveries list (admin / dispatcher / rep) so ops see when an agent has
+ *  responded without opening every thread.
+ *
+ *  RLS does the scoping: delivery_messages_select_participants grants the whole
+ *  ops set (is_admin_or_dispatcher() — admin + dispatcher + rep) read on every
+ *  delivery's messages, so this returns every delivery with an unread agent
+ *  message. `read_at` is a single shared column: mark_messages_read() clears the
+ *  *other* party's messages for whoever opens the thread, so this unread state is
+ *  shared across ops — once any ops user opens a thread, the agent's message
+ *  reads as cleared for everyone. Not date-scoped (unlike agentUnreadCounts):
+ *  the list owns its own date filter and this map is only ever matched against
+ *  the rows already on screen, so an unread on an off-screen date simply never
+ *  renders. */
+export async function opsUnreadAgentCounts(): Promise<Map<string, number>> {
+  const { data, error } = await supabase
+    .from('delivery_messages')
+    .select('delivery_id')
+    .eq('author_role', 'agent')
+    .is('read_at', null);
+  if (error) throw error;
+  const map = new Map<string, number>();
+  for (const r of (data ?? []) as { delivery_id: string }[]) {
+    map.set(r.delivery_id, (map.get(r.delivery_id) ?? 0) + 1);
+  }
+  return map;
+}
+
 export type OpenIssueRow = {
   delivery_id: string;
   issue_type: IssueType | null;

@@ -10,13 +10,15 @@
 // shared building blocks then.
 import { useCallback, useMemo } from 'react';
 import { ScrollView, Text, View } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { listDeliveries, siblingGroupKey, type DeliveryRow } from '@/services/deliveries';
 import { listUsers } from '@/services/users';
+import { listOpenIssuesForOps } from '@/services/delivery-messages';
 import { AppBar, Card, Icon } from '@/components/ui';
 import { AgentWorkloadCard } from '@/components/delivery/AgentWorkloadCard';
+import { IssuesAttentionBlock } from '@/components/delivery/IssuesAttentionBlock';
 import { RecentActivityCard } from '@/components/delivery/RecentActivityCard';
 import { colors, fonts, statusBucket } from '@/lib/theme';
 
@@ -34,12 +36,18 @@ function shortDate(): string {
 
 export function RepDashboard() {
   const user = useCurrentUser();
+  const router = useRouter();
   const deliveriesQ = useAsync(() => listDeliveries(user.role), [user.role]);
   const usersQ = useAsync(() => listUsers(), []);
+  // Actionable agent-flagged issues — same card dispatchers get on OpsDashboard.
+  // RLS (is_admin_or_dispatcher) already covers reps, so this is the parity the
+  // role was missing: a durable home cue that an agent needs a follow-up.
+  const issuesQ = useAsync(() => listOpenIssuesForOps(), []);
 
   useFocusEffect(
     useCallback(() => {
       deliveriesQ.reload();
+      issuesQ.reload();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []),
   );
@@ -111,6 +119,21 @@ export function RepDashboard() {
             <Legend label="Closed" n={stats.closed} color={colors.closed} />
           </View>
         </Card>
+
+        {/* Open agent-flagged issues — same card the dispatcher dashboard shows.
+            Renders only when there's something actionable so the home stays
+            tight when the queue is clear. */}
+        {(issuesQ.data ?? []).length > 0 ? (
+          <IssuesAttentionBlock
+            issues={issuesQ.data ?? []}
+            onOpen={(deliveryId) =>
+              router.push({
+                pathname: `${REP_BASE}/deliveries/[id]` as `/(rep)/deliveries/[id]`,
+                params: { id: deliveryId },
+              })
+            }
+          />
+        ) : null}
 
         {/* Recent activity — shared with admin */}
         <RecentActivityCard rows={deliveries} loading={deliveriesQ.loading} basePath={REP_BASE} />
