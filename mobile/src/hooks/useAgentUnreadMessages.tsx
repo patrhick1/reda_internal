@@ -27,6 +27,16 @@ export type AgentUnread = {
 
 const EMPTY: AgentUnread = { byDelivery: new Map(), total: 0 };
 
+/** Shallow-equal two count maps so an unchanged poll/realtime refetch doesn't
+ *  produce a new object — without this every 30s poll allocates a fresh Map and
+ *  re-renders the whole agent shell (tab bar + Today list) even when nothing
+ *  changed. */
+function sameCounts(a: ReadonlyMap<string, number>, b: ReadonlyMap<string, number>): boolean {
+  if (a.size !== b.size) return false;
+  for (const [k, v] of a) if (b.get(k) !== v) return false;
+  return true;
+}
+
 /** Data hook — call ONCE (in the agent layout) and share via the provider below
  *  so the tab badge and the Today row dots read one subscription. */
 export function useAgentUnreadMessagesData(enabled: boolean = true): AgentUnread {
@@ -34,7 +44,8 @@ export function useAgentUnreadMessagesData(enabled: boolean = true): AgentUnread
 
   const refresh = useCallback(async () => {
     try {
-      setByDelivery(await agentUnreadCounts());
+      const next = await agentUnreadCounts();
+      setByDelivery((prev) => (sameCounts(prev, next) ? prev : next));
     } catch {
       // Best-effort: a transient failure leaves the last value until next poll.
     }
