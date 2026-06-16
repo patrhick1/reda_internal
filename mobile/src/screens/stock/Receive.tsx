@@ -12,7 +12,16 @@ import { listUsers, isWarehousePlace } from '@/services/users';
 import { listClients } from '@/services/clients';
 import { listActiveProductsByClient } from '@/services/products';
 import { useEnqueueStockAdjustment } from '@/queue/mutations';
+import { useQueuedSubmit } from '@/queue/useQueuedSubmit';
 import { errorMessage } from '@/lib/errors';
+import { resolveWarehouseHolder } from '@/lib/stock-helpers';
+
+// How a partial/failed bulk intake reads in the inline error.
+function receiveFailureMessage(failed: number, total: number, firstReason: string): string {
+  return total === 1
+    ? firstReason
+    : `${total - failed} of ${total} recorded; ${failed} failed: ${firstReason}`;
+}
 
 /**
  * Bulk vendor intake screen. Each row enqueues an independent
@@ -65,25 +74,35 @@ export function StockReceiveScreen({ scope }: StockReceiveScreenProps) {
     [activeUsers],
   );
 
-  // Warehouse scope: the holder is the PLACE — for staff that's their linked
-  // warehouse (warehouseId); for a place user it's themselves.
-  const [destinationId, setDestinationId] = useState<string | null>(
-    scope === 'warehouse' ? (currentUser.warehouseId ?? currentUser.userId) : null,
-  );
+  // Admin scope: a pickable destination. Warehouse scope derives the place
+  // (warehouseHolder) so it can't silently fall back to the caller's own id.
+  const [destinationId, setDestinationId] = useState<string | null>(null);
   const [notes, setNotes] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const enqueueAdj = useEnqueueStockAdjustment();
+  // Owns submit state + "stay on-screen until the queued jobs settle".
+  const { submitting, setSubmitting, error, setError, finish, retrying } =
+    useQueuedSubmit(receiveFailureMessage);
 
-  // Display name of the place stock lands on in warehouse scope (the staffer's
-  // linked place, or themselves when they ARE the place).
-  const placeName = useMemo(() => {
-    if (scope !== 'warehouse' || !currentUser.warehouseId) return currentUser.displayName;
-    return (
-      (usersQ.data ?? []).find((u) => u.id === currentUser.warehouseId)?.display_name ??
-      'your warehouse'
-    );
-  }, [scope, currentUser.displayName, currentUser.warehouseId, usersQ.data]);
+  // Warehouse scope: resolve the PLACE this caller acts on (fail loud rather
+  // than defaulting to the caller's own id, which the server rejects).
+  const warehouseHolder = useMemo(
+    () =>
+      scope === 'warehouse'
+        ? resolveWarehouseHolder(
+            {
+              userId: currentUser.userId,
+              warehouseId: currentUser.warehouseId,
+              displayName: currentUser.displayName,
+            },
+            usersQ.data ?? undefined,
+          )
+        : null,
+    [scope, currentUser.userId, currentUser.warehouseId, currentUser.displayName, usersQ.data],
+  );
+  const effectiveDestinationId =
+    scope === 'warehouse' ? (warehouseHolder?.ok ? warehouseHolder.holderId : null) : destinationId;
+  const placeName = warehouseHolder?.ok ? warehouseHolder.placeName : currentUser.displayName;
+  const holderError = warehouseHolder && !warehouseHolder.ok ? warehouseHolder.reason : null;
 
   // Admin path: auto-select the only active warehouse if there's exactly one.
   // Warehouse path: destination is already locked to caller; no auto-select.
@@ -117,7 +136,7 @@ export function StockReceiveScreen({ scope }: StockReceiveScreenProps) {
         setError(errorMessage(e));
       }
     },
-    [productsByClient],
+    [productsByClient, setError],
   );
 
   function patchRow(id: string, patch: Partial<ReceiveRow>) {
@@ -133,7 +152,11 @@ export function StockReceiveScreen({ scope }: StockReceiveScreenProps) {
 
   async function handleSubmit() {
     setError(null);
-    if (!destinationId) {
+    if (scope === 'warehouse' && warehouseHolder && !warehouseHolder.ok) {
+      setError(warehouseHolder.reason);
+      return;
+    }
+    if (!effectiveDestinationId) {
       setError('Pick where this stock is going');
       return;
     }
@@ -167,22 +190,26 @@ export function StockReceiveScreen({ scope }: StockReceiveScreenProps) {
       const destLabel =
         scope === 'warehouse'
           ? placeName
-          : (activeUsers.find((u) => u.id === destinationId)?.display_name ?? 'destination');
+          : (activeUsers.find((u) => u.id === effectiveDestinationId)?.display_name ??
+            'destination');
+      const ids: string[] = [];
       for (const row of validRows) {
         const product = productsByClient.get(row.clientId)?.find((p) => p.id === row.productId);
         const label = `Bulk intake · +${row.qty} ${product?.product_name ?? 'product'} · ${destLabel}`;
-        await enqueueAdj(
-          {
-            agentId: destinationId,
-            productCatalogId: row.productId,
-            quantityDelta: row.qty,
-            reason: 'bulk_intake',
-            notes: notes.trim() || null,
-          },
-          label,
+        ids.push(
+          await enqueueAdj(
+            {
+              agentId: effectiveDestinationId,
+              productCatalogId: row.productId,
+              quantityDelta: row.qty,
+              reason: 'bulk_intake',
+              notes: notes.trim() || null,
+            },
+            label,
+          ),
         );
       }
-      router.back();
+      finish(ids);
     } catch (e) {
       setError(errorMessage(e));
       setSubmitting(false);
@@ -215,10 +242,16 @@ export function StockReceiveScreen({ scope }: StockReceiveScreenProps) {
       {isWarehouseScope ? (
         <View style={styles.lockedDestBox}>
           <Text style={styles.lockedDestLabel}>Receiving into</Text>
-          <Text style={styles.lockedDestValue}>{placeName}</Text>
-          <Text style={styles.hint}>
-            Stock arriving at the warehouse. Goes onto your books as soon as you save.
-          </Text>
+          {holderError ? (
+            <Text style={styles.errorText}>{holderError}</Text>
+          ) : (
+            <>
+              <Text style={styles.lockedDestValue}>{placeName}</Text>
+              <Text style={styles.hint}>
+                Stock arriving at the warehouse. Goes onto your books as soon as you save.
+              </Text>
+            </>
+          )}
         </View>
       ) : (
         <>
@@ -304,9 +337,9 @@ export function StockReceiveScreen({ scope }: StockReceiveScreenProps) {
         placeholder="Optional — e.g. Invoice #1234, Aernings May restock"
       />
 
-      {error ? (
+      {error || usersQ.error ? (
         <View style={styles.errorBox}>
-          <Text style={styles.errorText}>{error}</Text>
+          <Text style={styles.errorText}>{error ?? usersQ.error}</Text>
         </View>
       ) : null}
 
@@ -314,7 +347,13 @@ export function StockReceiveScreen({ scope }: StockReceiveScreenProps) {
         title={`Record ${filledCount} ${filledCount === 1 ? 'item' : 'items'}`}
         onPress={handleSubmit}
         loading={submitting}
+        disabled={!!holderError}
       />
+      {retrying ? (
+        <Text style={styles.retryNote}>
+          Still trying to reach the server — tap Cancel to finish in the background.
+        </Text>
+      ) : null}
       <Button
         title="Cancel"
         onPress={() => router.back()}
@@ -347,6 +386,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   errorText: { color: '#a02d1b', fontSize: 14 },
+  retryNote: { fontSize: 12, color: '#666', textAlign: 'center', marginTop: 10 },
   hint: { fontSize: 12, color: '#666', marginTop: -8, marginBottom: 4, fontStyle: 'italic' },
   rowCard: {
     marginTop: 10,

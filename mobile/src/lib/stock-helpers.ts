@@ -4,6 +4,7 @@
 // any tweak to LOW_STOCK_THRESHOLD has to be made in three places and
 // inevitably one gets missed.
 import type { StockMatrixRow } from '@/services/stock';
+import { isWarehousePlace, type AppUser } from '@/services/users';
 
 /** Rows at or below this on-hand count render in the "low" amber colour
  *  and are counted on the hero LOW chip. 0 is intentionally NOT low — it
@@ -107,4 +108,63 @@ export function getOverviewStats(rows: StockMatrixRow[]): OverviewStats {
     lowHolderCount: lowHolders.size,
     negativeHolderCount: negHolders.size,
   };
+}
+
+/** Resolved warehouse holder, or a reason the warehouse-scope stock screens
+ *  should block submission. */
+export type WarehouseHolder =
+  | { ok: true; holderId: string; placeName: string }
+  | { ok: false; reason: string };
+
+/**
+ * Resolve the warehouse PLACE that a warehouse user acts on, for the
+ * warehouse-scope stock screens (Transfer / Receive / Adjust).
+ *
+ * The holder the server sees must be the PLACE — never a staff member's own
+ * user id. Warehouse STAFF (users.warehouse_id set) hold no stock; the place
+ * is always the holder (agent_id). Sending a staff member's own id makes
+ * create_stock_transfer / create_stock_adjustment raise 42501 (permission
+ * denied) — the server gate requires `from = coalesce(warehouse_id, self)`.
+ * That rejection is the "transferring stock just spins, so we use the
+ * dispatcher account instead" report: a silent fall-back to `currentUser.userId`
+ * sent the wrong holder.
+ *
+ * We resolve against the loaded `users` list (the authoritative warehouse_id),
+ * with the auth-provided `warehouseId` as a fallback, and refuse to guess when
+ * the place can't be determined — fail loud rather than enqueue a transfer the
+ * server will reject.
+ */
+export function resolveWarehouseHolder(
+  currentUser: { userId: string; warehouseId: string | null; displayName: string },
+  users: AppUser[] | undefined,
+): WarehouseHolder {
+  const selfRow = (users ?? []).find((u) => u.id === currentUser.userId);
+  // Most-trusted source first: the loaded self row's warehouse_id (staff → their
+  // place), then the auth-provided warehouseId (same value; covers users not yet
+  // loaded), then — only if the user IS a place — themselves.
+  const placeId =
+    selfRow?.warehouse_id ??
+    currentUser.warehouseId ??
+    (selfRow && isWarehousePlace(selfRow) ? selfRow.id : null);
+
+  if (!placeId) {
+    return {
+      ok: false,
+      reason: "Couldn't determine your warehouse — update the app or contact an admin.",
+    };
+  }
+
+  // When the users list is loaded, confirm the resolved holder is an active
+  // warehouse place (not a deactivated or mis-linked row).
+  const placeRow = (users ?? []).find((u) => u.id === placeId);
+  if (placeRow && !(placeRow.is_active && isWarehousePlace(placeRow))) {
+    return { ok: false, reason: "Your warehouse isn't set up correctly — contact an admin." };
+  }
+
+  const placeName =
+    placeId === currentUser.userId
+      ? currentUser.displayName
+      : (placeRow?.display_name ?? 'your warehouse');
+
+  return { ok: true, holderId: placeId, placeName };
 }

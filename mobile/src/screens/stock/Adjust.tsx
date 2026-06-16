@@ -11,7 +11,14 @@ import { listClients } from '@/services/clients';
 import { listActiveProductsByClient } from '@/services/products';
 import { ADJUSTMENT_REASONS, type SingleReason } from '@/services/stock';
 import { useEnqueueStockAdjustment } from '@/queue/mutations';
+import { useQueuedSubmit } from '@/queue/useQueuedSubmit';
 import { errorMessage } from '@/lib/errors';
+import { resolveWarehouseHolder } from '@/lib/stock-helpers';
+
+// A single adjustment: the inline error is just the failure reason.
+function adjustFailureMessage(_failed: number, _total: number, firstReason: string): string {
+  return firstReason;
+}
 
 /**
  * Single stock adjustment screen.
@@ -34,20 +41,19 @@ export function StockAdjustScreen({ scope }: StockAdjustScreenProps) {
   const usersQ = useAsync(() => listUsers(), []);
   const clientsQ = useAsync(() => listClients(), []);
 
-  // Warehouse scope: adjust the PLACE's holdings — staff act on their linked
-  // warehouse (warehouseId); a place user acts on itself.
-  const [agentId, setAgentId] = useState<string | null>(
-    scope === 'warehouse' ? (currentUser.warehouseId ?? currentUser.userId) : null,
-  );
+  // Admin scope: a pickable user. Warehouse scope derives the place
+  // (warehouseHolder) so it can't silently fall back to the caller's own id.
+  const [agentId, setAgentId] = useState<string | null>(null);
   const [clientId, setClientId] = useState<string | null>(null);
   const [productId, setProductId] = useState<string | null>(null);
   const [products, setProducts] = useState<{ id: string; product_name: string }[]>([]);
   const [reason, setReason] = useState<SingleReason | null>(null);
   const [quantity, setQuantity] = useState('');
   const [notes, setNotes] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const enqueueAdj = useEnqueueStockAdjustment();
+  // Owns submit state + "stay on-screen until the queued job settles".
+  const { submitting, setSubmitting, error, setError, finish, retrying } =
+    useQueuedSubmit(adjustFailureMessage);
 
   // Load products when client changes
   useMemo(() => {
@@ -57,7 +63,7 @@ export function StockAdjustScreen({ scope }: StockAdjustScreenProps) {
     listActiveProductsByClient(clientId)
       .then((p) => setProducts(p.map((x) => ({ id: x.id, product_name: x.product_name }))))
       .catch((e) => setError(errorMessage(e)));
-  }, [clientId]);
+  }, [clientId, setError]);
 
   // Holders only: agents + warehouse PLACES (staff are never holders).
   const userOptions = useMemo(
@@ -67,14 +73,26 @@ export function StockAdjustScreen({ scope }: StockAdjustScreenProps) {
         .map((u) => ({ value: u.id, label: u.display_name, sub: u.role })),
     [usersQ.data],
   );
-  // Place name shown in warehouse scope (the staffer's linked place, or self).
-  const placeName = useMemo(() => {
-    if (scope !== 'warehouse' || !currentUser.warehouseId) return currentUser.displayName;
-    return (
-      (usersQ.data ?? []).find((u) => u.id === currentUser.warehouseId)?.display_name ??
-      'your warehouse'
-    );
-  }, [scope, currentUser.displayName, currentUser.warehouseId, usersQ.data]);
+  // Warehouse scope: resolve the PLACE this caller acts on (fail loud rather
+  // than defaulting to the caller's own id, which the server rejects).
+  const warehouseHolder = useMemo(
+    () =>
+      scope === 'warehouse'
+        ? resolveWarehouseHolder(
+            {
+              userId: currentUser.userId,
+              warehouseId: currentUser.warehouseId,
+              displayName: currentUser.displayName,
+            },
+            usersQ.data ?? undefined,
+          )
+        : null,
+    [scope, currentUser.userId, currentUser.warehouseId, currentUser.displayName, usersQ.data],
+  );
+  const effectiveAgentId =
+    scope === 'warehouse' ? (warehouseHolder?.ok ? warehouseHolder.holderId : null) : agentId;
+  const placeName = warehouseHolder?.ok ? warehouseHolder.placeName : currentUser.displayName;
+  const holderError = warehouseHolder && !warehouseHolder.ok ? warehouseHolder.reason : null;
   const clientOptions = useMemo(
     () => (clientsQ.data ?? []).map((c) => ({ value: c.id, label: c.name })),
     [clientsQ.data],
@@ -108,7 +126,11 @@ export function StockAdjustScreen({ scope }: StockAdjustScreenProps) {
 
   async function handleSubmit() {
     setError(null);
-    if (!agentId) {
+    if (scope === 'warehouse' && warehouseHolder && !warehouseHolder.ok) {
+      setError(warehouseHolder.reason);
+      return;
+    }
+    if (!effectiveAgentId) {
       setError('Pick the user whose stock is being adjusted');
       return;
     }
@@ -129,9 +151,9 @@ export function StockAdjustScreen({ scope }: StockAdjustScreenProps) {
     try {
       const reasonLabel = ADJUSTMENT_REASONS.find((r) => r.value === reason)?.label ?? reason;
       const productName = products.find((p) => p.id === productId)?.product_name ?? 'product';
-      await enqueueAdj(
+      const jobId = await enqueueAdj(
         {
-          agentId,
+          agentId: effectiveAgentId,
           productCatalogId: productId,
           quantityDelta: q,
           reason,
@@ -139,7 +161,7 @@ export function StockAdjustScreen({ scope }: StockAdjustScreenProps) {
         },
         `${reasonLabel} · ${q > 0 ? '+' : ''}${q} ${productName}`,
       );
-      router.back();
+      finish([jobId]);
     } catch (e) {
       setError(errorMessage(e));
       setSubmitting(false);
@@ -165,7 +187,11 @@ export function StockAdjustScreen({ scope }: StockAdjustScreenProps) {
       {isWarehouseScope ? (
         <View style={styles.lockedDestBox}>
           <Text style={styles.lockedDestLabel}>Adjusting stock for</Text>
-          <Text style={styles.lockedDestValue}>{placeName}</Text>
+          {holderError ? (
+            <Text style={styles.errorText}>{holderError}</Text>
+          ) : (
+            <Text style={styles.lockedDestValue}>{placeName}</Text>
+          )}
         </View>
       ) : (
         <Select
@@ -217,13 +243,23 @@ export function StockAdjustScreen({ scope }: StockAdjustScreenProps) {
         placeholder="Optional context"
       />
 
-      {error ? (
+      {error || usersQ.error ? (
         <View style={styles.errorBox}>
-          <Text style={styles.errorText}>{error}</Text>
+          <Text style={styles.errorText}>{error ?? usersQ.error}</Text>
         </View>
       ) : null}
 
-      <Button title="Create adjustment" onPress={handleSubmit} loading={submitting} />
+      <Button
+        title="Create adjustment"
+        onPress={handleSubmit}
+        loading={submitting}
+        disabled={!!holderError}
+      />
+      {retrying ? (
+        <Text style={styles.retryNote}>
+          Still trying to reach the server — tap Cancel to finish in the background.
+        </Text>
+      ) : null}
       <Button
         title="Cancel"
         onPress={() => router.back()}
@@ -246,6 +282,7 @@ const styles = StyleSheet.create({
   },
   errorBox: { backgroundColor: '#fdecea', padding: 12, borderRadius: 8, marginBottom: 12 },
   errorText: { color: '#a02d1b', fontSize: 14 },
+  retryNote: { fontSize: 12, color: '#666', textAlign: 'center', marginTop: 10 },
   hint: { fontSize: 12, color: '#666', marginTop: -8, marginBottom: 12, fontStyle: 'italic' },
   cancel: { marginTop: 12 },
   lockedDestBox: {

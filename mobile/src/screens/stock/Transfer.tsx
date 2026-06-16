@@ -21,7 +21,16 @@ import { listClients } from '@/services/clients';
 import { listActiveProductsByClient } from '@/services/products';
 import { PAIRED_REASONS, type PairedReason } from '@/services/stock';
 import { useEnqueueStockTransfer } from '@/queue/mutations';
+import { useQueuedSubmit } from '@/queue/useQueuedSubmit';
 import { errorMessage } from '@/lib/errors';
+import { resolveWarehouseHolder } from '@/lib/stock-helpers';
+
+// How a partial/failed paired transfer reads in the inline error.
+function transferFailureMessage(failed: number, total: number, firstReason: string): string {
+  return total === 1
+    ? firstReason
+    : `${total - failed} of ${total} done; ${failed} failed: ${firstReason}`;
+}
 
 /**
  * Paired stock transfer screen.
@@ -72,9 +81,10 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
   // Common state
   const [reason, setReason] = useState<PairedReason | null>(null);
   const [notes, setNotes] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const enqueueTransfer = useEnqueueStockTransfer();
+  // Owns submit state + "stay on-screen until the queued jobs settle".
+  const { submitting, setSubmitting, error, setError, finish, retrying } =
+    useQueuedSubmit(transferFailureMessage);
 
   // Single-row state (used for reason === 'transfer'; admin scope only)
   const [fromUserId, setFromUserId] = useState<string | null>(null);
@@ -84,12 +94,11 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
   const [singleProducts, setSingleProducts] = useState<Product[]>([]);
   const [singleQty, setSingleQty] = useState('');
 
-  // Bulk state (used for reason === 'warehouse_issue' | 'warehouse_return')
-  // Warehouse scope: the warehouse side is the PLACE — staff act on their
-  // linked warehouse (warehouseId), a place user acts as itself.
-  const [warehouseId, setWarehouseId] = useState<string | null>(
-    scope === 'warehouse' ? (currentUser.warehouseId ?? currentUser.userId) : null,
-  );
+  // Bulk state (used for reason === 'warehouse_issue' | 'warehouse_return').
+  // Admin scope: a pickable warehouse. Warehouse scope no longer uses this
+  // state — the place is derived (warehouseHolder) so it can't silently fall
+  // back to the caller's own id.
+  const [warehouseId, setWarehouseId] = useState<string | null>(null);
   // One agent per submission.
   const [bulkAgentId, setBulkAgentId] = useState<string | null>(null);
   const {
@@ -122,11 +131,9 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
       setSingleProductId(null);
       setSingleProducts([]);
       setSingleQty('');
-      // Warehouse scope: keep warehouseId pinned to caller across reason
-      // switches; admin scope: reset to null and let the auto-select rerun.
-      setWarehouseId(
-        scope === 'warehouse' ? (currentUser.warehouseId ?? currentUser.userId) : null,
-      );
+      // Admin scope only: reset and let the auto-select rerun. Warehouse scope
+      // derives the place (warehouseHolder), so there's nothing to reset.
+      setWarehouseId(null);
       setBulkAgentId(null);
       resetRows();
     };
@@ -157,7 +164,7 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
     return () => {
       cancelled = true;
     };
-  }, [singleClientId]);
+  }, [singleClientId, setError]);
 
   // Pre-fill warehouseId (admin scope) when bulk and exactly one active
   // warehouse user exists. Warehouse scope is already pinned to caller.
@@ -172,14 +179,30 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
     [activeUsers],
   );
   const agentUsers = useMemo(() => activeUsers.filter((u) => u.role === 'agent'), [activeUsers]);
-  // Place name shown in warehouse scope (the staffer's linked place, or self).
-  const placeName = useMemo(() => {
-    if (scope !== 'warehouse' || !currentUser.warehouseId) return currentUser.displayName;
-    return (
-      (usersQ.data ?? []).find((u) => u.id === currentUser.warehouseId)?.display_name ??
-      'your warehouse'
-    );
-  }, [scope, currentUser.displayName, currentUser.warehouseId, usersQ.data]);
+
+  // Warehouse scope: resolve the PLACE this caller acts on from the loaded
+  // users list (authoritative warehouse_id), failing loud if it can't be
+  // determined rather than defaulting to the caller's own id (which the
+  // server rejects with 42501).
+  const warehouseHolder = useMemo(
+    () =>
+      scope === 'warehouse'
+        ? resolveWarehouseHolder(
+            {
+              userId: currentUser.userId,
+              warehouseId: currentUser.warehouseId,
+              displayName: currentUser.displayName,
+            },
+            usersQ.data ?? undefined,
+          )
+        : null,
+    [scope, currentUser.userId, currentUser.warehouseId, currentUser.displayName, usersQ.data],
+  );
+  // The warehouse side of the paired transfer: derived place (warehouse scope)
+  // or the picked warehouse (admin scope).
+  const effectiveWarehouseId =
+    scope === 'warehouse' ? (warehouseHolder?.ok ? warehouseHolder.holderId : null) : warehouseId;
+  const placeName = warehouseHolder?.ok ? warehouseHolder.placeName : currentUser.displayName;
   useEffect(() => {
     if (scope === 'warehouse') return;
     const only = warehouseUsers[0];
@@ -254,7 +277,7 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
       const reasonLabel = PAIRED_REASONS.find((r) => r.value === reason)?.label ?? reason;
       const productName =
         singleProducts.find((p) => p.id === singleProductId)?.product_name ?? 'product';
-      await enqueueTransfer(
+      const jobId = await enqueueTransfer(
         {
           fromUserId,
           toUserId,
@@ -265,7 +288,7 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
         },
         `${reasonLabel} · ${q} ${productName}`,
       );
-      router.back();
+      finish([jobId]);
     } catch (e) {
       setError(errorMessage(e));
       setSubmitting(false);
@@ -278,7 +301,11 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
       setError('Pick a transfer reason');
       return;
     }
-    if (!warehouseId) {
+    if (scope === 'warehouse' && warehouseHolder && !warehouseHolder.ok) {
+      setError(warehouseHolder.reason);
+      return;
+    }
+    if (!effectiveWarehouseId) {
       setError('Pick the warehouse');
       return;
     }
@@ -311,26 +338,29 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
     try {
       const reasonLabel = PAIRED_REASONS.find((r) => r.value === reason)?.label ?? reason;
       const agent = agentUsers.find((u) => u.id === bulkAgentId);
-      const fromId = reason === 'warehouse_issue' ? warehouseId : bulkAgentId;
-      const toId = reason === 'warehouse_issue' ? bulkAgentId : warehouseId;
+      const fromId = reason === 'warehouse_issue' ? effectiveWarehouseId : bulkAgentId;
+      const toId = reason === 'warehouse_issue' ? bulkAgentId : effectiveWarehouseId;
+      const ids: string[] = [];
       for (const row of validRows) {
         const product = productsByClient
           .get(rows.find((r) => r.productId === row.productId)?.clientId ?? '')
           ?.find((p) => p.id === row.productId);
         const label = `${reasonLabel} · ${row.qty} ${product?.product_name ?? 'product'} · ${agent?.display_name ?? 'agent'}`;
-        await enqueueTransfer(
-          {
-            fromUserId: fromId,
-            toUserId: toId,
-            productCatalogId: row.productId,
-            quantity: row.qty,
-            reason,
-            notes: notes.trim() || null,
-          },
-          label,
+        ids.push(
+          await enqueueTransfer(
+            {
+              fromUserId: fromId,
+              toUserId: toId,
+              productCatalogId: row.productId,
+              quantity: row.qty,
+              reason,
+              notes: notes.trim() || null,
+            },
+            label,
+          ),
         );
       }
-      router.back();
+      finish(ids);
     } catch (e) {
       setError(errorMessage(e));
       setSubmitting(false);
@@ -344,6 +374,10 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
       </View>
     );
   }
+
+  // Warehouse scope can't resolve the place this caller acts on — block the
+  // form with a clear reason instead of silently sending a rejected transfer.
+  const holderError = warehouseHolder && !warehouseHolder.ok ? warehouseHolder.reason : null;
 
   // Reason picker: full set for admin; warehouse_issue + warehouse_return only
   // for warehouse (transfer = agent→agent is admin-only on the server).
@@ -392,7 +426,11 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
               <Text style={styles.lockedDestLabel}>
                 {reason === 'warehouse_issue' ? 'From warehouse' : 'To warehouse'}
               </Text>
-              <Text style={styles.lockedDestValue}>{placeName}</Text>
+              {holderError ? (
+                <Text style={styles.errorText}>{holderError}</Text>
+              ) : (
+                <Text style={styles.lockedDestValue}>{placeName}</Text>
+              )}
             </View>
           ) : (
             <Select
@@ -486,9 +524,9 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
         />
       ) : null}
 
-      {error ? (
+      {error || usersQ.error ? (
         <View style={styles.errorBox}>
-          <Text style={styles.errorText}>{error}</Text>
+          <Text style={styles.errorText}>{error ?? usersQ.error}</Text>
         </View>
       ) : null}
 
@@ -503,7 +541,13 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
           )}
           onPress={handleSubmitBulk}
           loading={submitting}
+          disabled={!!holderError}
         />
+      ) : null}
+      {retrying ? (
+        <Text style={styles.retryNote}>
+          Still trying to reach the server — tap Cancel to finish in the background.
+        </Text>
       ) : null}
       <Button
         title="Cancel"
@@ -631,6 +675,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   errorText: { color: '#a02d1b', fontSize: 14 },
+  retryNote: { fontSize: 12, color: '#666', textAlign: 'center', marginTop: 10 },
   cancel: { marginTop: 12 },
   rowCard: {
     marginTop: 10,
