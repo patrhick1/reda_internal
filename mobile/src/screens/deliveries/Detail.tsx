@@ -234,7 +234,8 @@ export function DeliveryDetail() {
 
   // Ops (admin/dispatcher/rep) → call the delivery's assigned agent directly.
   const callAgent = useCallback(
-    (calleeId: string) => startCall(() => initiateCall({ calleeId, relatedDeliveryId: deliveryId })),
+    (calleeId: string) =>
+      startCall(() => initiateCall({ calleeId, relatedDeliveryId: deliveryId })),
     [startCall, deliveryId],
   );
 
