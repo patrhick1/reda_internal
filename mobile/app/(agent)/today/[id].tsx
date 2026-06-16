@@ -24,8 +24,8 @@ import {
 } from '@/services/deliveries';
 import { listSubAgents } from '@/services/users';
 import { canHandoffToSubAgent } from '@/lib/permissions';
-import { AppBar, Button, Card, Empty, Icon, StatusPill } from '@/components/ui';
-import { colors, fonts, TERMINAL_STATUSES } from '@/lib/theme';
+import { AppBar, Banner, Button, Card, Empty, Icon, StatusPill } from '@/components/ui';
+import { colors, fonts, STATUS_META, TERMINAL_STATUSES } from '@/lib/theme';
 import { formatDateTime, formatNaira } from '@/lib/format';
 import { MarkDeliveredSheet } from '@/components/sheets/MarkDeliveredSheet';
 import { UpdateStatusSheet } from '@/components/sheets/UpdateStatusSheet';
@@ -124,6 +124,16 @@ export default function AgentDeliveryDetail() {
   const firstName = (d.customer_name ?? 'customer').split(/\s+/)[0]!;
   // customer_price is per-delivery, not per-unit. Do NOT multiply by quantity.
   const expectedTotal = Number(d.customer_price ?? 0);
+  // Handoff awareness (Gap 5): if the latest status was set by someone OTHER
+  // than this agent, the order was handed over — they've already reached the
+  // customer, so don't re-call. Clears once this agent takes any action (their
+  // own status change makes the latest history row theirs); hidden for terminal
+  // rows and system-set rows (no changed_by_user_id).
+  const latestHistory = historyQ.data?.[0];
+  const handedToYou =
+    !!latestHistory?.changed_by_user_id &&
+    latestHistory.changed_by_user_id !== user.userId &&
+    !isTerminal;
   // Lead can hand off to a sub-agent. Only the current assignee can hand
   // off (server gate matches); terminal rows hide the option.
   const canHandoff = canHandoffToSubAgent(user, d.assigned_agent_id, hasSubAgents) && !isTerminal;
@@ -190,6 +200,14 @@ export default function AgentDeliveryDetail() {
           gap: 12,
         }}
       >
+        {/* Handoff banner (Gap 5): surfaced when this order was last worked by
+            someone else — i.e. reassigned to this agent. */}
+        {latestHistory && handedToYou ? (
+          <Banner tone="info" icon="user" title="Handed to you">
+            {`Set to ${STATUS_META[latestHistory.to_status]?.label ?? latestHistory.to_status} by ${latestHistory.changed_by_name ?? 'the team'} · ${formatDateTime(latestHistory.effective_at)}. Check the messages before calling — the customer may already have been reached.`}
+          </Banner>
+        ) : null}
+
         {/* Hero: customer + status + call */}
         <Card>
           <View
