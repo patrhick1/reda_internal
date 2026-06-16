@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { TERMINAL_STATUSES } from '@/lib/theme';
+import { todayLagos } from '@/lib/date';
 
 export type IssueType =
   | 'wrong_address'
@@ -113,18 +114,28 @@ export async function markRead(deliveryId: string): Promise<void> {
   if (error) throw error;
 }
 
-/** Unread ops-authored messages on the calling AGENT's own deliveries, keyed by
- *  delivery_id → count. No RPC needed: the delivery_messages SELECT policy
- *  (delivery_messages_select_participants) already restricts an agent to their
- *  own deliveries' messages, so `author_role <> 'agent' AND read_at IS NULL`
- *  returns exactly the ops replies waiting for this agent. Powers the Today
- *  row dot + bottom-tab badge (see useAgentUnreadMessages). */
+/** Unread ops-authored messages on the calling AGENT's own deliveries scheduled
+ *  for TODAY, keyed by delivery_id → count. Powers the Today row dot + bottom-tab
+ *  badge (see useAgentUnreadMessages).
+ *
+ *  Two filters do the scoping:
+ *   - RLS: the delivery_messages SELECT policy already restricts an agent to
+ *     their own deliveries' messages, so `author_role <> 'agent' AND read_at IS
+ *     NULL` returns exactly the ops replies waiting for this agent.
+ *   - `deliveries!inner(scheduled_date)` + `scheduled_date = today`: scopes to
+ *     today only. Without this, an unread reply on yesterday's delivery would
+ *     dangle in the badge with no matching Today row — at EOD that row rolls
+ *     over (parent goes terminal, child is unassigned), so it's no longer the
+ *     agent's live work. The embed reuses base-`deliveries` RLS (agent sees only
+ *     their own assigned rows), matching the same `todayLagos()` the Today list
+ *     queries with so the badge and the rows always agree. */
 export async function agentUnreadCounts(): Promise<Map<string, number>> {
   const { data, error } = await supabase
     .from('delivery_messages')
-    .select('delivery_id')
+    .select('delivery_id, deliveries!inner(scheduled_date)')
     .neq('author_role', 'agent')
-    .is('read_at', null);
+    .is('read_at', null)
+    .eq('deliveries.scheduled_date', todayLagos());
   if (error) throw error;
   const map = new Map<string, number>();
   for (const r of (data ?? []) as { delivery_id: string }[]) {
