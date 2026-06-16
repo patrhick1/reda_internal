@@ -9,6 +9,7 @@ import { formatNaira } from '@/lib/format';
 import { Button, Card, Empty, Icon, RedaMark, SectionHeader, StatusPill } from '@/components/ui';
 import { BulkMarkDeliveredSheet } from '@/components/sheets/BulkMarkDeliveredSheet';
 import { canBulkDeliverRow, canBulkMarkDelivered } from '@/lib/permissions';
+import { useAgentUnread } from '@/hooks/useAgentUnreadMessages';
 import type { STATUS_GROUPS } from '@/lib/theme';
 import { colors, fonts, statusBucket } from '@/lib/theme';
 
@@ -33,6 +34,9 @@ export default function AgentToday() {
   const user = useCurrentUser();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  // Unread admin/dispatcher replies, keyed by delivery — drives the per-row
+  // dot here and the bottom-tab badge in the layout. Shared single subscription.
+  const { byDelivery: unreadByDelivery, total: unreadTotal } = useAgentUnread();
   const { data, loading, error, reload } = useAsync(() => listDeliveries(user.role), [user.role]);
   useFocusEffect(
     useCallback(() => {
@@ -145,6 +149,29 @@ export default function AgentToday() {
           </View>
           <View>
             <Icon name="bell" size={22} color={colors.black} />
+            {unreadTotal > 0 ? (
+              <View
+                accessibilityLabel={`${unreadTotal} unread message${unreadTotal === 1 ? '' : 's'} from the team`}
+                style={{
+                  position: 'absolute',
+                  top: -5,
+                  right: -6,
+                  minWidth: 16,
+                  height: 16,
+                  borderRadius: 8,
+                  backgroundColor: colors.red,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  paddingHorizontal: 4,
+                  borderWidth: 1.5,
+                  borderColor: colors.white,
+                }}
+              >
+                <Text style={{ color: colors.white, fontFamily: fonts.bold, fontSize: 10 }}>
+                  {unreadTotal > 9 ? '9+' : unreadTotal}
+                </Text>
+              </View>
+            ) : null}
           </View>
         </View>
 
@@ -184,6 +211,7 @@ export default function AgentToday() {
           return (
             <DeliveryCard
               delivery={item}
+              unreadCount={itemId ? (unreadByDelivery.get(itemId) ?? 0) : 0}
               selectMode={selectMode}
               selectable={selectable}
               selected={!!itemId && selectedIds.has(itemId)}
@@ -321,6 +349,7 @@ function StatCell({ label, value, accent }: { label: string; value: string; acce
 
 const DeliveryCard = memo(function DeliveryCard({
   delivery,
+  unreadCount,
   onPress,
   onLongPress,
   selectMode,
@@ -328,6 +357,8 @@ const DeliveryCard = memo(function DeliveryCard({
   selected,
 }: {
   delivery: DeliveryRow;
+  /** Unread admin/dispatcher replies on this delivery's thread. >0 → row dot. */
+  unreadCount: number;
   onPress: () => void;
   onLongPress?: () => void;
   /** True when the screen is in multi-select mode (bulk Mark delivered). */
@@ -397,6 +428,25 @@ const DeliveryCard = memo(function DeliveryCard({
             >
               {delivery.customer_name}
             </Text>
+            {unreadCount > 0 ? (
+              <View
+                accessibilityLabel={`${unreadCount} unread message${unreadCount === 1 ? '' : 's'} from the team`}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 3,
+                  paddingHorizontal: 7,
+                  paddingVertical: 3,
+                  borderRadius: 999,
+                  backgroundColor: colors.red,
+                }}
+              >
+                <Icon name="message" size={11} color={colors.white} />
+                <Text style={{ fontFamily: fonts.bold, fontSize: 11, color: colors.white }}>
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </Text>
+              </View>
+            ) : null}
             <StatusPill status={status} size="sm" />
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>

@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
@@ -12,7 +12,13 @@ export const PUSH_TOKEN_STORAGE_KEY = 'reda.push.lastToken';
 /**
  * Registers the Expo push token for the currently signed-in user.
  * No-op on web (no native push) and in simulators (no token available).
- * Runs once per login; we don't auto-refresh on every render.
+ *
+ * Retries on every app foreground (AppState 'active'), not just login — a
+ * single login-time attempt was leaving ~1/3 of agents with no token when that
+ * one shot hit a transient FCM-init / projectId / token-refresh failure, so a
+ * reply notification silently went nowhere. `set_my_expo_push_token` upserts,
+ * so re-running is cheap and idempotent. (A hard permission denial still can't
+ * be re-prompted by the OS — that subset needs a manual settings nudge.)
  */
 export function usePushTokenRegistration() {
   const { account } = useAuth();
@@ -24,11 +30,12 @@ export function usePushTokenRegistration() {
     if (!Device.isDevice) return;
 
     let cancelled = false;
-    (async () => {
+
+    async function register() {
       try {
         const existing = await Notifications.getPermissionsAsync();
         let granted = existing.granted;
-        if (!granted) {
+        if (!granted && existing.canAskAgain) {
           const req = await Notifications.requestPermissionsAsync();
           granted = req.granted;
         }
@@ -42,6 +49,10 @@ export function usePushTokenRegistration() {
         );
         if (cancelled || !token?.data) return;
 
+        // Skip the network write when the token is unchanged since last success.
+        const last = await AsyncStorage.getItem(PUSH_TOKEN_STORAGE_KEY);
+        if (last === token.data) return;
+
         const deviceLabel = Device.modelName ?? Device.deviceName ?? null;
         await supabase.rpc('set_my_expo_push_token', {
           p_token: token.data,
@@ -50,15 +61,21 @@ export function usePushTokenRegistration() {
         });
         await AsyncStorage.setItem(PUSH_TOKEN_STORAGE_KEY, token.data);
       } catch (e) {
-        // Best-effort — but log so we can diagnose the 18-of-20-users-with-no-token
-        // mystery. Permission denials, projectId mismatches, and FCM init failures
-        // all surface here.
+        // Best-effort — but log so we can diagnose the agents-with-no-token
+        // mystery. Permission denials, projectId mismatches, and FCM init
+        // failures all surface here. Foreground retry recovers transient ones.
         console.warn('push token registration failed', e);
       }
-    })();
+    }
+
+    void register();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void register();
+    });
 
     return () => {
       cancelled = true;
+      sub.remove();
     };
   }, [userId]);
 }

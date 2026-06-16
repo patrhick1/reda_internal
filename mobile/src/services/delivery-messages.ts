@@ -113,6 +113,26 @@ export async function markRead(deliveryId: string): Promise<void> {
   if (error) throw error;
 }
 
+/** Unread ops-authored messages on the calling AGENT's own deliveries, keyed by
+ *  delivery_id → count. No RPC needed: the delivery_messages SELECT policy
+ *  (delivery_messages_select_participants) already restricts an agent to their
+ *  own deliveries' messages, so `author_role <> 'agent' AND read_at IS NULL`
+ *  returns exactly the ops replies waiting for this agent. Powers the Today
+ *  row dot + bottom-tab badge (see useAgentUnreadMessages). */
+export async function agentUnreadCounts(): Promise<Map<string, number>> {
+  const { data, error } = await supabase
+    .from('delivery_messages')
+    .select('delivery_id')
+    .neq('author_role', 'agent')
+    .is('read_at', null);
+  if (error) throw error;
+  const map = new Map<string, number>();
+  for (const r of (data ?? []) as { delivery_id: string }[]) {
+    map.set(r.delivery_id, (map.get(r.delivery_id) ?? 0) + 1);
+  }
+  return map;
+}
+
 export type OpenIssueRow = {
   delivery_id: string;
   issue_type: IssueType | null;

@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
+import { useSupabaseChannel } from '@/hooks/useSupabaseChannel';
 import { Card, Input } from '@/components/ui';
 import { colors, fonts, STATUS_META, TERMINAL_STATUSES } from '@/lib/theme';
 import { formatDateTime } from '@/lib/format';
@@ -48,6 +49,29 @@ export function MessageThread({
       markRead(deliveryId).catch(() => undefined);
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [deliveryId]),
+  );
+
+  // Realtime: a reply posted by anyone (esp. ops → agent) shows up live while
+  // the thread is open, and marking it read clears the agent's unread badge
+  // immediately. Server-filtered to this delivery. Pairs with
+  // scripts/agent-message-unread-realtime.sql (delivery_messages → publication).
+  useSupabaseChannel(
+    `delivery-messages:${deliveryId}`,
+    (ch) =>
+      ch.on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'delivery_messages',
+          filter: `delivery_id=eq.${deliveryId}`,
+        },
+        () => {
+          messagesQ.reload();
+          markRead(deliveryId).catch(() => undefined);
+        },
+      ),
+    [deliveryId, messagesQ.reload],
   );
 
   const isOpen = !TERMINAL_STATUSES.has(deliveryStatus ?? '');
