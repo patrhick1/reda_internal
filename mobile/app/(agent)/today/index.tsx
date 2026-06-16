@@ -114,7 +114,6 @@ export default function AgentToday() {
 
   const stats = useMemo(() => summarize(data ?? []), [data]);
   const dateLabel = todayLagosLabel();
-  const firstName = user.displayName.split(' ')[0] ?? user.displayName;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -144,7 +143,7 @@ export default function AgentToday() {
                 marginTop: 1,
               }}
             >
-              {greeting()}, {firstName}.
+              {greeting()}, {user.displayName}.
             </Text>
           </View>
           <View>
