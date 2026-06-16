@@ -34,16 +34,21 @@ Ranked by live 14-day order volume.
 
 ---
 
-## 3. NOT joined — single combo-units (keep as ONE SKU, do **not** split)
+## 3. Combos the message does NOT itemize — decision needed (do **not** assume single)
 
-These read like combos but are sold and stocked as **one unit at one price** — the message orders "1 unit", not separate lines. Leave them as single SKUs:
+Unlike the §2 bundles, these are sent as **one un-itemized line** ("X and Y — N units" or just a combo name). The message **cannot** tell us whether to split them — that's a **stock-keeping / vendor decision**. Verified across 10+ messages each:
 
-| Client | SKU | 14d orders | Why single |
-|---|---|---:|---|
-| Dentora | Oratox Capsule/Powder | 173 | *"Oratox Capsule and Powder — 1 unit — ₦19,500"* — one pack |
-| Dentora | Clovofresh Capsule/Spray | 50 | *"Clovofresh Capsule and Spray — 1 unit"* — one pack |
-| Runet | Alpha Combo | 20 | *"ALPHA COMBO — Quantity: 1 Unit"* — not itemized |
-| Infinite | Wine Opener/Beer Opener | 0 | one dual-purpose tool |
+| Client | SKU | 14d orders | How the message reads | Split? |
+|---|---|---:|---|---|
+| Dentora | Oratox Capsule/Powder | 173 | *"Oratox Capsule and Powder — 1 unit / 2 units / 3 units — ₦19,500…"* — one priced unit, never itemized | ⚠️ **Your call** — is a "unit" stocked whole, or as loose capsule + powder? |
+| Dentora | Clovofresh Capsule/Spray | 50 | *"Clovofresh Capsule and Spray — N units"* (one order added *"FREE GIFT: 1 free powder"* — so loose powders exist) | ⚠️ **Your call** — same question |
+| Runet | Alpha Combo | 20 | *"ALPHA COMBO — Quantity: 1 Unit — ₦30,000"* — **never says what's inside** | ❌ **Need the vendor's bill-of-materials** before we can model it |
+| Infinite | Wine Opener/Beer Opener | 0 | no orders in window | – no evidence either way |
+
+**Three buckets total:**
+1. **Itemized bundle** (§2: D&N, Papaya/Garlic, Butt Acne Cream/Soap, Perfume) — the message lists the products → our AI splits them.
+2. **Un-itemized "unit" combo** (Oratox, Clovofresh) — split **only if** the warehouse counts the components separately; otherwise keep as one "unit" SKU. **Decision: yours.**
+3. **Opaque combo** (Alpha Combo) — no contents in the message; needs the vendor to define the bill-of-materials.
 
 ---
 
