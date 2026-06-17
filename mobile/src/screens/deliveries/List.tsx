@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -16,6 +16,7 @@ import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
   listDeliveries,
+  listPostponed,
   deliveryProductsLabel,
   rolledFromLabel,
   type DeliveryRow,
@@ -32,7 +33,7 @@ import {
   canFilterDeliveriesList,
   canSeeClientName,
 } from '@/lib/permissions';
-import { formatNaira } from '@/lib/format';
+import { formatNaira, formatYmdShort } from '@/lib/format';
 import {
   AppBar,
   Avatar,
@@ -85,7 +86,7 @@ function unassignedGroupOrder(key: string): number {
 }
 
 type BasePath = '/(admin)' | '/(dispatcher)' | '/(rep)';
-type Filter = 'all' | 'active' | 'available' | 'soft' | 'done' | 'unassigned';
+type Filter = 'all' | 'active' | 'available' | 'soft' | 'postponed' | 'done' | 'unassigned';
 type DatePreset = 'today' | 'yesterday' | 'custom' | 'all';
 
 export function DeliveriesList({ basePath }: { basePath: BasePath }) {
@@ -166,6 +167,15 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   const unreadQ = useAsync<Map<string, number>>(
     () => (canSeeClaims ? opsUnreadAgentCounts() : Promise.resolve(new Map())),
     [canSeeClaims],
+  );
+
+  // Every postponed order, across ALL dates, ordered by postpone-to date. Drives
+  // the dedicated "Postponed" filter — a separate query because the main list is
+  // date-scoped, while postponed orders scatter across future dates. Ops-wide
+  // (RLS-scoped); see listPostponed.
+  const postponedQ = useAsync<DeliveryRow[]>(
+    () => (canSeeClaims ? listPostponed(user.role) : Promise.resolve([])),
+    [canSeeClaims, user.role],
   );
 
   // Roster for the agent picker. Skip the fetch entirely when the picker
@@ -264,10 +274,20 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
       if (canSeeClaims) {
         followupsQ.reload();
         unreadQ.reload();
+        postponedQ.reload();
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [reload, canSeeClaims]),
   );
+
+  // Bulk actions resolve `selectedRows` from the date-scoped `data`. The
+  // Postponed view is a separate cross-date pool not in `data`, so leaving
+  // select mode active across that boundary would act on a stale set. Drop out
+  // of select mode whenever we cross into (or out of) the Postponed view.
+  const isPostponedView = filter === 'postponed';
+  useEffect(() => {
+    exitSelect();
+  }, [isPostponedView, exitSelect]);
 
   // Realtime: keep the per-row claimer avatar pill live for the ops set.
   // Mirrors FollowupClaimBanner's per-delivery sub but unfiltered at the
@@ -393,12 +413,24 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     return { unassignedSorted: decorated.map((d) => d.row), headerByRowId: headers };
   }, [filter, buckets.unassigned]);
 
-  const list = unassignedSorted ?? buckets[filter];
+  // Postponed is a separate cross-date slice (its own query), narrowed by the
+  // same agent + name filters as the date-scoped list so the counts and the
+  // picker behave consistently.
+  const postponedRows = useMemo(() => {
+    let rows = postponedQ.data ?? [];
+    if (agentId) rows = rows.filter((d) => d.assigned_agent_id === agentId);
+    if (nameNeedle)
+      rows = rows.filter((d) => (d.customer_name ?? '').toLowerCase().includes(nameNeedle));
+    return rows;
+  }, [postponedQ.data, agentId, nameNeedle]);
+
+  const list = filter === 'postponed' ? postponedRows : (unassignedSorted ?? buckets[filter]);
   const filterOptions = [
     { id: 'all' as const, label: 'All', count: buckets.all.length },
     { id: 'active' as const, label: 'Active', count: buckets.active.length },
     { id: 'available' as const, label: 'Available', count: buckets.available.length },
     { id: 'soft' as const, label: 'Soft fail', count: buckets.soft.length },
+    { id: 'postponed' as const, label: 'Postponed', count: postponedRows.length },
     { id: 'done' as const, label: 'Done', count: buckets.done.length },
     { id: 'unassigned' as const, label: 'Unassigned', count: buckets.unassigned.length },
   ];
@@ -534,7 +566,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
                   });
                 }}
                 onLongPress={
-                  canBulkAssign && itemId
+                  canBulkAssign && itemId && filter !== 'postponed'
                     ? () => {
                         if (!selectMode) enterSelect(itemId);
                         else toggleSelected(itemId);
@@ -548,8 +580,13 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         ItemSeparatorComponent={SeparatorH8}
         refreshControl={
           <RefreshControl
-            refreshing={loading && !!data}
-            onRefresh={reload}
+            refreshing={
+              filter === 'postponed' ? postponedQ.loading && !!postponedQ.data : loading && !!data
+            }
+            onRefresh={() => {
+              reload();
+              postponedQ.reload();
+            }}
             tintColor={colors.black}
           />
         }
@@ -563,7 +600,21 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         maxToRenderPerBatch={8}
         removeClippedSubviews
         ListEmptyComponent={
-          error ? (
+          filter === 'postponed' ? (
+            postponedQ.error ? (
+              <Empty icon="alert" title="Could not load" sub={postponedQ.error} />
+            ) : postponedQ.loading ? (
+              <View style={{ padding: 60, alignItems: 'center' }}>
+                <ActivityIndicator color={colors.black} />
+              </View>
+            ) : (
+              <Empty
+                icon="calendar"
+                title="No postponed orders"
+                sub="Orders postponed to a later date show here with their due date, soonest first."
+              />
+            )
+          ) : error ? (
             <Empty icon="alert" title="Could not load" sub={error} />
           ) : loading ? (
             <View style={{ padding: 60, alignItems: 'center' }}>
@@ -897,6 +948,30 @@ const DeliveryListRow = memo(function DeliveryListRow({
                 style={{ fontFamily: fonts.semibold, fontSize: 10, color: colors.warningDark }}
               >
                 {carriedLabel}
+              </Text>
+            </View>
+          ) : null}
+          {status === 'postponed' && delivery.scheduled_date ? (
+            <View
+              accessibilityLabel={`Postponed to ${formatYmdShort(delivery.scheduled_date)}`}
+              style={{
+                marginTop: 5,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 4,
+                alignSelf: 'flex-start',
+                backgroundColor: colors.warningSoft,
+                paddingHorizontal: 7,
+                paddingVertical: 2,
+                borderRadius: 999,
+              }}
+            >
+              <Icon name="calendar" size={11} color={colors.warningDark} />
+              <Text
+                numberOfLines={1}
+                style={{ fontFamily: fonts.semibold, fontSize: 10, color: colors.warningDark }}
+              >
+                Postponed to {formatYmdShort(delivery.scheduled_date)}
               </Text>
             </View>
           ) : null}

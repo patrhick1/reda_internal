@@ -18,7 +18,7 @@ import {
   deliveryProductsLabel,
   type DeliveryRow,
 } from '@/services/deliveries';
-import { formatNaira } from '@/lib/format';
+import { formatNaira, formatYmdShort } from '@/lib/format';
 import {
   Button,
   Card,
@@ -182,11 +182,19 @@ export default function AgentToday() {
   const buckets = useMemo(
     () => ({
       all,
-      active: all.filter((d) => statusBucket(d.current_status) === 'active'),
+      // A 'postponed' row in the today list is, by definition, due TODAY (the
+      // list is date-scoped to today) — so present it as live work under Active,
+      // not buried under Soft fail. It keeps its amber Postponed pill. Future-
+      // dated postponed orders live in the separate Postponed chip, untouched.
+      active: all.filter(
+        (d) => statusBucket(d.current_status) === 'active' || d.current_status === 'postponed',
+      ),
       available: all.filter(
         (d) => d.current_status === 'available' || d.current_status === 'available_evening',
       ),
-      soft: all.filter((d) => statusBucket(d.current_status) === 'soft'),
+      soft: all.filter(
+        (d) => statusBucket(d.current_status) === 'soft' && d.current_status !== 'postponed',
+      ),
       done: all.filter((d) => statusBucket(d.current_status) === 'done'),
       closed: all.filter((d) => statusBucket(d.current_status) === 'closed'),
     }),
@@ -640,7 +648,7 @@ const DeliveryCard = memo(function DeliveryCard({
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
               <Icon name="calendar" size={12} color={colors.warning} />
               <Text style={{ fontFamily: fonts.semibold, fontSize: 12, color: colors.warningDark }}>
-                Postponed to {formatPostponeDate(delivery.scheduled_date)}
+                Postponed to {formatYmdShort(delivery.scheduled_date)}
               </Text>
             </View>
           ) : null}
@@ -703,16 +711,4 @@ function greeting(): string {
   if (h < 12) return 'Morning';
   if (h < 17) return 'Afternoon';
   return 'Evening';
-}
-
-/** Friendly rendering of a YYYY-MM-DD scheduled_date, e.g. "Tue, 30 Jun". */
-function formatPostponeDate(ymd: string): string {
-  const parts = ymd.split('-');
-  const date = new Date(Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])));
-  return date.toLocaleDateString('en-GB', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-    timeZone: 'UTC',
-  });
 }

@@ -381,6 +381,30 @@ export async function listAgentPostponed(userId: string): Promise<DeliveryRow[]>
   return (await attachItemsToRows(joined)) as DeliveryRow[];
 }
 
+/** The ops-wide twin of listAgentPostponed: every delivery currently in
+ *  'postponed', across ALL dates, ordered by the date it was postponed TO
+ *  (soonest first). Unlike the date-scoped deliveries list, this answers "show
+ *  me everything postponed and when it's due" in one place — postpone moves a
+ *  row's scheduled_date forward in place, so postponed orders otherwise scatter
+ *  across future dates and hide under the generic soft-fail bucket.
+ *
+ *  Reads through the role-scoped view (admin → deliveries_admin, ops →
+ *  deliveries_safe), so RLS still applies — ops see all, an agent would see only
+ *  their own. Same join + line-item pipeline as listDeliveries. */
+export async function listPostponed(role: Role): Promise<DeliveryRow[]> {
+  const view = VIEW_FOR[role];
+  const { data, error } = await supabase
+    .from(view)
+    .select(`*, ${JOIN_FRAGMENT}`)
+    .eq('current_status', 'postponed')
+    .order('scheduled_date', { ascending: true });
+  if (error) throw error;
+  const joined = (data ?? []).map((row) =>
+    attachJoins(row as unknown as JoinShape & object),
+  ) as Omit<DeliveryRow, 'items'>[];
+  return (await attachItemsToRows(joined)) as DeliveryRow[];
+}
+
 /** Most recent activity timestamp for list ordering: the max of the row's last
  *  status change, last thread message, and creation time. ISO timestamptz
  *  strings share one format, so lexical comparison is chronological. */

@@ -4,6 +4,20 @@ export function formatNaira(amount: number | null | undefined): string {
   return `₦${amount.toLocaleString('en-NG', { maximumFractionDigits: 2 })}`;
 }
 
+/** Short calendar date from a YYYY-MM-DD string, e.g. "Tue, 30 Jun". Date-only
+ *  (no time, no year). Parsed at UTC midnight to dodge TZ/DST wobble. Used for
+ *  postpone-to / scheduled dates on list rows and cards. */
+export function formatYmdShort(ymd: string): string {
+  const parts = ymd.split('-');
+  const d = new Date(Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])));
+  return d.toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  });
+}
+
 /** Format a Nigerian phone number as the user types.
  *   "08031234567"  → "0803 123 4567"
  *   "2348031234567" → "+234 803 123 4567"
