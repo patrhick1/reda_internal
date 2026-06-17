@@ -48,13 +48,41 @@ import {
 import { BulkAssignSheet } from '@/components/sheets/BulkAssignSheet';
 import { BulkStatusSheet } from '@/components/sheets/BulkStatusSheet';
 import { BulkDeleteSheet } from '@/components/sheets/BulkDeleteSheet';
-import { colors, fonts, statusBucket, isAssignedActive, STATUS_GROUPS } from '@/lib/theme';
+import {
+  colors,
+  fonts,
+  statusBucket,
+  isAssignedActive,
+  STATUS_GROUPS,
+  STATUS_META,
+} from '@/lib/theme';
 import { todayLagos, yesterdayLagos } from '@/lib/date';
 
 const SOFT_STATUSES = new Set<string>(STATUS_GROUPS.soft);
 // Stable empty map so rows don't see a fresh object (→ re-render) before the
 // unread query resolves.
 const EMPTY_UNREAD: ReadonlyMap<string, number> = new Map();
+
+// --- Unassigned grouping --------------------------------------------------
+// On the Unassigned tab the queue is grouped by the prior-day snapshot
+// (rolled_from_status): all "Not answering" together, all "Tomorrow" together,
+// etc., with the never-attempted/new orders in their own group. Same soft-only
+// gate as the carried-over badge, so a grouped row always shows its matching
+// badge. Carried groups come first (in the status defs' natural order, so the
+// unreachable statuses sit together and the deferrals sit together), New last.
+type UnassignedGroupHeader = { label: string; count: number; carried: boolean };
+const NEW_ORDERS_GROUP = '__new__';
+const EMPTY_HEADER_MAP: ReadonlyMap<string, UnassignedGroupHeader> = new Map();
+
+function unassignedGroupKey(d: DeliveryRow): string {
+  return d.rolled_from_status && SOFT_STATUSES.has(d.rolled_from_status)
+    ? d.rolled_from_status
+    : NEW_ORDERS_GROUP;
+}
+function unassignedGroupOrder(key: string): number {
+  const i = STATUS_GROUPS.soft.indexOf(key);
+  return i === -1 ? STATUS_GROUPS.soft.length : i; // New (and any non-soft) last
+}
 
 type BasePath = '/(admin)' | '/(dispatcher)' | '/(rep)';
 type Filter = 'all' | 'active' | 'available' | 'soft' | 'done' | 'unassigned';
@@ -318,7 +346,54 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     [all],
   );
 
-  const list = buckets[filter];
+  // Unassigned tab: sort into prior-status groups and compute the header that
+  // sits above the first row of each group. Other tabs keep the server order.
+  const { unassignedSorted, headerByRowId } = useMemo(() => {
+    if (filter !== 'unassigned') {
+      return { unassignedSorted: null, headerByRowId: EMPTY_HEADER_MAP };
+    }
+    // Decorate each row with its group key + sort order ONCE, so the sort
+    // comparator is O(1) (no per-comparison key recompute / indexOf) and the
+    // counts/headers passes reuse the same key. Also tallies group counts in
+    // the same pass.
+    const counts = new Map<string, number>();
+    const decorated = buckets.unassigned.map((row) => {
+      const key = unassignedGroupKey(row);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+      return { row, key, order: unassignedGroupOrder(key) };
+    });
+    // Only group when there's more than one prior-status group — otherwise the
+    // grouping adds a redundant lone header and needlessly re-sorts an all-fresh
+    // queue. With <2 groups, fall back to the default (newest-first) order.
+    if (counts.size < 2) {
+      return { unassignedSorted: null, headerByRowId: EMPTY_HEADER_MAP };
+    }
+    decorated.sort((a, b) => {
+      if (a.order !== b.order) return a.order - b.order;
+      // Within a group, oldest-first so the longest-waiting orders surface.
+      const ta = a.row.created_at ?? '';
+      const tb = b.row.created_at ?? '';
+      if (ta !== tb) return ta < tb ? -1 : 1;
+      return (a.row.id ?? '').localeCompare(b.row.id ?? '');
+    });
+    const headers = new Map<string, UnassignedGroupHeader>();
+    let prevKey: string | null = null;
+    for (const d of decorated) {
+      if (d.key !== prevKey) {
+        if (d.row.id) {
+          headers.set(d.row.id, {
+            label: d.key === NEW_ORDERS_GROUP ? 'New orders' : (STATUS_META[d.key]?.label ?? d.key),
+            count: counts.get(d.key) ?? 0,
+            carried: d.key !== NEW_ORDERS_GROUP,
+          });
+        }
+        prevKey = d.key;
+      }
+    }
+    return { unassignedSorted: decorated.map((d) => d.row), headerByRowId: headers };
+  }, [filter, buckets.unassigned]);
+
+  const list = unassignedSorted ?? buckets[filter];
   const filterOptions = [
     { id: 'all' as const, label: 'All', count: buckets.all.length },
     { id: 'active' as const, label: 'Active', count: buckets.active.length },
@@ -428,36 +503,46 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
           const claim = item.id ? followupByDelivery.get(item.id) : undefined;
           const itemId = item.id ?? '';
           const selected = selectMode && itemId ? selectedIds.has(itemId) : false;
+          const header = itemId ? headerByRowId.get(itemId) : undefined;
           return (
-            <DeliveryListRow
-              delivery={item}
-              followup={claim}
-              showClient={showClient}
-              unreadCount={itemId ? (unreadByDelivery.get(itemId) ?? 0) : 0}
-              selectMode={selectMode}
-              selected={selected}
-              onPress={() => {
-                if (selectMode) {
-                  if (itemId) toggleSelected(itemId);
-                  return;
+            <>
+              {header ? (
+                <GroupHeaderRow
+                  label={header.label}
+                  count={header.count}
+                  carried={header.carried}
+                />
+              ) : null}
+              <DeliveryListRow
+                delivery={item}
+                followup={claim}
+                showClient={showClient}
+                unreadCount={itemId ? (unreadByDelivery.get(itemId) ?? 0) : 0}
+                selectMode={selectMode}
+                selected={selected}
+                onPress={() => {
+                  if (selectMode) {
+                    if (itemId) toggleSelected(itemId);
+                    return;
+                  }
+                  router.push({
+                    pathname: `${basePath}/deliveries/[id]` as
+                      | `/(admin)/deliveries/[id]`
+                      | `/(dispatcher)/deliveries/[id]`
+                      | `/(rep)/deliveries/[id]`,
+                    params: { id: itemId },
+                  });
+                }}
+                onLongPress={
+                  canBulkAssign && itemId
+                    ? () => {
+                        if (!selectMode) enterSelect(itemId);
+                        else toggleSelected(itemId);
+                      }
+                    : undefined
                 }
-                router.push({
-                  pathname: `${basePath}/deliveries/[id]` as
-                    | `/(admin)/deliveries/[id]`
-                    | `/(dispatcher)/deliveries/[id]`
-                    | `/(rep)/deliveries/[id]`,
-                  params: { id: itemId },
-                });
-              }}
-              onLongPress={
-                canBulkAssign && itemId
-                  ? () => {
-                      if (!selectMode) enterSelect(itemId);
-                      else toggleSelected(itemId);
-                    }
-                  : undefined
-              }
-            />
+              />
+            </>
           );
         }}
         ItemSeparatorComponent={SeparatorH8}
@@ -588,6 +673,56 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         onClose={() => setBulkDeleteSheetOpen(false)}
         onDeleted={onBulkDeleted}
       />
+    </View>
+  );
+}
+
+// Section header for the Unassigned tab's prior-status groups. Carried groups
+// get the rollover icon + amber tint (matching the per-row badge); "New orders"
+// is neutral.
+function GroupHeaderRow({
+  label,
+  count,
+  carried,
+}: {
+  label: string;
+  count: number;
+  carried: boolean;
+}) {
+  const color = carried ? colors.warningDark : colors.textSecondary;
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginBottom: 6,
+        paddingLeft: 2,
+      }}
+    >
+      {carried ? <Icon name="refresh" size={12} color={color} /> : null}
+      <Text
+        style={{
+          fontFamily: fonts.bold,
+          fontSize: 11,
+          letterSpacing: 0.6,
+          textTransform: 'uppercase',
+          color,
+        }}
+      >
+        {label}
+      </Text>
+      <View
+        style={{
+          backgroundColor: carried ? colors.warningSoft : colors.surfaceAlt,
+          borderRadius: 999,
+          paddingHorizontal: 7,
+          paddingVertical: 1,
+        }}
+      >
+        <Text style={{ fontFamily: fonts.bold, fontSize: 10, color }}>{count}</Text>
+      </View>
+      <View style={{ flex: 1, height: 1, backgroundColor: colors.border, marginLeft: 4 }} />
     </View>
   );
 }
