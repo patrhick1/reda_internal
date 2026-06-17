@@ -246,15 +246,23 @@ export function canSeedThread(role: Role): boolean {
   return isOps(role);
 }
 
-/** Soft-delete a delivery. Admin-only.
- *  Server anchor: `delete_delivery` RPC (scripts/delete-deliveries.sql). */
+/** Soft-delete a delivery. Managers (admin + dispatcher) per Uzo
+ *  (2026-06-17) — dispatchers send their own orders and need to delete a
+ *  mistaken one without routing through an admin. Reps stay excluded: like
+ *  every other order-mutation (edit, assign, unassign), delete is a manager
+ *  job, not part of the rep coordination surface.
+ *  Server anchor: `delete_delivery` RPC gates on is_manager()
+ *  (scripts/delete-deliveries.sql). */
 export function canDeleteDelivery(role: Role): boolean {
-  return role === 'admin';
+  return isManager(role);
 }
 
-/** Bulk soft-delete N deliveries in one shot. Admin-only — matches single
- *  delete; dispatchers can flag for admin to clean up.
- *  Server anchor: `bulk_delete_deliveries` RPC. */
+/** Bulk soft-delete N deliveries in one shot. Admin-only — kept tighter than
+ *  single delete (which is now manager-wide, see canDeleteDelivery): deleting
+ *  many rows at once is a clean-up/maintenance action, not the everyday
+ *  "I mis-sent one order" fix dispatchers need. Dispatchers delete one at a
+ *  time from the detail screen; bulk stays an admin tool.
+ *  Server anchor: `bulk_delete_deliveries` RPC gates on is_admin(). */
 export function canBulkDeleteDeliveries(role: Role): boolean {
   return role === 'admin';
 }
