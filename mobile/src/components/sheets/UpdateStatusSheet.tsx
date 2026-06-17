@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
-import { Banner, Icon, Input, Sheet, StatusPill } from '@/components/ui';
+import { Banner, CalendarPicker, Icon, Input, Sheet, StatusPill } from '@/components/ui';
 import {
   colors,
   fonts,
@@ -149,9 +149,10 @@ export function UpdateStatusSheet({
     }
   }
 
-  /** Convenience: set the date input to today + N days (Lagos). */
+  /** Convenience: set the date to today + N days (Lagos), bumped off Sunday
+   *  to match the calendar (Sundays are closed / auto-bumped server-side). */
   function setRelative(daysAhead: number) {
-    setPostponeDate(addDaysYmd(lagosTodayYmd(), daysAhead));
+    setPostponeDate(nextWorkdayYmd(addDaysYmd(lagosTodayYmd(), daysAhead)));
   }
 
   if (!delivery) return null;
@@ -248,42 +249,57 @@ export function UpdateStatusSheet({
             </Banner>
           ) : null}
           {isPostponed ? (
-            <View style={{ gap: 8 }}>
-              <Input
-                label="Postpone to (required)"
-                value={postponeDate}
-                onChange={setPostponeDate}
-                placeholder="YYYY-MM-DD"
-                icon="calendar"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                {[1, 2, 3, 7].map((n) => (
-                  <Pressable
-                    key={n}
-                    onPress={() => setRelative(n)}
-                    style={({ pressed }) => [
-                      {
-                        paddingHorizontal: 12,
-                        paddingVertical: 8,
-                        borderRadius: 999,
-                        borderWidth: 1,
-                        borderColor: colors.border,
-                        backgroundColor: colors.white,
-                      },
-                      pressed && { backgroundColor: colors.surface },
-                    ]}
-                  >
-                    <Text style={{ fontFamily: fonts.semibold, fontSize: 12, color: colors.black }}>
-                      +{n}
-                      {n === 1 ? ' day' : ' days'}
-                    </Text>
-                  </Pressable>
-                ))}
+            <View style={{ gap: 10 }}>
+              <Text
+                style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.textSecondary }}
+              >
+                Postpone to (required)
+              </Text>
+              {/* Quick picks for the common cases — one tap, no scrolling. */}
+              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                {[1, 2, 3, 7].map((n) => {
+                  const ymd = nextWorkdayYmd(addDaysYmd(lagosTodayYmd(), n));
+                  const active = postponeDate === ymd;
+                  return (
+                    <Pressable
+                      key={n}
+                      onPress={() => setRelative(n)}
+                      style={({ pressed }) => [
+                        {
+                          paddingHorizontal: 12,
+                          paddingVertical: 8,
+                          borderRadius: 999,
+                          borderWidth: 1,
+                          borderColor: active ? colors.black : colors.border,
+                          backgroundColor: active ? colors.black : colors.white,
+                        },
+                        pressed && !active && { backgroundColor: colors.surface },
+                      ]}
+                    >
+                      <Text
+                        style={{
+                          fontFamily: fonts.semibold,
+                          fontSize: 12,
+                          color: active ? colors.white : colors.black,
+                        }}
+                      >
+                        +{n}
+                        {n === 1 ? ' day' : ' days'}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </View>
+              {/* Tap-to-pick calendar for any other date. */}
+              <CalendarPicker
+                value={postponeDate || null}
+                onSelect={setPostponeDate}
+                minExclusiveYmd={lagosTodayYmd()}
+              />
               <Text style={{ fontFamily: fonts.medium, fontSize: 11, color: colors.textSecondary }}>
-                Sundays auto-bump to Monday.
+                {postponeDate
+                  ? `Postponing to ${prettyYmd(postponeDate)}.`
+                  : 'Pick a date above. Sundays are closed.'}
               </Text>
             </View>
           ) : null}
@@ -378,4 +394,37 @@ function addDaysYmd(baseYmd: string, days: number): string {
   const base = new Date(Date.UTC(y, m - 1, d));
   base.setUTCDate(base.getUTCDate() + days);
   return base.toISOString().slice(0, 10);
+}
+
+/** If the given YYYY-MM-DD lands on a Sunday, bump it to Monday — mirrors the
+ *  backend's _ensure_workday so the chips never set a closed day. */
+function nextWorkdayYmd(ymd: string): string {
+  const parts = ymd.split('-');
+  const utc = new Date(Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])));
+  return utc.getUTCDay() === 0 ? addDaysYmd(ymd, 1) : ymd;
+}
+
+/** Friendly one-line rendering of a YYYY-MM-DD, e.g. "Tue, 30 Jun 2026". */
+function prettyYmd(ymd: string): string {
+  const parts = ymd.split('-');
+  const y = Number(parts[0]);
+  const m = Number(parts[1]);
+  const d = Number(parts[2]);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  return `${days[date.getUTCDay()]}, ${d} ${months[m - 1]} ${y}`;
 }
