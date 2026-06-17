@@ -123,6 +123,74 @@ export async function listMyStock(userId: string): Promise<StockMatrixRow[]> {
   return all.filter((r) => r.user_id === userId);
 }
 
+/** Stock held by ONE holder (agent or warehouse place), non-zero only. Unlike
+ *  listMyStock this filters on the server (`agent_id = holderId`) and only
+ *  resolves the names for that holder's products — so it doesn't pull the whole
+ *  stock matrix. Used by the transfer product picker, which only needs the
+ *  source's on-hand. Same shape + sort (by product name) as listCurrentStock. */
+export async function listHolderStock(holderId: string): Promise<StockMatrixRow[]> {
+  const stockRes = await supabase.from('current_stock').select('*').eq('agent_id', holderId);
+  if (stockRes.error) throw stockRes.error;
+  const rows = (stockRes.data ?? []).filter(
+    (r): r is { agent_id: string; product_catalog_id: string; quantity_on_hand: number } =>
+      r.agent_id !== null && r.product_catalog_id !== null && r.quantity_on_hand !== null,
+  );
+  if (rows.length === 0) return [];
+
+  const prodIds = Array.from(new Set(rows.map((r) => r.product_catalog_id)));
+  const [userRes, prodsRes] = await Promise.all([
+    supabase.from('users').select('id, email, display_name, role').eq('id', holderId).maybeSingle(),
+    // LEFT embed on clients (see listCurrentStock note): keep product rows even
+    // when the caller can't read clients.
+    supabase
+      .from('product_catalog')
+      .select('id, product_name, client_id, clients(name)')
+      .in('id', prodIds),
+  ]);
+  if (userRes.error) throw userRes.error;
+  if (prodsRes.error) throw prodsRes.error;
+
+  const u = userRes.data;
+  if (!u) return [];
+  const prodById = new Map(
+    (prodsRes.data ?? []).map((p) => {
+      const row = p as {
+        id: string;
+        product_name: string;
+        client_id: string;
+        clients: { name: string } | null;
+      };
+      return [
+        row.id,
+        {
+          product_name: row.product_name,
+          client_id: row.client_id,
+          client_name: row.clients?.name ?? '',
+        },
+      ];
+    }),
+  );
+
+  return rows
+    .map((r) => {
+      const p = prodById.get(r.product_catalog_id);
+      if (!p) return null;
+      return {
+        user_id: holderId,
+        user_email: u.email,
+        user_display_name: u.display_name,
+        user_role: u.role,
+        product_catalog_id: r.product_catalog_id,
+        product_name: p.product_name,
+        client_id: p.client_id,
+        client_name: p.client_name,
+        quantity_on_hand: r.quantity_on_hand,
+      };
+    })
+    .filter((r): r is StockMatrixRow => r !== null)
+    .sort((a, b) => a.product_name.localeCompare(b.product_name));
+}
+
 // ---------------------------------------------------------------------------
 // Client-grouped roll-up — total Reda inventory per client, split by where
 // it's currently held (warehouse vs agents).

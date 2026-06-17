@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { router } from 'expo-router';
 import {
   ActivityIndicator,
@@ -11,15 +11,18 @@ import {
 } from 'react-native';
 import { Field } from '@/components/Field';
 import { Button } from '@/components/Button';
-import { Select } from '@/components/Select';
+import { Select, type SelectOption } from '@/components/Select';
 import { Icon } from '@/components/ui';
 import { useAsync } from '@/hooks/useAsync';
 import { useBulkRows } from '@/hooks/useBulkRows';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { listUsers, isWarehousePlace, type AppUser } from '@/services/users';
-import { listClients } from '@/services/clients';
-import { listActiveProductsByClient } from '@/services/products';
-import { PAIRED_REASONS, type PairedReason } from '@/services/stock';
+import {
+  PAIRED_REASONS,
+  listHolderStock,
+  type PairedReason,
+  type StockMatrixRow,
+} from '@/services/stock';
 import { useEnqueueStockTransfer } from '@/queue/mutations';
 import { useQueuedSubmit } from '@/queue/useQueuedSubmit';
 import { errorMessage } from '@/lib/errors';
@@ -49,22 +52,23 @@ function transferFailureMessage(failed: number, total: number, firstReason: stri
  *                caller, matching the create_stock_transfer warehouse
  *                branches (`p_from_user_id = auth.uid()` for issue,
  *                `p_to_user_id = auth.uid()` for return).
+ *
+ * Product selection is driven by the SOURCE holder's on-hand stock (not by
+ * client). Once the source is known, the picker lists exactly what that holder
+ * carries — searchable by product or client name, with the on-hand quantity
+ * shown — so the operator never has to know which client owns a product.
  */
 type BulkRow = {
   id: string;
-  clientId: string | null;
   productId: string | null;
   quantity: string;
 };
 
 const newRow = (): BulkRow => ({
   id: Math.random().toString(36).slice(2),
-  clientId: null,
   productId: null,
   quantity: '',
 });
-
-type Product = { id: string; product_name: string };
 
 // Stable reference for useBulkRows so the hook's useCallback deps don't churn.
 const makeNewBulkRow = newRow;
@@ -76,7 +80,6 @@ export type StockTransferScreenProps = {
 export function StockTransferScreen({ scope }: StockTransferScreenProps) {
   const currentUser = useCurrentUser();
   const usersQ = useAsync(() => listUsers(), []);
-  const clientsQ = useAsync(() => listClients(), []);
 
   // Common state
   const [reason, setReason] = useState<PairedReason | null>(null);
@@ -86,20 +89,14 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
   const { submitting, setSubmitting, error, setError, finish, retrying } =
     useQueuedSubmit(transferFailureMessage);
 
-  // Single-row state (used for reason === 'transfer'; admin scope only)
+  // Single-row state (used for reason === 'transfer'; admin/dispatcher scope only)
   const [fromUserId, setFromUserId] = useState<string | null>(null);
   const [toUserId, setToUserId] = useState<string | null>(null);
-  const [singleClientId, setSingleClientId] = useState<string | null>(null);
   const [singleProductId, setSingleProductId] = useState<string | null>(null);
-  const [singleProducts, setSingleProducts] = useState<Product[]>([]);
   const [singleQty, setSingleQty] = useState('');
 
   // Bulk state (used for reason === 'warehouse_issue' | 'warehouse_return').
-  // Admin scope: a pickable warehouse. Warehouse scope no longer uses this
-  // state — the place is derived (warehouseHolder) so it can't silently fall
-  // back to the caller's own id.
   const [warehouseId, setWarehouseId] = useState<string | null>(null);
-  // One agent per submission.
   const [bulkAgentId, setBulkAgentId] = useState<string | null>(null);
   const {
     rows,
@@ -108,8 +105,6 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
     updateRow: updateBulkRow,
     resetRows,
   } = useBulkRows<BulkRow>(makeNewBulkRow);
-  // Cache products by clientId so multiple bulk rows on the same client share a fetch.
-  const [productsByClient, setProductsByClient] = useState<Map<string, Product[]>>(new Map());
 
   const isBulk = reason === 'warehouse_issue' || reason === 'warehouse_return';
 
@@ -127,12 +122,8 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
       setError(null);
       setFromUserId(null);
       setToUserId(null);
-      setSingleClientId(null);
       setSingleProductId(null);
-      setSingleProducts([]);
       setSingleQty('');
-      // Admin scope only: reset and let the auto-select rerun. Warehouse scope
-      // derives the place (warehouseHolder), so there's nothing to reset.
       setWarehouseId(null);
       setBulkAgentId(null);
       resetRows();
@@ -147,27 +138,6 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
     ]);
   }
 
-  // Load single-mode products when the single client changes.
-  useEffect(() => {
-    let cancelled = false;
-    setSingleProductId(null);
-    setSingleProducts([]);
-    if (!singleClientId) return;
-    listActiveProductsByClient(singleClientId)
-      .then((p) => {
-        if (!cancelled)
-          setSingleProducts(p.map((x) => ({ id: x.id, product_name: x.product_name })));
-      })
-      .catch((e) => {
-        if (!cancelled) setError(errorMessage(e));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [singleClientId, setError]);
-
-  // Pre-fill warehouseId (admin scope) when bulk and exactly one active
-  // warehouse user exists. Warehouse scope is already pinned to caller.
   // Holders only: agents + warehouse PLACES. Warehouse STAFF are never holders.
   const activeUsers = useMemo(
     () =>
@@ -180,10 +150,8 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
   );
   const agentUsers = useMemo(() => activeUsers.filter((u) => u.role === 'agent'), [activeUsers]);
 
-  // Warehouse scope: resolve the PLACE this caller acts on from the loaded
-  // users list (authoritative warehouse_id), failing loud if it can't be
-  // determined rather than defaulting to the caller's own id (which the
-  // server rejects with 42501).
+  // Warehouse scope: resolve the PLACE this caller acts on, failing loud rather
+  // than defaulting to the caller's own id (which the server rejects).
   const warehouseHolder = useMemo(
     () =>
       scope === 'warehouse'
@@ -211,72 +179,77 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
     }
   }, [scope, isBulk, warehouseUsers, warehouseId]);
 
-  // Fetch + cache products for a client (used by bulk row pickers).
-  const ensureProductsFor = useCallback(
-    async (clientId: string) => {
-      if (productsByClient.has(clientId)) return;
-      const list = await listActiveProductsByClient(clientId);
-      setProductsByClient((m) => {
-        const next = new Map(m);
-        next.set(
-          clientId,
-          list.map((x) => ({ id: x.id, product_name: x.product_name })),
-        );
-        return next;
-      });
-    },
-    [productsByClient],
+  // The SOURCE holder whose stock seeds the product picker:
+  //  - transfer (agent→agent): the From agent
+  //  - warehouse_issue (warehouse→agent): the warehouse
+  //  - warehouse_return (agent→warehouse): the From agent
+  const sourceHolderId = useMemo(() => {
+    if (reason === 'transfer') return fromUserId;
+    if (reason === 'warehouse_issue') return effectiveWarehouseId;
+    if (reason === 'warehouse_return') return bulkAgentId;
+    return null;
+  }, [reason, fromUserId, effectiveWarehouseId, bulkAgentId]);
+
+  const sourceStockQ = useAsync<StockMatrixRow[]>(
+    () => (sourceHolderId ? listHolderStock(sourceHolderId) : Promise.resolve([])),
+    [sourceHolderId],
   );
 
-  // Wrap updateBulkRow so changing the clientId also resets the productId.
-  function updateRow(rowId: string, patch: Partial<BulkRow>) {
-    if (patch.clientId !== undefined) {
-      const current = rows.find((r) => r.id === rowId);
-      if (current && patch.clientId !== current.clientId) {
-        updateBulkRow(rowId, { ...patch, productId: null });
-        return;
+  // Derive everything the pickers need from the source's on-hand stock in one
+  // pass: the option list (shared by the single picker and every bulk row), plus
+  // lookups for on-hand validation and label-building. Only products actually
+  // held (>0) become options; client name + on-hand sit in the sub so both are
+  // searchable and visible.
+  const { productOptions, onHandById, productNameById } = useMemo(() => {
+    const options: SelectOption<string>[] = [];
+    const onHand = new Map<string, number>();
+    const name = new Map<string, string>();
+    for (const r of sourceStockQ.data ?? []) {
+      onHand.set(r.product_catalog_id, r.quantity_on_hand);
+      name.set(r.product_catalog_id, r.product_name);
+      if (r.quantity_on_hand > 0) {
+        options.push({
+          value: r.product_catalog_id,
+          label: r.product_name,
+          sub: `${r.client_name} · ${r.quantity_on_hand} in stock`,
+        });
       }
     }
-    updateBulkRow(rowId, patch);
-  }
+    return { productOptions: options, onHandById: onHand, productNameById: name };
+  }, [sourceStockQ.data]);
+
+  // Changing the source invalidates any picked products (they belong to the old
+  // holder's stock) — clear them. Ref-guarded so it only fires on a real change.
+  const prevSourceRef = useRef(sourceHolderId);
+  useEffect(() => {
+    if (prevSourceRef.current !== sourceHolderId) {
+      prevSourceRef.current = sourceHolderId;
+      setSingleProductId(null);
+      resetRows();
+    }
+  }, [sourceHolderId, resetRows]);
+
+  const productsLoading = !!sourceHolderId && sourceStockQ.loading;
 
   // --------------------------------------------------------------------------
-  // Single-mode submit (admin + dispatcher scope; unreachable when
-  // scope='warehouse' because the 'transfer' reason is filtered out of
-  // the picker).
+  // Single-mode submit (admin + dispatcher scope).
   // --------------------------------------------------------------------------
   async function handleSubmitSingle() {
     setError(null);
-    if (!reason) {
-      setError('Pick a transfer reason');
-      return;
-    }
-    if (!fromUserId) {
-      setError('Pick the source user');
-      return;
-    }
-    if (!toUserId) {
-      setError('Pick the destination user');
-      return;
-    }
-    if (fromUserId === toUserId) {
-      setError('Source and destination must differ');
-      return;
-    }
-    if (!singleProductId) {
-      setError('Pick a product');
-      return;
-    }
+    if (!reason) return setError('Pick a transfer reason');
+    if (!fromUserId) return setError('Pick the source user');
+    if (!toUserId) return setError('Pick the destination user');
+    if (fromUserId === toUserId) return setError('Source and destination must differ');
+    if (!singleProductId) return setError('Pick a product');
     const q = Number(singleQty);
-    if (!Number.isInteger(q) || q <= 0) {
-      setError('Quantity must be a positive whole number');
-      return;
-    }
+    if (!Number.isInteger(q) || q <= 0) return setError('Quantity must be a positive whole number');
+    const onHand = onHandById.get(singleProductId) ?? 0;
+    if (q > onHand) return setError(`Only ${onHand} in stock at the source`);
+
     setSubmitting(true);
     try {
       const reasonLabel = PAIRED_REASONS.find((r) => r.value === reason)?.label ?? reason;
-      const productName =
-        singleProducts.find((p) => p.id === singleProductId)?.product_name ?? 'product';
+      const productName = productNameById.get(singleProductId) ?? 'product';
       const jobId = await enqueueTransfer(
         {
           fromUserId,
@@ -297,42 +270,39 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
 
   async function handleSubmitBulk() {
     setError(null);
-    if (!reason || !isBulk) {
-      setError('Pick a transfer reason');
-      return;
-    }
+    if (!reason || !isBulk) return setError('Pick a transfer reason');
     if (scope === 'warehouse' && warehouseHolder && !warehouseHolder.ok) {
-      setError(warehouseHolder.reason);
-      return;
+      return setError(warehouseHolder.reason);
     }
-    if (!effectiveWarehouseId) {
-      setError('Pick the warehouse');
-      return;
-    }
-    if (!bulkAgentId) {
-      setError('Pick the agent');
-      return;
-    }
+    if (!effectiveWarehouseId) return setError('Pick the warehouse');
+    if (!bulkAgentId) return setError('Pick the agent');
 
     const validRows: { productId: string; qty: number }[] = [];
+    // Track the running total per product so the same product across multiple
+    // rows is checked against on-hand cumulatively, not row-by-row.
+    const neededByProduct = new Map<string, number>();
     for (const r of rows) {
       const completelyEmpty = !r.productId && !r.quantity;
       if (completelyEmpty) continue;
-      if (!r.productId) {
-        setError('Each row needs a product');
-        return;
-      }
+      if (!r.productId) return setError('Each row needs a product');
       const q = Number(r.quantity);
       if (!Number.isInteger(q) || q <= 0) {
-        setError('Each row needs a positive whole-number quantity');
-        return;
+        return setError('Each row needs a positive whole-number quantity');
+      }
+      const running = (neededByProduct.get(r.productId) ?? 0) + q;
+      neededByProduct.set(r.productId, running);
+      const onHand = onHandById.get(r.productId) ?? 0;
+      if (running > onHand) {
+        const name = productNameById.get(r.productId) ?? 'A product';
+        return setError(
+          running > q
+            ? `${name}: rows need ${running} but only ${onHand} in stock`
+            : `${name}: only ${onHand} in stock`,
+        );
       }
       validRows.push({ productId: r.productId, qty: q });
     }
-    if (validRows.length === 0) {
-      setError('Add at least one product');
-      return;
-    }
+    if (validRows.length === 0) return setError('Add at least one product');
 
     setSubmitting(true);
     try {
@@ -342,10 +312,7 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
       const toId = reason === 'warehouse_issue' ? bulkAgentId : effectiveWarehouseId;
       const ids: string[] = [];
       for (const row of validRows) {
-        const product = productsByClient
-          .get(rows.find((r) => r.productId === row.productId)?.clientId ?? '')
-          ?.find((p) => p.id === row.productId);
-        const label = `${reasonLabel} · ${row.qty} ${product?.product_name ?? 'product'} · ${agent?.display_name ?? 'agent'}`;
+        const label = `${reasonLabel} · ${row.qty} ${productNameById.get(row.productId) ?? 'product'} · ${agent?.display_name ?? 'agent'}`;
         ids.push(
           await enqueueTransfer(
             {
@@ -367,7 +334,7 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
     }
   }
 
-  if (usersQ.loading || clientsQ.loading) {
+  if (usersQ.loading) {
     return (
       <View style={styles.center}>
         <ActivityIndicator />
@@ -386,8 +353,19 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
   ).map((r) => ({ value: r.value, label: r.label, sub: r.sub }));
   const warehouseOptions = warehouseUsers.map((u) => ({ value: u.id, label: u.display_name }));
   const agentOptions = agentUsers.map((u) => ({ value: u.id, label: u.display_name }));
-  const clientOptions = (clientsQ.data ?? []).map((c) => ({ value: c.id, label: c.name }));
   const isWarehouseScope = scope === 'warehouse';
+
+  // Placeholder for a product picker, given whether its source is set.
+  const productPlaceholder = (sourceSet: boolean): string =>
+    !sourceSet
+      ? 'Pick the source first'
+      : productsLoading
+        ? 'Loading stock…'
+        : sourceStockQ.error
+          ? 'Could not load stock'
+          : productOptions.length === 0
+            ? 'No stock at source'
+            : 'Search product or client';
 
   return (
     <ScrollView
@@ -410,14 +388,12 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
           setFromUserId={setFromUserId}
           toUserId={toUserId}
           setToUserId={setToUserId}
-          clientOptions={clientOptions}
-          singleClientId={singleClientId}
-          setSingleClientId={setSingleClientId}
-          singleProducts={singleProducts}
+          productOptions={productOptions}
           singleProductId={singleProductId}
           setSingleProductId={setSingleProductId}
           singleQty={singleQty}
           setSingleQty={setSingleQty}
+          productPlaceholder={productPlaceholder}
         />
       ) : isBulk ? (
         <>
@@ -456,54 +432,37 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
             placeholder="Pick agent"
           />
 
-          {rows.map((row, i) => {
-            const rowProducts = row.clientId ? (productsByClient.get(row.clientId) ?? []) : [];
-            return (
-              <View key={row.id} style={styles.rowCard}>
-                <View style={styles.rowHeader}>
-                  <Text style={styles.rowTitle}>Product {i + 1}</Text>
-                  {rows.length > 1 ? (
-                    <Pressable onPress={() => removeRow(row.id)} hitSlop={6}>
-                      <Icon name="x" size={18} color="#a02d1b" />
-                    </Pressable>
-                  ) : null}
-                </View>
-                <Select
-                  label="Client"
-                  required
-                  value={row.clientId}
-                  options={clientOptions}
-                  onChange={(v) => {
-                    updateRow(row.id, { clientId: v });
-                    if (v) void ensureProductsFor(v);
-                  }}
-                />
-                <Select
-                  label="Product"
-                  required
-                  value={row.productId}
-                  options={rowProducts.map((p) => ({ value: p.id, label: p.product_name }))}
-                  onChange={(v) => updateRow(row.id, { productId: v })}
-                  disabled={!row.clientId || rowProducts.length === 0}
-                  placeholder={
-                    !row.clientId
-                      ? 'Pick a client first'
-                      : rowProducts.length === 0
-                        ? 'No products for this client'
-                        : 'Choose'
-                  }
-                />
-                <Field
-                  label="Quantity"
-                  required
-                  value={row.quantity}
-                  onChangeText={(v) => updateRow(row.id, { quantity: v })}
-                  keyboardType="numeric"
-                  autoCapitalize="none"
-                />
+          {rows.map((row, i) => (
+            <View key={row.id} style={styles.rowCard}>
+              <View style={styles.rowHeader}>
+                <Text style={styles.rowTitle}>Product {i + 1}</Text>
+                {rows.length > 1 ? (
+                  <Pressable onPress={() => removeRow(row.id)} hitSlop={6}>
+                    <Icon name="x" size={18} color="#a02d1b" />
+                  </Pressable>
+                ) : null}
               </View>
-            );
-          })}
+              <Select
+                label="Product"
+                required
+                searchable
+                searchPlaceholder="Search product or client"
+                value={row.productId}
+                options={productOptions}
+                onChange={(v) => updateBulkRow(row.id, { productId: v })}
+                disabled={!sourceHolderId || productsLoading || productOptions.length === 0}
+                placeholder={productPlaceholder(!!sourceHolderId)}
+              />
+              <Field
+                label="Quantity"
+                required
+                value={row.quantity}
+                onChangeText={(v) => updateBulkRow(row.id, { quantity: v })}
+                keyboardType="numeric"
+                autoCapitalize="none"
+              />
+            </View>
+          ))}
 
           <Button
             title="+ Add another product"
@@ -524,9 +483,9 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
         />
       ) : null}
 
-      {error || usersQ.error ? (
+      {error || usersQ.error || sourceStockQ.error ? (
         <View style={styles.errorBox}>
-          <Text style={styles.errorText}>{error ?? usersQ.error}</Text>
+          <Text style={styles.errorText}>{error ?? usersQ.error ?? sourceStockQ.error}</Text>
         </View>
       ) : null}
 
@@ -581,14 +540,12 @@ function SingleForm(props: {
   setFromUserId: (v: string | null) => void;
   toUserId: string | null;
   setToUserId: (v: string | null) => void;
-  clientOptions: { value: string; label: string }[];
-  singleClientId: string | null;
-  setSingleClientId: (v: string | null) => void;
-  singleProducts: Product[];
+  productOptions: SelectOption<string>[];
   singleProductId: string | null;
   setSingleProductId: (v: string | null) => void;
   singleQty: string;
   setSingleQty: (v: string) => void;
+  productPlaceholder: (sourceSet: boolean) => string;
 }) {
   const agentOptions = useMemo(
     () =>
@@ -604,7 +561,6 @@ function SingleForm(props: {
         .map((u) => ({ value: u.id, label: u.display_name })),
     [props.activeUsers],
   );
-  const productOptions = props.singleProducts.map((p) => ({ value: p.id, label: p.product_name }));
 
   return (
     <>
@@ -624,26 +580,15 @@ function SingleForm(props: {
         disabled={!props.fromUserId}
       />
       <Select
-        label="Client"
-        required
-        value={props.singleClientId}
-        options={props.clientOptions}
-        onChange={props.setSingleClientId}
-      />
-      <Select
         label="Product"
         required
+        searchable
+        searchPlaceholder="Search product or client"
         value={props.singleProductId}
-        options={productOptions}
+        options={props.productOptions}
         onChange={props.setSingleProductId}
-        disabled={!props.singleClientId || props.singleProducts.length === 0}
-        placeholder={
-          !props.singleClientId
-            ? 'Pick a client first'
-            : props.singleProducts.length === 0
-              ? 'No products for this client'
-              : 'Choose'
-        }
+        disabled={!props.fromUserId || props.productOptions.length === 0}
+        placeholder={props.productPlaceholder(!!props.fromUserId)}
       />
       <Field
         label="Quantity"

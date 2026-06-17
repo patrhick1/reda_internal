@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { colors, fonts } from '@/lib/theme';
 import { Icon } from '@/components/ui/Icon';
 
@@ -17,6 +17,8 @@ export function Select<T extends string>({
   placeholder = 'Choose…',
   required,
   disabled,
+  searchable = false,
+  searchPlaceholder = 'Search…',
 }: {
   label: string;
   value: T | null;
@@ -25,9 +27,39 @@ export function Select<T extends string>({
   placeholder?: string;
   required?: boolean;
   disabled?: boolean;
+  /** When true, shows a filter box in the sheet that matches both label and
+   *  sub (so e.g. a product's client name is searchable). Default off — every
+   *  existing Select is unchanged. */
+  searchable?: boolean;
+  searchPlaceholder?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const searchRef = useRef<TextInput>(null);
   const selected = options.find((o) => o.value === value);
+
+  // Focus the search box once the sheet is open. Done via ref + a tick rather
+  // than autoFocus so it doesn't race the modal's fade-in animation (which can
+  // drop focus / flicker the keyboard on some Android devices).
+  useEffect(() => {
+    if (!open || !searchable) return;
+    const t = setTimeout(() => searchRef.current?.focus(), 60);
+    return () => clearTimeout(t);
+  }, [open, searchable]);
+
+  const needle = query.trim().toLowerCase();
+  const visibleOptions = useMemo(
+    () =>
+      searchable && needle
+        ? options.filter((o) => `${o.label} ${o.sub ?? ''}`.toLowerCase().includes(needle))
+        : options,
+    [searchable, needle, options],
+  );
+
+  function close() {
+    setOpen(false);
+    setQuery('');
+  }
 
   return (
     <View style={styles.wrap}>
@@ -51,8 +83,8 @@ export function Select<T extends string>({
         <Icon name="chevronDown" size={18} color={colors.textSecondary} />
       </Pressable>
 
-      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-        <Pressable style={styles.backdrop} onPress={() => setOpen(false)}>
+      <Modal visible={open} transparent animationType="fade" onRequestClose={close}>
+        <Pressable style={styles.backdrop} onPress={close}>
           <Pressable style={styles.sheet} onPress={() => undefined}>
             <View style={{ alignItems: 'center', paddingTop: 8 }}>
               <View
@@ -60,8 +92,35 @@ export function Select<T extends string>({
               />
             </View>
             <Text style={styles.sheetTitle}>{label}</Text>
+            {searchable ? (
+              <View style={styles.searchWrap}>
+                <Icon name="search" size={16} color={colors.textSecondary} />
+                <TextInput
+                  ref={searchRef}
+                  style={styles.searchInput}
+                  value={query}
+                  onChangeText={setQuery}
+                  placeholder={searchPlaceholder}
+                  placeholderTextColor={colors.textTertiary}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  accessibilityLabel={`Search ${label}`}
+                />
+                {query ? (
+                  <Pressable
+                    onPress={() => setQuery('')}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear search"
+                  >
+                    <Icon name="x" size={16} color={colors.textSecondary} />
+                  </Pressable>
+                ) : null}
+              </View>
+            ) : null}
             <FlatList
-              data={options}
+              data={visibleOptions}
+              keyboardShouldPersistTaps="handled"
               keyExtractor={(o) => o.value}
               renderItem={({ item }) => (
                 <Pressable
@@ -72,7 +131,7 @@ export function Select<T extends string>({
                   ]}
                   onPress={() => {
                     onChange(item.value);
-                    setOpen(false);
+                    close();
                   }}
                 >
                   <View style={styles.optionLeft}>
@@ -87,7 +146,7 @@ export function Select<T extends string>({
               ItemSeparatorComponent={() => <View style={styles.sep} />}
               ListEmptyComponent={
                 <View style={styles.empty}>
-                  <Text style={styles.emptyText}>No options.</Text>
+                  <Text style={styles.emptyText}>{needle ? 'No matches.' : 'No options.'}</Text>
                 </View>
               }
             />
@@ -137,6 +196,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 8,
     paddingBottom: 8,
+  },
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: 20,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+  },
+  searchInput: {
+    flex: 1,
+    fontFamily: fonts.medium,
+    fontSize: 15,
+    color: colors.black,
+    padding: 0,
   },
   option: {
     flexDirection: 'row',
