@@ -97,6 +97,10 @@ const REQUIRED_FIELDS: { key: keyof DeliveryFormState; label: string }[] = [
   { key: 'rawAddress', label: 'Address' },
   { key: 'clientId', label: 'Client' },
   { key: 'customerPrice', label: 'Customer price' },
+  // Location is required so a manual order is never saved "Unmatched" — an
+  // unmatched delivery has no rate and can't be marked delivered. (The bot
+  // already refuses to place an order it can't match; this aligns manual entry.)
+  { key: 'locationId', label: 'Location' },
 ];
 
 /** Info banner that names what the operator still has to fill before they can
@@ -663,7 +667,8 @@ export function DeliveryFieldsForm({
           value={state.locationId}
           options={locationOptions}
           onChange={(v) => patch({ locationId: v })}
-          placeholder="Optional — leave empty to flag for review"
+          required
+          placeholder="Match to the delivery area"
         />
         {!hide.has('assignedAgent') ? (
           <>
