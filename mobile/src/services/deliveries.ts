@@ -333,6 +333,32 @@ export async function listDeliveries(
   return rows.sort((a, b) => latestActivityAt(b).localeCompare(latestActivityAt(a)));
 }
 
+/** The agent's own orders that were postponed to a FUTURE date. Postponing moves
+ *  a row's scheduled_date forward in place (status stays 'postponed', the agent
+ *  stays assigned), so it drops off the today list and would otherwise vanish
+ *  from the agent's view until that day arrives. This surfaces them so the agent
+ *  can still check the order / re-engage if the customer calls back early.
+ *
+ *  Scoped to `assigned_agent_id = me`, status 'postponed', scheduled_date in the
+ *  future. RLS already lets an agent read their own rows on any date, so no
+ *  backend change is needed. Ordered by the date they were postponed TO, soonest
+ *  first. Same join + line-item pipeline as listDeliveries so cards render
+ *  identically. */
+export async function listAgentPostponed(userId: string): Promise<DeliveryRow[]> {
+  const { data, error } = await supabase
+    .from('deliveries_safe')
+    .select(`*, ${JOIN_FRAGMENT}`)
+    .eq('assigned_agent_id', userId)
+    .eq('current_status', 'postponed')
+    .gt('scheduled_date', todayLagos())
+    .order('scheduled_date', { ascending: true });
+  if (error) throw error;
+  const joined = (data ?? []).map((row) =>
+    attachJoins(row as unknown as JoinShape & object),
+  ) as Omit<DeliveryRow, 'items'>[];
+  return (await attachItemsToRows(joined)) as DeliveryRow[];
+}
+
 /** Most recent activity timestamp for list ordering: the max of the row's last
  *  status change, last thread message, and creation time. ISO timestamptz
  *  strings share one format, so lexical comparison is chronological. */

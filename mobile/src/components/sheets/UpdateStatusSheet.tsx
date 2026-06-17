@@ -149,12 +149,6 @@ export function UpdateStatusSheet({
     }
   }
 
-  /** Convenience: set the date to today + N days (Lagos), bumped off Sunday
-   *  to match the calendar (Sundays are closed / auto-bumped server-side). */
-  function setRelative(daysAhead: number) {
-    setPostponeDate(nextWorkdayYmd(addDaysYmd(lagosTodayYmd(), daysAhead)));
-  }
-
   if (!delivery) return null;
 
   return (
@@ -263,7 +257,7 @@ export function UpdateStatusSheet({
                   return (
                     <Pressable
                       key={n}
-                      onPress={() => setRelative(n)}
+                      onPress={() => setPostponeDate(ymd)}
                       style={({ pressed }) => [
                         {
                           paddingHorizontal: 12,

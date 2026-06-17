@@ -12,7 +12,12 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
-import { listDeliveries, deliveryProductsLabel, type DeliveryRow } from '@/services/deliveries';
+import {
+  listDeliveries,
+  listAgentPostponed,
+  deliveryProductsLabel,
+  type DeliveryRow,
+} from '@/services/deliveries';
 import { formatNaira } from '@/lib/format';
 import {
   Button,
@@ -41,7 +46,9 @@ const BUCKET_ACCENT: Record<keyof typeof STATUS_GROUPS, string> = {
 // Status segments for the agent's Today list. No date filter — the screen only
 // ever shows today's own deliveries — and no "Unassigned" (every row here is
 // already assigned to this agent). Mirrors the ops list's bucket definitions.
-type Filter = 'all' | 'active' | 'available' | 'soft' | 'done' | 'closed';
+// 'postponed' is the exception: it's a FUTURE-dated slice (orders this agent
+// pushed to a later day) fetched via a separate query, not part of today's set.
+type Filter = 'all' | 'active' | 'available' | 'soft' | 'postponed' | 'done' | 'closed';
 
 function todayLagosLabel(): string {
   const lagos = new Date(new Date().getTime() + 60 * 60 * 1000);
@@ -61,10 +68,20 @@ export default function AgentToday() {
   // dot here and the bottom-tab badge in the layout. Shared single subscription.
   const { byDelivery: unreadByDelivery, total: unreadTotal } = useAgentUnread();
   const { data, loading, error, reload } = useAsync(() => listDeliveries(user.role), [user.role]);
+  // Future-dated postponed orders this agent owns — a separate light query so
+  // they survive leaving the today list (see listAgentPostponed). Only drives
+  // the "Postponed" chip + its list slice; never folds into today's `data`.
+  const {
+    data: postponedData,
+    loading: postponedLoading,
+    error: postponedError,
+    reload: reloadPostponed,
+  } = useAsync(() => listAgentPostponed(user.userId), [user.userId]);
   useFocusEffect(
     useCallback(() => {
       reload();
-    }, [reload]),
+      reloadPostponed();
+    }, [reload, reloadPostponed]),
   );
 
   // Status segment + customer-name search. Both are client-side narrows over the
@@ -141,6 +158,14 @@ export default function AgentToday() {
     });
   }, [data]);
 
+  // Bulk "mark delivered" is a Today-only action. The Postponed slice is a
+  // separate (future-dated) dataset that isn't in `selectedRows`, so leaving
+  // select mode active there would show a count the confirm sheet can't act on.
+  // Drop out of select mode if the user switches into Postponed.
+  useEffect(() => {
+    if (filter === 'postponed' && selectMode) exitSelect();
+  }, [filter, selectMode, exitSelect]);
+
   // Hero stats stay GLOBAL (whole day), independent of the active filter/search.
   const stats = useMemo(() => summarize(data ?? []), [data]);
   const dateLabel = todayLagosLabel();
@@ -167,12 +192,22 @@ export default function AgentToday() {
     }),
     [all],
   );
-  const list = buckets[filter];
+  // Postponed is its own future-dated slice (separate query). Apply the same
+  // name search so its chip count matches what's on screen.
+  const postponedRows = useMemo(() => {
+    const rows = postponedData ?? [];
+    return nameNeedle
+      ? rows.filter((d) => (d.customer_name ?? '').toLowerCase().includes(nameNeedle))
+      : rows;
+  }, [postponedData, nameNeedle]);
+
+  const list = filter === 'postponed' ? postponedRows : buckets[filter];
   const filterOptions = [
     { id: 'all' as const, label: 'All', count: buckets.all.length },
     { id: 'active' as const, label: 'Active', count: buckets.active.length },
     { id: 'available' as const, label: 'Available', count: buckets.available.length },
     { id: 'soft' as const, label: 'Soft fail', count: buckets.soft.length },
+    { id: 'postponed' as const, label: 'Postponed', count: postponedRows.length },
     { id: 'done' as const, label: 'Done', count: buckets.done.length },
     { id: 'closed' as const, label: 'Closed', count: buckets.closed.length },
   ];
@@ -303,7 +338,10 @@ export default function AgentToday() {
         renderItem={({ item }) => {
           const itemId = item.id ?? null;
           const selectable =
-            canBulk && canBulkDeliverRow(item) && !(itemId && pendingDeliveredIds.has(itemId));
+            canBulk &&
+            filter !== 'postponed' &&
+            canBulkDeliverRow(item) &&
+            !(itemId && pendingDeliveredIds.has(itemId));
           return (
             <DeliveryCard
               delivery={item}
@@ -332,11 +370,34 @@ export default function AgentToday() {
         ItemSeparatorComponent={SeparatorH12}
         ListHeaderComponent={
           <SectionHeader>
-            Today · {list.length} {list.length === 1 ? 'stop' : 'stops'}
+            {filter === 'postponed'
+              ? `Postponed · ${list.length} ${list.length === 1 ? 'order' : 'orders'}`
+              : `Today · ${list.length} ${list.length === 1 ? 'stop' : 'stops'}`}
           </SectionHeader>
         }
         ListEmptyComponent={
-          error ? (
+          filter === 'postponed' ? (
+            postponedError ? (
+              <Empty icon="alert" title="Could not load" sub={postponedError} />
+            ) : postponedLoading ? (
+              <View style={{ padding: 60 }}>
+                <ActivityIndicator color={colors.black} />
+              </View>
+            ) : (postponedData?.length ?? 0) > 0 ? (
+              // Has postponed orders, just none matching the current search.
+              <Empty
+                icon="search"
+                title="Nothing matches"
+                sub={`No postponed orders matching "${nameQuery.trim()}". Clear the search to see all postponed orders.`}
+              />
+            ) : (
+              <Empty
+                icon="calendar"
+                title="No postponed orders"
+                sub="Orders you postpone to a later date stay here until that day arrives — then they move back into Today."
+              />
+            )
+          ) : error ? (
             <Empty icon="alert" title="Could not load" sub={error} />
           ) : loading ? (
             <View style={{ padding: 60 }}>
@@ -372,8 +433,13 @@ export default function AgentToday() {
         removeClippedSubviews
         refreshControl={
           <RefreshControl
-            refreshing={loading && !!data}
-            onRefresh={reload}
+            refreshing={
+              filter === 'postponed' ? postponedLoading && !!postponedData : loading && !!data
+            }
+            onRefresh={() => {
+              reload();
+              reloadPostponed();
+            }}
             tintColor={colors.black}
           />
         }
@@ -570,6 +636,14 @@ const DeliveryCard = memo(function DeliveryCard({
               {delivery.location_name ?? 'Unmatched'}
             </Text>
           </View>
+          {status === 'postponed' && delivery.scheduled_date ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
+              <Icon name="calendar" size={12} color={colors.warning} />
+              <Text style={{ fontFamily: fonts.semibold, fontSize: 12, color: colors.warningDark }}>
+                Postponed to {formatPostponeDate(delivery.scheduled_date)}
+              </Text>
+            </View>
+          ) : null}
           <View
             style={{
               flexDirection: 'row',
@@ -629,4 +703,16 @@ function greeting(): string {
   if (h < 12) return 'Morning';
   if (h < 17) return 'Afternoon';
   return 'Evening';
+}
+
+/** Friendly rendering of a YYYY-MM-DD scheduled_date, e.g. "Tue, 30 Jun". */
+function formatPostponeDate(ymd: string): string {
+  const parts = ymd.split('-');
+  const date = new Date(Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])));
+  return date.toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  });
 }
