@@ -90,8 +90,28 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       }
       const loaded = await loadJobs(userId);
       if (cancelled) return;
+      // Reconcile orphaned in-flight jobs. A job persisted as `in_flight`
+      // means the app died between marking it in-flight and the RPC
+      // resolving (reboot, OS kill, crash, force-close). Nothing in the
+      // drain loop or re-schedule effect picks `in_flight` back up, so left
+      // alone these jobs are stuck forever — counted by the banner as
+      // "Syncing N…" but never drained, retried, or surfaced in the
+      // dead-letter screen. Reset them to `pending` so the drain replays
+      // them. Safe: every RPC is idempotent on `clientUuid`, so a job that
+      // actually landed server-side before the kill replays as a no-op.
+      const hasOrphaned = loaded.some((j) => j.status === 'in_flight');
+      const reconciled = hasOrphaned
+        ? loaded.map((j) =>
+            j.status === 'in_flight'
+              ? { ...j, status: 'pending' as const, nextAttemptAt: Date.now() }
+              : j,
+          )
+        : loaded;
+      // When nothing was reconciled, keep jobs === lastSavedRef so the
+      // persist effect skips a redundant write. When we did reconcile, leave
+      // them mismatched so the effect flushes the repaired state to disk.
       lastSavedRef.current = loaded;
-      setJobs(loaded);
+      setJobs(reconciled);
       ownerRef.current = userId;
     })().catch((err) => logError('queue.boot', err));
     return () => {
