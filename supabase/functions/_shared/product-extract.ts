@@ -66,16 +66,28 @@ Return strict JSON with these fields (use null when missing):
   customer_phone   : string  — Nigerian phone, keep digits and optional leading 0/+234
   raw_address      : string  — the delivery address, free-form, as-is from the message
   total_amount     : number  — the "Total(X)" amount if present in the message, otherwise null
-  products         : array   — one entry per product line, in the order they appear:
+  products         : array   — one entry per DISTINCT product the customer receives, in the order they appear:
     {
-      product_name   : string  — the product name as written
-      quantity       : integer — units of this product, default 1 if implied
+      product_name   : string  — the CLEAN product name ONLY (apply the normalization rules below)
+      quantity       : integer — total units of this product the customer receives, INCLUDING any free units; default 1 if implied
       customer_price : number  — the subtotal for this product line (the parenthesized amount), null if missing
     }
 
+PRODUCT-NAME NORMALIZATION — return the real catalog product, never the marketing wrapper:
+  1. Strip promo/tier LABELS. "Gold Package", "Standard Package", "VIP Package", "Bronze/Silver/Premium", "Combo", "Deal", "Offer", "Bundle" are price tiers, NOT products. The real product is the item named inside the offer.
+  2. "Buy N <Product> Get M FREE" (same product) -> ONE line: product = <Product>, quantity = N + M.
+       "Buy 2 Water Filter Get 1 FREE"                      -> [{product_name:"Water Filter", quantity:3}]
+       "Gold Package - Buy 2 Fire Stop Spray Get 1 FREE"    -> [{product_name:"Fire Stop Spray", quantity:3}]
+  3. "Set of <X> including N (FREE) <Y>" / "<X> with N free <Y>" -> TWO lines (different products):
+       "1 Set of OUD AL LAYL including 2 FREE Perfume Oil"  -> [{product_name:"Oud Al Layl", quantity:1},{product_name:"Perfume Oil", quantity:2}]
+  4. Strip quantities, prices, currency, and filler words ("Pack of", "Set of", "(One)", "units", "x2", parenthetical totals) from product_name — keep only the product itself.
+       "1 Pack Of Double Arabian Tea"                       -> {product_name:"Double Arabian Tea", quantity:1}
+  5. Keep genuinely distinct products as separate lines.
+       "1 Pack Arabian Tea Powder Mix and 1 Pack Double Arabian Tea" -> two lines.
+
 Do NOT include the Total line as a product. Do NOT invent products that aren't in the message.
-Ignore order-reference / SKU-header lines — a product code or order label such as "OUD AL LAYL BROWN SINGLE WITH OIL 2246-U" or "OPULENT ORDER 252-O" is metadata, not a product line. The real products are the named quantities in the order body (e.g. "1 OPULENT OUD + 2 PERFUME OILS").
-"FREE DELIVERY" / "FREE SHIPPING" / "FREE DELIVERY" is NOT a product — exclude it. But a free PRODUCT (e.g. "FREE PACIFIC BLUE PERFUME") IS a product line: include it with its quantity and customer_price 0.
+Ignore order-reference / SKU-header lines — a product code or order label such as "OUD AL LAYL BROWN SINGLE WITH OIL 2246-U" or "OPULENT ORDER 252-O" is metadata, not a product line.
+"FREE DELIVERY" / "FREE SHIPPING" is NOT a product — exclude it. A free PRODUCT (e.g. "FREE PACIFIC BLUE PERFUME") IS a product line: include it with quantity and customer_price 0.
 
 Message:
 """
