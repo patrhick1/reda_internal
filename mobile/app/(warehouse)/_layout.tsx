@@ -21,8 +21,14 @@ export default function WarehouseLayout() {
         tabBarLabelStyle: { fontFamily: fonts.semibold, fontSize: 11 },
       }}
     >
+      {/* The "Stock" tab is a nested Stack (the (home) group): the dashboard
+          plus the Transfer / Receive / Adjust / Available / Movements screens
+          pushed on top. Stacking them — rather than mounting each as a hidden
+          tab route — is what lets `router.back()` dismiss an action screen
+          after a submit settles, so a successful Transfer no longer leaves the
+          button spinning. */}
       <Tabs.Screen
-        name="index"
+        name="(home)"
         options={{
           title: 'Stock',
           tabBarIcon: ({ color, focused }) => (
@@ -39,20 +45,6 @@ export default function WarehouseLayout() {
           ),
         }}
       />
-      {/* Action screens — pushed from the Stock dashboard, never shown in
-          the tab bar. Each re-exports the shared screen with scope='warehouse'
-          which locks the holder side to the caller server-side. */}
-      <Tabs.Screen name="receive" options={{ href: null }} />
-      <Tabs.Screen name="transfer" options={{ href: null }} />
-      <Tabs.Screen name="adjust" options={{ href: null }} />
-      {/* Available orders — shared dispatcher+warehouse view, entered via
-          the card on the Stock home. Read-only here (no /deliveries route
-          in this group, so order rows are non-tappable). */}
-      <Tabs.Screen name="available" options={{ href: null }} />
-      {/* Per-holder stock movement history — pushed from the Stock home
-          card tap. Auth gate on the server-side RPC limits warehouse staff
-          to their own warehouse place + themselves. */}
-      <Tabs.Screen name="movements/[holderId]" options={{ href: null }} />
     </Tabs>
   );
 }
