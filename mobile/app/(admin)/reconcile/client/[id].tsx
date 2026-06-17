@@ -259,7 +259,11 @@ function DeliveryRow({ row }: { row: ClientRemitDetailRow }) {
           gap: 4,
         }}
       >
-        <MicroRow label="Customer paid" value={formatNaira(row.paid)} />
+        {row.payment_method === 'vendor_direct' ? (
+          <MicroRow label="Paid to vendor (direct)" value={formatNaira(row.customer_price)} />
+        ) : (
+          <MicroRow label="Customer paid" value={formatNaira(row.paid)} />
+        )}
         <MicroRow label="Reda fee" value={formatNaira(row.reda_fee)} />
         {Number(row.cash_pos_fee ?? 0) > 0 ? (
           <MicroRow label="Cash POS fee" value={formatNaira(row.cash_pos_fee)} />

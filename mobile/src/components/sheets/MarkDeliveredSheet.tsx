@@ -7,7 +7,7 @@ import { useEnqueueChangeStatus, useEnqueueReturnLeftover } from '@/queue/mutati
 import { formatNaira } from '@/lib/format';
 import { errorMessage } from '@/lib/errors';
 
-type PaymentMethod = 'cash' | 'transfer';
+type PaymentMethod = 'cash' | 'transfer' | 'vendor_direct';
 
 /** [Feature A] The order's lines, normalized from delivery_items (or a synthetic
  *  single line from the legacy columns for any row that predates the backfill). */
@@ -108,9 +108,15 @@ export function MarkDeliveredSheet({
   // and partial state; it does NOT scale the money.
   const expectedTotal = Number(delivery?.customer_price ?? 0);
   const agentEarn = Number(delivery?.agent_payment_snapshot ?? 0);
-  const remit = paidNum - agentEarn;
-  const diff = paidNum - expectedTotal;
-  const cashPosFee = method === 'cash' && paidNum > 0 ? 500 : 0;
+  // 'vendor_direct' = the customer paid the vendor directly, so the agent
+  // collects nothing — paid is forced to 0. The agent fee is still owed (Reda
+  // pays it) and the Reda fee is still billed to the vendor; both are derived
+  // server-side from the creation snapshots, so there's nothing extra to send.
+  const isVendorDirect = method === 'vendor_direct';
+  const effectivePaid = isVendorDirect ? 0 : paidNum;
+  const remit = effectivePaid - agentEarn;
+  const diff = effectivePaid - expectedTotal;
+  const cashPosFee = method === 'cash' && effectivePaid > 0 ? 500 : 0;
 
   if (!delivery) return null;
 
@@ -130,7 +136,7 @@ export function MarkDeliveredSheet({
         return;
       }
     }
-    if (!Number.isFinite(paidNum) || paidNum < 0) {
+    if (!isVendorDirect && (!Number.isFinite(paidNum) || paidNum < 0)) {
       setError('Paid must be ≥ 0');
       return;
     }
@@ -143,7 +149,7 @@ export function MarkDeliveredSheet({
           reason: null,
           notes: null,
           quantityDelivered: totalDelivered,
-          paid: paidNum,
+          paid: effectivePaid,
           paymentMethod: method,
           newScheduledDate: null,
           // Pass per-line quantities only when real delivery_items exist; for a
@@ -216,14 +222,21 @@ export function MarkDeliveredSheet({
           </Banner>
         ) : null}
 
-        <Input
-          label="Amount collected (₦)"
-          value={paid}
-          onChange={setPaid}
-          keyboardType="numeric"
-          autoCapitalize="none"
-          helper={`Expected: ${formatNaira(expectedTotal)}`}
-        />
+        {isVendorDirect ? (
+          <Banner tone="info" icon="alert" title="Paid to vendor">
+            The customer paid the vendor directly — you collect ₦0. Reda still pays your earnings
+            and bills the vendor its fee.
+          </Banner>
+        ) : (
+          <Input
+            label="Amount collected (₦)"
+            value={paid}
+            onChange={setPaid}
+            keyboardType="numeric"
+            autoCapitalize="none"
+            helper={`Expected: ${formatNaira(expectedTotal)}`}
+          />
+        )}
 
         <View>
           <Text
@@ -237,7 +250,7 @@ export function MarkDeliveredSheet({
             Payment method
           </Text>
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            {(['cash', 'transfer'] as const).map((m) => {
+            {(['cash', 'transfer', 'vendor_direct'] as const).map((m) => {
               const active = method === m;
               return (
                 <Pressable
@@ -248,6 +261,7 @@ export function MarkDeliveredSheet({
                       flex: 1,
                       minHeight: 56,
                       paddingVertical: 12,
+                      paddingHorizontal: 4,
                       borderRadius: 12,
                       borderWidth: 2,
                       borderColor: active ? colors.black : colors.border,
@@ -255,24 +269,24 @@ export function MarkDeliveredSheet({
                       alignItems: 'center',
                       justifyContent: 'center',
                       flexDirection: 'row',
-                      gap: 8,
+                      gap: 6,
                     },
                     pressed && { opacity: 0.85 },
                   ]}
                 >
                   <Icon
-                    name={m === 'cash' ? 'cash' : 'bank'}
+                    name={m === 'cash' ? 'cash' : m === 'transfer' ? 'bank' : 'user'}
                     size={18}
                     color={active ? colors.white : colors.black}
                   />
                   <Text
                     style={{
                       fontFamily: fonts.bold,
-                      fontSize: 14,
+                      fontSize: 13,
                       color: active ? colors.white : colors.black,
                     }}
                   >
-                    {m === 'cash' ? 'Cash' : 'Transfer'}
+                    {m === 'cash' ? 'Cash' : m === 'transfer' ? 'Transfer' : 'To vendor'}
                   </Text>
                 </Pressable>
               );
@@ -280,7 +294,7 @@ export function MarkDeliveredSheet({
           </View>
         </View>
 
-        {Number.isFinite(diff) && diff !== 0 ? (
+        {!isVendorDirect && Number.isFinite(diff) && diff !== 0 ? (
           <Banner tone="warn" icon="alert" title={diff < 0 ? 'Underpayment' : 'Overpayment'}>
             {`Difference of ${formatNaira(Math.abs(diff))}. Remit will reflect the actual paid amount.`}
           </Banner>
@@ -336,7 +350,11 @@ export function MarkDeliveredSheet({
 
         <View style={{ backgroundColor: colors.surface, borderRadius: 12, padding: 12, gap: 6 }}>
           <SummaryRow label="Your earnings" value={formatNaira(agentEarn)} />
-          <SummaryRow label="Remit to Reda" value={formatNaira(remit)} />
+          {isVendorDirect ? (
+            <SummaryRow label="To remit to Reda" value={formatNaira(0)} />
+          ) : (
+            <SummaryRow label="Remit to Reda" value={formatNaira(remit)} />
+          )}
         </View>
 
         {error ? (

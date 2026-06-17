@@ -683,7 +683,9 @@ export function DeliveryDetail() {
                     ? 'Cash'
                     : d.payment_method === 'transfer'
                       ? 'Transfer'
-                      : 'Paid'}
+                      : d.payment_method === 'vendor_direct'
+                        ? 'Paid to vendor'
+                        : 'Paid'}
                 </Text>
                 <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.successDark }}>
                   {formatNaira(d.paid)}

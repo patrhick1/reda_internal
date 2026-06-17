@@ -19,7 +19,7 @@ export type ChangeDeliveryStatusArgs = {
   notes: string | null;
   quantityDelivered: number | null;
   paid: number | null;
-  paymentMethod: 'cash' | 'transfer' | null;
+  paymentMethod: 'cash' | 'transfer' | 'vendor_direct' | null;
   /** YYYY-MM-DD. Only meaningful when toStatus = 'postponed' — the server
    *  ignores it otherwise. Required by the UI for postponed transitions;
    *  null for every other status. */

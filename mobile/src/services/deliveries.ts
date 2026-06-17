@@ -678,7 +678,7 @@ export type ChangeStatusInput = {
   /** Order-total delivered quantity (sum of the per-line quantities). */
   quantityDelivered: number | null;
   paid: number | null;
-  paymentMethod: 'cash' | 'transfer' | null;
+  paymentMethod: 'cash' | 'transfer' | 'vendor_direct' | null;
   // For 'postponed' only — YYYY-MM-DD; server ignores otherwise.
   newScheduledDate: string | null;
   /** [Feature A] Per-line delivered quantities. When omitted on a delivered
