@@ -1,7 +1,8 @@
 import { supabase } from '@/lib/supabase';
 import type { Database } from '@/types/database.gen';
 import type { Role } from '@/lib/permissions';
-import { STATUS_GROUPS } from '@/lib/theme';
+import { STATUS_GROUPS, STATUS_META } from '@/lib/theme';
+import { formatDayMonthLagos } from '@/lib/date';
 
 // The two role-scoped views over deliveries. Same columns except:
 //   - deliveries_admin has charged_snapshot, agent_payment_snapshot, margin
@@ -134,6 +135,31 @@ export function deliveryProductsSummary(row: {
   }
   const name = row.product_name ?? '—';
   return row.quantity_ordered != null ? `${name} ×${row.quantity_ordered}` : name;
+}
+
+// Soft-failure statuses are the only prior statuses worth surfacing on a
+// carried-over row: they mean "attempted yesterday and didn't land". Active
+// statuses ('available') are noise here, and a terminal value ('picked_up')
+// would read as contradictory on a now-pending row (only possible from
+// pre-terminal-reclassification history; never from a forward roll).
+const ROLLED_FROM_SURFACED = new Set<string>(STATUS_GROUPS.soft);
+
+/** Human label for a rolled-over delivery's prior status, e.g.
+ *  "was Not answering · 16 Jun" or "2× · was Not answering · 16 Jun".
+ *  Returns null when the row isn't a carry-over, carried only an untouched
+ *  'pending', or carried a non-soft status we don't surface. Sourced from the
+ *  rolled_from_* snapshot set at rollover time (carried forward across
+ *  multi-day chains). Shared by the list row and the detail screen. */
+export function rolledFromLabel(row: {
+  rolled_from_status?: string | null;
+  rolled_from_date?: string | null;
+  rollover_count?: number | null;
+}): string | null {
+  if (!row.rolled_from_status || !ROLLED_FROM_SURFACED.has(row.rolled_from_status)) return null;
+  const label = STATUS_META[row.rolled_from_status]?.label ?? row.rolled_from_status;
+  const times = (row.rollover_count ?? 0) > 1 ? `${row.rollover_count}× · ` : '';
+  const when = row.rolled_from_date ? ` · ${formatDayMonthLagos(row.rolled_from_date)}` : '';
+  return `${times}was ${label}${when}`;
 }
 
 /** [Feature A] Compact product label for tight list rows: "3 items" for a

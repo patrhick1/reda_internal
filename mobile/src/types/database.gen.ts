@@ -1519,6 +1519,9 @@ export type Database = {
           quantity_delivered: number | null
           quantity_ordered: number | null
           raw_address: string | null
+          rolled_from_date: string | null
+          rolled_from_status: string | null
+          rollover_count: number | null
           scheduled_date: string | null
           updated_at: string | null
         }
@@ -1622,6 +1625,9 @@ export type Database = {
           quantity_delivered: number | null
           quantity_ordered: number | null
           raw_address: string | null
+          rolled_from_date: string | null
+          rolled_from_status: string | null
+          rollover_count: number | null
           scheduled_date: string | null
           updated_at: string | null
         }

@@ -14,7 +14,12 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
-import { listDeliveries, deliveryProductsLabel, type DeliveryRow } from '@/services/deliveries';
+import {
+  listDeliveries,
+  deliveryProductsLabel,
+  rolledFromLabel,
+  type DeliveryRow,
+} from '@/services/deliveries';
 import { listActiveFollowups, type ActiveFollowup } from '@/services/followups';
 import { opsUnreadAgentCounts } from '@/services/delivery-messages';
 import { useSupabaseChannel } from '@/hooks/useSupabaseChannel';
@@ -614,6 +619,7 @@ const DeliveryListRow = memo(function DeliveryListRow({
 }) {
   const status = delivery.current_status ?? 'pending';
   const showFollowup = followup && SOFT_STATUSES.has(status);
+  const carriedLabel = rolledFromLabel(delivery);
   return (
     <Card dense onPress={onPress} onLongPress={onLongPress}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
@@ -735,6 +741,30 @@ const DeliveryListRow = memo(function DeliveryListRow({
               <Text style={{ color: colors.red, fontFamily: fonts.bold }}>Unmatched</Text>
             ) : null}
           </Text>
+          {carriedLabel ? (
+            <View
+              accessibilityLabel={`Carried over — ${carriedLabel}`}
+              style={{
+                marginTop: 5,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 4,
+                alignSelf: 'flex-start',
+                backgroundColor: colors.warningSoft,
+                paddingHorizontal: 7,
+                paddingVertical: 2,
+                borderRadius: 999,
+              }}
+            >
+              <Icon name="refresh" size={11} color={colors.warningDark} />
+              <Text
+                numberOfLines={1}
+                style={{ fontFamily: fonts.semibold, fontSize: 10, color: colors.warningDark }}
+              >
+                {carriedLabel}
+              </Text>
+            </View>
+          ) : null}
           <View
             style={{
               marginTop: 8,

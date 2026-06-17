@@ -19,6 +19,7 @@ import {
   getDelivery,
   listDeliveryHistory,
   listStatusDefs,
+  rolledFromLabel,
   type DeliveryStatusHistoryRow,
 } from '@/services/deliveries';
 import { initiateCall, initiateTeamCall } from '@/services/calls';
@@ -296,6 +297,7 @@ export function DeliveryDetail() {
   };
 
   const canHandoff = canHandoffToSubAgent(user, d.assigned_agent_id, hasSubAgents) && !isTerminal;
+  const carriedLabel = rolledFromLabel(d);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -762,6 +764,7 @@ export function DeliveryDetail() {
             </View>
             <MoneyRow label="Scheduled date" value={d.scheduled_date ?? '—'} />
             <MoneyRow label="Created" value={formatDateTime(d.created_at)} />
+            {carriedLabel ? <MoneyRow label="Carried over" value={carriedLabel} /> : null}
           </View>
           {/* One-tap call about THIS delivery, role-aware:
               • Agent → rings the whole ops team (admin/dispatcher/rep); first

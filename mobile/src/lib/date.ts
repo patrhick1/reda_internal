@@ -57,6 +57,18 @@ export function formatDateLagos(iso: string): string {
   });
 }
 
+// Compact day+month for tight UI (e.g. "16 Jun"), no year. Same UTC-safe parse
+// as formatDateLagos.
+export function formatDayMonthLagos(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return iso;
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    timeZone: 'UTC',
+  });
+}
+
 /** Human-friendly range string used in share headers and AppBar subtitles. */
 export function formatRangeLagos(from: string, to: string): string {
   if (from === to) return formatDateLagos(from);
