@@ -3,14 +3,15 @@ import { router } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 import { Screen } from '@/components/Screen';
 import { Field } from '@/components/Field';
+import { AliasEditor } from '@/components/AliasEditor';
 import { Button } from '@/components/Button';
 import { createLocation } from '@/services/locations';
-import { parseAliases, parseCoord } from '@/lib/parse';
+import { parseCoord } from '@/lib/parse';
 import { errorMessage } from '@/lib/errors';
 
 export default function NewLocation() {
   const [name, setName] = useState('');
-  const [aliases, setAliases] = useState('');
+  const [aliases, setAliases] = useState<string[]>([]);
   const [latitude, setLatitude] = useState('');
   const [longitude, setLongitude] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -28,7 +29,7 @@ export default function NewLocation() {
       const lon = parseCoord(longitude, -180, 180, 'Longitude');
       await createLocation({
         name: name.trim(),
-        aliases: parseAliases(aliases),
+        aliases,
         latitude: lat,
         longitude: lon,
       });
@@ -42,13 +43,7 @@ export default function NewLocation() {
   return (
     <Screen>
       <Field label="Name" value={name} onChangeText={setName} required autoCapitalize="words" />
-      <Field
-        label="Aliases (comma-separated)"
-        value={aliases}
-        onChangeText={setAliases}
-        placeholder="e.g. Iganmu, Costain"
-        autoCapitalize="none"
-      />
+      <AliasEditor aliases={aliases} onChange={setAliases} />
       <Field
         label="Latitude"
         value={latitude}

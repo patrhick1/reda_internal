@@ -3,6 +3,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { ActivityIndicator, Alert, Platform, StyleSheet, Text, View } from 'react-native';
 import { Screen } from '@/components/Screen';
 import { Field } from '@/components/Field';
+import { AliasEditor } from '@/components/AliasEditor';
 import { Button } from '@/components/Button';
 import { useAsync } from '@/hooks/useAsync';
 import {
@@ -11,7 +12,7 @@ import {
   reactivateLocation,
   updateLocation,
 } from '@/services/locations';
-import { parseAliases, parseCoord } from '@/lib/parse';
+import { parseCoord } from '@/lib/parse';
 import { errorMessage } from '@/lib/errors';
 
 export default function EditLocation() {
@@ -19,7 +20,7 @@ export default function EditLocation() {
   const { data: location, loading, error, reload } = useAsync(() => getLocation(id), [id]);
 
   const [name, setName] = useState('');
-  const [aliases, setAliases] = useState('');
+  const [aliases, setAliases] = useState<string[]>([]);
   const [latitude, setLatitude] = useState('');
   const [longitude, setLongitude] = useState('');
   const [reason, setReason] = useState('');
@@ -29,7 +30,7 @@ export default function EditLocation() {
   useEffect(() => {
     if (location) {
       setName(location.name);
-      setAliases((location.aliases ?? []).join(', '));
+      setAliases(location.aliases ?? []);
       setLatitude(location.latitude !== null ? String(location.latitude) : '');
       setLongitude(location.longitude !== null ? String(location.longitude) : '');
     }
@@ -50,9 +51,12 @@ export default function EditLocation() {
     );
   }
 
+  const origAliases = location.aliases ?? [];
+  const aliasesDirty =
+    aliases.length !== origAliases.length || aliases.some((a, i) => a !== origAliases[i]);
   const dirty =
     name !== location.name ||
-    aliases !== (location.aliases ?? []).join(', ') ||
+    aliasesDirty ||
     latitude !== (location.latitude !== null ? String(location.latitude) : '') ||
     longitude !== (location.longitude !== null ? String(location.longitude) : '');
 
@@ -70,7 +74,7 @@ export default function EditLocation() {
         location!.id,
         {
           name: name.trim(),
-          aliases: parseAliases(aliases),
+          aliases,
           latitude: lat,
           longitude: lon,
         },
@@ -142,12 +146,7 @@ export default function EditLocation() {
       ) : null}
 
       <Field label="Name" value={name} onChangeText={setName} required autoCapitalize="words" />
-      <Field
-        label="Aliases (comma-separated)"
-        value={aliases}
-        onChangeText={setAliases}
-        autoCapitalize="none"
-      />
+      <AliasEditor aliases={aliases} onChange={setAliases} />
       <Field
         label="Latitude"
         value={latitude}
