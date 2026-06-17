@@ -85,6 +85,9 @@ PRODUCT-NAME NORMALIZATION — return the real catalog product, never the market
        "1 bottle for a start Stand again=18500"             -> {product_name:"Stand again", quantity:1, customer_price:18500}
   5. Keep genuinely distinct products as separate lines.
        "1 Pack Arabian Tea Powder Mix and 1 Pack Double Arabian Tea" -> two lines.
+  6. KNOWN 2-PRODUCT BUNDLE: "Opulent X Khamrah" (also written "Opulent Z Khamrah", "Opulent X Khakrah", "Opulent Oud X Khamrah Dukhan") is a bundle of TWO products, not one. Expand it to two lines — {product_name:"Opulent Oud", quantity:N} and {product_name:"Khamrah Dukhan", quantity:N}, where N is the bundle's quantity (default 1).
+       "1 Opulent X Khamrah" -> [{product_name:"Opulent Oud", quantity:1},{product_name:"Khamrah Dukhan", quantity:1}]
+       EXCEPTION — do NOT double-count: if the SAME message also spells out "Opulent Oud" and "Khamrah Dukhan" as their own line items (e.g. a header "OPULENT X KHAMRAH ORDER ..." followed by a body "1 OPULENT OUD + 1 KHAMRAH DUKHAN + ..."), then the "Opulent X Khamrah" text is just the order title — ignore it and use ONLY the itemized lines.
 
 Do NOT include the Total line as a product. Do NOT invent products that aren't in the message.
 Ignore order-reference / SKU-header lines — a product code or order label such as "OUD AL LAYL BROWN SINGLE WITH OIL 2246-U" or "OPULENT ORDER 252-O" is metadata, not a product line.
