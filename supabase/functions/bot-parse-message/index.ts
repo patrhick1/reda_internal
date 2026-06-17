@@ -473,6 +473,15 @@ Deno.serve(async (req) => {
 
   const matchedLines     = lineMatches.filter((r) => r.match);
   const unmatchedLines   = lineMatches.filter((r) => !r.match);
+  // [free-gift] A free (customer_price === 0) line that matches no SKU is a
+  // promotional giveaway — "FREE DIGITAL BRACELET", a bonus sachet, etc. — not a
+  // product the customer paid for. Drop it instead of dragging the whole order to
+  // needs_review. Paid or unknown-price unmatched lines still block (we never
+  // silently lose something the customer paid for).
+  const blockingUnmatched = unmatchedLines.filter((r) => r.line.customer_price !== 0);
+  const droppedFreeGifts  = unmatchedLines
+    .filter((r) => r.line.customer_price === 0)
+    .map((r) => r.line.product_name);
   const matchedClientIds = [...new Set(matchedLines.map((r) => r.match!.client_id))];
   const multiVendor      = matchedClientIds.length > 1;
   const orderClientId    = matchedClientIds.length === 1 ? matchedClientIds[0] : null;
@@ -574,7 +583,8 @@ Deno.serve(async (req) => {
     })),
     items:             resolvedItems,                 // what we'll store as delivery_items
     client_id_conflict: multiVendor,                  // true → bundle spans clients
-    unmatched_count:    unmatchedLines.length,
+    unmatched_count:    blockingUnmatched.length,     // [free-gift] free unmatched lines don't count
+    dropped_free_gifts: droppedFreeGifts,             // [free-gift] unmatched freebies we dropped
     order_client_id:    orderClientId,
     address,
     source,                  // "contractor" | "contractor+openrouter" | "openrouter"
@@ -591,7 +601,7 @@ Deno.serve(async (req) => {
   const haveAllFields =
     !!customerName && !!customerPhone && !!rawAddress &&
     !!address.matched_location_id && customerPrice !== null &&
-    resolvedItems.length > 0 && unmatchedLines.length === 0 &&
+    resolvedItems.length > 0 && blockingUnmatched.length === 0 &&
     !multiVendor && !!orderClientId;
 
   // Pipeline gating.
