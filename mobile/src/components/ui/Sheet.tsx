@@ -19,9 +19,13 @@ export type SheetProps = {
   title?: string;
   subtitle?: string;
   children: React.ReactNode;
+  /** Optional pinned footer (e.g. action buttons). Rendered OUTSIDE the
+   *  scroll area so it can never scroll off the bottom of a tall sheet — the
+   *  scrollable content shrinks to leave room for it within the maxHeight cap. */
+  footer?: React.ReactNode;
 };
 
-export function Sheet({ open, onClose, title, subtitle, children }: SheetProps) {
+export function Sheet({ open, onClose, title, subtitle, children, footer }: SheetProps) {
   const slide = useRef(new Animated.Value(0)).current;
   const insets = useSafeAreaInsets();
 
@@ -82,13 +86,27 @@ export function Sheet({ open, onClose, title, subtitle, children }: SheetProps) 
               keyboardShouldPersistTaps="handled"
               // flexShrink lets the ScrollView shrink to the parent's maxHeight
               // cap and scroll when content is tall; without it a tall sheet
-              // (e.g. Mark delivered) overflows the cap and clips its action row
+              // (e.g. Mark delivered) overflows the cap and clips its content
               // off the bottom of the screen. No effect when content fits.
               style={{ flexShrink: 1 }}
-              contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
+              contentContainerStyle={{ paddingBottom: footer ? 8 : insets.bottom + 16 }}
             >
               {children}
             </ScrollView>
+            {footer ? (
+              <View
+                style={{
+                  paddingHorizontal: 20,
+                  paddingTop: 10,
+                  paddingBottom: insets.bottom + 12,
+                  borderTopWidth: 1,
+                  borderTopColor: colors.border,
+                  backgroundColor: colors.white,
+                }}
+              >
+                {footer}
+              </View>
+            ) : null}
           </Animated.View>
         </Animated.View>
       </KeyboardAvoidingView>

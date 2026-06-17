@@ -185,8 +185,18 @@ export function MarkDeliveredSheet({
       subtitle={`${delivery.customer_name} · ${
         isMulti ? `${lines.length} items` : (delivery.product_name ?? '—')
       }`}
+      footer={
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Button variant="secondary" onPress={onClose} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button variant="emphasis" full icon="check" onPress={submit} disabled={submitting}>
+            {submitting ? 'Saving…' : 'Confirm delivery'}
+          </Button>
+        </View>
+      }
     >
-      <View style={{ padding: 20, gap: 18, paddingBottom: 32 }}>
+      <View style={{ padding: 20, gap: 18, paddingBottom: 8 }}>
         {/* Quantity delivered — one field per product line */}
         <View style={{ gap: 12 }}>
           {perLine.map((p) => (
@@ -366,15 +376,6 @@ export function MarkDeliveredSheet({
         <Banner tone="warn" icon="alert">
           Marking delivered is final — you can’t undo it from the app.
         </Banner>
-
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Button variant="secondary" onPress={onClose} disabled={submitting}>
-            Cancel
-          </Button>
-          <Button variant="emphasis" full icon="check" onPress={submit} disabled={submitting}>
-            {submitting ? 'Saving…' : 'Confirm delivery'}
-          </Button>
-        </View>
       </View>
     </Sheet>
   );
