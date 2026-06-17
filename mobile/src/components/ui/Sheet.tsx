@@ -80,7 +80,12 @@ export function Sheet({ open, onClose, title, subtitle, children }: SheetProps) 
             ) : null}
             <ScrollView
               keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ paddingBottom: insets.bottom }}
+              // flexShrink lets the ScrollView shrink to the parent's maxHeight
+              // cap and scroll when content is tall; without it a tall sheet
+              // (e.g. Mark delivered) overflows the cap and clips its action row
+              // off the bottom of the screen. No effect when content fits.
+              style={{ flexShrink: 1 }}
+              contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
             >
               {children}
             </ScrollView>
