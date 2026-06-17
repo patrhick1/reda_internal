@@ -80,8 +80,9 @@ PRODUCT-NAME NORMALIZATION — return the real catalog product, never the market
        "Gold Package - Buy 2 Fire Stop Spray Get 1 FREE"    -> [{product_name:"Fire Stop Spray", quantity:3}]
   3. "Set of <X> including N (FREE) <Y>" / "<X> with N free <Y>" -> TWO lines (different products):
        "1 Set of OUD AL LAYL including 2 FREE Perfume Oil"  -> [{product_name:"Oud Al Layl", quantity:1},{product_name:"Perfume Oil", quantity:2}]
-  4. Strip quantities, prices, currency, and filler words ("Pack of", "Set of", "(One)", "units", "x2", parenthetical totals) from product_name — keep only the product itself.
+  4. Strip quantities, prices, currency, and packaging/filler words ("Pack of", "Set of", "bottle(s)", "sachet", "tube", "carton", "piece(s)", "(One)", "units", "x2", parenthetical totals) from product_name — keep only the REAL product. A bare container/unit word ("bottle", "pack", "sachet") is NEVER the product; the product name often comes AFTER the quantity/container, and an "=price" may follow it.
        "1 Pack Of Double Arabian Tea"                       -> {product_name:"Double Arabian Tea", quantity:1}
+       "1 bottle for a start Stand again=18500"             -> {product_name:"Stand again", quantity:1, customer_price:18500}
   5. Keep genuinely distinct products as separate lines.
        "1 Pack Arabian Tea Powder Mix and 1 Pack Double Arabian Tea" -> two lines.
 
