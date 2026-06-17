@@ -39,6 +39,7 @@ export default function ClientReconcileDetail() {
   const totals = useMemo(() => {
     let customerOwed = 0,
       paid = 0,
+      paidToVendor = 0,
       redaFee = 0,
       cashPosFee = 0;
     let outstanding = 0;
@@ -47,17 +48,21 @@ export default function ClientReconcileDetail() {
       const pd = Number(r.paid ?? 0);
       customerOwed += cp;
       paid += pd;
+      // vendor_direct: the customer settled the order value with the vendor
+      // directly (paid-to-Reda = 0). Surfacing it as its own line keeps the
+      // breakdown reconciling: owed = paid-to-Reda + paid-to-vendor + outstanding.
+      if (r.payment_method === 'vendor_direct') paidToVendor += cp;
       redaFee += Number(r.reda_fee ?? 0);
       cashPosFee += Number(r.cash_pos_fee ?? 0);
-      // 'vendor_direct' is settled customer<->vendor directly (paid-to-Reda = 0),
-      // so it contributes 0 to outstanding — mirrors client_remit_summary so the
-      // index and this detail agree.
+      // vendor_direct contributes 0 to outstanding — mirrors client_remit_summary
+      // so the index and this detail agree.
       outstanding += rowOutstanding(r);
     }
     return {
       count: rows.length,
       customerOwed,
       paid,
+      paidToVendor,
       outstanding,
       redaFee,
       cashPosFee,
@@ -138,6 +143,12 @@ export default function ClientReconcileDetail() {
             <View style={{ marginTop: 14, gap: 6 }}>
               <SmallRow label="Customer owed" value={formatNaira(totals.customerOwed)} />
               <SmallRow label="Customer paid" value={formatNaira(totals.paid)} />
+              {totals.paidToVendor > 0 ? (
+                <SmallRow
+                  label="Paid to vendor (direct)"
+                  value={formatNaira(totals.paidToVendor)}
+                />
+              ) : null}
               <SmallRow
                 label="Outstanding"
                 value={formatNaira(totals.outstanding)}
