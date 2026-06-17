@@ -249,10 +249,6 @@ export async function listAgentEarnings(
 export type DeliveryStatusDef = Database['public']['Tables']['delivery_status_defs']['Row'];
 export type DeliveryStatusTransition =
   Database['public']['Tables']['delivery_status_transitions']['Row'];
-export type DeliveryStatusHistoryRow =
-  Database['public']['Tables']['delivery_status_history']['Row'] & {
-    changed_by_name: string | null;
-  };
 
 const VIEW_FOR: Record<Role, 'deliveries_admin' | 'deliveries_safe'> = {
   admin: 'deliveries_admin',
@@ -872,20 +868,26 @@ export async function bulkChangeStatus(
   };
 }
 
-export async function listDeliveryHistory(deliveryId: string): Promise<DeliveryStatusHistoryRow[]> {
-  const { data, error } = await supabase
-    .from('delivery_status_history')
-    .select('*, changed_by:users(display_name)')
-    .eq('delivery_id', deliveryId)
-    .order('effective_at', { ascending: false });
-  if (error) throw error;
-  return (data ?? []).map((row) => {
-    const r = row as Database['public']['Tables']['delivery_status_history']['Row'] & {
-      changed_by: { display_name: string } | null;
-    };
-    const { changed_by, ...rest } = r;
-    return { ...rest, changed_by_name: changed_by?.display_name ?? null };
+/** One row of a delivery's merged history timeline (the delivery + its rollover
+ *  ancestry). Comes from list_delivery_history_chain. `is_current` marks rows
+ *  belonging to the delivery being viewed (vs. an earlier carried-over day);
+ *  `scheduled_date` is the owning delivery's date, for day dividers. */
+export type DeliveryChainHistoryRow =
+  Database['public']['Functions']['list_delivery_history_chain']['Returns'][number];
+
+/** Status history for a delivery AND its rollover ancestry (parent chain),
+ *  oldest delivery first and chronological within each. Backed by a
+ *  SECURITY DEFINER RPC so the ancestry is reachable for every role (an agent
+ *  can't read a parent assigned to someone else via the deliveries views, but
+ *  the chain's history is). Powers the detail screen's merged timeline. */
+export async function listDeliveryHistoryChain(
+  deliveryId: string,
+): Promise<DeliveryChainHistoryRow[]> {
+  const { data, error } = await supabase.rpc('list_delivery_history_chain', {
+    p_delivery_id: deliveryId,
   });
+  if (error) throw error;
+  return (data ?? []) as DeliveryChainHistoryRow[];
 }
 
 // State machine reads — same surface for everyone, RLS allows select-all on these tables.

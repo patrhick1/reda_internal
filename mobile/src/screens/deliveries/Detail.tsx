@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -17,10 +17,10 @@ import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
   getDelivery,
-  listDeliveryHistory,
+  listDeliveryHistoryChain,
   listStatusDefs,
   rolledFromLabel,
-  type DeliveryStatusHistoryRow,
+  type DeliveryChainHistoryRow,
 } from '@/services/deliveries';
 import { initiateCall, initiateTeamCall } from '@/services/calls';
 import { ensureMicPermission } from '@/lib/calls/permissions';
@@ -52,6 +52,7 @@ import { BotRawMessageCard } from '@/components/delivery/BotRawMessageCard';
 import { FollowupClaimBanner } from '@/components/delivery/FollowupClaimBanner';
 import { HINTS } from '@/hints/registry';
 import { formatDateTime, formatNaira } from '@/lib/format';
+import { ChainDivider } from '@/components/delivery/ChainDivider';
 import { MarkDeliveredSheet } from '@/components/sheets/MarkDeliveredSheet';
 import { CorrectLocationSheet } from '@/components/sheets/CorrectLocationSheet';
 import { RevertDeliveredSheet } from '@/components/sheets/RevertDeliveredSheet';
@@ -69,7 +70,7 @@ export function DeliveryDetail() {
   const insets = useSafeAreaInsets();
 
   const deliveryQ = useAsync(() => getDelivery(user.role, id), [user.role, id]);
-  const historyQ = useAsync(() => listDeliveryHistory(id), [id]);
+  const historyQ = useAsync(() => listDeliveryHistoryChain(id), [id]);
   const defsQ = useAsync(() => listStatusDefs(), []);
   const notifQ = useAsync(() => listClientNotificationsForDelivery(id), [id]);
   const canMarkNotified = canMarkClientNotified(user.role);
@@ -298,6 +299,11 @@ export function DeliveryDetail() {
 
   const canHandoff = canHandoffToSubAgent(user, d.assigned_agent_id, hasSubAgents) && !isTerminal;
   const carriedLabel = rolledFromLabel(d);
+  // History timeline spans this delivery + its rollover ancestry. When there
+  // are ancestor rows we render per-delivery dividers ("Before rollover · …");
+  // a plain (never-rolled) delivery has only its own rows and renders as before.
+  const chainRows = historyQ.data ?? [];
+  const chainHasAncestors = chainRows.some((r) => !r.is_current);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -822,24 +828,42 @@ export function DeliveryDetail() {
           <Text style={[kicker, { marginBottom: 12 }]}>History</Text>
           {historyQ.loading && !historyQ.data ? (
             <ActivityIndicator color={colors.black} />
-          ) : (historyQ.data ?? []).length === 0 ? (
+          ) : historyQ.error ? (
+            <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.red }}>
+              Couldn’t load history. Pull down to refresh.
+            </Text>
+          ) : chainRows.length === 0 ? (
             <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary }}>
               No history yet.
             </Text>
           ) : (
             <View>
-              {[...historyQ.data!].reverse().map((h, i, arr) => (
-                <HistoryRow
-                  key={h.id}
-                  row={h}
-                  first={i === 0}
-                  last={i === arr.length - 1}
-                  labelByStatus={labelByStatus}
-                  notification={notifQ.data?.get(h.id) ?? null}
-                  canMark={canMarkNotified}
-                  onMark={onMarkNotified}
-                />
-              ))}
+              {chainRows.map((h, i, arr) => {
+                const prev = arr[i - 1];
+                const newGroup = !prev || prev.delivery_id !== h.delivery_id;
+                const isAncestor = !h.is_current;
+                return (
+                  <Fragment key={h.id}>
+                    {chainHasAncestors && newGroup ? (
+                      <ChainDivider isCurrent={h.is_current} date={h.scheduled_date} />
+                    ) : null}
+                    {/* Ancestor (prior-day) rows are muted and read-only — the
+                        "Mark client notified" action only applies to this
+                        delivery's own rows. */}
+                    <View style={isAncestor ? { opacity: 0.6 } : undefined}>
+                      <HistoryRow
+                        row={h}
+                        first={i === 0}
+                        last={i === arr.length - 1}
+                        labelByStatus={labelByStatus}
+                        notification={isAncestor ? null : (notifQ.data?.get(h.id) ?? null)}
+                        canMark={isAncestor ? false : canMarkNotified}
+                        onMark={onMarkNotified}
+                      />
+                    </View>
+                  </Fragment>
+                );
+              })}
             </View>
           )}
         </Card>
@@ -1051,7 +1075,7 @@ function HistoryRow({
   canMark,
   onMark,
 }: {
-  row: DeliveryStatusHistoryRow;
+  row: DeliveryChainHistoryRow;
   first: boolean;
   last: boolean;
   labelByStatus: Map<string, string>;

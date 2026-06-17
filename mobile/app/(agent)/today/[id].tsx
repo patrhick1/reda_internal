@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -18,9 +18,9 @@ import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
   getDelivery,
-  listDeliveryHistory,
+  listDeliveryHistoryChain,
   listStatusDefs,
-  type DeliveryStatusHistoryRow,
+  type DeliveryChainHistoryRow,
 } from '@/services/deliveries';
 import { listSubAgents } from '@/services/users';
 import { canHandoffToSubAgent } from '@/lib/permissions';
@@ -32,6 +32,7 @@ import { UpdateStatusSheet } from '@/components/sheets/UpdateStatusSheet';
 import { FlagDeliverySheet } from '@/components/sheets/FlagDeliverySheet';
 import { HandoffToSubAgentSheet } from '@/components/sheets/HandoffToSubAgentSheet';
 import { MessageThread } from '@/components/delivery/MessageThread';
+import { ChainDivider } from '@/components/delivery/ChainDivider';
 import { BotRawMessageCard } from '@/components/delivery/BotRawMessageCard';
 import { useQueue } from '@/queue/QueueProvider';
 
@@ -42,7 +43,7 @@ export default function AgentDeliveryDetail() {
   const user = useCurrentUser();
 
   const deliveryQ = useAsync(() => getDelivery(user.role, id), [user.role, id]);
-  const historyQ = useAsync(() => listDeliveryHistory(id), [id]);
+  const historyQ = useAsync(() => listDeliveryHistoryChain(id), [id]);
   const defsQ = useAsync(() => listStatusDefs(), []);
 
   const [markOpen, setMarkOpen] = useState(false);
@@ -119,6 +120,10 @@ export default function AgentDeliveryDetail() {
 
   const d = deliveryQ.data;
   const status = optimisticStatus ?? d.current_status ?? 'pending';
+  // History spans this delivery + its rollover ancestry; show per-day dividers
+  // when there are earlier (carried-over) rows.
+  const chainRows = historyQ.data ?? [];
+  const chainHasAncestors = chainRows.some((r) => !r.is_current);
   const isTerminal = TERMINAL_STATUSES.has(status);
   const isDelivered = status === 'delivered';
   const firstName = (d.customer_name ?? 'customer').split(/\s+/)[0]!;
@@ -128,8 +133,10 @@ export default function AgentDeliveryDetail() {
   // than this agent, the order was handed over — they've already reached the
   // customer, so don't re-call. Clears once this agent takes any action (their
   // own status change makes the latest history row theirs); hidden for terminal
-  // rows and system-set rows (no changed_by_user_id).
-  const latestHistory = historyQ.data?.[0];
+  // rows and system-set rows (no changed_by_user_id). chainRows is oldest-first
+  // and includes ancestry, so take the newest row of THIS delivery.
+  const currentHistory = chainRows.filter((r) => r.is_current);
+  const latestHistory = currentHistory[currentHistory.length - 1];
   const handedToYou =
     !!latestHistory?.changed_by_user_id &&
     latestHistory.changed_by_user_id !== user.userId &&
@@ -518,21 +525,36 @@ export default function AgentDeliveryDetail() {
           <Text style={[kicker, { marginBottom: 12 }]}>History</Text>
           {historyQ.loading && !historyQ.data ? (
             <ActivityIndicator color={colors.black} />
-          ) : (historyQ.data ?? []).length === 0 ? (
+          ) : historyQ.error ? (
+            <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.red }}>
+              Couldn’t load history. Pull down to refresh.
+            </Text>
+          ) : chainRows.length === 0 ? (
             <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary }}>
               No history yet.
             </Text>
           ) : (
             <View>
-              {[...historyQ.data!].reverse().map((h, i, arr) => (
-                <HistoryRow
-                  key={h.id}
-                  row={h}
-                  first={i === 0}
-                  last={i === arr.length - 1}
-                  labelByStatus={labelByStatus}
-                />
-              ))}
+              {chainRows.map((h, i, arr) => {
+                const prev = arr[i - 1];
+                const newGroup = !prev || prev.delivery_id !== h.delivery_id;
+                const isAncestor = !h.is_current;
+                return (
+                  <Fragment key={h.id}>
+                    {chainHasAncestors && newGroup ? (
+                      <ChainDivider isCurrent={h.is_current} date={h.scheduled_date} />
+                    ) : null}
+                    <View style={isAncestor ? { opacity: 0.6 } : undefined}>
+                      <HistoryRow
+                        row={h}
+                        first={i === 0}
+                        last={i === arr.length - 1}
+                        labelByStatus={labelByStatus}
+                      />
+                    </View>
+                  </Fragment>
+                );
+              })}
             </View>
           )}
         </Card>
@@ -623,7 +645,7 @@ function HistoryRow({
   last,
   labelByStatus: _labelByStatus,
 }: {
-  row: DeliveryStatusHistoryRow;
+  row: DeliveryChainHistoryRow;
   first: boolean;
   last: boolean;
   labelByStatus: Map<string, string>;

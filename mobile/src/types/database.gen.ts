@@ -2255,6 +2255,24 @@ export type Database = {
       is_admin: { Args: never; Returns: boolean }
       is_admin_or_dispatcher: { Args: never; Returns: boolean }
       is_warehouse: { Args: never; Returns: boolean }
+      list_delivery_history_chain: {
+        Args: { p_delivery_id: string }
+        Returns: {
+          changed_at: string
+          changed_by_name: string | null
+          changed_by_user_id: string | null
+          chain_depth: number
+          delivery_id: string
+          effective_at: string
+          from_status: string | null
+          id: string
+          is_current: boolean
+          notes: string | null
+          reason: string | null
+          scheduled_date: string | null
+          to_status: string
+        }[]
+      }
       list_settlements_for_date: {
         Args: { p_period_date: string }
         Returns: {
