@@ -145,18 +145,28 @@ function AllocationRow({ line, divider }: { line: AllocationLine; divider: boole
       }
     >
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Text
-          style={{
-            fontFamily: fonts.semibold,
-            fontSize: 14,
-            color: colors.black,
-            flex: 1,
-            marginRight: 8,
-          }}
-          numberOfLines={1}
-        >
-          {line.product_name}
-        </Text>
+        <View style={{ flex: 1, marginRight: 8 }}>
+          <Text
+            style={{
+              fontFamily: fonts.semibold,
+              fontSize: 14,
+              color: colors.black,
+            }}
+            numberOfLines={1}
+          >
+            {line.product_name}
+          </Text>
+          {/* Vendor — disambiguates products sold by two clients so the
+              warehouse knows whose stock to transfer from. */}
+          {line.client_name ? (
+            <Text
+              style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary }}
+              numberOfLines={1}
+            >
+              {line.client_name}
+            </Text>
+          ) : null}
+        </View>
         <View
           style={{
             paddingHorizontal: 8,
@@ -217,6 +227,7 @@ function OrderRow({ row, onPress }: { row: AvailableOrderRow; onPress: (() => vo
             numberOfLines={1}
           >
             {row.product_name} × {row.quantity_ordered}
+            {row.client_name ? ` · ${row.client_name}` : ''}
           </Text>
         </View>
       </View>

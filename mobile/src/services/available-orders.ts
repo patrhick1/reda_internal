@@ -260,6 +260,12 @@ export type AllocationAction = 'give' | 'collect' | 'ok';
 export type AllocationLine = {
   product_catalog_id: string;
   product_name: string;
+  /** Owning vendor. Each product_catalog_id belongs to exactly one client, so a
+   *  product "sold by two clients" surfaces as two lines with the same
+   *  product_name but different vendors — the warehouse needs this to know whose
+   *  stock to transfer from. */
+  client_id: string | null;
+  client_name: string | null;
   qty_needed: number;
   qty_held: number;
   gap: number; // qty_needed - qty_held; positive = give, negative = collect
@@ -274,7 +280,10 @@ export function buildAllocation(
   stockRows: StockMatrixRow[],
   agentId: string,
 ): AllocationLine[] {
-  const needByProduct = new Map<string, { name: string; qty: number }>();
+  const needByProduct = new Map<
+    string,
+    { name: string; qty: number; client_id: string | null; client_name: string | null }
+  >();
   for (const r of agentRows) {
     const cur = needByProduct.get(r.product_catalog_id);
     if (cur) {
@@ -283,16 +292,23 @@ export function buildAllocation(
       needByProduct.set(r.product_catalog_id, {
         name: r.product_name,
         qty: r.quantity_ordered,
+        client_id: r.client_id,
+        client_name: r.client_name,
       });
     }
   }
 
-  const heldByProduct = new Map<string, { name: string; qty: number }>();
+  const heldByProduct = new Map<
+    string,
+    { name: string; qty: number; client_id: string | null; client_name: string | null }
+  >();
   for (const s of stockRows) {
     if (s.user_id !== agentId) continue;
     heldByProduct.set(s.product_catalog_id, {
       name: s.product_name,
       qty: s.quantity_on_hand,
+      client_id: s.client_id || null,
+      client_name: s.client_name || null,
     });
   }
 
@@ -311,6 +327,10 @@ export function buildAllocation(
     lines.push({
       product_catalog_id: pid,
       product_name: need?.name ?? held?.name ?? 'Product',
+      // Prefer the demand row's vendor; fall back to the held-stock row for
+      // collect-only lines (held but no demand today).
+      client_id: need?.client_id ?? held?.client_id ?? null,
+      client_name: need?.client_name ?? held?.client_name ?? null,
       qty_needed,
       qty_held,
       gap,
