@@ -518,7 +518,13 @@ export default function AgentDeliveryDetail() {
         {/* Messages — agent can reply to ops-seeded threads or follow up on
             their own flagged thread. Seeding still goes through
             FlagDeliverySheet so the chip + status change are captured. */}
-        <MessageThread deliveryId={d.id!} deliveryStatus={status} canPost canSeed={false} />
+        <MessageThread
+          deliveryId={d.id!}
+          deliveryStatus={status}
+          viewerRole={user.role}
+          canPost
+          canSeed={false}
+        />
 
         {/* History */}
         <Card>

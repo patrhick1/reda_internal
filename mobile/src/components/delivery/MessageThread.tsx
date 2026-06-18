@@ -16,6 +16,7 @@ import {
 } from '@/services/delivery-messages';
 import { newClientUuid } from '@/lib/uuid';
 import { errorMessage } from '@/lib/errors';
+import type { Role } from '@/lib/permissions';
 
 /** Per-delivery message thread. Renders when either:
  *  - the thread already has messages (anyone with read access sees it), or
@@ -27,6 +28,7 @@ import { errorMessage } from '@/lib/errors';
 export function MessageThread({
   deliveryId,
   deliveryStatus,
+  viewerRole,
   canPost,
   canSeed,
 }: {
@@ -35,20 +37,29 @@ export function MessageThread({
    *  the thread is open. Pass the optimistic value if the parent screen has
    *  one. */
   deliveryStatus: string | null | undefined;
+  /** The signed-in viewer's role. Drives the read model: an AGENT clears the
+   *  thread by opening it (seeing the ops reply is enough), but OPS must take an
+   *  explicit action — reply, claim, or "Mark handled" — so a rep who just peeks
+   *  and gets distracted doesn't silently clear the issue for the whole team. */
+  viewerRole: Role;
   /** Viewer can post a reply when the thread already has messages. */
   canPost: boolean;
   /** Viewer can seed an empty thread (ops only). */
   canSeed: boolean;
 }) {
+  const isAgentViewer = viewerRole === 'agent';
   const messagesQ = useAsync(() => listMessages(deliveryId), [deliveryId]);
+  const [marking, setMarking] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
       messagesQ.reload();
-      // Mark-read can fail silently — it's not user-visible.
-      markRead(deliveryId).catch(() => undefined);
+      // Agents clear by viewing (seeing the ops reply is enough). Ops do NOT —
+      // they clear via reply / claim / "Mark handled" so an issue can't vanish
+      // on a distracted peek.
+      if (isAgentViewer) markRead(deliveryId).catch(() => undefined);
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [deliveryId]),
+    }, [deliveryId, isAgentViewer]),
   );
 
   // Realtime: a reply posted by anyone (esp. ops → agent) shows up live while
@@ -68,14 +79,31 @@ export function MessageThread({
         },
         () => {
           messagesQ.reload();
-          markRead(deliveryId).catch(() => undefined);
+          if (isAgentViewer) markRead(deliveryId).catch(() => undefined);
         },
       ),
-    [deliveryId, messagesQ.reload],
+    [deliveryId, isAgentViewer, messagesQ.reload],
   );
 
   const isOpen = !TERMINAL_STATUSES.has(deliveryStatus ?? '');
   const messages = messagesQ.data ?? [];
+
+  // Ops "Mark handled": shown when an ops viewer has an unread agent message on
+  // an open thread and there's nothing to reply (e.g. they fixed it offline).
+  // Clears the agent's unread via the role-aware mark_messages_read RPC.
+  const hasUnreadAgentMsg = messages.some((m) => m.author_role === 'agent' && !m.read_at);
+  const showMarkHandled = !isAgentViewer && isOpen && hasUnreadAgentMsg;
+  async function markHandled() {
+    setMarking(true);
+    try {
+      await markRead(deliveryId);
+      messagesQ.reload();
+    } catch {
+      // Best-effort — the realtime sub / next focus reconciles.
+    } finally {
+      setMarking(false);
+    }
+  }
 
   if (messagesQ.loading && messages.length === 0) {
     return (
@@ -119,6 +147,31 @@ export function MessageThread({
           <Bubble key={m.id} message={m} />
         ))}
       </View>
+      {showMarkHandled ? (
+        <View style={{ marginTop: 12, flexDirection: 'row', justifyContent: 'flex-end' }}>
+          <Pressable
+            onPress={markHandled}
+            disabled={marking}
+            accessibilityLabel="Mark this issue handled"
+            style={({ pressed }) => [
+              {
+                paddingVertical: 9,
+                paddingHorizontal: 16,
+                borderRadius: 999,
+                borderWidth: 1.5,
+                borderColor: colors.black,
+                backgroundColor: colors.white,
+                opacity: marking ? 0.5 : 1,
+              },
+              pressed && !marking && { opacity: 0.85 },
+            ]}
+          >
+            <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.black }}>
+              {marking ? 'Marking…' : 'Mark handled'}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
       {isOpen && canPost ? (
         <ReplyComposer deliveryId={deliveryId} onSent={() => messagesQ.reload()} />
       ) : !isOpen ? (

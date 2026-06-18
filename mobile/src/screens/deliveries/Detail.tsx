@@ -820,6 +820,7 @@ export function DeliveryDetail() {
           <MessageThread
             deliveryId={d.id}
             deliveryStatus={status}
+            viewerRole={user.role}
             canPost={canPostOnThread(user.role, d.assigned_agent_id === user.userId)}
             canSeed={canSeedThread(user.role)}
           />
