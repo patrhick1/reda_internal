@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import {
   ActivityIndicator,
   FlatList,
   RefreshControl,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -16,6 +17,7 @@ import { listClients, type Client } from '@/services/clients';
 
 export default function ClientsList() {
   const [includeInactive, setIncludeInactive] = useState(false);
+  const [query, setQuery] = useState('');
   const { data, loading, error, reload } = useAsync(
     () => listClients({ includeInactive }),
     [includeInactive],
@@ -28,6 +30,10 @@ export default function ClientsList() {
     }, [reload]),
   );
 
+  // Pure client-side filter over the already-loaded list (no extra query).
+  const filtered = useMemo(() => filterClients(data ?? [], query), [data, query]);
+  const searching = query.trim().length > 0;
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -39,6 +45,20 @@ export default function ClientsList() {
         </Link>
       </View>
 
+      <View style={styles.searchWrap}>
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search clients"
+          placeholderTextColor="#999"
+          style={styles.search}
+          autoCapitalize="none"
+          autoCorrect={false}
+          clearButtonMode="while-editing"
+          returnKeyType="search"
+        />
+      </View>
+
       {error ? (
         <View style={styles.center}>
           <Text style={styles.error}>{error}</Text>
@@ -48,14 +68,23 @@ export default function ClientsList() {
         <View style={styles.center}>
           <ActivityIndicator />
         </View>
-      ) : data && data.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <View style={styles.center}>
-          <Text style={styles.empty}>No clients yet.</Text>
-          <Text style={styles.emptySub}>Tap “New client” to add one.</Text>
+          {searching ? (
+            <>
+              <Text style={styles.empty}>No clients match “{query.trim()}”.</Text>
+              <Text style={styles.emptySub}>Try a different name, phone, or email.</Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.empty}>No clients yet.</Text>
+              <Text style={styles.emptySub}>Tap “New client” to add one.</Text>
+            </>
+          )}
         </View>
       ) : (
         <FlatList
-          data={data ?? []}
+          data={filtered}
           keyExtractor={(c) => c.id}
           renderItem={({ item }) => <ClientRow client={item} />}
           ItemSeparatorComponent={() => <View style={styles.sep} />}
@@ -86,6 +115,19 @@ function ClientRow({ client }: { client: Client }) {
   );
 }
 
+/** Case-insensitive match across client name, contact phone, and email.
+ *  Pure; runs over the already-loaded list. */
+function filterClients(clients: Client[], query: string): Client[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return clients;
+  return clients.filter(
+    (c) =>
+      c.name.toLowerCase().includes(q) ||
+      (c.contact_phone ?? '').toLowerCase().includes(q) ||
+      (c.contact_email ?? '').toLowerCase().includes(q),
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   header: {
@@ -99,6 +141,17 @@ const styles = StyleSheet.create({
   },
   toggle: { fontSize: 14, color: '#333', fontWeight: '500' },
   newBtn: { paddingHorizontal: 14, minHeight: 36 },
+  searchWrap: { paddingHorizontal: 16, paddingTop: 12 },
+  search: {
+    borderWidth: 1,
+    borderColor: '#e2e2e2',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: '#111',
+    backgroundColor: '#fafafa',
+  },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   list: { paddingHorizontal: 16, paddingVertical: 12 },
   row: {

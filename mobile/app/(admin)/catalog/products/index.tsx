@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -6,6 +6,7 @@ import {
   SectionList,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -18,6 +19,7 @@ type Section = { title: string; data: ProductWithClient[] };
 
 export default function ProductsList() {
   const [includeInactive, setIncludeInactive] = useState(false);
+  const [query, setQuery] = useState('');
   const { data, loading, error, reload } = useAsync(
     () => listProducts({ includeInactive }),
     [includeInactive],
@@ -29,7 +31,13 @@ export default function ProductsList() {
     }, [reload]),
   );
 
-  const sections: Section[] = groupByClient(data ?? []);
+  // Search is a pure client-side filter — the full list is already loaded, so
+  // no extra query/pagination. Empty query = unfiltered (today's behavior).
+  const sections: Section[] = useMemo(
+    () => groupByClient(filterProducts(data ?? [], query)),
+    [data, query],
+  );
+  const searching = query.trim().length > 0;
 
   return (
     <View style={styles.container}>
@@ -40,6 +48,20 @@ export default function ProductsList() {
         <Link href="/(admin)/catalog/products/new" asChild>
           <Button title="New product" onPress={() => undefined} style={styles.newBtn} />
         </Link>
+      </View>
+
+      <View style={styles.searchWrap}>
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder="Search products or vendor"
+          placeholderTextColor="#999"
+          style={styles.search}
+          autoCapitalize="none"
+          autoCorrect={false}
+          clearButtonMode="while-editing"
+          returnKeyType="search"
+        />
       </View>
 
       {error ? (
@@ -53,8 +75,17 @@ export default function ProductsList() {
         </View>
       ) : sections.length === 0 ? (
         <View style={styles.center}>
-          <Text style={styles.empty}>No products yet.</Text>
-          <Text style={styles.emptySub}>Tap “New product” to add one.</Text>
+          {searching ? (
+            <>
+              <Text style={styles.empty}>No products match “{query.trim()}”.</Text>
+              <Text style={styles.emptySub}>Try a different name or vendor.</Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.empty}>No products yet.</Text>
+              <Text style={styles.emptySub}>Tap “New product” to add one.</Text>
+            </>
+          )}
         </View>
       ) : (
         <SectionList
@@ -91,6 +122,19 @@ function ProductRow({ product }: { product: ProductWithClient }) {
   );
 }
 
+/** Case-insensitive match across product name, vendor (client) name, and
+ *  description. Pure; runs over the already-loaded list. */
+function filterProducts(products: ProductWithClient[], query: string): ProductWithClient[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return products;
+  return products.filter(
+    (p) =>
+      p.product_name.toLowerCase().includes(q) ||
+      p.client_name.toLowerCase().includes(q) ||
+      (p.description ?? '').toLowerCase().includes(q),
+  );
+}
+
 function groupByClient(products: ProductWithClient[]): Section[] {
   const map = new Map<string, ProductWithClient[]>();
   for (const p of products) {
@@ -119,6 +163,17 @@ const styles = StyleSheet.create({
   },
   toggle: { fontSize: 14, color: '#333', fontWeight: '500' },
   newBtn: { paddingHorizontal: 14, minHeight: 36 },
+  searchWrap: { paddingHorizontal: 16, paddingTop: 12 },
+  search: {
+    borderWidth: 1,
+    borderColor: '#e2e2e2',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: '#111',
+    backgroundColor: '#fafafa',
+  },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   list: { paddingHorizontal: 16, paddingVertical: 12 },
   sectionHeader: {
