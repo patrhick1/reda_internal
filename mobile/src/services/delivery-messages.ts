@@ -149,6 +149,17 @@ export async function agentUnreadCounts(): Promise<Map<string, number>> {
  *  shared deliveries list (admin / dispatcher / rep) so ops see when an agent has
  *  responded without opening every thread.
  *
+ *  Counts DELIBERATE contact only: a reply (issue_type null) or an actionable
+ *  flag. Auto-seeded soft-fail notes are excluded — when an agent picks
+ *  "number busy" / "not connecting" / "switched off" etc., the status change
+ *  routes through flag_delivery_issue with issue_type=cant_reach_client, which
+ *  is a routine call outcome, not the agent reaching out. Badging those caused
+ *  alert fatigue and disagreed with the home "Needs Attention" feed, which
+ *  already filters them via ACTIONABLE_ISSUE_TYPES. We reuse the same derived
+ *  AUTO_SEEDED_ISSUE_TYPES set here so the two surfaces stay in lockstep. The
+ *  soft-fail itself still surfaces to ops via the row's status pill + the
+ *  Soft fail filter — it just no longer fires a "message" badge.
+ *
  *  RLS does the scoping: delivery_messages_select_participants grants the whole
  *  ops set (is_admin_or_dispatcher() — admin + dispatcher + rep) read on every
  *  delivery's messages, so this returns every delivery with an unread agent
@@ -162,12 +173,14 @@ export async function agentUnreadCounts(): Promise<Map<string, number>> {
 export async function opsUnreadAgentCounts(): Promise<Map<string, number>> {
   const { data, error } = await supabase
     .from('delivery_messages')
-    .select('delivery_id')
+    .select('delivery_id, issue_type')
     .eq('author_role', 'agent')
     .is('read_at', null);
   if (error) throw error;
   const map = new Map<string, number>();
-  for (const r of (data ?? []) as { delivery_id: string }[]) {
+  for (const r of (data ?? []) as { delivery_id: string; issue_type: IssueType | null }[]) {
+    // Skip auto-seeded soft-fail notes — badge deliberate contact only.
+    if (r.issue_type && AUTO_SEEDED_ISSUE_TYPES.has(r.issue_type)) continue;
     map.set(r.delivery_id, (map.get(r.delivery_id) ?? 0) + 1);
   }
   return map;
