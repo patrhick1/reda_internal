@@ -89,8 +89,9 @@ export function NotifyAttentionBlock({
                   }}
                   numberOfLines={1}
                 >
-                  {deliveryProductsLabel(row)}
-                  {row.assigned_agent_name ? ` · ${row.assigned_agent_name}` : ''}
+                  {[deliveryProductsLabel(row), row.assigned_agent_name]
+                    .filter(Boolean)
+                    .join(' · ')}
                 </Text>
               </View>
               {row.current_status ? (

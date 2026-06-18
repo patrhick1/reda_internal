@@ -63,14 +63,25 @@ export function RepDashboard() {
 
   // Deliveries whose latest status the client hasn't been told about yet, freshest
   // first — the rep's #1 daily task. Derived from the already-loaded list (no extra
-  // fetch); the same predicate backs the deliveries "To notify" filter.
-  const toNotify = useMemo(
-    () =>
-      deliveries
-        .filter(awaitsClientNotification)
-        .sort((a, b) => (b.latest_changed_at ?? '').localeCompare(a.latest_changed_at ?? '')),
-    [deliveries],
-  );
+  // fetch); the same predicate backs the deliveries "To notify" filter. Collapsed
+  // per customer order (siblingGroupKey, keeping the freshest racing row) so the
+  // count matches the sibling-collapsed hero above it and the rep sees one entry
+  // per client to message — the list's "To notify" chip stays per-row, like its
+  // sibling chips.
+  const toNotify = useMemo(() => {
+    const freshestByGroup = new Map<string, DeliveryRow>();
+    for (const d of deliveries) {
+      if (!awaitsClientNotification(d)) continue;
+      const key = siblingGroupKey(d);
+      const cur = freshestByGroup.get(key);
+      if (!cur || (d.latest_changed_at ?? '') > (cur.latest_changed_at ?? '')) {
+        freshestByGroup.set(key, d);
+      }
+    }
+    return [...freshestByGroup.values()].sort((a, b) =>
+      (b.latest_changed_at ?? '').localeCompare(a.latest_changed_at ?? ''),
+    );
+  }, [deliveries]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>

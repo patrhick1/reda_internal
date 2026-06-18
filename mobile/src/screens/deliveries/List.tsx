@@ -87,16 +87,9 @@ function unassignedGroupOrder(key: string): number {
 }
 
 type BasePath = '/(admin)' | '/(dispatcher)' | '/(rep)';
-type Filter =
-  | 'all'
-  | 'to_notify'
-  | 'active'
-  | 'available'
-  | 'soft'
-  | 'postponed'
-  | 'done'
-  | 'unassigned';
-const FILTER_IDS = new Set<string>([
+// Single source of truth for the chip ids: the `Filter` union and the runtime
+// validation set are both derived from this, so adding a filter is a one-line edit.
+const FILTER_IDS_LIST = [
   'all',
   'to_notify',
   'active',
@@ -105,7 +98,9 @@ const FILTER_IDS = new Set<string>([
   'postponed',
   'done',
   'unassigned',
-]);
+] as const;
+type Filter = (typeof FILTER_IDS_LIST)[number];
+const FILTER_IDS = new Set<string>(FILTER_IDS_LIST);
 type DatePreset = 'today' | 'yesterday' | 'custom' | 'all';
 
 export function DeliveriesList({ basePath }: { basePath: BasePath }) {
@@ -118,8 +113,14 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   const params = useLocalSearchParams<{ filter?: string }>();
   const [filter, setFilter] = useState<Filter>('all');
   useEffect(() => {
-    if (params.filter && FILTER_IDS.has(params.filter)) setFilter(params.filter as Filter);
-  }, [params.filter]);
+    if (params.filter && FILTER_IDS.has(params.filter)) {
+      setFilter(params.filter as Filter);
+      // Consume the param so it doesn't linger in the URL after the user changes
+      // chips, and so a repeat "View all" (same value) re-triggers this effect
+      // instead of silently no-opping on an unchanged param.
+      router.setParams({ filter: undefined });
+    }
+  }, [params.filter, router]);
   const [datePreset, setDatePreset] = useState<DatePreset>('today');
   // Persists across preset toggles so switching today → yesterday → custom
   // doesn't blank the value the user already typed.
