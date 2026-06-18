@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
@@ -43,16 +43,6 @@ export default function RepReconcile() {
 
   const rangeLabel = formatRangeLagos(from, to);
   const activePreset = detectPreset(from, to);
-
-  const totalRemit = useMemo(
-    () => (clientsQ.data ?? []).reduce((s, r) => s + Number(r.total_remit), 0),
-    [clientsQ.data],
-  );
-  const deliveriesTotal = useMemo(
-    () => (clientsQ.data ?? []).reduce((s, r) => s + Number(r.deliveries_count), 0),
-    [clientsQ.data],
-  );
-  const count = (clientsQ.data ?? []).length;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -104,32 +94,6 @@ export default function RepReconcile() {
             onRefresh={clientsQ.reload}
             tintColor={colors.black}
           />
-        }
-        ListHeaderComponent={
-          <Card style={{ marginBottom: 12 }}>
-            <Text style={kicker}>Total to remit</Text>
-            <Text
-              style={{
-                fontFamily: fonts.extrabold,
-                fontSize: 36,
-                color: colors.black,
-                letterSpacing: -1,
-                marginTop: 4,
-              }}
-            >
-              {formatNaira(totalRemit)}
-            </Text>
-            <Text
-              style={{
-                fontFamily: fonts.medium,
-                fontSize: 13,
-                color: colors.textSecondary,
-                marginTop: 2,
-              }}
-            >
-              {deliveriesTotal} deliveries · {count} {count === 1 ? 'client' : 'clients'}
-            </Text>
-          </Card>
         }
         renderItem={({ item }) => (
           <ClientRow
@@ -229,11 +193,3 @@ function ClientRow({ row, onPress }: { row: RepClientRemitRow; onPress: () => vo
     </Card>
   );
 }
-
-const kicker = {
-  fontFamily: fonts.bold,
-  fontSize: 11,
-  color: colors.textSecondary,
-  letterSpacing: 0.8,
-  textTransform: 'uppercase' as const,
-};
