@@ -295,6 +295,25 @@ function normalizePhone(p: string | null | undefined): string | null {
   return digits.length >= 10 ? digits : null;
 }
 
+// Bowan's structured template carries the real order quantity in an explicit
+// column: "<product> | qty | unit_price | line_total". Returns that qty ONLY
+// when the message is unmistakably Bowan's template (Order Number + Closer
+// markers) AND the column arithmetic checks out (unit × qty === total), so it
+// cannot fire on any other client's free-form message. Null otherwise → caller
+// leaves the AI-extracted quantity untouched. See the call site for why.
+function bowanColumnQuantity(raw: string | null | undefined): number | null {
+  if (!raw) return null;
+  if (!/order\s*number\s*:/i.test(raw) || !/closer\s*:/i.test(raw)) return null;
+  const m = raw.match(/\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*(\d+)/);
+  if (!m) return null;
+  const qty = Number(m[1]);
+  const unit = Number(m[2]);
+  const total = Number(m[3]);
+  if (!Number.isInteger(qty) || qty < 1) return null;
+  if (unit * qty !== total) return null; // math guard — reject a stray pipe
+  return qty;
+}
+
 async function resolveInboundId(body: any, supabase: any): Promise<string | null> {
   if (typeof body?.inbound_message_id === 'string') return body.inbound_message_id;
   if (body?.record?.id && typeof body.record.id === 'string') return body.record.id;
@@ -373,6 +392,9 @@ Deno.serve(async (req) => {
   let customerPhoneRaw    = contractorFields.customer_phone     ?? null;
   let customerPhoneAltRaw = contractorFields.customer_phone_alt ?? null;
   let rawAddressRaw       = contractorFields.raw_address        ?? null;
+  // Delivery instructions are self-extracted from the raw message by our LLM —
+  // the contractor doesn't send them, so there's no contractor field to merge.
+  let deliveryInstructionsRaw: string | null = null;
   let lineItems: LineItem[] = contractorProducts ?? [];
   let orderTotal: number | null =
     typeof contractorFields.customer_price === 'number' ? contractorFields.customer_price : null;
@@ -415,6 +437,9 @@ Deno.serve(async (req) => {
     // return one. Every other envelope field keeps contractor-wins (the
     // contractor has SKU/name context the LLM lacks — see extractContractorParse).
     rawAddressRaw       = out.parsed.raw_address ?? rawAddressRaw;
+    // Instructions: LLM-only (no contractor source). Best-effort, conservative
+    // prompt — null on the vast majority of orders that carry no handling note.
+    deliveryInstructionsRaw = out.parsed.instructions ?? null;
     // Products: prefer a contractor-supplied array, else the LLM's array.
     if (lineItems.length === 0) lineItems = out.parsed.products ?? [];
     // Order total: LLM's Total line, else sum of line prices, else contractor's.
@@ -437,6 +462,24 @@ Deno.serve(async (req) => {
     }];
   }
 
+  // ── Bowan structured template: trust the explicit | qty | column ──────────
+  // Bowan forwards a fixed template ("Order Number: … Closer: … <product> | qty
+  // | unit | total"). Both the LLM and the contractor mis-read the product-name
+  // prefix (e.g. "3 - SUCTION SITUP-BAR" — "3 suction cups", not a count) as the
+  // quantity; the real quantity is the column right after the first pipe. Read it
+  // deterministically and trust neither AI for it. Gated on this client's template
+  // markers + a unit×qty==total check, so it can NEVER fire on another client's
+  // format. Scope = quantity of the paid product line(s) only — matching, product
+  // names, free gifts and everything else are untouched. Every Bowan order to date
+  // is single-line / single paid product; the regex reads the first line's qty and
+  // the math guard rejects any mismatch.
+  const bowanQty = bowanColumnQuantity(row.raw_text);
+  if (bowanQty !== null) {
+    for (const li of lineItems) {
+      if ((li.customer_price ?? 0) > 0) li.quantity = bowanQty;
+    }
+  }
+
   const customerName  = customerNameRaw?.trim() || null;
   const customerPhone = normalizePhone(customerPhoneRaw);
   // Second number: only keep it if it's a real, DISTINCT phone — never store the
@@ -445,6 +488,7 @@ Deno.serve(async (req) => {
   let customerPhoneAlt = normalizePhone(customerPhoneAltRaw);
   if (customerPhoneAlt && customerPhoneAlt === customerPhone) customerPhoneAlt = null;
   const rawAddress    = rawAddressRaw?.trim() || null;
+  const deliveryInstructions = deliveryInstructionsRaw?.trim() || null;
   const customerPrice = orderTotal !== null && orderTotal >= 0 ? orderTotal : null;
 
   // Optional client hint from contractor — disambiguates "same product name,
@@ -596,6 +640,7 @@ Deno.serve(async (req) => {
       customer_phone:     customerPhoneRaw,
       customer_phone_alt: customerPhoneAltRaw,
       raw_address:        rawAddressRaw,
+      instructions:       deliveryInstructions,   // self-extracted handling note (null if none)
       total_amount:       orderTotal,
       products:           lineItems,    // [Feature A] the full extracted line set
     },
@@ -668,6 +713,7 @@ Deno.serve(async (req) => {
     p_bot_raw_message:    row.raw_text,
     p_assigned_agent_id:  agentResolution.agent_id,
     p_items:              resolvedItems,                    // [Feature A] line items
+    p_delivery_instructions: deliveryInstructions,         // self-extracted handling note (null if none)
   });
 
   if (createErr) {
