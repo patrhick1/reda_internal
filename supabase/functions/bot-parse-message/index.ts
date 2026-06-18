@@ -56,14 +56,15 @@ const EXTRACTION_SCHEMA = {
   schema: {
     type:                 'object',
     additionalProperties: false,
-    required: ['customer_name', 'customer_phone', 'raw_address', 'product_name', 'quantity', 'customer_price'],
+    required: ['customer_name', 'customer_phone', 'customer_phone_alt', 'raw_address', 'product_name', 'quantity', 'customer_price'],
     properties: {
-      customer_name:  { type: ['string',  'null'] },
-      customer_phone: { type: ['string',  'null'] },
-      raw_address:    { type: ['string',  'null'] },
-      product_name:   { type: ['string',  'null'] },
-      quantity:       { type: ['integer', 'null'] },
-      customer_price: { type: ['number',  'null'] },
+      customer_name:      { type: ['string',  'null'] },
+      customer_phone:     { type: ['string',  'null'] },
+      customer_phone_alt: { type: ['string',  'null'] },
+      raw_address:        { type: ['string',  'null'] },
+      product_name:       { type: ['string',  'null'] },
+      quantity:           { type: ['integer', 'null'] },
+      customer_price:     { type: ['number',  'null'] },
     },
   },
 };
@@ -73,6 +74,7 @@ const EXTRACTION_PROMPT = `You are extracting a single delivery order from a Wha
 Return strict JSON with these fields (use null when missing):
   customer_name    : string  — the recipient's name. If the message has no name, use the customer_phone digits as the customer_name instead of returning null. Only return null if BOTH a name and a phone are missing.
   customer_phone   : string  — Nigerian phone, keep digits and optional leading 0/+234
+  customer_phone_alt : string — a SECOND, distinct customer phone if the message lists one (e.g. "or call 0…", a second contact line). Phone numbers only — NEVER a bank/transfer/account number. null if there is only one number.
   raw_address      : string  — the delivery address, free-form, as-is from the message
   product_name     : string  — the product the customer ordered (one product per order)
   quantity         : integer — quantity ordered, default 1 if implied
@@ -84,12 +86,13 @@ Message:
 """`;
 
 type Extracted = {
-  customer_name:  string | null;
-  customer_phone: string | null;
-  raw_address:    string | null;
-  product_name:   string | null;
-  quantity:       number | null;
-  customer_price: number | null;
+  customer_name:      string | null;
+  customer_phone:     string | null;
+  customer_phone_alt: string | null;
+  raw_address:        string | null;
+  product_name:       string | null;
+  quantity:           number | null;
+  customer_price:     number | null;
 };
 
 // Read a pre-parsed delivery from the inbound row's raw_payload, if the
@@ -113,6 +116,8 @@ function extractContractorParse(raw_payload: any): PartialExtracted {
   const fields: Partial<Extracted> = {};
   if (typeof p.customer_name  === 'string' && p.customer_name.trim())  fields.customer_name  = p.customer_name.trim();
   if (normalizePhone(p.customer_phone))                                 fields.customer_phone = p.customer_phone;
+  // Not load-bearing — deliberately excluded from `needsLlm` below.
+  if (normalizePhone(p.customer_phone_alt))                             fields.customer_phone_alt = p.customer_phone_alt;
   if (typeof p.raw_address    === 'string' && p.raw_address.trim())     fields.raw_address    = p.raw_address.trim();
   if (typeof p.product_name   === 'string' && p.product_name.trim())    fields.product_name   = p.product_name.trim();
   if (typeof p.quantity       === 'number' && p.quantity > 0)           fields.quantity       = p.quantity;
@@ -147,14 +152,16 @@ function toInt(v: any): number | null {
 function coerceExtracted(obj: any): Extracted | null {
   if (!obj || typeof obj !== 'object') return null;
   return {
-    customer_name:  toStr(obj.customer_name),
-    customer_phone: toStr(obj.customer_phone),
-    raw_address:    toStr(obj.raw_address),
-    product_name:   toStr(obj.product_name),
-    quantity:       toInt(obj.quantity),
-    customer_price: toNum(obj.customer_price),
+    customer_name:      toStr(obj.customer_name),
+    customer_phone:     toStr(obj.customer_phone),
+    customer_phone_alt: toStr(obj.customer_phone_alt),
+    raw_address:        toStr(obj.raw_address),
+    product_name:       toStr(obj.product_name),
+    quantity:           toInt(obj.quantity),
+    customer_price:     toNum(obj.customer_price),
   };
 }
+
 function stripJsonFences(s: string): string {
   let t = s.trim();
   if (t.startsWith('```')) {
@@ -362,9 +369,10 @@ Deno.serve(async (req) => {
   let source: 'contractor' | 'contractor+openrouter' | 'openrouter';
 
   // Envelope (start from contractor; LLM fills gaps below).
-  let customerNameRaw  = contractorFields.customer_name  ?? null;
-  let customerPhoneRaw = contractorFields.customer_phone ?? null;
-  let rawAddressRaw    = contractorFields.raw_address    ?? null;
+  let customerNameRaw     = contractorFields.customer_name      ?? null;
+  let customerPhoneRaw    = contractorFields.customer_phone     ?? null;
+  let customerPhoneAltRaw = contractorFields.customer_phone_alt ?? null;
+  let rawAddressRaw       = contractorFields.raw_address        ?? null;
   let lineItems: LineItem[] = contractorProducts ?? [];
   let orderTotal: number | null =
     typeof contractorFields.customer_price === 'number' ? contractorFields.customer_price : null;
@@ -394,9 +402,19 @@ Deno.serve(async (req) => {
       return new Response('extraction failed', { status: 200 });
     }
     // Envelope: contractor wins, LLM fills the gaps.
-    customerNameRaw  = customerNameRaw  ?? out.parsed.customer_name;
-    customerPhoneRaw = customerPhoneRaw ?? out.parsed.customer_phone;
-    rawAddressRaw    = rawAddressRaw    ?? out.parsed.raw_address;
+    customerNameRaw     = customerNameRaw     ?? out.parsed.customer_name;
+    customerPhoneRaw    = customerPhoneRaw    ?? out.parsed.customer_phone;
+    customerPhoneAltRaw = customerPhoneAltRaw ?? out.parsed.customer_phone_alt;
+    // raw_address is the ONE envelope field where the contractor's regex is LESS
+    // reliable than our LLM. Its pre-parse routinely over-captures the following
+    // forwarded-message labels into the address — e.g.
+    //   "Lekki phase 11. Lagos CUSTOMER PHN NUMBER: 0707... or 0707... PRODUCT"
+    // which then tanks the location match (confidence "none" → needs_review).
+    // Our LLM isolates the address field cleanly, so for THIS field we PREFER the
+    // LLM's value and fall back to the contractor's only when the LLM didn't
+    // return one. Every other envelope field keeps contractor-wins (the
+    // contractor has SKU/name context the LLM lacks — see extractContractorParse).
+    rawAddressRaw       = out.parsed.raw_address ?? rawAddressRaw;
     // Products: prefer a contractor-supplied array, else the LLM's array.
     if (lineItems.length === 0) lineItems = out.parsed.products ?? [];
     // Order total: LLM's Total line, else sum of line prices, else contractor's.
@@ -421,6 +439,11 @@ Deno.serve(async (req) => {
 
   const customerName  = customerNameRaw?.trim() || null;
   const customerPhone = normalizePhone(customerPhoneRaw);
+  // Second number: only keep it if it's a real, DISTINCT phone — never store the
+  // primary twice. (Any valid phone in a forward is the customer's; the prompt
+  // keeps account/transfer numbers out.)
+  let customerPhoneAlt = normalizePhone(customerPhoneAltRaw);
+  if (customerPhoneAlt && customerPhoneAlt === customerPhone) customerPhoneAlt = null;
   const rawAddress    = rawAddressRaw?.trim() || null;
   const customerPrice = orderTotal !== null && orderTotal >= 0 ? orderTotal : null;
 
@@ -569,11 +592,12 @@ Deno.serve(async (req) => {
   // 5. Outcome decision.
   const parseResult = {
     extracted: {
-      customer_name:  customerNameRaw,
-      customer_phone: customerPhoneRaw,
-      raw_address:    rawAddressRaw,
-      total_amount:   orderTotal,
-      products:       lineItems,        // [Feature A] the full extracted line set
+      customer_name:      customerNameRaw,
+      customer_phone:     customerPhoneRaw,
+      customer_phone_alt: customerPhoneAltRaw,
+      raw_address:        rawAddressRaw,
+      total_amount:       orderTotal,
+      products:           lineItems,    // [Feature A] the full extracted line set
     },
     // [Feature A] per-line resolution: each line, its chosen SKU, and candidates.
     product_matches: lineMatches.map((r) => ({
@@ -635,6 +659,7 @@ Deno.serve(async (req) => {
     p_product_catalog_id: primaryItem!.product_catalog_id,  // legacy primary (dual-write)
     p_customer_name:      customerName,
     p_customer_phone:     customerPhone,
+    p_customer_phone_alt: customerPhoneAlt,
     p_raw_address:        rawAddress,
     p_quantity_ordered:   primaryItem!.quantity_ordered,    // legacy primary qty
     p_customer_price:     customerPrice,                    // single order total
