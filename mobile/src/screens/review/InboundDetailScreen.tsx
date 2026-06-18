@@ -27,7 +27,13 @@ import {
 import { colors, fonts } from '@/lib/theme';
 import { formatDateTime } from '@/lib/format';
 import { errorMessage } from '@/lib/errors';
-import { reviewReason, splitPhone, type ParseResultShape } from './reviewReason';
+import {
+  reviewReason,
+  splitPhone,
+  primaryProduct,
+  primaryPrice,
+  type ParseResultShape,
+} from './reviewReason';
 
 const DISCARD_REASONS = [
   { value: 'spam', label: 'Spam' },
@@ -64,11 +70,16 @@ export default function InboundDetailScreen() {
     () => splitPhone(extracted.customer_phone ?? null),
     [extracted.customer_phone],
   );
+  // [Feature A] the bot now writes a multi-product shape (product_matches[] /
+  // extracted.products[] / total_amount); the old singular product/quantity/
+  // customer_price keys are gone for new rows. Read the first line via the shared
+  // helper (legacy fallback inside) so client/product/qty/price aren't blank.
+  const primary = useMemo(() => primaryProduct(parse), [parse]);
 
   const initial = useMemo<Partial<DeliveryFormState>>(
     () => ({
-      clientId: parse.product?.client_id ?? null,
-      productCatalogId: parse.product?.id ?? null,
+      clientId: primary.clientId,
+      productCatalogId: primary.productCatalogId,
       customerName: extracted.customer_name ?? '',
       customerPhone: phoneSplit.primary,
       // A parsed "0803… or 0815…" now persists: primary + alternate both land.
@@ -76,8 +87,8 @@ export default function InboundDetailScreen() {
       rawAddress: extracted.raw_address ?? '',
       locationId: parse.address?.matched_location_id ?? null,
       assignedAgentId: parse.agent_resolution?.agent_id ?? null,
-      quantityOrdered: typeof extracted.quantity === 'number' ? extracted.quantity : null,
-      customerPrice: typeof extracted.customer_price === 'number' ? extracted.customer_price : null,
+      quantityOrdered: primary.quantity,
+      customerPrice: primaryPrice(parse),
       scheduledDate: todayLagos(),
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -337,11 +348,19 @@ export default function InboundDetailScreen() {
           </Card>
         ) : null}
 
+        {/* Multi-line order: the fix form is single-product, so warn before it
+            silently drops the extra lines (rare — most review rows are 1 line). */}
+        {primary.lineCount > 1 ? (
+          <Banner tone="warn" icon="alert">
+            {`This order has ${primary.lineCount} product lines. This screen creates a single-product delivery — only the first line is used. Create it, then add the other items by editing the delivery.`}
+          </Banner>
+        ) : null}
+
         {/* The form, pre-filled from parse_result */}
         <DeliveryFieldsForm
           initial={initial}
           hideFields={['scheduledDate']}
-          productCandidates={parse.product_candidates ?? null}
+          productCandidates={primary.candidates.length ? primary.candidates : null}
           onChange={handleFormChange}
         />
 
