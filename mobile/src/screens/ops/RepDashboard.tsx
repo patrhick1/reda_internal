@@ -188,6 +188,12 @@ export function RepDashboard() {
           deliveries={deliveries}
           agents={agents}
           loading={deliveriesQ.loading && !deliveriesQ.data}
+          onAgentPress={(agentId) =>
+            router.navigate({
+              pathname: `${REP_BASE}/deliveries` as `/(rep)/deliveries`,
+              params: { agent: agentId },
+            })
+          }
         />
       </ScrollView>
     </View>

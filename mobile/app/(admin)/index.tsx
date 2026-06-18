@@ -176,6 +176,9 @@ export default function AdminHome() {
           deliveries={todayQ.data ?? []}
           agents={agents}
           loading={todayQ.loading && !todayQ.data}
+          onAgentPress={(agentId) =>
+            router.navigate({ pathname: '/(admin)/deliveries', params: { agent: agentId } })
+          }
         />
       </ScrollView>
     </View>

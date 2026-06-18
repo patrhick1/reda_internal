@@ -110,17 +110,8 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   // Optional deep-link target — the rep dashboard's "Awaiting client update" card
   // routes here with ?filter=to_notify. Validated against FILTER_IDS so a stray
   // param can never put the chips in an unknown state.
-  const params = useLocalSearchParams<{ filter?: string }>();
+  const params = useLocalSearchParams<{ filter?: string; agent?: string }>();
   const [filter, setFilter] = useState<Filter>('all');
-  useEffect(() => {
-    if (params.filter && FILTER_IDS.has(params.filter)) {
-      setFilter(params.filter as Filter);
-      // Consume the param so it doesn't linger in the URL after the user changes
-      // chips, and so a repeat "View all" (same value) re-triggers this effect
-      // instead of silently no-opping on an unchanged param.
-      router.setParams({ filter: undefined });
-    }
-  }, [params.filter, router]);
   const [datePreset, setDatePreset] = useState<DatePreset>('today');
   // Persists across preset toggles so switching today → yesterday → custom
   // doesn't blank the value the user already typed.
@@ -128,6 +119,25 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   // null = "All agents". Agents see only their own deliveries server-side,
   // so the picker stays hidden for them — narrowing has no work to do.
   const [agentId, setAgentId] = useState<string | null>(null);
+  // Apply deep-link params then consume them: ?filter= from the dashboard "View
+  // all" card, ?agent= from a tapped Agent-workload row. Consuming (setParams →
+  // undefined) keeps the URL from retaining a stale filter/agent after the user
+  // changes chips, and lets a repeat navigation with the same value re-trigger
+  // instead of silently no-opping on an unchanged param. The agent id isn't
+  // allow-list-validated (it's an arbitrary uuid) — a bogus one just yields an
+  // empty list, and it only ever arrives from our own buttons.
+  useEffect(() => {
+    const cleared: Record<string, undefined> = {};
+    if (params.filter && FILTER_IDS.has(params.filter)) {
+      setFilter(params.filter as Filter);
+      cleared.filter = undefined;
+    }
+    if (typeof params.agent === 'string' && params.agent) {
+      setAgentId(params.agent);
+      cleared.agent = undefined;
+    }
+    if (Object.keys(cleared).length > 0) router.setParams(cleared);
+  }, [params.filter, params.agent, router]);
   // Read-only narrowing affordance, open to the full ops set (admin +
   // dispatcher + rep). Reps coordinate with vendors and asked to scan
   // "show me Tunde's queue" the same way managers do — it's a client-side

@@ -29,10 +29,16 @@ export function AgentWorkloadCard({
   deliveries,
   agents,
   loading,
+  onAgentPress,
 }: {
   deliveries: DeliveryRow[];
   agents: AppUser[];
   loading: boolean;
+  /** When provided, each agent row becomes tappable and calls this with the
+   *  agent's id — callers route to their own deliveries list narrowed to that
+   *  agent (?agent=). Omitted (e.g. a future read-only context) → rows are
+   *  static, no Pressable wrapper. */
+  onAgentPress?: (agentId: string) => void;
 }) {
   // Busiest agents float to the top so the zero-workload rows don't push
   // the actionable ones below the fold. Alphabetical tiebreaker keeps the
@@ -97,7 +103,11 @@ export function AgentWorkloadCard({
       ) : (
         <View style={{ gap: 8 }}>
           {rows.map(({ agent, total, done, pending, available, pct }) => (
-            <Card key={agent.id} dense>
+            <Card
+              key={agent.id}
+              dense
+              onPress={onAgentPress ? () => onAgentPress(agent.id) : undefined}
+            >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                 <Avatar user={agent} size={40} />
                 <View style={{ flex: 1 }}>
