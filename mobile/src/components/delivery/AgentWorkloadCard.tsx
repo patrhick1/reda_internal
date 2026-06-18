@@ -9,9 +9,21 @@ type AgentRow = {
   agent: AppUser;
   total: number;
   done: number;
+  // Counted separately: `pending` is truly awaiting action; `available` is
+  // customer-confirmed-reachable (available + available_evening). Lumping them
+  // read as misleadingly high "pending".
   pending: number;
+  available: number;
   pct: number;
 };
+
+/** "3/9 delivered · 2 available · 1 pending", dropping zero segments. */
+function workloadSummary(done: number, total: number, available: number, pending: number): string {
+  const parts = [`${done}/${total} delivered`];
+  if (available > 0) parts.push(`${available} available`);
+  if (pending > 0) parts.push(`${pending} pending`);
+  return parts.join(' · ');
+}
 
 export function AgentWorkloadCard({
   deliveries,
@@ -29,12 +41,13 @@ export function AgentWorkloadCard({
     const out = agents.map((a) => {
       const aDels = deliveries.filter((d) => d.assigned_agent_id === a.id);
       const done = aDels.filter((d) => d.current_status === 'delivered').length;
-      const pending = aDels.filter((d) =>
-        ['pending', 'available', 'available_evening'].includes(d.current_status ?? ''),
+      const pending = aDels.filter((d) => d.current_status === 'pending').length;
+      const available = aDels.filter((d) =>
+        ['available', 'available_evening'].includes(d.current_status ?? ''),
       ).length;
       const total = aDels.length;
       const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-      return { agent: a, total, done, pending, pct };
+      return { agent: a, total, done, pending, available, pct };
     });
     out.sort((a, b) => {
       if (b.total !== a.total) return b.total - a.total;
@@ -64,7 +77,7 @@ export function AgentWorkloadCard({
         </Card>
       ) : (
         <View style={{ gap: 8 }}>
-          {rows.map(({ agent, total, done, pending, pct }) => (
+          {rows.map(({ agent, total, done, pending, available, pct }) => (
             <Card key={agent.id} dense>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                 <Avatar user={agent} size={40} />
@@ -83,7 +96,7 @@ export function AgentWorkloadCard({
                       marginTop: 2,
                     }}
                   >
-                    {done}/{total} delivered · {pending} pending
+                    {workloadSummary(done, total, available, pending)}
                   </Text>
                   <View
                     style={{
