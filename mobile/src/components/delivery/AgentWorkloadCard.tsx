@@ -38,16 +38,35 @@ export function AgentWorkloadCard({
   // the actionable ones below the fold. Alphabetical tiebreaker keeps the
   // order stable when totals match.
   const rows: AgentRow[] = useMemo(() => {
+    // Single pass over deliveries → per-agent tallies, instead of re-scanning
+    // the full list (and allocating sub-arrays) once per agent. O(A+D) not O(A×D).
+    type Tally = { total: number; done: number; pending: number; available: number };
+    const tally = new Map<string, Tally>();
+    for (const d of deliveries) {
+      const id = d.assigned_agent_id;
+      if (!id) continue;
+      let t = tally.get(id);
+      if (!t) {
+        t = { total: 0, done: 0, pending: 0, available: 0 };
+        tally.set(id, t);
+      }
+      t.total++;
+      const s = d.current_status;
+      if (s === 'delivered') t.done++;
+      else if (s === 'pending') t.pending++;
+      else if (s === 'available' || s === 'available_evening') t.available++;
+    }
     const out = agents.map((a) => {
-      const aDels = deliveries.filter((d) => d.assigned_agent_id === a.id);
-      const done = aDels.filter((d) => d.current_status === 'delivered').length;
-      const pending = aDels.filter((d) => d.current_status === 'pending').length;
-      const available = aDels.filter((d) =>
-        ['available', 'available_evening'].includes(d.current_status ?? ''),
-      ).length;
-      const total = aDels.length;
-      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-      return { agent: a, total, done, pending, available, pct };
+      const t = tally.get(a.id) ?? { total: 0, done: 0, pending: 0, available: 0 };
+      const pct = t.total > 0 ? Math.round((t.done / t.total) * 100) : 0;
+      return {
+        agent: a,
+        total: t.total,
+        done: t.done,
+        pending: t.pending,
+        available: t.available,
+        pct,
+      };
     });
     out.sort((a, b) => {
       if (b.total !== a.total) return b.total - a.total;
