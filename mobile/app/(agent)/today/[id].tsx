@@ -34,6 +34,7 @@ import { HandoffToSubAgentSheet } from '@/components/sheets/HandoffToSubAgentShe
 import { MessageThread } from '@/components/delivery/MessageThread';
 import { ChainDivider } from '@/components/delivery/ChainDivider';
 import { BotRawMessageCard } from '@/components/delivery/BotRawMessageCard';
+import { DeliveryInstructionsCard } from '@/components/delivery/DeliveryInstructionsCard';
 import { useQueue } from '@/queue/QueueProvider';
 
 export default function AgentDeliveryDetail() {
@@ -327,6 +328,10 @@ export default function AgentDeliveryDetail() {
             </Button>
           </View>
         </Card>
+
+        {/* Delivery instructions — directly under the address (where the agent
+            is about to navigate). Renders nothing when there are none. */}
+        <DeliveryInstructionsCard instructions={d.delivery_instructions} />
 
         {/* Original WhatsApp message — collapsed by default; renders nothing
             when bot_raw_message is null (manual orders). Same component as

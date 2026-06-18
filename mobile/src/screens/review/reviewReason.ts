@@ -43,6 +43,7 @@ export type ParseResultShape = {
     total_amount?: number; // [Feature A] order total
     products?: Array<{ quantity?: number; product_name?: string; customer_price?: number | null }>;
     raw_address?: string;
+    instructions?: string | null;
     product_name?: string;
     customer_name?: string;
     customer_phone?: string;

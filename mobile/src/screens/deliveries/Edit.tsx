@@ -92,6 +92,7 @@ export default function EditDeliveryScreen() {
       customerPhone: d.customer_phone ?? '',
       customerPhoneAlt: d.customer_phone_alt ?? '',
       rawAddress: d.raw_address ?? '',
+      deliveryInstructions: d.delivery_instructions ?? '',
       locationId: d.location_id ?? null,
       assignedAgentId: d.assigned_agent_id ?? null,
       quantityOrdered: d.quantity_ordered ?? null,
@@ -216,6 +217,9 @@ export default function EditDeliveryScreen() {
       patch.customerPhoneAlt = state.customerPhoneAlt.trim();
     if (state.rawAddress.trim() !== (d.raw_address ?? ''))
       patch.rawAddress = state.rawAddress.trim();
+    // '' is sent intentionally to CLEAR instructions (RPC: null=unchanged, ''=clear).
+    if (state.deliveryInstructions.trim() !== (d.delivery_instructions ?? ''))
+      patch.deliveryInstructions = state.deliveryInstructions.trim();
     if (state.locationId !== (d.location_id ?? null)) patch.locationId = state.locationId;
     if (state.clientId !== (d.client_id ?? null)) patch.clientId = state.clientId ?? undefined;
     if (state.productCatalogId !== (d.product_catalog_id ?? null))

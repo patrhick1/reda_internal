@@ -34,12 +34,13 @@ export const PRODUCT_EXTRACTION_SCHEMA = {
   schema: {
     type:                 'object',
     additionalProperties: false,
-    required: ['customer_name', 'customer_phone', 'customer_phone_alt', 'raw_address', 'total_amount', 'products'],
+    required: ['customer_name', 'customer_phone', 'customer_phone_alt', 'raw_address', 'instructions', 'total_amount', 'products'],
     properties: {
       customer_name:      { type: ['string',  'null'] },
       customer_phone:     { type: ['string',  'null'] },
       customer_phone_alt: { type: ['string',  'null'] },
       raw_address:        { type: ['string',  'null'] },
+      instructions:       { type: ['string',  'null'] },
       total_amount:       { type: ['number',  'null'] },
       products: {
         type:  'array',
@@ -67,6 +68,7 @@ Return strict JSON with these fields (use null when missing):
   customer_phone   : string  — Nigerian phone, keep digits and optional leading 0/+234
   customer_phone_alt : string — a SECOND, distinct customer phone if the message lists one (e.g. "or call 0…", a second contact line). Phone numbers only — NEVER a bank/transfer/account number. null if there is only one number.
   raw_address      : string  — the delivery address, free-form, as-is from the message
+  instructions     : string  — a SPECIAL DELIVERY/HANDLING note for the agent ONLY: how to reach the customer or hand over the order. Examples: "use the side gate", "call on arrival", "ask for the gateman", "don't ring the bell", "deliver after 5pm", "landmark: opposite the blue church". Return null when there is no such note. Do NOT put the address, the product, the price, the customer name/phone, or a payment instruction here — those belong in their own fields. Most messages have NO instruction → null.
   total_amount     : number  — the "Total(X)" amount if present in the message, otherwise null
   products         : array   — one entry per DISTINCT product the customer receives, in the order they appear:
     {
@@ -111,6 +113,7 @@ export type ExtractedProducts = {
   customer_phone:     string | null;
   customer_phone_alt: string | null;
   raw_address:        string | null;
+  instructions:       string | null;
   total_amount:       number | null;
   products:           LineItem[];
 };
@@ -163,6 +166,7 @@ export function coerceExtractedProducts(obj: any): ExtractedProducts | null {
     customer_phone:     toStr(obj.customer_phone),
     customer_phone_alt: toStr(obj.customer_phone_alt),
     raw_address:        toStr(obj.raw_address),
+    instructions:       toStr(obj.instructions)?.trim() || null,
     total_amount:       toNum(obj.total_amount),
     products,
   };

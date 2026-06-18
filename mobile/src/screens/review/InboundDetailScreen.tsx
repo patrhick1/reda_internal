@@ -64,7 +64,7 @@ export default function InboundDetailScreen() {
   const lock = useEditLock('bot_inbound', allowed ? (id ?? null) : null);
 
   const row = inboundQ.data;
-  const parse = (row?.parse_result ?? {}) as ParseResultShape;
+  const parse = useMemo(() => (row?.parse_result ?? {}) as ParseResultShape, [row?.parse_result]);
   const extracted = parse.extracted ?? {};
   const phoneSplit = useMemo(
     () => splitPhone(extracted.customer_phone ?? null),
@@ -85,6 +85,7 @@ export default function InboundDetailScreen() {
       // A parsed "0803… or 0815…" now persists: primary + alternate both land.
       customerPhoneAlt: phoneSplit.alternate ?? '',
       rawAddress: extracted.raw_address ?? '',
+      deliveryInstructions: extracted.instructions ?? '',
       locationId: parse.address?.matched_location_id ?? null,
       assignedAgentId: parse.agent_resolution?.agent_id ?? null,
       quantityOrdered: primary.quantity,

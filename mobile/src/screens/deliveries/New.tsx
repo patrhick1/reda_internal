@@ -182,6 +182,7 @@ export function NewDelivery() {
         customerPhone: state.customerPhone.trim(),
         customerPhoneAlt: state.customerPhoneAlt.trim() || null,
         rawAddress: state.rawAddress.trim(),
+        deliveryInstructions: state.deliveryInstructions.trim() || null,
         quantityOrdered: state.quantityOrdered!,
         customerPrice: state.customerPrice!,
         locationId: state.locationId,

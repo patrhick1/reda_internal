@@ -75,11 +75,12 @@ const EXTRACTION_SCHEMA = {
   schema: {
     type:                 'object',
     additionalProperties: false,
-    required: ['customer_name', 'customer_phone', 'raw_address', 'total_amount', 'products'],
+    required: ['customer_name', 'customer_phone', 'raw_address', 'instructions', 'total_amount', 'products'],
     properties: {
       customer_name:  { type: ['string',  'null'] },
       customer_phone: { type: ['string',  'null'] },
       raw_address:    { type: ['string',  'null'] },
+      instructions:   { type: ['string',  'null'] },
       total_amount:   { type: ['number',  'null'] },
       products: {
         type:  'array',
@@ -112,6 +113,7 @@ Return strict JSON with these fields (use null when missing):
   customer_name    : string  — the recipient's name. If the message has no name, use the customer_phone digits as the customer_name instead of returning null. Only return null if BOTH a name and a phone are missing.
   customer_phone   : string  — Nigerian phone, keep digits and optional leading 0/+234
   raw_address      : string  — the delivery address, free-form, as-is from the message
+  instructions     : string  — a SPECIAL DELIVERY/HANDLING note for the agent ONLY (how to reach the customer or hand over the order): e.g. "use the side gate", "call on arrival", "ask for the gateman", "deliver after 5pm". null when there is none. NEVER put the address, product, price, name/phone, or a payment instruction here. Most messages have NO instruction → null.
   total_amount     : number  — the "Total(X)" amount if present in the message, otherwise null
   products         : array   — one entry per product line, in the order they appear:
     {
@@ -137,6 +139,7 @@ type Extracted = {
   customer_name:  string | null;
   customer_phone: string | null;
   raw_address:    string | null;
+  instructions:   string | null;
   total_amount:   number | null;
   products:       LineItem[];
 };
@@ -186,6 +189,7 @@ function coerceExtracted(obj: any): Extracted | null {
     customer_name:  toStr(obj.customer_name),
     customer_phone: toStr(obj.customer_phone),
     raw_address:    toStr(obj.raw_address),
+    instructions:   toStr(obj.instructions)?.trim() || null,
     total_amount:   toNum(obj.total_amount),
     products,
   };

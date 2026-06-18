@@ -31,6 +31,7 @@ export type DeliveryFormState = {
   customerPhone: string;
   customerPhoneAlt: string;
   rawAddress: string;
+  deliveryInstructions: string;
   customerPrice: number | null;
   locationId: string | null;
   assignedAgentId: string | null;
@@ -215,6 +216,7 @@ export function DeliveryFieldsForm({
     customerPhone: initial?.customerPhone ?? '',
     customerPhoneAlt: initial?.customerPhoneAlt ?? '',
     rawAddress: initial?.rawAddress ?? '',
+    deliveryInstructions: initial?.deliveryInstructions ?? '',
     quantityOrdered: initialItems[0]?.quantityOrdered ?? null,
     customerPrice: initial?.customerPrice ?? null,
     locationId: initial?.locationId ?? null,
@@ -419,6 +421,17 @@ export function DeliveryFieldsForm({
           numberOfLines={2}
           placeholder="17 Admiralty Way, Lekki"
           helper="Plain text — the bot pipeline matches this to a known location."
+        />
+        <View style={{ height: 16 }} />
+        <Input
+          label="Delivery instructions (optional)"
+          value={state.deliveryInstructions}
+          onChange={(v) => patch({ deliveryInstructions: v })}
+          icon="message"
+          multiline
+          numberOfLines={3}
+          placeholder="Use side gate · call on arrival · ask for the gateman"
+          helper="The agent sees this when delivering."
         />
       </Card>
 

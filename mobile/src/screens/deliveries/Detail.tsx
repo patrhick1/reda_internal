@@ -49,6 +49,7 @@ import {
   type ClientNotificationRow,
 } from '@/services/clientNotifications';
 import { BotRawMessageCard } from '@/components/delivery/BotRawMessageCard';
+import { DeliveryInstructionsCard } from '@/components/delivery/DeliveryInstructionsCard';
 import { FollowupClaimBanner } from '@/components/delivery/FollowupClaimBanner';
 import { HINTS } from '@/hints/registry';
 import { formatDateTime, formatNaira } from '@/lib/format';
@@ -563,6 +564,9 @@ export function DeliveryDetail() {
             </TouchableOpacity>
           ) : null}
         </Card>
+
+        {/* Delivery instructions — near the address. Renders nothing when none. */}
+        <DeliveryInstructionsCard instructions={d.delivery_instructions} />
 
         {/* Original WhatsApp message (collapsed by default; renders nothing
             when bot_raw_message is null — i.e. manually-created rows). */}

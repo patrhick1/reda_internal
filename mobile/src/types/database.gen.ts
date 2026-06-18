@@ -1866,6 +1866,7 @@ export type Database = {
           p_customer_name: string
           p_customer_phone: string
           p_customer_price: number
+          p_delivery_instructions?: string
           p_location_id?: string
           p_product_catalog_id: string
           p_quantity_ordered: number
@@ -2040,6 +2041,7 @@ export type Database = {
           p_customer_phone: string
           p_customer_phone_alt?: string
           p_customer_price: number
+          p_delivery_instructions?: string
           p_location_id?: string
           p_product_catalog_id: string
           p_quantity_ordered: number
@@ -2471,6 +2473,7 @@ export type Database = {
           p_customer_phone_alt?: string
           p_customer_price?: number
           p_delivery_id: string
+          p_delivery_instructions?: string
           p_location_id?: string
           p_product_catalog_id?: string
           p_quantity_ordered?: number

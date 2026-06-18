@@ -39,6 +39,11 @@ export type DeliveryDisplayJoins = {
    *  same way a status change does. Null if the delivery has no messages.
    *  See scripts/embed-latest-message-in-deliveries-views.sql. */
   latest_message_at: string | null;
+  /** Free-text delivery instructions (special handling notes the agent needs).
+   *  A base column on deliveries, appended to both views; rides the row spread
+   *  in attachJoins. Hand-typed here until database.gen.ts is regenerated. Null
+   *  when none. See scripts/delivery-instructions.sql. */
+  delivery_instructions: string | null;
 };
 
 /** [Feature A] One product line of a delivery (from delivery_items, joined to
@@ -303,6 +308,10 @@ function attachJoins<T extends object>(
       'latest_notified' in rest && typeof rest.latest_notified === 'boolean'
         ? rest.latest_notified
         : false,
+    delivery_instructions:
+      'delivery_instructions' in rest && typeof rest.delivery_instructions === 'string'
+        ? rest.delivery_instructions
+        : null,
   };
 }
 
@@ -543,6 +552,8 @@ export type CreateDeliveryInput = {
   customerPhone: string;
   customerPhoneAlt?: string | null;
   rawAddress: string;
+  /** Free-text delivery/handling instructions for the agent. Optional. */
+  deliveryInstructions?: string | null;
   /** Legacy primary quantity (the first line). */
   quantityOrdered: number;
   /** The single order total on the delivery. */
@@ -580,6 +591,7 @@ export async function createDelivery(input: CreateDeliveryInput): Promise<string
     p_scheduled_date: input.scheduledDate,
     p_assigned_agent_id: input.assignedAgentId as unknown as string,
     p_created_via: 'manual',
+    p_delivery_instructions: input.deliveryInstructions as unknown as string | undefined,
     p_items: toItemsJsonb(input.items) as unknown as undefined, // [Feature A]
   });
   if (error) throw error;
@@ -591,6 +603,8 @@ export type UpdateDeliveryFieldsPatch = {
   customerPhone?: string;
   /** '' clears the alt phone; a value sets it; omit to leave unchanged. */
   customerPhoneAlt?: string;
+  /** '' clears instructions; a value sets them; omit to leave unchanged. */
+  deliveryInstructions?: string;
   rawAddress?: string;
   locationId?: string | null;
   clientId?: string;
@@ -616,6 +630,7 @@ export async function updateDeliveryFields(
     p_customer_name: patch.customerName,
     p_customer_phone: patch.customerPhone,
     p_customer_phone_alt: patch.customerPhoneAlt,
+    p_delivery_instructions: patch.deliveryInstructions,
     p_raw_address: patch.rawAddress,
     p_location_id: patch.locationId as unknown as string | undefined,
     p_client_id: patch.clientId,
