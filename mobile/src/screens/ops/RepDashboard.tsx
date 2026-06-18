@@ -19,8 +19,9 @@ import { listOpenIssuesForOps } from '@/services/delivery-messages';
 import { AppBar, Card, Icon } from '@/components/ui';
 import { AgentWorkloadCard } from '@/components/delivery/AgentWorkloadCard';
 import { IssuesAttentionBlock } from '@/components/delivery/IssuesAttentionBlock';
+import { NotifyAttentionBlock } from '@/components/delivery/NotifyAttentionBlock';
 import { RecentActivityCard } from '@/components/delivery/RecentActivityCard';
-import { colors, fonts, statusBucket } from '@/lib/theme';
+import { awaitsClientNotification, colors, fonts, statusBucket } from '@/lib/theme';
 
 const REP_BASE = '/(rep)' as const;
 
@@ -59,6 +60,17 @@ export function RepDashboard() {
   );
 
   const stats = useMemo(() => bucketCounts(deliveries), [deliveries]);
+
+  // Deliveries whose latest status the client hasn't been told about yet, freshest
+  // first — the rep's #1 daily task. Derived from the already-loaded list (no extra
+  // fetch); the same predicate backs the deliveries "To notify" filter.
+  const toNotify = useMemo(
+    () =>
+      deliveries
+        .filter(awaitsClientNotification)
+        .sort((a, b) => (b.latest_changed_at ?? '').localeCompare(a.latest_changed_at ?? '')),
+    [deliveries],
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -119,6 +131,28 @@ export function RepDashboard() {
             <Legend label="Closed" n={stats.closed} color={colors.closed} />
           </View>
         </Card>
+
+        {/* Awaiting client notification — the rep's #1 task: new statuses to relay
+            to the client. Renders only when there's something to notify so the home
+            stays tight when the queue is clear. "View all" deep-links the deliveries
+            list to its matching "To notify" filter. */}
+        {toNotify.length > 0 ? (
+          <NotifyAttentionBlock
+            rows={toNotify}
+            onOpen={(deliveryId) =>
+              router.push({
+                pathname: `${REP_BASE}/deliveries/[id]` as `/(rep)/deliveries/[id]`,
+                params: { id: deliveryId },
+              })
+            }
+            onViewAll={() =>
+              router.push({
+                pathname: `${REP_BASE}/deliveries` as `/(rep)/deliveries`,
+                params: { filter: 'to_notify' },
+              })
+            }
+          />
+        ) : null}
 
         {/* Open agent-flagged issues — same card the dispatcher dashboard shows.
             Renders only when there's something actionable so the home stays

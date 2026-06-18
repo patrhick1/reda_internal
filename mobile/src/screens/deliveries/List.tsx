@@ -10,7 +10,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
@@ -54,6 +54,7 @@ import {
   fonts,
   statusBucket,
   isAssignedActive,
+  awaitsClientNotification,
   STATUS_GROUPS,
   STATUS_META,
 } from '@/lib/theme';
@@ -86,14 +87,39 @@ function unassignedGroupOrder(key: string): number {
 }
 
 type BasePath = '/(admin)' | '/(dispatcher)' | '/(rep)';
-type Filter = 'all' | 'active' | 'available' | 'soft' | 'postponed' | 'done' | 'unassigned';
+type Filter =
+  | 'all'
+  | 'to_notify'
+  | 'active'
+  | 'available'
+  | 'soft'
+  | 'postponed'
+  | 'done'
+  | 'unassigned';
+const FILTER_IDS = new Set<string>([
+  'all',
+  'to_notify',
+  'active',
+  'available',
+  'soft',
+  'postponed',
+  'done',
+  'unassigned',
+]);
 type DatePreset = 'today' | 'yesterday' | 'custom' | 'all';
 
 export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   const user = useCurrentUser();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  // Optional deep-link target — the rep dashboard's "Awaiting client update" card
+  // routes here with ?filter=to_notify. Validated against FILTER_IDS so a stray
+  // param can never put the chips in an unknown state.
+  const params = useLocalSearchParams<{ filter?: string }>();
   const [filter, setFilter] = useState<Filter>('all');
+  useEffect(() => {
+    if (params.filter && FILTER_IDS.has(params.filter)) setFilter(params.filter as Filter);
+  }, [params.filter]);
   const [datePreset, setDatePreset] = useState<DatePreset>('today');
   // Persists across preset toggles so switching today → yesterday → custom
   // doesn't blank the value the user already typed.
@@ -348,6 +374,10 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   const buckets = useMemo(
     () => ({
       all,
+      // Cross-cutting slice: latest status the client hasn't been told about yet
+      // (shared predicate with the rep dashboard card). Orthogonal to the status
+      // buckets below — a "To notify" row can be available, soft-fail, delivered, …
+      to_notify: all.filter(awaitsClientNotification),
       // Note on assignment-gating: "Active" is the ONLY status segment that
       // also requires an assigned agent (isAssignedActive). That's deliberate
       // — a freshly-rolled pending order is queue work, so it belongs under
@@ -427,6 +457,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   const list = filter === 'postponed' ? postponedRows : (unassignedSorted ?? buckets[filter]);
   const filterOptions = [
     { id: 'all' as const, label: 'All', count: buckets.all.length },
+    { id: 'to_notify' as const, label: 'To notify', count: buckets.to_notify.length },
     { id: 'active' as const, label: 'Active', count: buckets.active.length },
     { id: 'available' as const, label: 'Available', count: buckets.available.length },
     { id: 'soft' as const, label: 'Soft fail', count: buckets.soft.length },
