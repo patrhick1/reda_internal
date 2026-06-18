@@ -208,7 +208,8 @@ function DeliveryRow({ row }: { row: ClientRemitDetailRow }) {
   const customer = row.customer_name ?? 'Customer';
   const product = row.product_name ?? '—';
   const loc = row.location_name ?? '—';
-  const agent = row.agent_name?.split(/\s+/)[0] ?? null;
+  // Full display name so namesakes (e.g. "Mummy Jerry") stay distinguishable.
+  const agent = row.agent_name ?? null;
   const qty = row.quantity_delivered;
   const date = formatDateLagos(row.scheduled_date);
   const remit = Number(row.remit ?? 0);

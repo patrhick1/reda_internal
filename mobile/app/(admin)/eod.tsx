@@ -153,8 +153,17 @@ function DeliveryRowEOD({ delivery }: { delivery: DeliveryRow }) {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
             <StatusPill status={delivery.current_status ?? 'pending'} variant="subtle" size="sm" />
             {delivery.assigned_agent_name ? (
-              <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary }}>
-                · {delivery.assigned_agent_name.split(/\s+/)[0]}
+              <Text
+                numberOfLines={1}
+                style={{
+                  fontFamily: fonts.medium,
+                  fontSize: 12,
+                  color: colors.textSecondary,
+                  flexShrink: 1,
+                }}
+              >
+                {/* Full display name so namesakes (e.g. "Mummy Jerry") stay distinguishable. */}·{' '}
+                {delivery.assigned_agent_name}
               </Text>
             ) : (
               <Text

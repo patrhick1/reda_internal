@@ -983,12 +983,22 @@ const DeliveryListRow = memo(function DeliveryListRow({
               justifyContent: 'space-between',
             }}
           >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 }}>
               {delivery.assigned_agent_name ? (
                 <>
                   <Avatar user={{ display_name: delivery.assigned_agent_name }} size={20} />
-                  <Text style={{ fontFamily: fonts.semibold, fontSize: 12, color: colors.black }}>
-                    {delivery.assigned_agent_name.split(/\s+/)[0]}
+                  <Text
+                    numberOfLines={1}
+                    style={{
+                      fontFamily: fonts.semibold,
+                      fontSize: 12,
+                      color: colors.black,
+                      flexShrink: 1,
+                    }}
+                  >
+                    {/* Full display name — show the namesake's second word (e.g. "Mummy Jerry",
+                        "Mr Austin") so agents who share a first name are distinguishable. */}
+                    {delivery.assigned_agent_name}
                   </Text>
                 </>
               ) : (
