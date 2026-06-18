@@ -241,7 +241,7 @@ export default function AgentDeliveryDetail() {
             </View>
             <StatusPill status={status} />
           </View>
-          <View style={{ marginTop: 14 }}>
+          <View style={{ marginTop: 14, gap: 8 }}>
             <Button
               variant="primary"
               full
@@ -252,6 +252,23 @@ export default function AgentDeliveryDetail() {
             >
               {`Call ${firstName}`}
             </Button>
+            {/* Second number, when the order carries one. Spelled out ("alternate
+                number") and wired to customer_phone_alt so a rider whose primary
+                call doesn't connect can try the backup line — same affordance ops
+                already have on their detail screen. */}
+            {d.customer_phone_alt ? (
+              <Button
+                variant="secondary"
+                full
+                icon="phone"
+                onPress={() =>
+                  d.customer_phone_alt &&
+                  Linking.openURL(`tel:${d.customer_phone_alt.replace(/\s+/g, '')}`)
+                }
+              >
+                Call alternate number
+              </Button>
+            ) : null}
           </View>
           {d.customer_phone ? (
             <Text
@@ -263,6 +280,18 @@ export default function AgentDeliveryDetail() {
               }}
             >
               {d.customer_phone}
+            </Text>
+          ) : null}
+          {d.customer_phone_alt ? (
+            <Text
+              style={{
+                fontFamily: fonts.mono,
+                fontSize: 12,
+                color: colors.textSecondary,
+                marginTop: 2,
+              }}
+            >
+              Alt: {d.customer_phone_alt}
             </Text>
           ) : null}
         </Card>
