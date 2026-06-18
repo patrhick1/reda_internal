@@ -34,12 +34,13 @@ export const PRODUCT_EXTRACTION_SCHEMA = {
   schema: {
     type:                 'object',
     additionalProperties: false,
-    required: ['customer_name', 'customer_phone', 'raw_address', 'total_amount', 'products'],
+    required: ['customer_name', 'customer_phone', 'customer_phone_alt', 'raw_address', 'total_amount', 'products'],
     properties: {
-      customer_name:  { type: ['string',  'null'] },
-      customer_phone: { type: ['string',  'null'] },
-      raw_address:    { type: ['string',  'null'] },
-      total_amount:   { type: ['number',  'null'] },
+      customer_name:      { type: ['string',  'null'] },
+      customer_phone:     { type: ['string',  'null'] },
+      customer_phone_alt: { type: ['string',  'null'] },
+      raw_address:        { type: ['string',  'null'] },
+      total_amount:       { type: ['number',  'null'] },
       products: {
         type:  'array',
         items: {
@@ -64,6 +65,7 @@ A message contains one customer with one delivery address, but may contain multi
 Return strict JSON with these fields (use null when missing):
   customer_name    : string  — the recipient's name. If the message has no name, use the customer_phone digits as the customer_name instead of returning null. Only return null if BOTH a name and a phone are missing.
   customer_phone   : string  — Nigerian phone, keep digits and optional leading 0/+234
+  customer_phone_alt : string — a SECOND, distinct customer phone if the message lists one (e.g. "or call 0…", a second contact line). Phone numbers only — NEVER a bank/transfer/account number. null if there is only one number.
   raw_address      : string  — the delivery address, free-form, as-is from the message
   total_amount     : number  — the "Total(X)" amount if present in the message, otherwise null
   products         : array   — one entry per DISTINCT product the customer receives, in the order they appear:
@@ -105,11 +107,12 @@ export type LineItem = {
 };
 
 export type ExtractedProducts = {
-  customer_name:  string | null;
-  customer_phone: string | null;
-  raw_address:    string | null;
-  total_amount:   number | null;
-  products:       LineItem[];
+  customer_name:      string | null;
+  customer_phone:     string | null;
+  customer_phone_alt: string | null;
+  raw_address:        string | null;
+  total_amount:       number | null;
+  products:           LineItem[];
 };
 
 // --- defensive coercion -----------------------------------------------------
@@ -156,10 +159,11 @@ export function coerceExtractedProducts(obj: any): ExtractedProducts | null {
     ? obj.products.map(coerceLineItem).filter((li: LineItem | null): li is LineItem => li !== null)
     : [];
   return {
-    customer_name:  toStr(obj.customer_name),
-    customer_phone: toStr(obj.customer_phone),
-    raw_address:    toStr(obj.raw_address),
-    total_amount:   toNum(obj.total_amount),
+    customer_name:      toStr(obj.customer_name),
+    customer_phone:     toStr(obj.customer_phone),
+    customer_phone_alt: toStr(obj.customer_phone_alt),
+    raw_address:        toStr(obj.raw_address),
+    total_amount:       toNum(obj.total_amount),
     products,
   };
 }
