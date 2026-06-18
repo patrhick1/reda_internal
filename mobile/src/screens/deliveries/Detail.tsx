@@ -26,7 +26,7 @@ import { initiateCall, initiateTeamCall } from '@/services/calls';
 import { ensureMicPermission } from '@/lib/calls/permissions';
 import { canPlaceCall } from '@/lib/calls/availability';
 import { AppBar, Avatar, Button, Card, Empty, Hint, Icon, StatusPill } from '@/components/ui';
-import { colors, fonts, TERMINAL_STATUSES } from '@/lib/theme';
+import { colors, fonts, historyReasonLine, TERMINAL_STATUSES } from '@/lib/theme';
 import {
   canClaimFollowup,
   canCorrectDeliveryLocation,
@@ -1086,6 +1086,7 @@ function HistoryRow({
   canMark: boolean;
   onMark: (historyId: string) => void;
 }) {
+  const reasonLine = historyReasonLine(row.to_status, row.reason);
   return (
     <View style={{ flexDirection: 'row', gap: 12 }}>
       <View style={{ alignItems: 'center', paddingTop: 4 }}>
@@ -1115,7 +1116,7 @@ function HistoryRow({
             {row.changed_by_name}
           </Text>
         ) : null}
-        {row.reason ? (
+        {reasonLine ? (
           <Text
             selectable
             style={{
@@ -1125,7 +1126,7 @@ function HistoryRow({
               marginTop: 2,
             }}
           >
-            {row.reason}
+            {reasonLine}
           </Text>
         ) : null}
         {row.notes ? (
@@ -1143,9 +1144,9 @@ function HistoryRow({
           </Text>
         ) : null}
         {/* Reps usually retype this into WhatsApp when updating the client.
-            One-tap copy of reason + notes saves the retype. */}
-        {row.reason || row.notes ? (
-          <CopyNotePill text={[row.reason, row.notes].filter(Boolean).join('\n')} />
+            One-tap copy of the customer-facing line + note saves the retype. */}
+        {reasonLine || row.notes ? (
+          <CopyNotePill text={[reasonLine, row.notes].filter(Boolean).join('\n')} />
         ) : null}
         {/* show transition labels for terminal context */}
         {row.from_status ? (

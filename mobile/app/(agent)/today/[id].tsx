@@ -25,7 +25,7 @@ import {
 import { listSubAgents } from '@/services/users';
 import { canHandoffToSubAgent } from '@/lib/permissions';
 import { AppBar, Banner, Button, Card, Empty, Icon, StatusPill } from '@/components/ui';
-import { colors, fonts, STATUS_META, TERMINAL_STATUSES } from '@/lib/theme';
+import { colors, fonts, historyReasonLine, STATUS_META, TERMINAL_STATUSES } from '@/lib/theme';
 import { formatDateTime, formatNaira } from '@/lib/format';
 import { MarkDeliveredSheet } from '@/components/sheets/MarkDeliveredSheet';
 import { UpdateStatusSheet } from '@/components/sheets/UpdateStatusSheet';
@@ -656,6 +656,7 @@ function HistoryRow({
   last: boolean;
   labelByStatus: Map<string, string>;
 }) {
+  const reasonLine = historyReasonLine(row.to_status, row.reason);
   return (
     <View style={{ flexDirection: 'row', gap: 12 }}>
       <View style={{ alignItems: 'center', paddingTop: 4 }}>
@@ -685,7 +686,7 @@ function HistoryRow({
             {row.changed_by_name}
           </Text>
         ) : null}
-        {row.reason ? (
+        {reasonLine ? (
           <Text
             style={{
               fontFamily: fonts.medium,
@@ -694,7 +695,7 @@ function HistoryRow({
               marginTop: 2,
             }}
           >
-            {row.reason}
+            {reasonLine}
           </Text>
         ) : null}
         {row.notes ? (

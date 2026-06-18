@@ -107,6 +107,56 @@ export const STATUS_META: Record<
   rolled_over: { label: 'Rolled over', tone: 'gray', desc: 'Carried to next day' },
 };
 
+/** Customer-facing phrase for a status, for the history timeline's reason line
+ *  and the rep's one-tap "Copy note" → WhatsApp paste. Keyed by `to_status` so
+ *  the displayed line is a function of the status, never the coarse issue-bucket
+ *  stored in `status_history.reason` (e.g. `cant_reach_client`). Statuses NOT in
+ *  this map deliberately carry no canned phrase — `will_call_back` / `follow_up`
+ *  need rider-supplied context, so the rider's note is shown verbatim instead. */
+export const STATUS_CLIENT_PHRASE: Record<string, string> = {
+  not_answering: 'Not picking calls',
+  not_connecting: 'Number not going through',
+  number_busy: 'Number busy',
+  switched_off: 'Number switched off',
+  not_around: "Customer said he's not around",
+  not_available: "Customer said he's not available",
+  available: 'Available',
+  available_evening: 'Available in the evening',
+  tomorrow: 'Said tomorrow',
+  postponed: 'Customer postponed',
+  cancelled: 'Customer cancelled the order',
+};
+
+/** The five coarse issue buckets stored verbatim in `status_history.reason` by
+ *  flag_delivery_issue. They're redundant with the status pill and not
+ *  customer-readable, so the history line never surfaces them raw — a status
+ *  with a STATUS_CLIENT_PHRASE replaces them, and one without simply drops them.
+ *  Genuine free-text reasons (dedup explanations, "reconciled from sheet", agent
+ *  cancel notes) are NOT in this set and are always preserved. */
+const ISSUE_BUCKET_REASONS = new Set<string>([
+  'cant_reach_client',
+  'wrong_address',
+  'payment_dispute',
+  'product_issue',
+  'other',
+]);
+
+/** The reason line a history row should DISPLAY (and the rep should COPY) for a
+ *  given (to_status, stored reason). Pure and shared by both detail screens'
+ *  HistoryRow so the two never drift:
+ *    - status has a canned phrase  -> the customer-facing phrase;
+ *    - reason is a redundant issue bucket (cant_reach_client &c.) -> nothing;
+ *    - otherwise -> the genuine free-text reason, verbatim.
+ *  The rider's note (status_history.notes) is shown/copied separately by the
+ *  caller and supplies any specifics (e.g. the date for a postponement). */
+export function historyReasonLine(toStatus: string, reason: string | null): string | null {
+  const phrase = STATUS_CLIENT_PHRASE[toStatus];
+  if (phrase) return phrase;
+  if (reason && ISSUE_BUCKET_REASONS.has(reason)) return null;
+  const trimmed = reason?.trim();
+  return trimmed ? trimmed : null;
+}
+
 export const STATUS_GROUPS: Record<'active' | 'soft' | 'done' | 'closed', string[]> = {
   active: ['pending', 'available', 'available_evening'],
   soft: [
