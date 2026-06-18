@@ -591,7 +591,7 @@ export async function createDelivery(input: CreateDeliveryInput): Promise<string
     p_scheduled_date: input.scheduledDate,
     p_assigned_agent_id: input.assignedAgentId as unknown as string,
     p_created_via: 'manual',
-    p_delivery_instructions: input.deliveryInstructions as unknown as string | undefined,
+    p_delivery_instructions: input.deliveryInstructions ?? undefined,
     p_items: toItemsJsonb(input.items) as unknown as undefined, // [Feature A]
   });
   if (error) throw error;

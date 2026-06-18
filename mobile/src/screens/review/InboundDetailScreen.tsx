@@ -241,6 +241,7 @@ export default function InboundDetailScreen() {
         customerName: state.customerName.trim(),
         customerPhone: state.customerPhone.trim(),
         rawAddress: state.rawAddress.trim(),
+        deliveryInstructions: state.deliveryInstructions.trim() || null,
         quantityOrdered: state.quantityOrdered!,
         customerPrice: state.customerPrice!,
         locationId: state.locationId,
