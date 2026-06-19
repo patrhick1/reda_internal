@@ -70,7 +70,7 @@ export function CalendarPicker({
           <Text
             key={d + i}
             style={{
-              flexBasis: `${100 / 7}%`,
+              flexBasis: COL_BASIS,
               textAlign: 'center',
               fontFamily: fonts.semibold,
               fontSize: 11,
@@ -86,13 +86,13 @@ export function CalendarPicker({
       <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
         {cells.map((cell, idx) => {
           if (cell === null) {
-            return <View key={`blank-${idx}`} style={{ flexBasis: `${100 / 7}%`, height: 40 }} />;
+            return <View key={`blank-${idx}`} style={{ flexBasis: COL_BASIS, height: 40 }} />;
           }
           const isSunday = cell.weekday === 0;
           const disabled = cell.ymd <= minExclusiveYmd || (disableSundays && isSunday);
           const selected = value === cell.ymd;
           return (
-            <View key={cell.ymd} style={{ flexBasis: `${100 / 7}%`, height: 40, padding: 2 }}>
+            <View key={cell.ymd} style={{ flexBasis: COL_BASIS, height: 40, padding: 2 }}>
               <Pressable
                 disabled={disabled}
                 onPress={() => onSelect(cell.ymd)}
@@ -172,6 +172,14 @@ const MONTHS = [
 ];
 // Monday-first so Sunday (the closed day) sits at the end of each row.
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+// Width of one of the seven columns. NOT `${100 / 7}%`: that's
+// 14.285714285714286%, and in Yoga's float32 layout 7×that sums to just over
+// 100% of the row — so in the day grid (flexWrap: 'wrap') the 7th cell (Sunday)
+// wraps onto the next line, leaving every week showing only Mon–Sat and shoving
+// the dates into the wrong weekday columns. Rounding the basis down to 14.2857%
+// (7×14.2857 = 99.9999%) keeps all seven on one row with a sub-pixel gap.
+const COL_BASIS = '14.2857%';
 
 type DayCell = { day: number; ymd: string; weekday: number };
 
