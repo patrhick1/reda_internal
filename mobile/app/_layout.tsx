@@ -175,6 +175,8 @@ function expectedRouteFor(account: AccountState): `/${string}` | null {
       return '/(auth)/login';
     case 'incomplete':
       return '/(status)/incomplete';
+    case 'unreachable':
+      return '/(status)/unreachable';
     case 'deactivated':
       return '/(status)/deactivated';
     case 'active':

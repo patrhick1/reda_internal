@@ -1,4 +1,13 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
 import { PUSH_TOKEN_STORAGE_KEY } from '@/hooks/usePushTokenRegistration';
@@ -8,6 +17,11 @@ export type AccountState =
   | { kind: 'loading' }
   | { kind: 'signed_out' }
   | { kind: 'incomplete'; userId: string; email: string | null } // auth user exists but no public.users row
+  // Sign-in succeeded but we couldn't fetch the profile because the backend was
+  // unreachable (network drop, or a Supabase 5xx/503 outage). NOT an account
+  // problem — retried automatically with backoff. Distinct from 'incomplete' so
+  // an outage doesn't tell every agent to "contact your admin".
+  | { kind: 'unreachable'; userId: string; email: string | null }
   | { kind: 'deactivated'; userId: string; email: string }
   | {
       kind: 'active';
@@ -25,6 +39,9 @@ type AuthContextValue = {
   account: AccountState;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
+  /** Force an immediate re-fetch of the profile (used by the "Try again" button
+   *  on the unreachable screen). Also resets the auto-retry backoff. */
+  retry: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -34,6 +51,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authEmail, setAuthEmail] = useState<string | null>(null);
   const [bootstrapped, setBootstrapped] = useState(false);
   const [account, setAccount] = useState<AccountState>({ kind: 'loading' });
+  // Bumping this re-runs the profile-resolve effect (auto-retry + manual retry).
+  const [resolveTick, setResolveTick] = useState(0);
+  const retryAttempt = useRef(0); // consecutive transient failures, for backoff
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Subscribe to auth events. We deliberately key downstream effects off the
   // user id (a stable string) rather than the session object, since
@@ -53,17 +74,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  // Resolve the public.users row when the auth user id changes.
+  // Resolve the public.users row when the auth user id changes (or a retry is
+  // requested via resolveTick). A query ERROR (network drop, timeout, or a
+  // Supabase 5xx/503 outage) is NOT the same as a genuine "no profile row":
+  // maybeSingle() returns { data: null, error: null } for a real 0-row result,
+  // so only an error-present case is transient. Transient failures go to the
+  // 'unreachable' state and auto-retry with backoff; only a real missing row
+  // (or bad role) is the true 'incomplete'. Conflating the two told every agent
+  // to "contact your admin" during a backend outage (2026-06-19).
   useEffect(() => {
     if (!bootstrapped) return;
 
     if (!authUserId) {
+      if (retryTimer.current) clearTimeout(retryTimer.current);
+      retryAttempt.current = 0;
       setAccount({ kind: 'signed_out' });
       return;
     }
 
     let cancelled = false;
-    setAccount({ kind: 'loading' });
+    // Keep the unreachable screen up across background retries instead of
+    // flickering back to a spinner on every attempt.
+    setAccount((prev) => (prev.kind === 'unreachable' ? prev : { kind: 'loading' }));
 
     (async () => {
       const { data, error } = await supabase
@@ -77,7 +109,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (cancelled) return;
 
-      if (error || !data) {
+      if (error) {
+        // Backend unreachable — retry with exponential backoff (1s → 30s cap).
+        retryAttempt.current += 1;
+        const delay = Math.min(1000 * 2 ** (retryAttempt.current - 1), 30000);
+        setAccount({ kind: 'unreachable', userId: authUserId, email: authEmail });
+        retryTimer.current = setTimeout(() => setResolveTick((t) => t + 1), delay);
+        return;
+      }
+
+      retryAttempt.current = 0;
+
+      if (!data) {
         setAccount({ kind: 'incomplete', userId: authUserId, email: authEmail });
         return;
       }
@@ -104,8 +147,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       cancelled = true;
+      if (retryTimer.current) {
+        clearTimeout(retryTimer.current);
+        retryTimer.current = null;
+      }
     };
-  }, [authUserId, authEmail, bootstrapped]);
+  }, [authUserId, authEmail, bootstrapped, resolveTick]);
+
+  const retry = useCallback(() => {
+    if (retryTimer.current) {
+      clearTimeout(retryTimer.current);
+      retryTimer.current = null;
+    }
+    retryAttempt.current = 0;
+    setResolveTick((t) => t + 1);
+  }, []);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -128,8 +184,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         await supabase.auth.signOut();
       },
+      retry,
     }),
-    [account],
+    [account, retry],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
