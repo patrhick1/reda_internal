@@ -4,6 +4,8 @@ import { Banner, Button, Icon, Input, Sheet } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 import { getAgentProductsStock, type DeliveryRow } from '@/services/deliveries';
 import { useEnqueueChangeStatus, useEnqueueReturnLeftover } from '@/queue/mutations';
+import { useCurrentUser } from '@/hooks/useAuth';
+import { canSeePosFeeNote } from '@/lib/permissions';
 import { formatNaira } from '@/lib/format';
 import { errorMessage } from '@/lib/errors';
 
@@ -35,6 +37,7 @@ export function MarkDeliveredSheet({
   const [error, setError] = useState<string | null>(null);
   const [onHand, setOnHand] = useState<Record<string, number> | null>(null);
   const [returnLeftover, setReturnLeftover] = useState(false);
+  const { role } = useCurrentUser();
   const enqueueStatus = useEnqueueChangeStatus();
   const enqueueReturnLeftover = useEnqueueReturnLeftover();
 
@@ -310,7 +313,7 @@ export function MarkDeliveredSheet({
           </Banner>
         ) : null}
 
-        {cashPosFee > 0 ? (
+        {cashPosFee > 0 && canSeePosFeeNote(role) ? (
           <Banner tone="info" icon="cash" title="POS fee on cash">
             {`${formatNaira(cashPosFee)} will be deducted from the client's remit (POS charge for banking the cash). Doesn't change what you hand over.`}
           </Banner>

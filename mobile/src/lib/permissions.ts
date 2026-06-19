@@ -47,6 +47,16 @@ export function canSeeCharged(role: Role): boolean {
   return role === 'admin';
 }
 
+/** The "POS fee on cash" note in the mark-delivered sheets. It explains a
+ *  client-remit deduction that only concerns back-office reconciliation — the
+ *  field agents/reps who collect the cash never touch the remit, so the note is
+ *  noise for them (per Uzo, 2026-06-19). UI-only display gate: the ₦500 fee is
+ *  still computed + applied server-side in change_delivery_status regardless of
+ *  who marks the order delivered. Managers (admin + dispatcher) keep the note. */
+export function canSeePosFeeNote(role: Role): boolean {
+  return isManager(role);
+}
+
 /** Audit log. Operational set (admin + dispatcher + rep).
  * Server anchor: audit_log_select_admin_dispatcher policy → is_admin_or_dispatcher(). */
 export function canSeeAuditLog(role: Role): boolean {

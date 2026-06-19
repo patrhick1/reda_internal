@@ -4,7 +4,8 @@ import { Banner, Button, Icon, Sheet } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 import { type DeliveryRow } from '@/services/deliveries';
 import { useEnqueueChangeStatus } from '@/queue/mutations';
-import { canBulkDeliverRow } from '@/lib/permissions';
+import { useCurrentUser } from '@/hooks/useAuth';
+import { canBulkDeliverRow, canSeePosFeeNote } from '@/lib/permissions';
 import { formatNaira } from '@/lib/format';
 import { errorMessage } from '@/lib/errors';
 
@@ -36,6 +37,7 @@ export function BulkMarkDeliveredSheet({
   const [method, setMethod] = useState<PaymentMethod>('transfer');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { role } = useCurrentUser();
   const enqueueStatus = useEnqueueChangeStatus();
 
   // Reset to the default each time the sheet opens so a previous batch's Cash
@@ -183,7 +185,7 @@ export function BulkMarkDeliveredSheet({
           </View>
         </View>
 
-        {cashPosFeeTotal > 0 ? (
+        {cashPosFeeTotal > 0 && canSeePosFeeNote(role) ? (
           <Banner tone="info" icon="cash" title="POS fee on cash">
             {`${formatNaira(500)} per order (${formatNaira(cashPosFeeTotal)} total) is deducted from each client's remit for banking the cash. Doesn't change what you hand over.`}
           </Banner>
