@@ -143,18 +143,26 @@ const ISSUE_BUCKET_REASONS = new Set<string>([
 
 /** The reason line a history row should DISPLAY (and the rep should COPY) for a
  *  given (to_status, stored reason). Pure and shared by both detail screens'
- *  HistoryRow so the two never drift:
- *    - status has a canned phrase  -> the customer-facing phrase;
- *    - reason is a redundant issue bucket (cant_reach_client &c.) -> nothing;
- *    - otherwise -> the genuine free-text reason, verbatim.
- *  The rider's note (status_history.notes) is shown/copied separately by the
- *  caller and supplies any specifics (e.g. the date for a postponement). */
+ *  HistoryRow so the two never drift.
+ *
+ *  `status_history.reason` carries two very different things depending on the
+ *  path that wrote the row:
+ *    - flag_delivery_issue (cant-reach statuses) stores the coarse issue BUCKET
+ *      in `reason` (`cant_reach_client` &c.) and the agent's typed note in
+ *      `notes`. The bucket is redundant with the status pill and not
+ *      customer-readable, so we swap it for the canned phrase.
+ *    - change_delivery_status (postponed/cancelled/tomorrow/available, and every
+ *      ops update) stores the agent's/ops's typed FREE-TEXT note directly in
+ *      `reason` (with `notes` null). That note is the whole point of the agent
+ *      writing it, so it must always win.
+ *
+ *  Precedence therefore: a genuine free-text reason is shown verbatim; only when
+ *  the reason is empty or one of the coarse buckets do we fall back to the
+ *  status's canned phrase (or nothing). */
 export function historyReasonLine(toStatus: string, reason: string | null): string | null {
-  const phrase = STATUS_CLIENT_PHRASE[toStatus];
-  if (phrase) return phrase;
-  if (reason && ISSUE_BUCKET_REASONS.has(reason)) return null;
   const trimmed = reason?.trim();
-  return trimmed ? trimmed : null;
+  if (trimmed && !ISSUE_BUCKET_REASONS.has(trimmed)) return trimmed;
+  return STATUS_CLIENT_PHRASE[toStatus] ?? null;
 }
 
 export const STATUS_GROUPS: Record<'active' | 'soft' | 'done' | 'closed', string[]> = {
