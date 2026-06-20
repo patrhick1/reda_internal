@@ -3,7 +3,7 @@ import { Pressable, Text, View } from 'react-native';
 import { Banner, Button, Icon, Input, Sheet } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 import { getAgentProductsStock, type DeliveryRow } from '@/services/deliveries';
-import { useEnqueueChangeStatus, useEnqueueReturnLeftover } from '@/queue/mutations';
+import { useEnqueueChangeStatus } from '@/queue/mutations';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { canSeePosFeeNote } from '@/lib/permissions';
 import { formatNaira } from '@/lib/format';
@@ -36,10 +36,8 @@ export function MarkDeliveredSheet({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [onHand, setOnHand] = useState<Record<string, number> | null>(null);
-  const [returnLeftover, setReturnLeftover] = useState(false);
   const { role } = useCurrentUser();
   const enqueueStatus = useEnqueueChangeStatus();
-  const enqueueReturnLeftover = useEnqueueReturnLeftover();
 
   const lines: Line[] = useMemo(() => {
     if (!delivery) return [];
@@ -73,7 +71,6 @@ export function MarkDeliveredSheet({
     setDelivered(Object.fromEntries(lines.map((l) => [l.productCatalogId, String(l.ordered)])));
     setPaid(String(delivery.customer_price ?? 0));
     setMethod('transfer');
-    setReturnLeftover(false);
     setError(null);
     setOnHand(null);
     const agentId = delivery.assigned_agent_id;
@@ -88,7 +85,9 @@ export function MarkDeliveredSheet({
 
   const paidNum = Number(paid);
 
-  // Per-line numbers (delivered qty, stock-short, leftover) computed up front.
+  // Per-line numbers (delivered qty, stock-short) computed up front. Any
+  // undelivered remainder stays on the agent's hand — agents keep leftover
+  // product 100% of the time, so there is no return-to-warehouse option here.
   const perLine = useMemo(
     () =>
       lines.map((l) => {
@@ -96,16 +95,12 @@ export function MarkDeliveredSheet({
         const valid = Number.isInteger(qd) && qd > 0;
         const oh = onHand?.[l.productCatalogId];
         const short = valid && oh != null && qd > oh;
-        const leftover = valid && qd < l.ordered ? l.ordered - qd : 0;
-        return { ...l, qd, valid, onHand: oh, short, leftover };
+        return { ...l, qd, valid, onHand: oh, short };
       }),
     [lines, delivered, onHand],
   );
   const anyShort = perLine.some((p) => p.short);
   const totalDelivered = perLine.reduce((s, p) => s + (p.valid ? p.qd : 0), 0);
-  // Leftover return is offered only for single-line orders (the return RPC is
-  // per-product); multi-line leftovers stay with the agent in v1.
-  const singleLeftover = !isMulti && perLine[0] ? perLine[0].leftover : 0;
 
   // All money fields are per-delivery. Delivered quantity tracks stock movement
   // and partial state; it does NOT scale the money.
@@ -166,12 +161,6 @@ export function MarkDeliveredSheet({
         },
         `Mark delivered · ${delivery!.customer_name ?? ''}`,
       );
-      if (returnLeftover && singleLeftover > 0 && perLine[0]) {
-        await enqueueReturnLeftover(
-          { deliveryId: delivery!.id ?? '', quantity: singleLeftover, notes: null },
-          `Return ${singleLeftover} to warehouse · ${delivery!.customer_name ?? ''}`,
-        );
-      }
       onConfirmed('delivered', jobId);
     } catch (e) {
       setError(errorMessage(e));
@@ -317,48 +306,6 @@ export function MarkDeliveredSheet({
           <Banner tone="info" icon="cash" title="POS fee on cash">
             {`${formatNaira(cashPosFee)} will be deducted from the client's remit (POS charge for banking the cash). Doesn't change what you hand over.`}
           </Banner>
-        ) : null}
-
-        {singleLeftover > 0 ? (
-          <Pressable
-            onPress={() => setReturnLeftover((v) => !v)}
-            style={({ pressed }) => [
-              {
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 12,
-                padding: 14,
-                borderRadius: 12,
-                borderWidth: 2,
-                borderColor: returnLeftover ? colors.black : colors.border,
-                backgroundColor: returnLeftover ? colors.surface : colors.white,
-              },
-              pressed && { opacity: 0.85 },
-            ]}
-          >
-            <View
-              style={{
-                width: 24,
-                height: 24,
-                borderRadius: 6,
-                borderWidth: 2,
-                borderColor: returnLeftover ? colors.black : colors.border,
-                backgroundColor: returnLeftover ? colors.black : colors.white,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              {returnLeftover ? <Icon name="check" size={16} color={colors.white} /> : null}
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontFamily: fonts.semibold, fontSize: 14, color: colors.black }}>
-                {`Return ${singleLeftover} to warehouse`}
-              </Text>
-              <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary }}>
-                {`You're delivering ${perLine[0]?.qd} of ${perLine[0]?.ordered}. Leave this off to keep the ${singleLeftover} with you.`}
-              </Text>
-            </View>
-          </Pressable>
         ) : null}
 
         <View style={{ backgroundColor: colors.surface, borderRadius: 12, padding: 12, gap: 6 }}>
