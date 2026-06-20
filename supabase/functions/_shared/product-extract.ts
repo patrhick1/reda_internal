@@ -47,11 +47,12 @@ export const PRODUCT_EXTRACTION_SCHEMA = {
         items: {
           type:                 'object',
           additionalProperties: false,
-          required: ['product_name', 'quantity', 'customer_price'],
+          required: ['product_name', 'quantity', 'customer_price', 'free'],
           properties: {
             product_name:   { type: ['string',  'null'] },
             quantity:       { type: ['integer', 'null'] },
             customer_price: { type: ['number',  'null'] },
+            free:           { type: 'boolean' },
           },
         },
       },
@@ -75,6 +76,7 @@ Return strict JSON with these fields (use null when missing):
       product_name   : string  — the CLEAN product name ONLY (apply the normalization rules below)
       quantity       : integer — total units of this product the customer receives, INCLUDING any free units; default 1 if implied
       customer_price : number  — the subtotal for this product line (the parenthesized amount), null if missing
+      free           : boolean — true ONLY when the message explicitly marks THIS product as free/bonus/gift/complimentary — a giveaway the customer is NOT paying for ("1 Free Nose Trimmer", "+ a FREE perfume", "bonus sachet"). false for every normal product the customer pays for. NOTE: the bonus units of a "Buy N Get M FREE" of the SAME product are NOT a separate free line (rule 2 folds them into the one paid line, free:false) — "free" is only for a DISTINCT giveaway product.
     }
 
 PRODUCT-NAME NORMALIZATION — return the real catalog product, never the marketing wrapper:
@@ -82,8 +84,9 @@ PRODUCT-NAME NORMALIZATION — return the real catalog product, never the market
   2. "Buy N <Product> Get M FREE" (same product) -> ONE line: product = <Product>, quantity = N + M.
        "Buy 2 Water Filter Get 1 FREE"                      -> [{product_name:"Water Filter", quantity:3}]
        "Gold Package - Buy 2 Fire Stop Spray Get 1 FREE"    -> [{product_name:"Fire Stop Spray", quantity:3}]
-  3. "Set of <X> including N (FREE) <Y>" / "<X> with N free <Y>" -> TWO lines (different products):
-       "1 Set of OUD AL LAYL including 2 FREE Perfume Oil"  -> [{product_name:"Oud Al Layl", quantity:1},{product_name:"Perfume Oil", quantity:2}]
+  3. "Set of <X> including N (FREE) <Y>" / "<X> with N free <Y>" -> TWO lines (different products); the bonus <Y> is the giveaway, so free:true on it:
+       "1 Set of OUD AL LAYL including 2 FREE Perfume Oil"  -> [{product_name:"Oud Al Layl", quantity:1, free:false},{product_name:"Perfume Oil", quantity:2, free:true}]
+       "1 Pack of Shaving Device + 1 Free Nose Trimmer"     -> [{product_name:"Shaving Device", quantity:1, free:false},{product_name:"Nose Trimmer", quantity:1, free:true}]
   4. Strip quantities, prices, currency, and packaging/filler words ("Pack of", "Set of", "bottle(s)", "sachet", "tube", "carton", "piece(s)", "(One)", "units", "x2", parenthetical totals) from product_name — keep only the REAL product. A bare container/unit word ("bottle", "pack", "sachet") is NEVER the product; the product name often comes AFTER the quantity/container, and an "=price" may follow it.
        "1 Pack Of Double Arabian Tea"                       -> {product_name:"Double Arabian Tea", quantity:1}
        "1 bottle for a start Stand again=18500"             -> {product_name:"Stand again", quantity:1, customer_price:18500}
@@ -95,7 +98,7 @@ PRODUCT-NAME NORMALIZATION — return the real catalog product, never the market
 
 Do NOT include the Total line as a product. Do NOT invent products that aren't in the message.
 Ignore order-reference / SKU-header lines — a product code or order label such as "OUD AL LAYL BROWN SINGLE WITH OIL 2246-U" or "OPULENT ORDER 252-O" is metadata, not a product line.
-"FREE DELIVERY" / "FREE SHIPPING" is NOT a product — exclude it. A free PRODUCT (e.g. "FREE PACIFIC BLUE PERFUME") IS a product line: include it with quantity and customer_price 0.
+"FREE DELIVERY" / "FREE SHIPPING" is NOT a product — exclude it. A free PRODUCT (e.g. "FREE PACIFIC BLUE PERFUME") IS a product line: include it with quantity, free:true, and customer_price 0.
 
 Message:
 """
@@ -106,6 +109,10 @@ export type LineItem = {
   product_name:   string | null;
   quantity:       number | null;
   customer_price: number | null;
+  // true when the message marks this line as a free gift/bonus the customer
+  // isn't paying for. The caller uses this (NOT customer_price) to decide that
+  // an unmatched line is a droppable freebie vs a real product → needs_review.
+  free:           boolean;
 };
 
 export type ExtractedProducts = {
@@ -153,6 +160,7 @@ export function coerceLineItem(v: any): LineItem | null {
     product_name:   name,
     quantity:       toInt(v.quantity),
     customer_price: toNum(v.customer_price),
+    free:           v.free === true,
   };
 }
 

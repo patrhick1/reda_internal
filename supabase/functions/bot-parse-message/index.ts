@@ -284,6 +284,7 @@ function extractContractorProducts(raw_payload: any): LineItem[] | null {
       product_name:   name,
       quantity:       typeof e?.quantity === 'number' && e.quantity > 0 ? Math.round(e.quantity) : null,
       customer_price: typeof e?.customer_price === 'number' && e.customer_price >= 0 ? e.customer_price : null,
+      free:           e?.free === true,
     });
   }
   return items.length > 0 ? items : null;
@@ -459,6 +460,7 @@ Deno.serve(async (req) => {
       product_name:   contractorFields.product_name,
       quantity:       contractorFields.quantity ?? 1,
       customer_price: contractorFields.customer_price ?? null,
+      free:           false,  // a contractor's single named product is never the freebie line
     }];
   }
 
@@ -540,14 +542,18 @@ Deno.serve(async (req) => {
 
   const matchedLines     = lineMatches.filter((r) => r.match);
   const unmatchedLines   = lineMatches.filter((r) => !r.match);
-  // [free-gift] A free (customer_price === 0) line that matches no SKU is a
-  // promotional giveaway — "FREE DIGITAL BRACELET", a bonus sachet, etc. — not a
-  // product the customer paid for. Drop it instead of dragging the whole order to
-  // needs_review. Paid or unknown-price unmatched lines still block (we never
-  // silently lose something the customer paid for).
-  const blockingUnmatched = unmatchedLines.filter((r) => r.line.customer_price !== 0);
+  // [free-gift] An unmatched line the MESSAGE marked free (line.free) is a
+  // promotional giveaway — "1 Free Nose Trimmer", "FREE DIGITAL BRACELET", a
+  // bonus sachet — not a product the customer paid for. Drop it instead of
+  // dragging the whole order to needs_review. We key off the extracted `free`
+  // flag, NOT customer_price: per-line price is record-keeping only and is null
+  // for most lines (clients send one total, rarely a per-product price), so
+  // `=== 0` almost never fires and mis-routed real freebies to review. A genuine
+  // unmatched product that ISN'T flagged free still blocks (we never silently
+  // lose something the customer paid for).
+  const blockingUnmatched = unmatchedLines.filter((r) => !r.line.free);
   const droppedFreeGifts  = unmatchedLines
-    .filter((r) => r.line.customer_price === 0)
+    .filter((r) => r.line.free)
     .map((r) => r.line.product_name);
   const matchedClientIds = [...new Set(matchedLines.map((r) => r.match!.client_id))];
   const multiVendor      = matchedClientIds.length > 1;
