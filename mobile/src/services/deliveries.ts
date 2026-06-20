@@ -44,6 +44,13 @@ export type DeliveryDisplayJoins = {
    *  in attachJoins. Hand-typed here until database.gen.ts is regenerated. Null
    *  when none. See scripts/delivery-instructions.sql. */
   delivery_instructions: string | null;
+  /** When the order was last (re)assigned to its current agent. Folded into the
+   *  list sort alongside latest_changed_at / latest_message_at so a freshly
+   *  assigned order — e.g. a rolled-over follow-up an admin just handed to an
+   *  agent — bubbles to the top instead of sorting by its stale created_at. A
+   *  base column maintained by trg_set_assigned_at; null on rows never assigned
+   *  (ignored by the sort's max). See scripts/assigned-at-activity-sort.sql. */
+  assigned_at: string | null;
 };
 
 /** [Feature A] One product line of a delivery (from delivery_items, joined to
@@ -312,6 +319,8 @@ function attachJoins<T extends object>(
       'delivery_instructions' in rest && typeof rest.delivery_instructions === 'string'
         ? rest.delivery_instructions
         : null,
+    assigned_at:
+      'assigned_at' in rest && typeof rest.assigned_at === 'string' ? rest.assigned_at : null,
   };
 }
 
@@ -354,13 +363,16 @@ export async function listDeliveries(
 
   // Sort by most recent ACTIVITY DESC — a row touched 30s ago sits above one
   // untouched all day. "Activity" = the latest of a status change
-  // (latest_changed_at), a thread message (latest_message_at), or creation
-  // (created_at). Folding in latest_message_at means a new message bubbles the
-  // row to the top exactly like a status change does. All three timestamps are
-  // embedded on the deliveries views via LATERAL joins, so this whole function
-  // is a single PostgREST round trip.
-  // See scripts/embed-latest-history-in-deliveries-views.sql and
-  //     scripts/embed-latest-message-in-deliveries-views.sql.
+  // (latest_changed_at), a thread message (latest_message_at), an assignment
+  // (assigned_at), or creation (created_at). Folding in latest_message_at means
+  // a new message bubbles the row up exactly like a status change does; folding
+  // in assigned_at means a freshly (re)assigned order — e.g. a rolled-over
+  // follow-up an admin just handed to an agent — surfaces at the top instead of
+  // sinking to its stale created_at. All timestamps are embedded on the
+  // deliveries views, so this whole function is a single PostgREST round trip.
+  // See scripts/embed-latest-history-in-deliveries-views.sql,
+  //     scripts/embed-latest-message-in-deliveries-views.sql and
+  //     scripts/assigned-at-activity-sort.sql.
   return rows.sort((a, b) => latestActivityAt(b).localeCompare(latestActivityAt(a)));
 }
 
@@ -420,11 +432,13 @@ export async function listPostponed(role: Role): Promise<DeliveryRow[]> {
 function latestActivityAt(r: {
   latest_changed_at: string | null;
   latest_message_at: string | null;
+  assigned_at: string | null;
   created_at: string | null;
 }): string {
   let t = r.created_at ?? '';
   if ((r.latest_changed_at ?? '') > t) t = r.latest_changed_at as string;
   if ((r.latest_message_at ?? '') > t) t = r.latest_message_at as string;
+  if ((r.assigned_at ?? '') > t) t = r.assigned_at as string;
   return t;
 }
 
