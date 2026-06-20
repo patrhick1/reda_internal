@@ -16,15 +16,13 @@ export default function AgentEarnings() {
     [user.userId],
   );
 
-  // "Paid every Friday" → the period that matters for remit is the current
-  // work week (Mon → today, Lagos). agent_earnings_summary already gates on
-  // is_admin_or_dispatcher() OR u.id = auth.uid(), so this returns a single
-  // row — the caller's own — with collected / earnings / remit aggregated.
+  // Agents remit DAILY, not weekly (per Uzo, 2026-06-20), so the remit card is
+  // scoped to TODAY only — (today, today) is an inclusive single-day range.
+  // agent_earnings_summary already gates on is_admin_or_dispatcher() OR
+  // u.id = auth.uid(), so this returns a single row — the caller's own — with
+  // today's collected / earnings / remit aggregated.
   const week = useMemo(() => lagosWeekRange(), []);
-  const remitQ = useAsync(
-    () => listAgentEarningsSummary(week.start, week.today),
-    [week.start, week.today],
-  );
+  const remitQ = useAsync(() => listAgentEarningsSummary(week.today, week.today), [week.today]);
 
   useFocusEffect(
     useCallback(() => {
@@ -70,7 +68,7 @@ export default function AgentEarnings() {
                   textTransform: 'uppercase',
                 }}
               >
-                This week
+                Today
               </Text>
               <Text
                 style={{
@@ -81,10 +79,10 @@ export default function AgentEarnings() {
                   marginTop: 4,
                 }}
               >
-                {formatNaira(buckets.thisWeek)}
+                {formatNaira(buckets.today)}
               </Text>
               <View style={{ flexDirection: 'row', gap: 14, marginTop: 10 }}>
-                <SubStat label="Today" value={formatNaira(buckets.today)} />
+                <SubStat label="This week" value={formatNaira(buckets.thisWeek)} />
                 <View style={{ width: 1, backgroundColor: '#333' }} />
                 <SubStat label="This month" value={formatNaira(buckets.thisMonth)} />
               </View>
@@ -99,7 +97,7 @@ export default function AgentEarnings() {
                   textTransform: 'uppercase',
                 }}
               >
-                Remit this week
+                Remit today
               </Text>
               <View
                 style={{
