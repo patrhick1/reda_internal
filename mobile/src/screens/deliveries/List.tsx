@@ -465,10 +465,34 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     return rows;
   }, [postponedQ.data, agentId, nameNeedle]);
 
-  const list = filter === 'postponed' ? postponedRows : (unassignedSorted ?? buckets[filter]);
+  // "To notify" must include postponed orders even when they're scheduled for a
+  // FUTURE date (Uzo, 2026-06-20): postpone moves scheduled_date forward in place,
+  // so those rows fall outside the date-scoped `all` and would otherwise never
+  // reach the notify predicate. Merge the cross-date postponed slice in, deduped
+  // by id (today's postponed already sit in buckets.to_notify), each still gated
+  // by awaitsClientNotification so already-notified rows stay out.
+  const toNotifyRows = useMemo(() => {
+    const seen = new Set<string>();
+    const out: DeliveryRow[] = [];
+    for (const d of [...buckets.to_notify, ...postponedRows]) {
+      if (!awaitsClientNotification(d)) continue;
+      const rid = d.id;
+      if (!rid || seen.has(rid)) continue;
+      seen.add(rid);
+      out.push(d);
+    }
+    return out;
+  }, [buckets.to_notify, postponedRows]);
+
+  const list =
+    filter === 'postponed'
+      ? postponedRows
+      : filter === 'to_notify'
+        ? toNotifyRows
+        : (unassignedSorted ?? buckets[filter]);
   const filterOptions = [
     { id: 'all' as const, label: 'All', count: buckets.all.length },
-    { id: 'to_notify' as const, label: 'To notify', count: buckets.to_notify.length },
+    { id: 'to_notify' as const, label: 'To notify', count: toNotifyRows.length },
     { id: 'active' as const, label: 'Active', count: buckets.active.length },
     { id: 'available' as const, label: 'Available', count: buckets.available.length },
     { id: 'soft' as const, label: 'Soft fail', count: buckets.soft.length },

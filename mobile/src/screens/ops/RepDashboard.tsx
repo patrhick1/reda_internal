@@ -13,7 +13,12 @@ import { ScrollView, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
-import { listDeliveries, siblingGroupKey, type DeliveryRow } from '@/services/deliveries';
+import {
+  listDeliveries,
+  listPostponed,
+  siblingGroupKey,
+  type DeliveryRow,
+} from '@/services/deliveries';
 import { listUsers } from '@/services/users';
 import { listOpenIssuesForOps } from '@/services/delivery-messages';
 import { AppBar, Card, Icon } from '@/components/ui';
@@ -39,6 +44,10 @@ export function RepDashboard() {
   const user = useCurrentUser();
   const router = useRouter();
   const deliveriesQ = useAsync(() => listDeliveries(user.role), [user.role]);
+  // Cross-date postponed slice: postpone moves scheduled_date forward in place, so
+  // future-dated postponed orders fall outside the today-scoped deliveries fetch.
+  // Pulled separately so they still surface in "To notify" (Uzo, 2026-06-20).
+  const postponedQ = useAsync(() => listPostponed(user.role), [user.role]);
   const usersQ = useAsync(() => listUsers(), []);
   // Actionable agent-flagged issues — same card dispatchers get on OpsDashboard.
   // RLS (is_admin_or_dispatcher) already covers reps, so this is the parity the
@@ -48,6 +57,7 @@ export function RepDashboard() {
   useFocusEffect(
     useCallback(() => {
       deliveriesQ.reload();
+      postponedQ.reload();
       issuesQ.reload();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []),
@@ -62,15 +72,19 @@ export function RepDashboard() {
   const stats = useMemo(() => bucketCounts(deliveries), [deliveries]);
 
   // Deliveries whose latest status the client hasn't been told about yet, freshest
-  // first — the rep's #1 daily task. Derived from the already-loaded list (no extra
-  // fetch); the same predicate backs the deliveries "To notify" filter. Collapsed
-  // per customer order (siblingGroupKey, keeping the freshest racing row) so the
+  // first — the rep's #1 daily task. Built from the loaded today-list PLUS the
+  // cross-date postponed slice (one extra query) so future-dated postponed orders
+  // still surface here; the same predicate backs the deliveries "To notify" filter.
+  // Collapsed per customer order (siblingGroupKey, keeping the freshest racing row) so the
   // count matches the sibling-collapsed hero above it and the rep sees one entry
   // per client to message — the list's "To notify" chip stays per-row, like its
   // sibling chips.
   const toNotify = useMemo(() => {
     const freshestByGroup = new Map<string, DeliveryRow>();
-    for (const d of deliveries) {
+    // Today's rows + the cross-date postponed slice (future-dated postponed orders
+    // aren't in `deliveries`). Both gated by awaitsClientNotification; any overlap
+    // (today's postponed sits in both) collapses by sibling group below.
+    for (const d of [...deliveries, ...(postponedQ.data ?? [])]) {
       if (!awaitsClientNotification(d)) continue;
       const key = siblingGroupKey(d);
       const cur = freshestByGroup.get(key);
@@ -81,7 +95,7 @@ export function RepDashboard() {
     return [...freshestByGroup.values()].sort((a, b) =>
       (b.latest_changed_at ?? '').localeCompare(a.latest_changed_at ?? ''),
     );
-  }, [deliveries]);
+  }, [deliveries, postponedQ.data]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>

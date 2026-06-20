@@ -257,29 +257,36 @@ export function isAssignedActive(d: {
   return statusBucket(d.current_status) === 'active' && !!d.assigned_agent_id;
 }
 
-/** Statuses for which a rep is NOT expected to send the client a status update:
- *  `pending` is the default not-yet-worked state, and the rest are system/internal
- *  transitions the client was either already told about or never a customer-facing
- *  event — the automated EOD rollover, the 3-strike `unserious` cap, an agent
- *  passing on their own race row (`agent_cancelled`), and the terminal logistics
- *  hand-offs (`picked_up`/`waybilled`, where the customer is the actor). Every other
- *  status IS something the client should hear about, so a new customer-facing status
- *  added later auto-qualifies. Deliberately an exclusion list, not an include list. */
+/** Statuses for which a rep is NOT expected to send the client a status update.
+ *  Everything else — every "blue" worked active status (`available` /
+ *  `available_evening`), every "yellow" soft-fail, AND every non-delivered terminal
+ *  outcome (`cancelled`, `failed_delivery`, `no_product`, `abandoned`,
+ *  `deferred_to_client`, `unserious`, `picked_up`, `waybilled`) — IS something the
+ *  client should hear about (Uzo, 2026-06-20: "terminal statuses that aren't
+ *  delivered should be notified"). Exempt, by design:
+ *    - `pending`     — the not-yet-worked default;
+ *    - `delivered`   — relayed in the once-a-day NIGHT BATCH of delivered reports,
+ *                      not per-row (the change from the 2026-06-18 behaviour where
+ *                      delivered counted here);
+ *    - `rolled_over` — automated EOD bookkeeping on the parent row; the order lives
+ *                      on as a fresh child for the next day, so there's nothing new
+ *                      to tell the client (and it would flood the queue nightly);
+ *    - `agent_cancelled` — an agent passing on their own race/route row; the order is
+ *                      reassigned and stays alive, so the customer was NOT cancelled.
+ *  Deliberately an exclusion list, not an include list, so a new customer-facing
+ *  status added later auto-qualifies. */
 const NOTIFY_EXEMPT_STATUSES = new Set<string>([
   'pending',
+  'delivered',
   'rolled_over',
-  'unserious',
   'agent_cancelled',
-  'picked_up',
-  'waybilled',
 ]);
 
 /** True when the delivery's LATEST status change is one the client should be told
  *  about but hasn't been yet (latest_notified is false). Powers the rep "Awaiting
  *  client notification" surfaces — the dashboard card and the list's "To notify"
  *  filter — so both share one definition and can't drift. Pure: reads only fields
- *  already on every list row (no extra query). `delivered` counts here by design
- *  (Uzo, 2026-06-18): reps confirm the drop-off to the client too. */
+ *  already on every list row (no extra query). */
 export function awaitsClientNotification(d: {
   current_status: string | null | undefined;
   latest_notified: boolean | null | undefined;
