@@ -74,10 +74,10 @@ export const STATUS_META: Record<
     tone: 'blue',
     desc: 'Customer reachable in the evening',
   },
-  not_answering: { label: 'Not answering', tone: 'amber', desc: 'No answer' },
+  not_answering: { label: 'Not picking', tone: 'amber', desc: 'Not picking calls' },
   number_busy: { label: 'Number busy', tone: 'amber', desc: 'Line busy' },
   switched_off: { label: 'Switched off', tone: 'amber', desc: 'Phone off' },
-  not_connecting: { label: 'Not connecting', tone: 'amber', desc: "Call won't connect" },
+  not_connecting: { label: 'Number not reachable', tone: 'amber', desc: 'Number not reachable' },
   not_around: { label: 'Not around', tone: 'amber', desc: 'Customer not at location' },
   will_call_back: { label: 'Will call back', tone: 'amber', desc: 'Customer asked to call later' },
   not_available: { label: 'Not available', tone: 'amber', desc: "Customer can't take it now" },
@@ -115,7 +115,7 @@ export const STATUS_META: Record<
  *  need rider-supplied context, so the rider's note is shown verbatim instead. */
 export const STATUS_CLIENT_PHRASE: Record<string, string> = {
   not_answering: 'Not picking calls',
-  not_connecting: 'Number not going through',
+  not_connecting: 'Number not reachable',
   number_busy: 'Number busy',
   switched_off: 'Number switched off',
   not_around: "Customer said he's not around",

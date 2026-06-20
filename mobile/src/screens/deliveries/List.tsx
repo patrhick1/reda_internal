@@ -67,7 +67,7 @@ const EMPTY_UNREAD: ReadonlyMap<string, number> = new Map();
 
 // --- Unassigned grouping --------------------------------------------------
 // On the Unassigned tab the queue is grouped by the prior-day snapshot
-// (rolled_from_status): all "Not answering" together, all "Tomorrow" together,
+// (rolled_from_status): all "Not picking" together, all "Tomorrow" together,
 // etc., with the never-attempted/new orders in their own group. Same soft-only
 // gate as the carried-over badge, so a grouped row always shows its matching
 // badge. Carried groups come first (in the status defs' natural order, so the

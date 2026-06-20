@@ -150,7 +150,7 @@ export function deliveryProductsSummary(row: {
 const ROLLED_FROM_SURFACED = new Set<string>(STATUS_GROUPS.soft);
 
 /** Human label for a rolled-over delivery's prior status, e.g.
- *  "was Not answering · 16 Jun" or "2× · was Not answering · 16 Jun".
+ *  "was Not picking · 16 Jun" or "2× · was Not picking · 16 Jun".
  *  Returns null when the row isn't a carry-over, carried only an untouched
  *  'pending', or carried a non-soft status we don't surface. Sourced from the
  *  rolled_from_* snapshot set at rollover time (carried forward across

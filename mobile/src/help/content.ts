@@ -124,7 +124,7 @@ If someone else is already editing the same delivery, you'll see *"<Name> is edi
 
 ### Claim a customer follow-up
 
-When an agent flags a delivery as **Not answering / Number busy / Switched off / Tomorrow / Postponed / Follow up**, the customer needs a call from you or a dispatcher. To avoid two of you calling the same customer:
+When an agent flags a delivery as **Not picking / Number busy / Switched off / Tomorrow / Postponed / Follow up**, the customer needs a call from you or a dispatcher. To avoid two of you calling the same customer:
 
 - Open the delivery → tap **I'll handle this** on the yellow "Needs follow-up" banner.
 - Other admins/dispatchers will see *"<Your name> is handling this"* both on the delivery and in the deliveries list (small badge next to the status pill).
@@ -138,12 +138,12 @@ When an agent taps the alert icon on a delivery (wrong address, can't reach cust
 
 - Tap the row → opens the delivery. The agent's message is at the bottom with the issue chip + their note.
 - Type your reply in the composer and tap **Send** — the agent gets a push titled **"Reply from {your name}"**.
-- The flag also moves the delivery into a soft status (usually **Follow up** or **Not answering**), so the **I'll handle this** claim button is right there if you want to call the customer yourself.
+- The flag also moves the delivery into a soft status (usually **Follow up** or **Not picking**), so the **I'll handle this** claim button is right there if you want to call the customer yourself.
 - The issue row disappears from the home block as soon as you open the delivery (it's marked read on focus). When the delivery is closed (delivered / cancelled / etc.) the thread closes itself.
 
 ### The deliveries list order
 
-The list shows non-completed deliveries first, sorted by **most recent status change** at the top. Whatever just moved (just flagged, just marked Not answering, just transitioned) bubbles up. Completed/closed deliveries fall to the bottom.`,
+The list shows non-completed deliveries first, sorted by **most recent status change** at the top. Whatever just moved (just flagged, just marked Not picking, just transitioned) bubbles up. Completed/closed deliveries fall to the bottom.`,
   },
   {
     id: 'review',
@@ -269,7 +269,7 @@ The delivery turns green and your **Earned today** ticks up. You can't change a 
     icon: 'alert',
     body: `If the delivery didn't go through, tap **Update status** instead of Mark delivered:
 
-- **Not answering / Number busy / Switched off** — phone problems. Try again later in the day; the delivery stays open.
+- **Not picking / Number busy / Switched off** — phone problems. Try again later in the day; the delivery stays open.
 - **Tomorrow / Postponed / Follow up** — customer rescheduled. The delivery stays open but moves down your list.
 - **Failed delivery** — you went, customer refused or wasn't there. Closed.
 - **Unserious** — customer wasted your time. Closed.
@@ -283,7 +283,7 @@ The red **alert** icon in the top-right of a delivery is for when you need ops t
 
 1. Tap the **alert** icon.
 2. Pick the issue chip (e.g. *Wrong address*, *Can't reach client*, *Payment dispute*, *Product issue*, *Other*) → optional note ("address is in Lekki not VI, customer said over the phone").
-3. **Send to ops** — one tap does two things: opens a chat thread on this delivery AND sets the status (e.g. *Can't reach client* → *Not answering*). You don't need to also tap Update status.
+3. **Send to ops** — one tap does two things: opens a chat thread on this delivery AND sets the status (e.g. *Can't reach client* → *Not picking*). You don't need to also tap Update status.
 
 Reda and the dispatchers get a push, see the issue at the top of their list, and reply right inside the delivery — you get a push back. The thread stays visible on the delivery detail until the delivery is delivered/cancelled/etc.; then it closes automatically.`,
   },
