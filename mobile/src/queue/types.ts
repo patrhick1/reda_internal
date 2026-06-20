@@ -5,6 +5,8 @@
 // create-delivery, EOD rollover) is admin-only and happens at a desk on wifi.
 // Adding those later is just a matter of registering an executor.
 
+import type { IssueType } from '@/services/delivery-messages';
+
 export type JobKind =
   | 'change_delivery_status'
   | 'flag_delivery'
@@ -35,7 +37,7 @@ export type ChangeDeliveryStatusArgs = {
  *  through the flag path so ops get a thread automatically. */
 export type FlagDeliveryArgs = {
   deliveryId: string;
-  issueType: 'wrong_address' | 'cant_reach_client' | 'payment_dispute' | 'product_issue' | 'other';
+  issueType: IssueType;
   note: string | null;
   newStatus: string | null;
 };

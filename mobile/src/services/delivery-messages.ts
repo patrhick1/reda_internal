@@ -7,6 +7,7 @@ export type IssueType =
   | 'cant_reach_client'
   | 'payment_dispute'
   | 'product_issue'
+  | 'not_my_route'
   | 'other';
 
 export type AuthorRole = 'agent' | 'admin' | 'dispatcher' | 'rep';
@@ -243,6 +244,7 @@ export const ISSUE_LABELS: Record<IssueType, string> = {
   cant_reach_client: "Can't reach client",
   payment_dispute: 'Payment dispute',
   product_issue: 'Product issue',
+  not_my_route: 'Not my route',
   other: 'Other',
 };
 
@@ -253,6 +255,9 @@ export const ISSUE_DEFAULT_STATUS: Record<IssueType, string | null> = {
   wrong_address: 'follow_up',
   payment_dispute: 'follow_up',
   product_issue: 'follow_up',
+  // 'Not my route' is a routing flag, not a customer-side outcome — the order is
+  // fine, it just needs reassigning. No status change; ops gets the flag + reassigns.
+  not_my_route: null,
   other: null,
 };
 
@@ -263,6 +268,7 @@ export const ISSUE_STATUS_OVERRIDES: Record<IssueType, string[]> = {
   wrong_address: [],
   payment_dispute: [],
   product_issue: [],
+  not_my_route: [],
   other: ['follow_up'],
 };
 

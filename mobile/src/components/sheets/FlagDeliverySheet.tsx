@@ -279,6 +279,27 @@ function StatusSection({
     );
   }
 
+  // A chip with no default status and no overrides (e.g. 'Not my route') doesn't
+  // touch the order's status — it just alerts ops. Say so instead of rendering an
+  // empty status pill.
+  if (!derivedStatus && overrides.length === 0) {
+    return (
+      <View>
+        <Text style={kicker}>What happens</Text>
+        <Text
+          style={{
+            marginTop: 8,
+            fontFamily: fonts.medium,
+            fontSize: 13,
+            color: colors.textSecondary,
+          }}
+        >
+          No status change — ops gets alerted to reassign this delivery.
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View>
       <Text style={kicker}>Status will change to</Text>

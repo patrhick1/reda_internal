@@ -229,6 +229,12 @@ export const STATUS_HIDDEN_FROM_PICKER = new Set<string>([
   'deferred_to_client',
   'picked_up',
   'waybilled',
+  // 'Not my delivery' (agent_cancelled) retired from the picker (Uzo, 2026-06-20):
+  // an agent who can't take an order now flags "Not my route" instead, and an
+  // admin/dispatcher reassigns it — the order stays alive rather than being
+  // terminally cancelled. DB transitions + status def kept intact for historical
+  // rows and the rollover sibling-exclusion machinery.
+  'agent_cancelled',
 ]);
 
 export function statusBucket(s: string | null | undefined): keyof typeof STATUS_GROUPS {
