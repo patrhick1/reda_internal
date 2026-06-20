@@ -32,8 +32,9 @@ export function FlagDeliverySheet({
   delivery: DeliveryRow | null;
   onClose: () => void;
   /** Called once the flag has been posted. Parent screen should reflect
-   *  `newStatus` optimistically. `newStatus` is null when the agent
-   *  declined to change status (only possible for the 'other' chip). */
+   *  `newStatus` optimistically. `newStatus` is null when the flag makes no
+   *  status change — the 'other' chip (without the follow-up opt-in) and
+   *  'not_my_route' (a pure routing alert; ops reassigns). */
   onCommitted: (newStatus: string | null) => void;
 }) {
   const [picked, setPicked] = useState<IssueType | null>(null);

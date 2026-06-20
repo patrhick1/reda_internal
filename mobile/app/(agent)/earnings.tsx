@@ -20,9 +20,10 @@ export default function AgentEarnings() {
   // scoped to TODAY only — (today, today) is an inclusive single-day range.
   // agent_earnings_summary already gates on is_admin_or_dispatcher() OR
   // u.id = auth.uid(), so this returns a single row — the caller's own — with
-  // today's collected / earnings / remit aggregated.
-  const week = useMemo(() => lagosWeekRange(), []);
-  const remitQ = useAsync(() => listAgentEarningsSummary(week.today, week.today), [week.today]);
+  // today's collected / earnings / remit aggregated. (Only `today` is needed
+  // here; the week/month buckets are computed separately in bucketize.)
+  const today = useMemo(() => lagosWeekRange().today, []);
+  const remitQ = useAsync(() => listAgentEarningsSummary(today, today), [today]);
 
   useFocusEffect(
     useCallback(() => {

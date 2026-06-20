@@ -373,7 +373,14 @@ export async function listDeliveries(
   // See scripts/embed-latest-history-in-deliveries-views.sql,
   //     scripts/embed-latest-message-in-deliveries-views.sql and
   //     scripts/assigned-at-activity-sort.sql.
-  return rows.sort((a, b) => latestActivityAt(b).localeCompare(latestActivityAt(a)));
+  // Direct comparison, not localeCompare — these are fixed-format UTC ISO
+  // timestamps, so lexicographic order IS chronological order (and it's faster
+  // and immune to locale collation quirks).
+  return rows.sort((a, b) => {
+    const x = latestActivityAt(a);
+    const y = latestActivityAt(b);
+    return x < y ? 1 : x > y ? -1 : 0; // most-recent activity first
+  });
 }
 
 /** The agent's own orders that were postponed to a FUTURE date. Postponing moves
