@@ -690,7 +690,7 @@ Server-side guard lives in [scripts/warehouse-stock-ops.sql](scripts/warehouse-s
 - Re-snapshots `charged_snapshot` and `agent_payment_snapshot` from `current_rate_for_location()` for the new date (falls back to the old snapshots if no rate exists). Uses scalar variables for the rate columns so missing-location rollovers don't fail with "record not yet assigned."
 - Flips the original row to `rolled_over` via `change_delivery_status` — same audit trail, same trigger fanout.
 - Idempotent per `(parent_delivery_id, created_via='rollover')` — re-runs are no-ops.
-- **Carry-cap strike rule (since 2026-05-30):** the cap-trip-to-`unserious` after 2 rollovers only fires when the parent's status was a customer-unreachable one (`not_answering`, `not_around`, `not_available`, `not_connecting`, `number_busy`, `switched_off`). Operational rollovers (`pending`, `available`, `picked_up`, `postponed`, `follow_up`, `tomorrow`, `waybilled`, …) carry without ticking the counter. The customer-unreachable set is the same one §5.11's per-client EOD auto-cancel uses — single canonical definition. Audit-log records `is_strike_rollover: true|false` on every rollover.
+- **Carry-cap strike rule (since 2026-05-30):** the cap-trip-to-`unserious` after 1 rollover (lowered from 2 on 2026-06-20 — one follow-up day, not two) only fires when the parent's status was a customer-unreachable one (`not_answering`, `not_around`, `not_available`, `not_connecting`, `number_busy`, `switched_off`). Operational rollovers (`pending`, `available`, `picked_up`, `postponed`, `follow_up`, `tomorrow`, `waybilled`, …) carry without ticking the counter. The customer-unreachable set is the same one §5.11's per-client EOD auto-cancel uses — single canonical definition. Audit-log records `is_strike_rollover: true|false` on every rollover.
 
 **Stock is NOT moved by rollover.** Stock attribution is via delivered-side-effects + explicit adjustments; a pending row never moved stock. Under the new null-assignment behaviour the stock physically stays with yesterday's assignee (the system never knew about a "transfer" — stock tracks against the agent who last accepted it); once Uzo reassigns via the Unassigned queue, the new agent may need a warehouse transfer if they don't have enough on hand, which `tg_notify_pickup_needed` already signals.
 
@@ -733,7 +733,7 @@ The grouping key (`sib_key`) inside `run_eod_rollover` is computed as `md5(_norm
 
 2. **Auto-assign trigger skips rollovers.** `tg_auto_assign_on_insert` gates on `created_via <> 'rollover'`. Without this gate, the trigger would call `auto_assign_delivery` and reintroduce the same system-picks-an-agent behaviour we're removing. Fresh bot/manual orders still auto-assign normally.
 
-3. **Strike-cap only counts genuine soft-fails.** The 3-strike carry cap (mark `unserious` after 2 rollovers) used to fire on *any* rollover. Now it fires only when the parent's status was a customer-unreachable one — the same six statuses the per-client EOD auto-cancel uses: `not_answering, not_around, not_available, not_connecting, number_busy, switched_off`. Operational rollovers (a `pending` row nobody assigned, an `available` row that never got attempted, a `picked_up` row the agent didn't deliver) carry without burning a strike. The audit_log records `is_strike_rollover: true|false` on every rollover.
+3. **Strike-cap only counts genuine soft-fails.** The 2-strike carry cap (mark `unserious` after 1 rollover — lowered from 2 on 2026-06-20) used to fire on *any* rollover. Now it fires only when the parent's status was a customer-unreachable one — the same six statuses the per-client EOD auto-cancel uses: `not_answering, not_around, not_available, not_connecting, number_busy, switched_off`. Operational rollovers (a `pending` row nobody assigned, an `available` row that never got attempted, a `picked_up` row the agent didn't deliver) carry without burning a strike. The audit_log records `is_strike_rollover: true|false` on every rollover.
 
 4. **Multi-select + bulk reassign on the deliveries list.** Long-press a row to enter select mode; tap more rows to add them; the bottom action bar shows **"Assign N"**. Picker is a search-filterable bottom sheet ([mobile/src/components/sheets/BulkAssignSheet.tsx](mobile/src/components/sheets/BulkAssignSheet.tsx)) listing all active top-level agents. New direct-RPC service function `bulkAssignDeliveries(ids, agentId)` calls a new `bulk_assign_deliveries` Postgres function (admin+dispatcher only; skips terminal/deleted rows; returns the count actually updated for the success toast). Not queued — matches the existing `reassignToSubAgent` precedent. New permission helper `canBulkAssignDelivery` (admin OR dispatcher; rep is excluded because bulk routing is dispatch-team work).
 
@@ -1239,6 +1239,59 @@ Tracking for future. Don't build any of these in v1.
 - Smarter auto-assignment learning (ML-based)
 - AI fine-tuning on Reda's address data
 - Voice calling extensions: group calls (3+ participants), video, call recording, presence/online indicators, PSTN bridging from in-app, iOS CallKit (CallKeep already wraps it via the same API when iOS lands)
+
+### 9.1 Shared-fee orders across two vendors (deferred — revisit if it recurs)
+
+**Scenario.** A single customer orders products that belong to **two different
+vendors** (e.g. "Stand Again" from Muda + "garlic oil/zahidi" from Runet) to one
+address. The two vendors know each other and agree (via Uzo) to **split one
+delivery fee** instead of each paying a full fee. On the old manual sheet this was
+trivial — one hand-written line. First seen 2026-06-18 as a bot order that
+(correctly) parked in `needs_review`.
+
+**Why the app can't just "merge" it.** The whole money model is *one delivery =
+one vendor*: settlement sums each delivery's `charged_snapshot` (Reda's fee) and
+`paid` grouped by `client_id`, and stock decrements per vendor. A delivery row
+holds a single `client_id`, and `create_delivery` rejects line items that don't
+belong to that client. So two vendors can never live on one delivery — the bot
+holding it for review is correct behaviour, not a bug. Building a "multi-vendor
+delivery" object would fight the billing rollup, the stock model, and the
+single-client invariant → **do not build that.**
+
+**How it *should* be represented (no new object needed).** Two separate
+deliveries — one per vendor — same customer/address/rider/trip:
+
+| | Vendor A delivery | Vendor B delivery |
+|---|---|---|
+| product / `paid` | A's product + price | B's product + price |
+| `charged_snapshot` (Reda fee) | **½ fee** | **½ fee** |
+| `agent_payment_snapshot` | **full trip pay** | **0** |
+
+Summed back: Reda still collects exactly **one** fee (split across the two vendor
+settlements), the rider is paid **once**, each vendor settles only their own
+product, and stock decrements correctly for both. The per-delivery settlement
+math already produces the right result — no linking table, no schema change.
+
+**The only real gap.** `charged_snapshot` / `agent_payment_snapshot` are today
+*only* derived from the rate card (recomputed in `update_delivery_fields` when
+location/client/agent change). There is no way to **manually set** them. So the
+single enabling primitive — if we decide to support this — is a small,
+**admin-only, audited snapshot override** on a delivery (type in ½ fee, zero the
+second rider pay). That primitive is broadly useful beyond this case (goodwill
+discounts, one-off fee adjustments); it is *not* a bespoke multi-vendor feature.
+
+**Interim handling (zero build).** Record it as **one** delivery under whichever
+vendor at the full fee, and let the two vendors reconcile the half between
+themselves off-app — consistent with how Reda already stays out of
+vendor↔vendor money. Reda still nets exactly one fee; the only cost is the
+second vendor's product/stock isn't tracked in-app.
+
+**Decision to make before building anything.** Is this a one-off favour Uzo
+brokered, or a recurring pattern? One-off → do nothing (interim handling above).
+Recurring **and** the second vendor's per-vendor stock/records matter → add the
+admin snapshot-override primitive and use the two-delivery split. (Optional data
+check: scan inbound history for single messages whose product lines resolve to
+two different `client_id`s, to size how often this really happens.)
 
 
 ---
