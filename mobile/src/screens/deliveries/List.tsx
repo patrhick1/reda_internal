@@ -484,14 +484,35 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     return out;
   }, [buckets.to_notify, postponedRows]);
 
+  // "All" must likewise surface postponed orders (Uzo, 2026-06-21): postpone
+  // moves scheduled_date forward in place, so a postponed-to-a-future-date order
+  // falls outside the date-scoped `all` and was hiding ONLY under the Postponed
+  // chip — ops spent 10 minutes hunting one that read "All 0 / Postponed 1".
+  // Same merge as toNotifyRows: fold the cross-date postponed slice into All,
+  // deduped by id (today's postponed already sit in `all`), date-scoped rows
+  // first so the natural activity order is preserved.
+  const allRows = useMemo(() => {
+    const seen = new Set<string>();
+    const out: DeliveryRow[] = [];
+    for (const d of [...buckets.all, ...postponedRows]) {
+      const rid = d.id;
+      if (!rid || seen.has(rid)) continue;
+      seen.add(rid);
+      out.push(d);
+    }
+    return out;
+  }, [buckets.all, postponedRows]);
+
   const list =
     filter === 'postponed'
       ? postponedRows
       : filter === 'to_notify'
         ? toNotifyRows
-        : (unassignedSorted ?? buckets[filter]);
+        : filter === 'all'
+          ? allRows
+          : (unassignedSorted ?? buckets[filter]);
   const filterOptions = [
-    { id: 'all' as const, label: 'All', count: buckets.all.length },
+    { id: 'all' as const, label: 'All', count: allRows.length },
     { id: 'to_notify' as const, label: 'To notify', count: toNotifyRows.length },
     { id: 'active' as const, label: 'Active', count: buckets.active.length },
     { id: 'available' as const, label: 'Available', count: buckets.available.length },
