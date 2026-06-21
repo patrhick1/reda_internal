@@ -65,7 +65,6 @@ export default function RepClientReconcileDetail() {
           note: deriveDeliveryNote({
             quantityOrdered: q.ordered,
             quantityDelivered: q.delivered,
-            outstanding: r.outstanding,
           }),
         };
       }),
@@ -167,7 +166,6 @@ function DeliveryRow({ row }: { row: RepClientRemitDetailRow }) {
   const note = deriveDeliveryNote({
     quantityOrdered: q.ordered,
     quantityDelivered: q.delivered,
-    outstanding: row.outstanding,
   });
   return (
     <Card>

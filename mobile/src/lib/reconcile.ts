@@ -31,23 +31,19 @@ export function detectPreset(from: string, to: string): Preset {
   return 'custom';
 }
 
-// Auto-fill a delivery's report Note from data we already have:
-//   • short delivery   → "1 of 2 delivered"
-//   • customer balance → "balance ₦X" (customer ↔ vendor; informational)
-// "—" when there's nothing notable, so the Note: line is never blank.
+// Auto-fill a delivery's report Note. When the customer bought FEWER units than
+// the order quantity, state what they actually bought ("Bought 1"). A delivered
+// order is final — there is NO balance/outstanding concept (the customer paid for
+// what they took; nothing is owed and nothing is collected later). "—" when they
+// bought the full quantity, so the Note line is never blank.
 export function deriveDeliveryNote(input: {
   quantityOrdered: number | null | undefined;
   quantityDelivered: number | null | undefined;
-  /** customer_price − paid for this delivery. */
-  outstanding: number | null | undefined;
 }): string {
   const ordered = Number(input.quantityOrdered ?? 0);
   const delivered = Number(input.quantityDelivered ?? 0);
-  const outstanding = Number(input.outstanding ?? 0);
-  const parts: string[] = [];
-  if (ordered > 0 && delivered < ordered) parts.push(`${delivered} of ${ordered} delivered`);
-  if (outstanding > 0.005) parts.push(`balance ${formatNaira(outstanding)}`);
-  return parts.length > 0 ? parts.join(' · ') : '—';
+  if (ordered > 0 && delivered < ordered) return `Bought ${delivered}`;
+  return '—';
 }
 
 /** One delivered product line. `qty` is units delivered. */

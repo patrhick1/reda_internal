@@ -48,28 +48,22 @@ export default function ClientReconcileDetail() {
       paidToVendor = 0,
       redaFee = 0,
       cashPosFee = 0;
-    let outstanding = 0;
     for (const r of rows) {
       const cp = Number(r.customer_price ?? 0);
       const pd = Number(r.paid ?? 0);
       customerOwed += cp;
       paid += pd;
       // vendor_direct: the customer settled the order value with the vendor
-      // directly (paid-to-Reda = 0). Surfacing it as its own line keeps the
-      // breakdown reconciling: owed = paid-to-Reda + paid-to-vendor + outstanding.
+      // directly (paid-to-Reda = 0). Surfaced as its own line for clarity.
       if (r.payment_method === 'vendor_direct') paidToVendor += cp;
       redaFee += Number(r.reda_fee ?? 0);
       cashPosFee += Number(r.cash_pos_fee ?? 0);
-      // vendor_direct contributes 0 to outstanding — mirrors client_remit_summary
-      // so the index and this detail agree.
-      outstanding += rowOutstanding(r);
     }
     return {
       count: rows.length,
       customerOwed,
       paid,
       paidToVendor,
-      outstanding,
       redaFee,
       cashPosFee,
       remit: paid - redaFee - cashPosFee,
@@ -94,7 +88,6 @@ export default function ClientReconcileDetail() {
           note: deriveDeliveryNote({
             quantityOrdered: q.ordered,
             quantityDelivered: q.delivered,
-            outstanding: rowOutstanding(r),
           }),
         };
       }),
@@ -157,11 +150,6 @@ export default function ClientReconcileDetail() {
                   value={formatNaira(totals.paidToVendor)}
                 />
               ) : null}
-              <SmallRow
-                label="Outstanding"
-                value={formatNaira(totals.outstanding)}
-                accent={totals.outstanding > 0 ? colors.red : undefined}
-              />
               <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 4 }} />
               <SmallRow label="Reda delivery fee" value={formatNaira(totals.redaFee)} />
               <SmallRow label="Cash POS fee" value={formatNaira(totals.cashPosFee)} />
@@ -201,15 +189,6 @@ export default function ClientReconcileDetail() {
       </View>
     </View>
   );
-}
-
-// What the customer still owes for this delivery. A 'vendor_direct' order was
-// settled customer<->vendor directly (paid-to-Reda = 0), so nothing is
-// outstanding even though paid is 0 — matches client_remit_summary /
-// client_remit_detail_rep server-side.
-function rowOutstanding(row: ClientRemitDetailRow): number {
-  if (row.payment_method === 'vendor_direct') return 0;
-  return Number(row.customer_price ?? 0) - Number(row.paid ?? 0);
 }
 
 function DeliveryRow({ row }: { row: ClientRemitDetailRow }) {
