@@ -69,13 +69,15 @@ export function ClientStockDetail() {
   const onShare = useCallback(async () => {
     if (products.length === 0) return;
     const dateLabel = formatDateLagos(todayLagos());
-    const header = [`Reda Logistics — ${clientName}`, `Stock snapshot — ${dateLabel}`].join('\n');
+    const header = [`📦${clientName} Stock Update`, dateLabel].join('\n');
 
+    // Client-facing: just the total on-hand per product (no warehouse/agents
+    // split — the vendor only needs how many of theirs we hold, not where).
     const lines = products
       .map((p) =>
         p.total_qty === 0
           ? `• ${p.product_name}: OUT OF STOCK`
-          : `• ${p.product_name}: ${p.total_qty} total (${p.warehouse_qty} warehouse, ${p.agents_qty} with agents)`,
+          : `• ${p.product_name}: ${p.total_qty}`,
       )
       .join('\n');
 
