@@ -136,11 +136,18 @@ export default function AgentDeliveryDetail() {
   // own status change makes the latest history row theirs); hidden for terminal
   // rows and system-set rows (no changed_by_user_id). chainRows is oldest-first
   // and includes ancestry, so take the newest row of THIS delivery.
+  //
+  // EXCLUDE 'pending': the initial row of every order is stamped 'pending' by
+  // the admin/ops/bot who created or assigned it — never the agent — so without
+  // this guard the banner fired on EVERY freshly-assigned order and falsely
+  // claimed the customer "may already have been reached". A hand-off only
+  // matters once someone actually WORKED the order (any non-pending status).
   const currentHistory = chainRows.filter((r) => r.is_current);
   const latestHistory = currentHistory[currentHistory.length - 1];
   const handedToYou =
     !!latestHistory?.changed_by_user_id &&
     latestHistory.changed_by_user_id !== user.userId &&
+    latestHistory.to_status !== 'pending' &&
     !isTerminal;
   // Lead can hand off to a sub-agent. Only the current assignee can hand
   // off (server gate matches); terminal rows hide the option.
