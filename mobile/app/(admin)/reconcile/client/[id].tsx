@@ -12,6 +12,7 @@ import {
   deriveDeliveryNote,
   remitProductsDisplay,
   remitRowProducts,
+  remitRowQuantities,
 } from '@/lib/reconcile';
 
 export default function ClientReconcileDetail() {
@@ -84,16 +85,19 @@ export default function ClientReconcileDetail() {
     const message = buildClientShareMessage({
       clientName,
       rangeLabel,
-      rows: rows.map((r) => ({
-        customerName: r.customer_name,
-        products: remitRowProducts(r),
-        remit: Number(r.remit ?? 0),
-        note: deriveDeliveryNote({
-          quantityOrdered: r.quantity_ordered,
-          quantityDelivered: r.quantity_delivered,
-          outstanding: rowOutstanding(r),
-        }),
-      })),
+      rows: rows.map((r) => {
+        const q = remitRowQuantities(r);
+        return {
+          customerName: r.customer_name,
+          products: remitRowProducts(r),
+          remit: Number(r.remit ?? 0),
+          note: deriveDeliveryNote({
+            quantityOrdered: q.ordered,
+            quantityDelivered: q.delivered,
+            outstanding: rowOutstanding(r),
+          }),
+        };
+      }),
     });
 
     try {

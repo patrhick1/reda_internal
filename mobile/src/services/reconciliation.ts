@@ -45,6 +45,7 @@ export type AgentEarningsRow = {
  *  is wrapped into a 1-element array for pre-Feature-A rows. */
 export type RemitProduct = {
   product_name: string | null;
+  quantity_ordered: number | null;
   quantity_delivered: number | null;
 };
 

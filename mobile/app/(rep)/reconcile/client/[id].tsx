@@ -12,6 +12,7 @@ import {
   deriveDeliveryNote,
   remitProductsDisplay,
   remitRowProducts,
+  remitRowQuantities,
 } from '@/lib/reconcile';
 
 // Rep-facing per-client detail. Mirrors the admin client report but with NO fee
@@ -55,16 +56,19 @@ export default function RepClientReconcileDetail() {
     const message = buildClientShareMessage({
       clientName,
       rangeLabel,
-      rows: rows.map((r) => ({
-        customerName: r.customer_name,
-        products: remitRowProducts(r),
-        remit: Number(r.remit ?? 0),
-        note: deriveDeliveryNote({
-          quantityOrdered: r.quantity_ordered,
-          quantityDelivered: r.quantity_delivered,
-          outstanding: r.outstanding,
-        }),
-      })),
+      rows: rows.map((r) => {
+        const q = remitRowQuantities(r);
+        return {
+          customerName: r.customer_name,
+          products: remitRowProducts(r),
+          remit: Number(r.remit ?? 0),
+          note: deriveDeliveryNote({
+            quantityOrdered: q.ordered,
+            quantityDelivered: q.delivered,
+            outstanding: r.outstanding,
+          }),
+        };
+      }),
     });
     try {
       await Share.share({ message });
@@ -159,9 +163,10 @@ function DeliveryRow({ row }: { row: RepClientRemitDetailRow }) {
   const agent = row.agent_name ?? null;
   const date = formatDateLagos(row.scheduled_date);
   const remit = Number(row.remit ?? 0);
+  const q = remitRowQuantities(row);
   const note = deriveDeliveryNote({
-    quantityOrdered: row.quantity_ordered,
-    quantityDelivered: row.quantity_delivered,
+    quantityOrdered: q.ordered,
+    quantityDelivered: q.delivered,
     outstanding: row.outstanding,
   });
   return (

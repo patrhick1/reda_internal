@@ -81,6 +81,30 @@ export function remitRowProducts(row: {
   return [{ name: row.product_name ?? 'Product', qty: Number(row.quantity_delivered ?? 0) }];
 }
 
+/** Total ordered + delivered units across a reconcile row's products — for the
+ *  short-delivery Note. Sums the per-item breakdown (multi-product safe) so a
+ *  partial multi-product order reports accurately, instead of the legacy
+ *  aggregate columns (primary-line ordered vs cross-item-summed delivered, which
+ *  describe different things). Falls back to the legacy columns for rows with no
+ *  products array. */
+export function remitRowQuantities(row: {
+  products?: { quantity_ordered?: number | null; quantity_delivered: number | null }[] | null;
+  quantity_ordered?: number | null;
+  quantity_delivered?: number | null;
+}): { ordered: number; delivered: number } {
+  const items = row.products ?? [];
+  if (items.length > 0) {
+    return {
+      ordered: items.reduce((s, p) => s + Number(p.quantity_ordered ?? 0), 0),
+      delivered: items.reduce((s, p) => s + Number(p.quantity_delivered ?? 0), 0),
+    };
+  }
+  return {
+    ordered: Number(row.quantity_ordered ?? 0),
+    delivered: Number(row.quantity_delivered ?? 0),
+  };
+}
+
 /** On-screen product summary for a reconcile row, e.g. "Gallant Max · 5 units"
  *  (single) or "Antivirus Cleanser ×2, Gallant Max ×5" (multi). */
 export function remitProductsDisplay(products: ShareProduct[]): string {
@@ -94,9 +118,12 @@ export function remitProductsDisplay(products: ShareProduct[]): string {
  *  "Product: X / Qty: N" pair for single-product orders (the common case) and
  *  switches to a bulleted "Products:" list when there's more than one. */
 function shareProductLines(products: ShareProduct[]): string[] {
+  // Single product (the common case) keeps the familiar two-line shape. `products`
+  // is always non-empty in practice (remitRowProducts guarantees ≥1), but guard
+  // the [0] read defensively rather than emit a "Product: Product" placeholder.
   if (products.length <= 1) {
     const p = products[0];
-    return [`Product: ${p?.name ?? 'Product'}`, `Qty: ${p?.qty ?? 0}`];
+    return p ? [`Product: ${p.name}`, `Qty: ${p.qty}`] : ['Product: —'];
   }
   return ['Products:', ...products.map((p) => `- ${p.name} ×${p.qty}`)];
 }
