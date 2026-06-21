@@ -31,6 +31,7 @@ import { MarkDeliveredSheet } from '@/components/sheets/MarkDeliveredSheet';
 import { UpdateStatusSheet } from '@/components/sheets/UpdateStatusSheet';
 import { FlagDeliverySheet } from '@/components/sheets/FlagDeliverySheet';
 import { HandoffToSubAgentSheet } from '@/components/sheets/HandoffToSubAgentSheet';
+import { ChangeDeliveryZoneSheet } from '@/components/sheets/ChangeDeliveryZoneSheet';
 import { MessageThread } from '@/components/delivery/MessageThread';
 import { ChainDivider } from '@/components/delivery/ChainDivider';
 import { BotRawMessageCard } from '@/components/delivery/BotRawMessageCard';
@@ -51,6 +52,7 @@ export default function AgentDeliveryDetail() {
   const [updateOpen, setUpdateOpen] = useState(false);
   const [flagOpen, setFlagOpen] = useState(false);
   const [handoffOpen, setHandoffOpen] = useState(false);
+  const [zoneOpen, setZoneOpen] = useState(false);
 
   // Team-lead handoff: load this agent's sub-agents on mount so we know
   // whether to render the "Hand off" button on the action bar. Returns []
@@ -126,6 +128,9 @@ export default function AgentDeliveryDetail() {
   const chainRows = historyQ.data ?? [];
   const chainHasAncestors = chainRows.some((r) => !r.is_current);
   const isTerminal = TERMINAL_STATUSES.has(status);
+  // Zone change is valid pre-delivery (still open) OR on a delivered row (agent
+  // realized after the fact). Other terminals (cancelled/rolled_over/…) are out.
+  const canChangeZone = status === 'delivered' || !isTerminal;
   const isDelivered = status === 'delivered';
   const firstName = (d.customer_name ?? 'customer').split(/\s+/)[0]!;
   // customer_price is per-delivery, not per-unit. Do NOT multiply by quantity.
@@ -324,7 +329,7 @@ export default function AgentDeliveryDetail() {
               {d.location_name ?? 'Unmatched location'}
             </Text>
           </View>
-          <View style={{ marginTop: 12, alignSelf: 'flex-start' }}>
+          <View style={{ marginTop: 12, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
             <Button
               variant="secondary"
               size="sm"
@@ -333,6 +338,11 @@ export default function AgentDeliveryDetail() {
             >
               Open in maps
             </Button>
+            {canChangeZone ? (
+              <Button variant="secondary" size="sm" icon="mapPin" onPress={() => setZoneOpen(true)}>
+                Delivered elsewhere?
+              </Button>
+            ) : null}
           </View>
         </Card>
 
@@ -654,6 +664,15 @@ export default function AgentDeliveryDetail() {
         delivery={d}
         onClose={() => setMarkOpen(false)}
         onConfirmed={onCommitted}
+      />
+      <ChangeDeliveryZoneSheet
+        open={zoneOpen}
+        deliveryId={d.id ?? null}
+        customerName={d.customer_name ?? null}
+        currentLocationId={d.location_id ?? null}
+        currentLocationName={d.location_name ?? null}
+        onClose={() => setZoneOpen(false)}
+        onSubmitted={() => deliveryQ.reload()}
       />
       <UpdateStatusSheet
         open={updateOpen}

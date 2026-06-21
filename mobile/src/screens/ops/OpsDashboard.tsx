@@ -5,6 +5,7 @@ import { ScrollView, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
+import { usePendingLocationChangesCount } from '@/hooks/usePendingLocationChangesCount';
 import { listDeliveries, siblingGroupKey, type DeliveryRow } from '@/services/deliveries';
 import { listBotInbound } from '@/services/bot';
 import { listAvailableOrders } from '@/services/available-orders';
@@ -49,6 +50,8 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
   const deliveries = useMemo(() => deliveriesQ.data ?? [], [deliveriesQ.data]);
   const stats = useMemo(() => bucketCounts(deliveries), [deliveries]);
   const reviewCount = (reviewQ.data ?? []).length;
+  // Zone-change approvals are dispatcher-only (managers); reps never poll.
+  const pendingZoneCount = usePendingLocationChangesCount(user.role === 'dispatcher');
   const unassignedCount = deliveries.filter((d) => !d.assigned_agent_id).length;
   const openIssues = issuesQ.data ?? [];
   const availableRows = useMemo(() => availableQ.data ?? [], [availableQ.data]);
@@ -197,6 +200,43 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
               >
                 <Icon name="chevronRight" size={22} color={colors.white} />
               </View>
+            </View>
+          </Card>
+        ) : null}
+
+        {/* Zone-change approvals (dispatcher only). Pay-raising agent zone
+            changes wait here; auto-applied ones don't surface. */}
+        {user.role === 'dispatcher' && pendingZoneCount > 0 ? (
+          <Card dense onPress={() => router.push('/(dispatcher)/location-approvals')}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <View
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 12,
+                  backgroundColor: colors.warningSoft,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Icon name="mapPin" size={20} color={colors.warningDark} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>
+                  {`${pendingZoneCount} zone ${pendingZoneCount === 1 ? 'change' : 'changes'} to approve`}
+                </Text>
+                <Text
+                  style={{
+                    fontFamily: fonts.medium,
+                    fontSize: 12,
+                    color: colors.textSecondary,
+                    marginTop: 2,
+                  }}
+                >
+                  Agent delivered elsewhere — raises their pay
+                </Text>
+              </View>
+              <Icon name="chevronRight" size={18} color={colors.textSecondary} />
             </View>
           </Card>
         ) : null}

@@ -9,6 +9,7 @@
 import { supabase } from '@/lib/supabase';
 import { classifyRpcError } from '@/lib/errors';
 import type {
+  AgentChangeDeliveryLocationArgs,
   ChangeDeliveryStatusArgs,
   CreateStockAdjustmentArgs,
   CreateStockTransferArgs,
@@ -87,6 +88,16 @@ const EXECUTORS: Record<JobKind, Executor> = {
       p_delivery_id: args.deliveryId,
       p_quantity: args.quantity as unknown as number,
       p_notes: args.notes as unknown as string,
+    });
+    if (error) throw classifyRpcError(error);
+  },
+  async agent_change_delivery_location(clientUuid, raw) {
+    const args = raw as AgentChangeDeliveryLocationArgs;
+    const { error } = await supabase.rpc('agent_change_delivery_location', {
+      p_client_uuid: clientUuid,
+      p_delivery_id: args.deliveryId,
+      p_location_id: args.toLocationId,
+      p_reason: args.reason,
     });
     if (error) throw classifyRpcError(error);
   },

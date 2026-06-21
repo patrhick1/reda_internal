@@ -109,6 +109,16 @@ export default function AdminLayout() {
         }}
       />
       <Tabs.Screen
+        name="location-approvals"
+        options={{
+          title: 'Approvals',
+          tabBarIcon: ({ color, focused }) => (
+            <Icon name="mapPin" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
+          ),
+          href: null,
+        }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{
           title: 'Settings',

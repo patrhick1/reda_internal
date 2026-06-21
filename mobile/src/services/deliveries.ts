@@ -1009,3 +1009,57 @@ export async function previewDeliveryCharge(
   const row = (data ?? [])[0];
   return row ?? null;
 }
+
+// --- Agent-driven delivery zone change + manager approval -------------------
+
+/** One row of the manager approvals list (joined for display). Mirrors the
+ *  `list_location_changes` RPC return. */
+export type LocationChangeRow =
+  Database['public']['Functions']['list_location_changes']['Returns'][number];
+
+/** Manager: list agent zone-change requests by state. Server returns rows only
+ *  to managers (admin + dispatcher). Pass ['pending'] for the approval queue,
+ *  or the resolved states for the "Recent" tab. */
+export async function listLocationChanges(states?: string[]): Promise<LocationChangeRow[]> {
+  const { data, error } = await supabase.rpc('list_location_changes', {
+    p_states: states ?? (null as unknown as string[]),
+  });
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** Count of pending zone-change requests — for the approvals tab badge. */
+export async function countPendingLocationChanges(): Promise<number> {
+  const rows = await listLocationChanges(['pending']);
+  return rows.length;
+}
+
+/** Manager: approve a pending zone change. Server recomputes the rate at
+ *  approval time and applies it (works even if the row is now delivered); if
+ *  the delivery is no longer eligible it auto-rejects. Notifies the agent. */
+export async function approveLocationChange(changeId: string, reason?: string): Promise<void> {
+  const { error } = await supabase.rpc('approve_location_change', {
+    p_change_id: changeId,
+    p_reason: (reason ?? null) as unknown as string,
+  });
+  if (error) throw error;
+}
+
+/** Manager: reject a pending zone change (reason required). Notifies the agent. */
+export async function rejectLocationChange(changeId: string, reason: string): Promise<void> {
+  const { error } = await supabase.rpc('reject_location_change', {
+    p_change_id: changeId,
+    p_reason: reason,
+  });
+  if (error) throw error;
+}
+
+/** Manager: revert an applied/approved zone change back to its original zone
+ *  and money snapshots (true undo). Reason required. Notifies the agent. */
+export async function revertLocationChange(changeId: string, reason: string): Promise<void> {
+  const { error } = await supabase.rpc('revert_location_change', {
+    p_change_id: changeId,
+    p_reason: reason,
+  });
+  if (error) throw error;
+}

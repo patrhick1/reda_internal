@@ -11,6 +11,7 @@
 import { useCallback } from 'react';
 import { useQueue } from './QueueProvider';
 import type {
+  AgentChangeDeliveryLocationArgs,
   ChangeDeliveryStatusArgs,
   CreateStockAdjustmentArgs,
   CreateStockTransferArgs,
@@ -68,6 +69,16 @@ export function useEnqueueReturnLeftover() {
   return useCallback(
     async (args: ReturnDeliveryLeftoverArgs, label: string): Promise<string> => {
       return await enqueue({ kind: 'return_delivery_leftover', args, label });
+    },
+    [enqueue],
+  );
+}
+
+export function useEnqueueAgentChangeLocation() {
+  const { enqueue } = useQueue();
+  return useCallback(
+    async (args: AgentChangeDeliveryLocationArgs, label: string): Promise<string> => {
+      return await enqueue({ kind: 'agent_change_delivery_location', args, label });
     },
     [enqueue],
   );

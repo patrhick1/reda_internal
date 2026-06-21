@@ -3,6 +3,7 @@ import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
+import { usePendingLocationChangesCount } from '@/hooks/usePendingLocationChangesCount';
 import { listDeliveries, siblingGroupKey, type DeliveryRow } from '@/services/deliveries';
 import { listBotInbound } from '@/services/bot';
 import { listUsers } from '@/services/users';
@@ -43,6 +44,7 @@ export default function AdminHome() {
 
   const stats = useMemo(() => summarize(todayQ.data ?? []), [todayQ.data]);
   const reviewCount = (reviewQ.data ?? []).length;
+  const pendingZoneCount = usePendingLocationChangesCount();
   const openIssues = issuesQ.data ?? [];
   const agents = useMemo(
     () => (usersQ.data ?? []).filter((u) => u.role === 'agent' && u.is_active),
@@ -100,7 +102,7 @@ export default function AdminHome() {
         </Card>
 
         {/* Needs attention */}
-        {reviewCount > 0 || stats.stale > 0 || openIssues.length > 0 ? (
+        {reviewCount > 0 || stats.stale > 0 || openIssues.length > 0 || pendingZoneCount > 0 ? (
           <>
             <SectionHeader>Needs attention</SectionHeader>
             <View style={{ gap: 8 }}>
@@ -123,6 +125,16 @@ export default function AdminHome() {
                   title={`${reviewCount} ${reviewCount === 1 ? 'item needs' : 'items need'} review`}
                   sub="Unmatched addresses or failed bot ingestion"
                   onPress={() => router.push('/(admin)/needs-review')}
+                />
+              ) : null}
+              {pendingZoneCount > 0 ? (
+                <AttentionRow
+                  icon="mapPin"
+                  iconBg={colors.warningSoft}
+                  iconColor={colors.warningDark}
+                  title={`${pendingZoneCount} zone ${pendingZoneCount === 1 ? 'change' : 'changes'} to approve`}
+                  sub="Agent delivered elsewhere — raises their pay"
+                  onPress={() => router.push('/(admin)/location-approvals')}
                 />
               ) : null}
               {stats.stale > 0 ? (

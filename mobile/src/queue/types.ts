@@ -12,7 +12,8 @@ export type JobKind =
   | 'flag_delivery'
   | 'create_stock_adjustment'
   | 'create_stock_transfer'
-  | 'return_delivery_leftover';
+  | 'return_delivery_leftover'
+  | 'agent_change_delivery_location';
 
 export type ChangeDeliveryStatusArgs = {
   deliveryId: string;
@@ -70,12 +71,24 @@ export type ReturnDeliveryLeftoverArgs = {
   notes: string | null;
 };
 
+/** Args for `agent_change_delivery_location` — the assigned agent records the
+ *  ACTUAL delivery zone (customer was delivered elsewhere). The server re-snaps
+ *  the rate and either auto-applies (pay not raised) or holds for a manager
+ *  (pay raised). Enqueued alongside the mark-delivered job; order-independent
+ *  because the RPC accepts both pre-delivery and delivered rows. */
+export type AgentChangeDeliveryLocationArgs = {
+  deliveryId: string;
+  toLocationId: string;
+  reason: string;
+};
+
 export type JobArgs =
   | { kind: 'change_delivery_status'; args: ChangeDeliveryStatusArgs }
   | { kind: 'flag_delivery'; args: FlagDeliveryArgs }
   | { kind: 'create_stock_adjustment'; args: CreateStockAdjustmentArgs }
   | { kind: 'create_stock_transfer'; args: CreateStockTransferArgs }
-  | { kind: 'return_delivery_leftover'; args: ReturnDeliveryLeftoverArgs };
+  | { kind: 'return_delivery_leftover'; args: ReturnDeliveryLeftoverArgs }
+  | { kind: 'agent_change_delivery_location'; args: AgentChangeDeliveryLocationArgs };
 
 export type JobStatus = 'pending' | 'in_flight' | 'failed_retrying' | 'dead_letter';
 

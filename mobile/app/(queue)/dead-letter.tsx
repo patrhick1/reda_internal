@@ -169,6 +169,8 @@ function prettyKind(kind: Job['kind']): string {
       return 'Stock adjustment';
     case 'create_stock_transfer':
       return 'Stock transfer';
+    case 'agent_change_delivery_location':
+      return 'Zone change';
     default:
       return kind;
   }

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { Banner, Button, Icon, Input, Sheet } from '@/components/ui';
+import { Select } from '@/components/Select';
 import { colors, fonts } from '@/lib/theme';
 import { getAgentProductsStock, type DeliveryRow } from '@/services/deliveries';
-import { useEnqueueChangeStatus } from '@/queue/mutations';
+import { listLocations } from '@/services/locations';
+import { useEnqueueChangeStatus, useEnqueueAgentChangeLocation } from '@/queue/mutations';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { canSeePosFeeNote } from '@/lib/permissions';
 import { formatNaira } from '@/lib/format';
@@ -36,8 +38,17 @@ export function MarkDeliveredSheet({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [onHand, setOnHand] = useState<Record<string, number> | null>(null);
+  // Optional "delivered at a different area" zone change, bundled with this
+  // mark-delivered. Enqueued as its own job BEFORE the delivered job so an
+  // auto-applied zone re-snap lands first; a pay-raising change is held for a
+  // manager and the delivery still completes at the original zone.
+  const [zoneChanged, setZoneChanged] = useState(false);
+  const [newZoneId, setNewZoneId] = useState<string | null>(null);
+  const [zoneNote, setZoneNote] = useState('');
+  const [zones, setZones] = useState<{ value: string; label: string }[]>([]);
   const { role } = useCurrentUser();
   const enqueueStatus = useEnqueueChangeStatus();
+  const enqueueZoneChange = useEnqueueAgentChangeLocation();
 
   const lines: Line[] = useMemo(() => {
     if (!delivery) return [];
@@ -73,6 +84,18 @@ export function MarkDeliveredSheet({
     setMethod('transfer');
     setError(null);
     setOnHand(null);
+    setZoneChanged(false);
+    setNewZoneId(null);
+    setZoneNote('');
+    listLocations()
+      .then((ls) =>
+        setZones(
+          ls
+            .filter((l) => l.id !== delivery.location_id)
+            .map((l) => ({ value: l.id, label: l.name })),
+        ),
+      )
+      .catch(() => setZones([]));
     const agentId = delivery.assigned_agent_id;
     const productIds = lines.map((l) => l.productCatalogId);
     if (agentId && productIds.length > 0) {
@@ -140,6 +163,19 @@ export function MarkDeliveredSheet({
     }
     setSubmitting(true);
     try {
+      // Enqueue the zone change FIRST so an auto-applied re-snap lands before the
+      // delivered job; a pay-raising change is held for a manager and delivered
+      // proceeds at the original zone. Order-independent server-side regardless.
+      if (zoneChanged && newZoneId && newZoneId !== delivery!.location_id) {
+        await enqueueZoneChange(
+          {
+            deliveryId: delivery!.id ?? '',
+            toLocationId: newZoneId,
+            reason: zoneNote.trim() || 'Delivered at a different area than ordered',
+          },
+          `Zone change · ${delivery!.customer_name ?? ''}`,
+        );
+      }
       const jobId = await enqueueStatus(
         {
           deliveryId: delivery!.id ?? '',
@@ -294,6 +330,53 @@ export function MarkDeliveredSheet({
               );
             })}
           </View>
+        </View>
+
+        <View>
+          <Pressable
+            onPress={() => setZoneChanged((v) => !v)}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
+          >
+            <View
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: 6,
+                borderWidth: 2,
+                borderColor: zoneChanged ? colors.black : colors.border,
+                backgroundColor: zoneChanged ? colors.black : colors.white,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              {zoneChanged ? <Icon name="check" size={14} color={colors.white} /> : null}
+            </View>
+            <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.black }}>
+              Delivered at a different area?
+            </Text>
+          </Pressable>
+          {zoneChanged ? (
+            <View style={{ gap: 10, marginTop: 12 }}>
+              <Select
+                label="Actual delivery zone"
+                value={newZoneId}
+                options={zones}
+                onChange={setNewZoneId}
+                placeholder="Pick the zone you delivered to"
+              />
+              <Input
+                label="Note (optional)"
+                value={zoneNote}
+                onChange={setZoneNote}
+                placeholder="e.g. customer moved to VI"
+                autoCapitalize="sentences"
+              />
+              <Text style={{ fontFamily: fonts.medium, fontSize: 11, color: colors.textSecondary }}>
+                If this raises your delivery pay, a manager approves it first. Otherwise it applies
+                right away.
+              </Text>
+            </View>
+          ) : null}
         </View>
 
         {!isVendorDirect && Number.isFinite(diff) && diff !== 0 ? (

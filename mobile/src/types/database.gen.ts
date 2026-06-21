@@ -503,10 +503,29 @@ export type Database = {
         }
         Relationships: []
       }
+      current_stock_parity_baseline: {
+        Row: {
+          agent_id: string | null
+          product_catalog_id: string | null
+          quantity_on_hand: number | null
+        }
+        Insert: {
+          agent_id?: string | null
+          product_catalog_id?: string | null
+          quantity_on_hand?: number | null
+        }
+        Update: {
+          agent_id?: string | null
+          product_catalog_id?: string | null
+          quantity_on_hand?: number | null
+        }
+        Relationships: []
+      }
       deliveries: {
         Row: {
           agent_payment_snapshot: number | null
           assigned_agent_id: string | null
+          assigned_at: string | null
           bot_raw_message: string | null
           cash_pos_fee_snapshot: number | null
           charged_snapshot: number | null
@@ -518,10 +537,13 @@ export type Database = {
           current_status: string
           customer_name: string
           customer_phone: string
+          customer_phone_alt: string | null
           customer_phone_normalized: string | null
           customer_price: number
           deleted_at: string | null
+          delivery_instructions: string | null
           id: string
+          items_fingerprint: string | null
           location_id: string | null
           paid: number | null
           parent_delivery_id: string | null
@@ -530,6 +552,8 @@ export type Database = {
           quantity_delivered: number | null
           quantity_ordered: number
           raw_address: string
+          rolled_from_date: string | null
+          rolled_from_status: string | null
           rollover_count: number
           scheduled_date: string
           text_fingerprint: string | null
@@ -538,6 +562,7 @@ export type Database = {
         Insert: {
           agent_payment_snapshot?: number | null
           assigned_agent_id?: string | null
+          assigned_at?: string | null
           bot_raw_message?: string | null
           cash_pos_fee_snapshot?: number | null
           charged_snapshot?: number | null
@@ -549,10 +574,13 @@ export type Database = {
           current_status?: string
           customer_name: string
           customer_phone: string
+          customer_phone_alt?: string | null
           customer_phone_normalized?: string | null
           customer_price: number
           deleted_at?: string | null
+          delivery_instructions?: string | null
           id?: string
+          items_fingerprint?: string | null
           location_id?: string | null
           paid?: number | null
           parent_delivery_id?: string | null
@@ -561,6 +589,8 @@ export type Database = {
           quantity_delivered?: number | null
           quantity_ordered: number
           raw_address: string
+          rolled_from_date?: string | null
+          rolled_from_status?: string | null
           rollover_count?: number
           scheduled_date?: string
           text_fingerprint?: string | null
@@ -569,6 +599,7 @@ export type Database = {
         Update: {
           agent_payment_snapshot?: number | null
           assigned_agent_id?: string | null
+          assigned_at?: string | null
           bot_raw_message?: string | null
           cash_pos_fee_snapshot?: number | null
           charged_snapshot?: number | null
@@ -580,10 +611,13 @@ export type Database = {
           current_status?: string
           customer_name?: string
           customer_phone?: string
+          customer_phone_alt?: string | null
           customer_phone_normalized?: string | null
           customer_price?: number
           deleted_at?: string | null
+          delivery_instructions?: string | null
           id?: string
+          items_fingerprint?: string | null
           location_id?: string | null
           paid?: number | null
           parent_delivery_id?: string | null
@@ -592,6 +626,8 @@ export type Database = {
           quantity_delivered?: number | null
           quantity_ordered?: number
           raw_address?: string
+          rolled_from_date?: string | null
+          rolled_from_status?: string | null
           rollover_count?: number
           scheduled_date?: string
           text_fingerprint?: string | null
@@ -798,6 +834,186 @@ export type Database = {
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      delivery_items: {
+        Row: {
+          created_at: string
+          customer_price: number | null
+          delivery_id: string
+          id: string
+          product_catalog_id: string
+          quantity_delivered: number | null
+          quantity_ordered: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          customer_price?: number | null
+          delivery_id: string
+          id?: string
+          product_catalog_id: string
+          quantity_delivered?: number | null
+          quantity_ordered: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          customer_price?: number | null
+          delivery_id?: string
+          id?: string
+          product_catalog_id?: string
+          quantity_delivered?: number | null
+          quantity_ordered?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "delivery_items_delivery_id_fkey"
+            columns: ["delivery_id"]
+            isOneToOne: false
+            referencedRelation: "available_orders_safe"
+            referencedColumns: ["delivery_id"]
+          },
+          {
+            foreignKeyName: "delivery_items_delivery_id_fkey"
+            columns: ["delivery_id"]
+            isOneToOne: false
+            referencedRelation: "deliveries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_items_delivery_id_fkey"
+            columns: ["delivery_id"]
+            isOneToOne: false
+            referencedRelation: "deliveries_admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_items_delivery_id_fkey"
+            columns: ["delivery_id"]
+            isOneToOne: false
+            referencedRelation: "deliveries_safe"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_items_product_catalog_id_fkey"
+            columns: ["product_catalog_id"]
+            isOneToOne: false
+            referencedRelation: "product_catalog"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      delivery_location_changes: {
+        Row: {
+          client_uuid: string
+          created_at: string
+          decided_at: string | null
+          decided_by_user_id: string | null
+          delivery_id: string
+          from_agent_payment: number | null
+          from_charged: number | null
+          from_location_id: string | null
+          id: string
+          reason: string
+          requested_by_agent_id: string
+          state: string
+          to_agent_payment: number
+          to_charged: number
+          to_location_id: string
+        }
+        Insert: {
+          client_uuid: string
+          created_at?: string
+          decided_at?: string | null
+          decided_by_user_id?: string | null
+          delivery_id: string
+          from_agent_payment?: number | null
+          from_charged?: number | null
+          from_location_id?: string | null
+          id?: string
+          reason: string
+          requested_by_agent_id: string
+          state?: string
+          to_agent_payment: number
+          to_charged: number
+          to_location_id: string
+        }
+        Update: {
+          client_uuid?: string
+          created_at?: string
+          decided_at?: string | null
+          decided_by_user_id?: string | null
+          delivery_id?: string
+          from_agent_payment?: number | null
+          from_charged?: number | null
+          from_location_id?: string | null
+          id?: string
+          reason?: string
+          requested_by_agent_id?: string
+          state?: string
+          to_agent_payment?: number
+          to_charged?: number
+          to_location_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "delivery_location_changes_decided_by_user_id_fkey"
+            columns: ["decided_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_location_changes_delivery_id_fkey"
+            columns: ["delivery_id"]
+            isOneToOne: false
+            referencedRelation: "available_orders_safe"
+            referencedColumns: ["delivery_id"]
+          },
+          {
+            foreignKeyName: "delivery_location_changes_delivery_id_fkey"
+            columns: ["delivery_id"]
+            isOneToOne: false
+            referencedRelation: "deliveries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_location_changes_delivery_id_fkey"
+            columns: ["delivery_id"]
+            isOneToOne: false
+            referencedRelation: "deliveries_admin"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_location_changes_delivery_id_fkey"
+            columns: ["delivery_id"]
+            isOneToOne: false
+            referencedRelation: "deliveries_safe"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_location_changes_from_location_id_fkey"
+            columns: ["from_location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_location_changes_requested_by_agent_id_fkey"
+            columns: ["requested_by_agent_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "delivery_location_changes_to_location_id_fkey"
+            columns: ["to_location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
             referencedColumns: ["id"]
           },
         ]
@@ -1175,6 +1391,7 @@ export type Database = {
       }
       product_catalog: {
         Row: {
+          aliases: string[] | null
           client_id: string
           created_at: string
           description: string | null
@@ -1183,6 +1400,7 @@ export type Database = {
           product_name: string
         }
         Insert: {
+          aliases?: string[] | null
           client_id: string
           created_at?: string
           description?: string | null
@@ -1191,6 +1409,7 @@ export type Database = {
           product_name: string
         }
         Update: {
+          aliases?: string[] | null
           client_id?: string
           created_at?: string
           description?: string | null
@@ -1290,6 +1509,72 @@ export type Database = {
             columns: ["location_id"]
             isOneToOne: false
             referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      settlements: {
+        Row: {
+          created_at: string
+          deliveries_count: number
+          expected_amount: number
+          id: string
+          note: string | null
+          period_date: string
+          settled_at: string
+          settled_by: string
+          snapshot: Json
+          subject_id: string
+          subject_type: string
+          void_reason: string | null
+          voided_at: string | null
+          voided_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          deliveries_count: number
+          expected_amount: number
+          id?: string
+          note?: string | null
+          period_date: string
+          settled_at?: string
+          settled_by: string
+          snapshot: Json
+          subject_id: string
+          subject_type: string
+          void_reason?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          deliveries_count?: number
+          expected_amount?: number
+          id?: string
+          note?: string | null
+          period_date?: string
+          settled_at?: string
+          settled_by?: string
+          snapshot?: Json
+          subject_id?: string
+          subject_type?: string
+          void_reason?: string | null
+          voided_at?: string | null
+          voided_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "settlements_settled_by_fkey"
+            columns: ["settled_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "settlements_voided_by_fkey"
+            columns: ["voided_by"]
+            isOneToOne: false
+            referencedRelation: "users"
             referencedColumns: ["id"]
           },
         ]
@@ -1473,7 +1758,7 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "deliveries_product_catalog_id_fkey"
+            foreignKeyName: "delivery_items_product_catalog_id_fkey"
             columns: ["product_catalog_id"]
             isOneToOne: false
             referencedRelation: "product_catalog"
@@ -1493,6 +1778,7 @@ export type Database = {
         Row: {
           agent_payment_snapshot: number | null
           assigned_agent_id: string | null
+          assigned_at: string | null
           bot_raw_message: string | null
           charged_snapshot: number | null
           client_id: string | null
@@ -1506,9 +1792,11 @@ export type Database = {
           customer_phone_alt: string | null
           customer_price: number | null
           deleted_at: string | null
+          delivery_instructions: string | null
           id: string | null
           latest_changed_at: string | null
           latest_history_id: string | null
+          latest_message_at: string | null
           latest_notified: boolean | null
           location_id: string | null
           margin: number | null
@@ -1602,6 +1890,7 @@ export type Database = {
         Row: {
           agent_payment_snapshot: number | null
           assigned_agent_id: string | null
+          assigned_at: string | null
           bot_raw_message: string | null
           client_id: string | null
           created_at: string | null
@@ -1613,9 +1902,11 @@ export type Database = {
           customer_phone: string | null
           customer_phone_alt: string | null
           customer_price: number | null
+          delivery_instructions: string | null
           id: string | null
           latest_changed_at: string | null
           latest_history_id: string | null
+          latest_message_at: string | null
           latest_notified: boolean | null
           location_id: string | null
           paid: number | null
@@ -1727,22 +2018,47 @@ export type Database = {
       }
     }
     Functions: {
-      admin_set_user_credentials: {
-        Args: { p_id: string; p_email?: string; p_password?: string; p_reason?: string }
-        Returns: undefined
+      _apply_delivery_items: {
+        Args: { p_delivery_id: string; p_items: Json }
+        Returns: string
+      }
+      _apply_delivery_zone: {
+        Args: {
+          p_audit_reason: string
+          p_delivery_id: string
+          p_location_id: string
+        }
+        Returns: {
+          agent_payment: number
+          charged: number
+        }[]
+      }
+      _apply_item_deliveries: {
+        Args: { p_delivery_id: string; p_item_quantities: Json }
+        Returns: number
       }
       _assert_holds_lock: {
         Args: { p_entity_id: string; p_entity_type: string }
         Returns: undefined
       }
+      _copy_delivery_items: {
+        Args: { p_child: string; p_parent: string }
+        Returns: undefined
+      }
+      _delivery_items_sig: { Args: { p_items: Json }; Returns: string }
       _dm_is_terminal_status: { Args: { p_status: string }; Returns: boolean }
       _dm_issue_label: { Args: { p_issue_type: string }; Returns: string }
+      _effective_scheduled_date: {
+        Args: { p_created_via: string; p_scheduled_date: string }
+        Returns: string
+      }
       _ensure_workday: { Args: { p_candidate: string }; Returns: string }
       _find_sibling_deliveries: {
         Args: { p_delivery_id: string }
         Returns: {
           agent_payment_snapshot: number | null
           assigned_agent_id: string | null
+          assigned_at: string | null
           bot_raw_message: string | null
           cash_pos_fee_snapshot: number | null
           charged_snapshot: number | null
@@ -1754,10 +2070,13 @@ export type Database = {
           current_status: string
           customer_name: string
           customer_phone: string
+          customer_phone_alt: string | null
           customer_phone_normalized: string | null
           customer_price: number
           deleted_at: string | null
+          delivery_instructions: string | null
           id: string
+          items_fingerprint: string | null
           location_id: string | null
           paid: number | null
           parent_delivery_id: string | null
@@ -1766,6 +2085,8 @@ export type Database = {
           quantity_delivered: number | null
           quantity_ordered: number
           raw_address: string
+          rolled_from_date: string | null
+          rolled_from_status: string | null
           rollover_count: number
           scheduled_date: string
           text_fingerprint: string | null
@@ -1777,6 +2098,11 @@ export type Database = {
           isOneToOne: false
           isSetofReturn: true
         }
+      }
+      _items_fingerprint: { Args: { p_delivery_id: string }; Returns: string }
+      _items_fingerprint_from_canon: {
+        Args: { p_canon: string }
+        Returns: string
       }
       _norm_address: { Args: { a: string }; Returns: string }
       _norm_phone: { Args: { p: string }; Returns: string }
@@ -1843,6 +2169,24 @@ export type Database = {
           is_self: boolean
         }[]
       }
+      admin_set_user_credentials: {
+        Args: {
+          p_email?: string
+          p_id: string
+          p_password?: string
+          p_reason?: string
+        }
+        Returns: undefined
+      }
+      agent_change_delivery_location: {
+        Args: {
+          p_client_uuid: string
+          p_delivery_id: string
+          p_location_id: string
+          p_reason: string
+        }
+        Returns: Json
+      }
       agent_earnings_summary: {
         Args: { p_from: string; p_to: string }
         Returns: {
@@ -1856,6 +2200,10 @@ export type Database = {
         }[]
       }
       agent_pending_workload: { Args: { p_agent_id: string }; Returns: number }
+      approve_location_change: {
+        Args: { p_change_id: string; p_reason?: string }
+        Returns: undefined
+      }
       auto_assign_delivery: { Args: { p_delivery_id: string }; Returns: string }
       bot_create_delivery: {
         Args: {
@@ -1865,8 +2213,10 @@ export type Database = {
           p_client_uuid: string
           p_customer_name: string
           p_customer_phone: string
+          p_customer_phone_alt?: string
           p_customer_price: number
           p_delivery_instructions?: string
+          p_items?: Json
           p_location_id?: string
           p_product_catalog_id: string
           p_quantity_ordered: number
@@ -1924,6 +2274,7 @@ export type Database = {
           p_client_uuid: string
           p_delivery_id: string
           p_effective_at?: string
+          p_item_quantities?: Json
           p_new_scheduled_date?: string
           p_notes?: string
           p_paid?: number
@@ -1945,6 +2296,10 @@ export type Database = {
       }
       clear_client_ceiling: {
         Args: { p_id: string; p_reason?: string }
+        Returns: undefined
+      }
+      clear_delivery_location: {
+        Args: { p_delivery_id: string; p_reason: string }
         Returns: undefined
       }
       client_remit_detail: {
@@ -2042,6 +2397,7 @@ export type Database = {
           p_customer_phone_alt?: string
           p_customer_price: number
           p_delivery_instructions?: string
+          p_items?: Json
           p_location_id?: string
           p_product_catalog_id: string
           p_quantity_ordered: number
@@ -2256,23 +2612,62 @@ export type Database = {
       }
       is_admin: { Args: never; Returns: boolean }
       is_admin_or_dispatcher: { Args: never; Returns: boolean }
+      is_manager: { Args: never; Returns: boolean }
       is_warehouse: { Args: never; Returns: boolean }
       list_delivery_history_chain: {
         Args: { p_delivery_id: string }
         Returns: {
-          changed_at: string
-          changed_by_name: string | null
-          changed_by_user_id: string | null
           chain_depth: number
+          changed_at: string
+          changed_by_name: string
+          changed_by_user_id: string
           delivery_id: string
           effective_at: string
-          from_status: string | null
+          from_status: string
           id: string
           is_current: boolean
-          notes: string | null
-          reason: string | null
-          scheduled_date: string | null
+          notes: string
+          reason: string
+          scheduled_date: string
           to_status: string
+        }[]
+      }
+      list_location_changes: {
+        Args: { p_states?: string[] }
+        Returns: {
+          agent_id: string
+          agent_name: string
+          change_id: string
+          created_at: string
+          current_status: string
+          customer_name: string
+          decided_at: string
+          delivery_id: string
+          from_agent_payment: number
+          from_charged: number
+          from_location_id: string
+          from_location_name: string
+          reason: string
+          scheduled_date: string
+          state: string
+          to_agent_payment: number
+          to_charged: number
+          to_location_id: string
+          to_location_name: string
+        }[]
+      }
+      list_movement_actors: {
+        Args: { p_holder_id: string }
+        Returns: {
+          actor_id: string
+          actor_name: string
+        }[]
+      }
+      list_movement_counterparties: {
+        Args: { p_holder_id: string }
+        Returns: {
+          counterparty_id: string
+          counterparty_name: string
         }[]
       }
       list_settlements_for_date: {
@@ -2280,12 +2675,41 @@ export type Database = {
         Returns: {
           deliveries_count: number
           expected_amount: number
-          note: string | null
+          note: string
           settled_at: string
-          settled_by_name: string | null
+          settled_by_name: string
           settlement_id: string
           subject_id: string
           subject_type: string
+        }[]
+      }
+      list_stock_movements: {
+        Args: {
+          p_actor_id?: string
+          p_before_at?: string
+          p_before_event_id?: string
+          p_counterparty_id?: string
+          p_holder_id: string
+          p_kinds?: string[]
+          p_limit?: number
+        }
+        Returns: {
+          actor_id: string
+          actor_name: string
+          counterparty_holder_id: string
+          counterparty_holder_name: string
+          customer_name: string
+          delivery_id: string
+          event_at: string
+          event_id: string
+          event_kind: string
+          notes: string
+          product_catalog_id: string
+          product_name: string
+          quantity_delta: number
+          quantity_ordered: number
+          related_adjustment_id: string
+          source: string
         }[]
       }
       mark_client_notified: {
@@ -2346,6 +2770,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      reject_location_change: {
+        Args: { p_change_id: string; p_reason: string }
+        Returns: undefined
+      }
       release_edit_lock: {
         Args: { p_entity_id: string; p_entity_type: string }
         Returns: undefined
@@ -2355,6 +2783,7 @@ export type Database = {
         Args: { p_token: string }
         Returns: undefined
       }
+      release_postponed_due: { Args: { p_due_date: string }; Returns: number }
       reply_to_delivery: {
         Args: { p_client_uuid: string; p_delivery_id: string; p_text: string }
         Returns: {
@@ -2387,6 +2816,14 @@ export type Database = {
           p_quantity?: number
         }
         Returns: string
+      }
+      revert_delivery_to_pending: {
+        Args: { p_delivery_id: string; p_reason: string }
+        Returns: undefined
+      }
+      revert_location_change: {
+        Args: { p_change_id: string; p_reason: string }
+        Returns: undefined
       }
       rollover_delivery: {
         Args: {
@@ -2474,6 +2911,7 @@ export type Database = {
           p_customer_price?: number
           p_delivery_id: string
           p_delivery_instructions?: string
+          p_items?: Json
           p_location_id?: string
           p_product_catalog_id?: string
           p_quantity_ordered?: number

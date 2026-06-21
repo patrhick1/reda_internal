@@ -65,6 +65,7 @@ type Audience =
   | { kind: 'admins' }
   | { kind: 'admins+dispatchers' }
   | { kind: 'reps' }
+  | { kind: 'managers' }
   | { kind: 'assignment';           deliveryId: string }
   | { kind: 'status_change';        deliveryId: string; newStatus: string }
   | { kind: 'warehouse_pickup';     deliveryId: string }
@@ -170,6 +171,7 @@ function parseAudience(body: any): Audience | null {
     case 'admins':              return { kind: 'admins' };
     case 'admins+dispatchers':  return { kind: 'admins+dispatchers' };
     case 'reps':                return { kind: 'reps' };
+    case 'managers':            return { kind: 'managers' };
     case 'assignment':
       if (typeof body.delivery_id === 'string') return { kind: 'assignment', deliveryId: body.delivery_id };
       return null;
@@ -207,7 +209,8 @@ async function resolve(
   if (
     audience.kind === 'admins' ||
     audience.kind === 'admins+dispatchers' ||
-    audience.kind === 'reps'
+    audience.kind === 'reps' ||
+    audience.kind === 'managers'
   ) {
     if (typeof body.title !== 'string' || typeof body.body !== 'string') {
       return { error: 'title and body required', status: 400 };
@@ -217,12 +220,16 @@ async function resolve(
     // helper's body. Stock-specific pushes use audience 'admins' instead so
     // rep (no stock access) is excluded by construction. 'reps' is rep-only —
     // used for agent-flagged delivery issues, which are the rep's job to handle.
+    // 'managers' is admin + dispatcher only (mirrors is_manager()) — used for
+    // agent zone-change approvals, which reps cannot action.
     const roles =
       audience.kind === 'admins'
         ? ['admin']
         : audience.kind === 'reps'
           ? ['rep']
-          : ['admin', 'dispatcher', 'rep'];
+          : audience.kind === 'managers'
+            ? ['admin', 'dispatcher']
+            : ['admin', 'dispatcher', 'rep'];
     const { data: users, error } = await supabase
       .from('users')
       .select('id')

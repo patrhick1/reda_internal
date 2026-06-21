@@ -14,6 +14,9 @@ import { useNeedsReviewCount } from '@/hooks/useNeedsReviewCount';
 export function OpsTabsLayout() {
   const user = useCurrentUser();
   const showStock = user.role === 'dispatcher';
+  // Zone-change approvals are manager-only; among ops that's dispatcher (admin
+  // has its own group). Reps must NOT declare it (no matching directory).
+  const showApprovals = user.role === 'dispatcher';
   // Review queue is manager-only; reps don't declare a (rep)/review directory.
   const showReview = user.role !== 'rep';
   // Reps get a fee-free client-reconcile tab to send delivered-updates. Only
@@ -124,6 +127,18 @@ export function OpsTabsLayout() {
             }}
           />
         </>
+      ) : null}
+      {showApprovals ? (
+        <Tabs.Screen
+          name="location-approvals"
+          options={{
+            title: 'Approvals',
+            tabBarIcon: ({ color, focused }) => (
+              <Icon name="mapPin" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
+            ),
+            href: null,
+          }}
+        />
       ) : null}
     </Tabs>
   );
