@@ -20,6 +20,9 @@ export type AvailableOrderRow = {
   customer_name: string;
   location_name: string | null;
   scheduled_date: string;
+  /** Original WhatsApp text that produced the order (null for manual orders).
+   *  Surfaced to the warehouse via a tap-to-view sheet on the order row. */
+  bot_raw_message: string | null;
 };
 
 function todayLagos(): string {
@@ -70,6 +73,7 @@ export async function listAvailableOrders(): Promise<AvailableOrderRow[]> {
       customer_name: string | null;
       location_name: string | null;
       scheduled_date: string | null;
+      bot_raw_message: string | null;
     }>
   )
     .map((row): AvailableOrderRow | null => {
@@ -96,6 +100,7 @@ export async function listAvailableOrders(): Promise<AvailableOrderRow[]> {
         customer_name: row.customer_name,
         location_name: row.location_name ?? null,
         scheduled_date: row.scheduled_date,
+        bot_raw_message: row.bot_raw_message ?? null,
       };
     })
     .filter((r): r is AvailableOrderRow => r !== null);

@@ -3,7 +3,7 @@
 //      Pulled from the available-orders rows for this agent + current_stock.
 //   2. "Orders" — the actual delivery rows the agent is going to do today.
 //      Each row taps through to the existing Delivery detail screen.
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, Text, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
@@ -14,7 +14,8 @@ import {
   type AllocationLine,
 } from '@/services/available-orders';
 import { listCurrentStock } from '@/services/stock';
-import { AppBar, Card, Empty } from '@/components/ui';
+import { AppBar, Card, Empty, Icon } from '@/components/ui';
+import { RawMessageSheet } from '@/components/sheets/RawMessageSheet';
 import { colors, fonts } from '@/lib/theme';
 
 export type AvailableBasePath = '/(dispatcher)' | '/(warehouse)';
@@ -22,6 +23,13 @@ export type AvailableBasePath = '/(dispatcher)' | '/(warehouse)';
 export function AvailableAgentDetail({ basePath }: { basePath: AvailableBasePath }) {
   const router = useRouter();
   const { agentId } = useLocalSearchParams<{ agentId: string }>();
+  const isWarehouse = basePath === '/(warehouse)';
+  // Warehouse rows have no Detail route to tap into, so tapping a row opens a
+  // sheet with the order's original WhatsApp message instead. `sheetOpen` drives
+  // visibility separately from `rawMsgRow` so the selected row stays mounted
+  // through the close animation (no empty-state flash as the sheet slides out).
+  const [rawMsgRow, setRawMsgRow] = useState<AvailableOrderRow | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   const ordersQ = useAsync(() => listAvailableOrders(), []);
   const stockQ = useAsync(() => listCurrentStock(), []);
@@ -108,20 +116,31 @@ export function AvailableAgentDetail({ basePath }: { basePath: AvailableBasePath
           renderItem={({ item }) => (
             <OrderRow
               row={item}
+              // Dispatcher drills into the full Delivery detail; warehouse (no
+              // such route) opens the raw-WhatsApp-message sheet for the order.
               onPress={
-                // Warehouse role group has no /deliveries route — only
-                // dispatcher's drilldown gets a tappable order row.
-                basePath === '/(dispatcher)'
-                  ? () =>
+                isWarehouse
+                  ? () => {
+                      setRawMsgRow(item);
+                      setSheetOpen(true);
+                    }
+                  : () =>
                       router.push(
                         `${basePath}/deliveries/${item.delivery_id}` as `/(dispatcher)/deliveries/${string}`,
                       )
-                  : undefined
               }
+              showMessageHint={isWarehouse && !!item.bot_raw_message}
             />
           )}
         />
       )}
+
+      <RawMessageSheet
+        open={sheetOpen}
+        onClose={() => setSheetOpen(false)}
+        customerName={rawMsgRow?.customer_name ?? ''}
+        message={rawMsgRow?.bot_raw_message}
+      />
     </View>
   );
 }
@@ -200,7 +219,17 @@ function AllocationRow({ line, divider }: { line: AllocationLine; divider: boole
   );
 }
 
-function OrderRow({ row, onPress }: { row: AvailableOrderRow; onPress: (() => void) | undefined }) {
+function OrderRow({
+  row,
+  onPress,
+  showMessageHint = false,
+}: {
+  row: AvailableOrderRow;
+  onPress: (() => void) | undefined;
+  /** Show a trailing message icon hinting the row is tappable to read the
+   *  original WhatsApp message (warehouse drilldown). */
+  showMessageHint?: boolean;
+}) {
   return (
     <Card dense onPress={onPress}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -230,6 +259,7 @@ function OrderRow({ row, onPress }: { row: AvailableOrderRow; onPress: (() => vo
             {row.client_name ? ` · ${row.client_name}` : ''}
           </Text>
         </View>
+        {showMessageHint ? <Icon name="message" size={16} color={colors.textTertiary} /> : null}
       </View>
     </Card>
   );
