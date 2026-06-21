@@ -84,9 +84,10 @@ PRODUCT-NAME NORMALIZATION — return the real catalog product, never the market
   2. "Buy N <Product> Get M FREE" (same product) -> ONE line: product = <Product>, quantity = N + M.
        "Buy 2 Water Filter Get 1 FREE"                      -> [{product_name:"Water Filter", quantity:3}]
        "Gold Package - Buy 2 Fire Stop Spray Get 1 FREE"    -> [{product_name:"Fire Stop Spray", quantity:3}]
-  3. "Set of <X> including N (FREE) <Y>" / "<X> with N free <Y>" -> TWO lines (different products); the bonus <Y> is the giveaway, so free:true on it:
+  3. "Set of <X> including N (FREE) <Y>" / "<X> with N free <Y>" / "<X> <qty> + M FREE <Y>" -> TWO lines (different products); the bonus <Y> is the giveaway, so free:true on it. CRITICAL: each line carries ONLY its OWN stated quantity — do NOT add the free product's count onto the main product. The main product's quantity is whatever the message states for IT alone (default 1). The "+ M FREE <Y>" describes <Y>, never <X>:
        "1 Set of OUD AL LAYL including 2 FREE Perfume Oil"  -> [{product_name:"Oud Al Layl", quantity:1, free:false},{product_name:"Perfume Oil", quantity:2, free:true}]
        "1 Pack of Shaving Device + 1 Free Nose Trimmer"     -> [{product_name:"Shaving Device", quantity:1, free:false},{product_name:"Nose Trimmer", quantity:1, free:true}]
+       "A520 TWS Earbuds 1 PCS + 1 FREE Digital Bracelet"   -> [{product_name:"A520 TWS Earbuds", quantity:1, free:false},{product_name:"Digital Bracelet", quantity:1, free:true}]   (NOT earbuds quantity:2 — the free bracelet is a separate line, it does NOT raise the earbuds count)
   4. Strip quantities, prices, currency, and packaging/filler words ("Pack of", "Set of", "bottle(s)", "sachet", "tube", "carton", "piece(s)", "(One)", "units", "x2", parenthetical totals) from product_name — keep only the REAL product. A bare container/unit word ("bottle", "pack", "sachet") is NEVER the product; the product name often comes AFTER the quantity/container, and an "=price" may follow it.
        "1 Pack Of Double Arabian Tea"                       -> {product_name:"Double Arabian Tea", quantity:1}
        "1 bottle for a start Stand again=18500"             -> {product_name:"Stand again", quantity:1, customer_price:18500}
