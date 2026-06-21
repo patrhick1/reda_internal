@@ -40,12 +40,24 @@ export type AgentEarningsRow = {
   total_remit: number;
 };
 
+/** One product line within a delivery, from the reconcile RPC's `products`
+ *  jsonb. Multi-product deliveries return N of these; the legacy single product
+ *  is wrapped into a 1-element array for pre-Feature-A rows. */
+export type RemitProduct = {
+  product_name: string | null;
+  quantity_delivered: number | null;
+};
+
 export type ClientRemitDetailRow = {
   delivery_id: string;
   scheduled_date: string;
   customer_name: string;
   product_name: string | null;
   location_name: string | null;
+  /** [Feature A] True per-product breakdown (multi-product safe). The legacy
+   *  product_name / quantity_delivered above collapse a multi-product order to
+   *  one name + the summed qty, so the display + share message read this. */
+  products: RemitProduct[] | null;
   /** Units originally ordered. Used to derive a "delivered fewer than ordered" note. */
   quantity_ordered: number;
   quantity_delivered: number;
@@ -119,6 +131,9 @@ export type RepClientRemitDetailRow = {
   location_name: string | null;
   quantity_ordered: number;
   quantity_delivered: number;
+  /** [Feature A] True per-product breakdown (multi-product safe) — see
+   *  ClientRemitDetailRow.products. */
+  products: RemitProduct[] | null;
   /** Customer balance = customer_price − paid (customer ↔ vendor; informational). */
   outstanding: number;
   /** What Reda remits the client for this delivery (net of Reda fee). */

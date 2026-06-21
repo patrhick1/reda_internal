@@ -50,17 +50,59 @@ export function deriveDeliveryNote(input: {
   return parts.length > 0 ? parts.join(' · ') : '—';
 }
 
+/** One delivered product line. `qty` is units delivered. */
+export type ShareProduct = { name: string; qty: number };
+
 export type ShareDeliveryLine = {
   customerName: string | null;
-  productName: string | null;
-  quantityDelivered: number | null;
+  /** Every product on the delivery. Multi-product orders carry N entries — the
+   *  reconcile RPC's per-item breakdown, not the collapsed legacy single line. */
+  products: ShareProduct[];
   /** What Reda remits the client for this delivery (net of Reda fee). */
   remit: number;
   note: string;
 };
 
+/** Normalize a reconcile row into share-ready product lines: prefer the RPC's
+ *  per-item `products` array; fall back to the legacy single product for rows
+ *  with none. Shared so the on-screen display and the share message agree. */
+export function remitRowProducts(row: {
+  products?: { product_name: string | null; quantity_delivered: number | null }[] | null;
+  product_name?: string | null;
+  quantity_delivered?: number | null;
+}): ShareProduct[] {
+  const items = row.products ?? [];
+  if (items.length > 0) {
+    return items.map((p) => ({
+      name: p.product_name ?? 'Product',
+      qty: Number(p.quantity_delivered ?? 0),
+    }));
+  }
+  return [{ name: row.product_name ?? 'Product', qty: Number(row.quantity_delivered ?? 0) }];
+}
+
+/** On-screen product summary for a reconcile row, e.g. "Gallant Max · 5 units"
+ *  (single) or "Antivirus Cleanser ×2, Gallant Max ×5" (multi). */
+export function remitProductsDisplay(products: ShareProduct[]): string {
+  const [first] = products;
+  if (!first) return '—';
+  if (products.length === 1) return `${first.name} · ${first.qty} units`;
+  return products.map((p) => `${p.name} ×${p.qty}`).join(', ');
+}
+
+/** Per-delivery product lines for the share message. Keeps the familiar
+ *  "Product: X / Qty: N" pair for single-product orders (the common case) and
+ *  switches to a bulleted "Products:" list when there's more than one. */
+function shareProductLines(products: ShareProduct[]): string[] {
+  if (products.length <= 1) {
+    const p = products[0];
+    return [`Product: ${p?.name ?? 'Product'}`, `Qty: ${p?.qty ?? 0}`];
+  }
+  return ['Products:', ...products.map((p) => `- ${p.name} ×${p.qty}`)];
+}
+
 // Builds the WhatsApp "Share with client" message in Uzo's preferred shape:
-// per-delivery blocks (Name / Product / Qty / To Remit / Note), then a Total
+// per-delivery blocks (Name / Product(s) / To Remit / Note), then a Total
 // block (delivered units per product + the single remit total), closing with
 // the thank-you line. Fee figures never appear — only client-facing numbers.
 export function buildClientShareMessage(input: {
@@ -71,8 +113,7 @@ export function buildClientShareMessage(input: {
   const blocks = input.rows.map((r) =>
     [
       `Name: ${r.customerName ?? 'Customer'}`,
-      `Product: ${r.productName ?? 'Product'}`,
-      `Qty: ${r.quantityDelivered ?? 0}`,
+      ...shareProductLines(r.products),
       `To Remit: ${formatNaira(Number(r.remit ?? 0))}`,
       `Note: ${r.note}`,
     ].join('\n'),
@@ -80,8 +121,7 @@ export function buildClientShareMessage(input: {
 
   const byProduct = new Map<string, number>();
   for (const r of input.rows) {
-    const name = r.productName ?? 'Product';
-    byProduct.set(name, (byProduct.get(name) ?? 0) + Number(r.quantityDelivered ?? 0));
+    for (const p of r.products) byProduct.set(p.name, (byProduct.get(p.name) ?? 0) + p.qty);
   }
   const productLines = [...byProduct.entries()].map(([name, qty]) => `${name}: ${qty}`);
   const totalRemit = input.rows.reduce((s, r) => s + Number(r.remit ?? 0), 0);

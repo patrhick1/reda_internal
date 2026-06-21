@@ -7,7 +7,12 @@ import { AppBar, Button, Card, Empty } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 import { formatNaira } from '@/lib/format';
 import { formatDateLagos, formatRangeLagos, isYmd } from '@/lib/date';
-import { buildClientShareMessage, deriveDeliveryNote } from '@/lib/reconcile';
+import {
+  buildClientShareMessage,
+  deriveDeliveryNote,
+  remitProductsDisplay,
+  remitRowProducts,
+} from '@/lib/reconcile';
 
 export default function ClientReconcileDetail() {
   const router = useRouter();
@@ -81,8 +86,7 @@ export default function ClientReconcileDetail() {
       rangeLabel,
       rows: rows.map((r) => ({
         customerName: r.customer_name,
-        productName: r.product_name,
-        quantityDelivered: r.quantity_delivered,
+        products: remitRowProducts(r),
         remit: Number(r.remit ?? 0),
         note: deriveDeliveryNote({
           quantityOrdered: r.quantity_ordered,
@@ -206,11 +210,12 @@ function rowOutstanding(row: ClientRemitDetailRow): number {
 
 function DeliveryRow({ row }: { row: ClientRemitDetailRow }) {
   const customer = row.customer_name ?? 'Customer';
-  const product = row.product_name ?? '—';
+  // Itemized so a multi-product order reads "Antivirus Cleanser ×2, Gallant Max ×5"
+  // instead of the legacy collapsed "Gallant Max · 7 units".
+  const products = remitProductsDisplay(remitRowProducts(row));
   const loc = row.location_name ?? '—';
   // Full display name so namesakes (e.g. "Mummy Jerry") stay distinguishable.
   const agent = row.agent_name ?? null;
-  const qty = row.quantity_delivered;
   const date = formatDateLagos(row.scheduled_date);
   const remit = Number(row.remit ?? 0);
   return (
@@ -234,10 +239,9 @@ function DeliveryRow({ row }: { row: ClientRemitDetailRow }) {
               color: colors.textSecondary,
               marginTop: 2,
             }}
-            numberOfLines={1}
+            numberOfLines={2}
           >
-            {product}
-            {qty != null ? ` · ${qty} units` : ''}
+            {products}
           </Text>
           <Text
             style={{
