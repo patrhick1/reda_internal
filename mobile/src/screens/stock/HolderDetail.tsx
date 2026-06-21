@@ -358,23 +358,38 @@ function roleLabel(role: string): string {
   }
 }
 
-/** Ordered list of holder ids the prev/next arrows step through. Order
- *  mirrors the Overview list: warehouses first, then agents alphabetical.
- *  Includes warehouses with zero stock so the prev/next sequence matches
- *  what the user sees in the parent. */
+/** Ordered list of holder ids the prev/next arrows step through. Must mirror
+ *  the Overview list (buildHolders): seed active warehouse PLACES + active
+ *  agents (so zero-stock agents are in the sequence too), plus any other holder
+ *  that appears in the stock matrix; sort warehouses first, then holders-with-
+ *  stock above cleared-out empties, alpha within each. `withStock` keys off
+ *  appearing in `rows` (which are non-zero by construction) — equivalent to
+ *  buildHolders' `productCount > 0`. */
 function buildOrderedHolderIds(rows: StockMatrixRow[], users: AppUser[]): string[] {
-  const placeIds = users
-    .filter((u) => u.is_active && isWarehousePlace(u))
-    .sort((a, b) => a.display_name.localeCompare(b.display_name))
-    .map((u) => u.id);
+  const withStock = new Set(rows.map((r) => r.user_id));
+  const byId = new Map<string, { id: string; name: string; isWarehouse: boolean }>();
 
-  const seen = new Set<string>(placeIds);
-  const others: { id: string; name: string }[] = [];
-  for (const r of rows) {
-    if (seen.has(r.user_id)) continue;
-    seen.add(r.user_id);
-    others.push({ id: r.user_id, name: r.user_display_name });
+  for (const u of users) {
+    if (!u.is_active) continue;
+    if (!(isWarehousePlace(u) || u.role === 'agent')) continue;
+    byId.set(u.id, { id: u.id, name: u.display_name, isWarehouse: isWarehousePlace(u) });
   }
-  others.sort((a, b) => a.name.localeCompare(b.name));
-  return [...placeIds, ...others.map((o) => o.id)];
+  for (const r of rows) {
+    if (byId.has(r.user_id)) continue;
+    byId.set(r.user_id, {
+      id: r.user_id,
+      name: r.user_display_name,
+      isWarehouse: r.user_role === 'warehouse',
+    });
+  }
+
+  return Array.from(byId.values())
+    .sort((a, b) => {
+      if (a.isWarehouse !== b.isWarehouse) return a.isWarehouse ? -1 : 1;
+      const aHas = withStock.has(a.id);
+      const bHas = withStock.has(b.id);
+      if (aHas !== bHas) return aHas ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    })
+    .map((h) => h.id);
 }

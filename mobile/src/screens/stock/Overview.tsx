@@ -80,19 +80,24 @@ export function StockOverview({ basePath }: { basePath: StockBasePath }) {
   const [overflowOpen, setOverflowOpen] = useState(false);
 
   const rows = useMemo(() => stockQ.data ?? [], [stockQ.data]);
-  // Holder list seeded from warehouse PLACES so empty warehouses still
-  // appear as cards (they're operationally important even at zero stock).
-  // Warehouse STAFF (warehouse_id set) hold no stock — they act on a
-  // place's books — so they must not show up as their own cards.
-  const warehouseUsers = useMemo(
-    () => (usersQ.data ?? []).filter((u) => u.is_active && isWarehousePlace(u)),
+  // Holder list is seeded from a roster so holders surface even at zero stock.
+  // `current_stock` is a computed view (adjustments − delivered) with a hard
+  // `<> 0` filter, so a holder vanishes the instant they net to zero — an agent
+  // who delivers their last unit would otherwise disappear (and become
+  // unsearchable / untransferable-to). Seed both:
+  //   • warehouse PLACES — operationally important even when empty.
+  //   • every active AGENT — a bounded roster (~20), so a cleared-out agent
+  //     still shows as "No stock currently held" and stays a valid transfer
+  //     target. (Product-level views stay non-zero — see HolderDetail.)
+  // Warehouse STAFF (warehouse_id set, not a place) hold no stock and act on a
+  // place's books, so isWarehousePlace excludes them; only places + agents seed.
+  const seedHolders = useMemo(
+    () =>
+      (usersQ.data ?? []).filter((u) => u.is_active && (isWarehousePlace(u) || u.role === 'agent')),
     [usersQ.data],
   );
 
-  const allHolders = useMemo<Holder[]>(
-    () => buildHolders(rows, warehouseUsers),
-    [rows, warehouseUsers],
-  );
+  const allHolders = useMemo<Holder[]>(() => buildHolders(rows, seedHolders), [rows, seedHolders]);
 
   // Overview-wide aggregate stats for the hero card.
   const overviewStats = useMemo(() => getOverviewStats(rows), [rows]);
@@ -667,19 +672,21 @@ function ClientCard({ group, onPress }: { group: ClientStockGroup; onPress: () =
 
 // --- Builders / utilities ----------------------------------------------------
 
-/** Build the holder list — one entry per holder seen in the stock matrix,
- *  plus every active warehouse PLACE so empty warehouses still surface. */
-function buildHolders(rows: StockMatrixRow[], warehouseUsers: AppUser[]): Holder[] {
+/** Build the holder list — one entry per seeded holder (active warehouse PLACES
+ *  + active agents, so both surface even at zero stock), plus any other holder
+ *  that appears in the stock matrix but wasn't seeded (e.g. an inactive agent
+ *  who still carries stock — never hide actually-held stock). */
+function buildHolders(rows: StockMatrixRow[], seedUsers: AppUser[]): Holder[] {
   const map = new Map<string, Holder>();
 
-  for (const w of warehouseUsers) {
-    map.set(w.id, {
-      user_id: w.id,
-      display_name: w.display_name,
-      role: w.role,
-      email: w.email,
-      isWarehouse: true,
-      stats: getHolderStats(rows, w.id),
+  for (const u of seedUsers) {
+    map.set(u.id, {
+      user_id: u.id,
+      display_name: u.display_name,
+      role: u.role,
+      email: u.email,
+      isWarehouse: isWarehousePlace(u),
+      stats: getHolderStats(rows, u.id),
     });
   }
 
@@ -695,9 +702,13 @@ function buildHolders(rows: StockMatrixRow[], warehouseUsers: AppUser[]): Holder
     });
   }
 
+  // Warehouses first; then holders-with-stock above cleared-out empties so the
+  // zero-stock agents we now always show sink to the bottom; alpha within each.
   return Array.from(map.values()).sort((a, b) => {
-    if (a.isWarehouse && !b.isWarehouse) return -1;
-    if (b.isWarehouse && !a.isWarehouse) return 1;
+    if (a.isWarehouse !== b.isWarehouse) return a.isWarehouse ? -1 : 1;
+    const aHas = a.stats.productCount > 0;
+    const bHas = b.stats.productCount > 0;
+    if (aHas !== bHas) return aHas ? -1 : 1;
     return a.display_name.localeCompare(b.display_name);
   });
 }
