@@ -267,11 +267,19 @@ begin
 
 exception
   when unique_violation then
-    -- Concurrent replay raced past the idempotency SELECT; the implicit
-    -- savepoint rolls back any apply done in this block. Return the winner row.
+    -- Two unique constraints collapse here: (a) idempotent replay of the SAME
+    -- client_uuid, or (b) a concurrent SECOND pending request for this delivery
+    -- hitting dlc_one_open_per_delivery. The implicit savepoint already rolled
+    -- back any apply done in this block. If our client_uuid row exists it's (a)
+    -- -> return its outcome; otherwise it's (b) -> a clean "already pending" error
+    -- (NOT a bogus silent success that drops the agent's queued job).
     select * into v_existing from public.delivery_location_changes where client_uuid = p_client_uuid limit 1;
-    return jsonb_build_object('outcome', coalesce(v_existing.state, 'applied'),
-                              'change_id', v_existing.id, 'idempotent', true);
+    if found then
+      return jsonb_build_object('outcome', v_existing.state,
+                                'change_id', v_existing.id, 'idempotent', true);
+    end if;
+    raise exception 'a zone change for this order is already awaiting approval'
+      using errcode = '22023';
 end;
 $fn$;
 
@@ -414,6 +422,15 @@ begin
 
   select * into v_d from public.deliveries where id = v_c.delivery_id for update;
   if not found then raise exception 'delivery not found' using errcode = 'P0002'; end if;
+
+  -- Don't clobber a newer change: only revert when the delivery is STILL on the
+  -- zone this change applied. If a later change/correction moved it on, reverting
+  -- to from_* would silently overwrite that newer state.
+  if v_d.location_id is distinct from v_c.to_location_id then
+    raise exception
+      'this delivery has since moved to a different zone; revert no longer applies'
+      using errcode = '22023';
+  end if;
 
   -- True undo: write the stored from_* values exactly (no recompute), so it
   -- restores the original even if the rate card changed meanwhile.

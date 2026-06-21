@@ -243,7 +243,9 @@ function ChangeCard({
   const payFrom = Number(row.from_agent_payment ?? 0);
   const payTo = Number(row.to_agent_payment ?? 0);
   const payDelta = payTo - payFrom;
-  const canRevert = row.state === 'applied' || row.state === 'approved';
+  // Revert needs an original zone to restore to; first-time-set changes
+  // (from_location_id null) can't be reverted — the server refuses them.
+  const canRevert = (row.state === 'applied' || row.state === 'approved') && !!row.from_location_id;
 
   return (
     <Card>
@@ -307,6 +309,18 @@ function ChangeCard({
         >
           {`Reda charge ${formatNaira(Number(row.from_charged ?? 0))} → ${formatNaira(Number(row.to_charged ?? 0))}`}
         </Text>
+        {row.state === 'pending' ? (
+          <Text
+            style={{
+              fontFamily: fonts.regular,
+              fontSize: 11,
+              color: colors.textTertiary,
+              marginTop: 4,
+            }}
+          >
+            Recalculated from the current rate when you approve.
+          </Text>
+        ) : null}
       </View>
 
       {row.reason ? (
