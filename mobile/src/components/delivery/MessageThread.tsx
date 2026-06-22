@@ -144,7 +144,12 @@ export function MessageThread({
       <Text style={kicker}>Messages</Text>
       <View style={{ marginTop: 12, gap: 10 }}>
         {messages.map((m) => (
-          <Bubble key={m.id} message={m} />
+          // Read receipt only on the OPS side's own (ops-authored) messages:
+          // read_at there is stamped when the assigned rider OPENS the chat
+          // (mark_messages_read clears the other side), so it's a true "seen".
+          // Agent-authored read_at follows different (explicit-action) rules,
+          // so we don't surface a receipt there.
+          <Bubble key={m.id} message={m} showReceipt={!isAgentViewer && m.fromOps} />
         ))}
       </View>
       {showMarkHandled ? (
@@ -193,11 +198,19 @@ export function MessageThread({
   );
 }
 
-function Bubble({ message }: { message: DeliveryMessage }) {
+function Bubble({
+  message,
+  showReceipt = false,
+}: {
+  message: DeliveryMessage;
+  /** Show a Sent/Seen read receipt under this bubble (ops's own messages). */
+  showReceipt?: boolean;
+}) {
   const align = message.fromOps ? 'flex-end' : 'flex-start';
   const bg = message.fromOps ? colors.black : colors.surface;
   const fg = message.fromOps ? colors.white : colors.black;
   const subFg = message.fromOps ? '#bbb' : colors.textSecondary;
+  const seen = !!message.read_at;
 
   return (
     <View style={{ alignItems: align }}>
@@ -248,6 +261,30 @@ function Bubble({ message }: { message: DeliveryMessage }) {
           {formatDateTime(message.created_at)}
         </Text>
       </View>
+      {showReceipt ? (
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 3,
+            marginTop: 3,
+            marginRight: 2,
+          }}
+        >
+          <Text style={{ fontFamily: fonts.medium, fontSize: 10, color: colors.textTertiary }}>
+            {seen ? '✓✓' : '✓'}
+          </Text>
+          <Text
+            style={{
+              fontFamily: fonts.medium,
+              fontSize: 10,
+              color: seen ? colors.success : colors.textTertiary,
+            }}
+          >
+            {seen ? `Seen by rider · ${formatDateTime(message.read_at!)}` : 'Sent'}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
