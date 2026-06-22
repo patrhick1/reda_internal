@@ -2,9 +2,18 @@
 // this via thin route wrappers. Read-only by design; the only action is the
 // "Share with client" button which goes through the OS share sheet.
 import { useCallback, useMemo } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, Share, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  FlatList,
+  Pressable,
+  RefreshControl,
+  Share,
+  Text,
+  View,
+} from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
+import { useCurrentUser } from '@/hooks/useAuth';
 import {
   listCurrentStock,
   groupByClient,
@@ -12,12 +21,17 @@ import {
   type ClientStockGroup,
 } from '@/services/stock';
 import { listActiveProductsByClient, type Product } from '@/services/products';
-import { AppBar, Button, Card, Empty } from '@/components/ui';
+import { AppBar, Button, Card, Empty, Icon } from '@/components/ui';
+import { canViewGlobalStockHistory } from '@/lib/permissions';
 import { colors, fonts } from '@/lib/theme';
 import { formatDateLagos, todayLagos } from '@/lib/date';
 
-export function ClientStockDetail() {
+/** `basePath` is set only by the admin/dispatcher wrappers (where a
+ *  movements-client route exists); the warehouse wrapper omits it, so the
+ *  "stock history" affordance stays hidden there. */
+export function ClientStockDetail({ basePath }: { basePath?: '/(admin)' | '/(dispatcher)' } = {}) {
   const router = useRouter();
+  const user = useCurrentUser();
   const { id, name } = useLocalSearchParams<{ id: string; name?: string }>();
 
   const stockQ = useAsync(() => listCurrentStock(), []);
@@ -39,6 +53,10 @@ export function ClientStockDetail() {
   }, [stockQ.data, id]);
 
   const clientName = group?.client_name ?? name ?? 'Client';
+
+  // Deep-link to this vendor's cross-holder movement history. Only where a
+  // movements-client route exists (admin/dispatcher) AND the viewer is ops.
+  const showMovements = !!basePath && !!id && canViewGlobalStockHistory(user.role);
 
   const products = useMemo<ClientProductTotal[]>(() => {
     const byProductId = new Map<string, ClientProductTotal>();
@@ -99,7 +117,28 @@ export function ClientStockDetail() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
-      <AppBar title={clientName} subtitle="Stock" onBack={() => router.back()} />
+      <AppBar
+        title={clientName}
+        subtitle="Stock"
+        onBack={() => router.back()}
+        right={
+          showMovements && basePath ? (
+            <Pressable
+              onPress={() =>
+                router.push({
+                  pathname: `${basePath}/stock/movements-client/[id]` as const,
+                  params: { id, name: clientName },
+                })
+              }
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Stock movement history for this client"
+            >
+              <Icon name="history" size={22} color={colors.black} />
+            </Pressable>
+          ) : null
+        }
+      />
 
       <FlatList
         data={products}

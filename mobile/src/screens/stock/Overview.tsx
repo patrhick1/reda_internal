@@ -41,6 +41,7 @@ import {
   canTransferAgentToAgent,
   canAdjustAnyStock,
   canAdjustOwnStock,
+  canViewGlobalStockHistory,
 } from '@/lib/permissions';
 import { getHolderStats, getOverviewStats, type HolderStats } from '@/lib/stock-helpers';
 import { ClientStockCard } from '@/components/stock/ClientStockCard';
@@ -136,9 +137,12 @@ export function StockOverview({ basePath }: { basePath: StockBasePath }) {
   const showReceive = canReceiveStock(user.role);
   const showTransfer = canDoWarehouseTransfer(user.role) || canTransferAgentToAgent(user.role);
   const showAdjust = canAdjustAnyStock(user.role) || canAdjustOwnStock(user.role);
+  // Company-wide movement history (ops oversight). Lives in the overflow sheet so
+  // it surfaces for dispatchers too, who have no Receive/Adjust of their own.
+  const showGlobalHistory = canViewGlobalStockHistory(user.role);
   // Overflow sheet only meaningful if there's ≥2 actions OR a non-transfer
   // action that wouldn't fit beside the primary Transfer button.
-  const showOverflow = showReceive || showAdjust;
+  const showOverflow = showReceive || showAdjust || showGlobalHistory;
 
   // Responsive: 1-col on phones, 2 on tablets/narrow web, 3 on full web.
   // Key swap is required when numColumns changes on a FlatList (RN rule).
@@ -321,6 +325,19 @@ export function StockOverview({ basePath }: { basePath: StockBasePath }) {
           its permission helper returns true so the sheet is empty-safe. */}
       <Sheet open={overflowOpen} onClose={() => setOverflowOpen(false)} title="More actions">
         <View style={{ gap: 8 }}>
+          {showGlobalHistory ? (
+            <ActionRow
+              icon="history"
+              label="All movements"
+              sub="Every receive, transfer, and delivery across all holders"
+              onPress={() => {
+                setOverflowOpen(false);
+                router.push(
+                  `${basePath}/stock/all-movements` as `${StockBasePath}/stock/all-movements`,
+                );
+              }}
+            />
+          ) : null}
           {showReceive ? (
             <ActionRow
               icon="arrowDown"
@@ -577,7 +594,7 @@ function ActionRow({
   sub,
   onPress,
 }: {
-  icon: 'arrowDown' | 'edit';
+  icon: 'arrowDown' | 'edit' | 'history';
   label: string;
   sub: string;
   onPress: () => void;

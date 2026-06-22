@@ -72,6 +72,16 @@ export function canViewOthersStockHistory(role: Role): boolean {
   return isOps(role) || role === 'warehouse';
 }
 
+/** Company-wide / per-client stock-movement feed (the cross-holder oversight
+ *  views). Operational set only (admin + dispatcher + rep) — these expose EVERY
+ *  holder's movements, so warehouse is deliberately NOT included (it keeps the
+ *  per-holder screen via canViewOthersStockHistory). Mirrors the server-side
+ *  list_stock_movements_global gate, which checks is_admin_or_dispatcher().
+ *  Server anchor: list_stock_movements_global(...) auth check. */
+export function canViewGlobalStockHistory(role: Role): boolean {
+  return isOps(role);
+}
+
 /** Address-match log + Needs Review queue. Operational set.
  * Server anchor: aml_select_admin_dispatcher policy → is_admin_or_dispatcher(). */
 export function canSeeAddressMatchLog(role: Role): boolean {

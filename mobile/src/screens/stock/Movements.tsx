@@ -47,13 +47,15 @@ const PAGE_SIZE = 50;
 export type MovementsBasePath = '/(admin)' | '/(dispatcher)' | '/(warehouse)' | '/(agent)';
 
 // Friendly type chips → the underlying event kinds. `null` kinds = no filter.
-type KindCategory = {
+// Exported so the cross-holder GlobalMovements screen reuses the exact same
+// kind taxonomy (and its iconFor mapping below).
+export type KindCategory = {
   id: string;
   label: string;
   kinds: MovementEventKind[] | null;
 };
 
-const KIND_CATEGORIES: KindCategory[] = [
+export const KIND_CATEGORIES: KindCategory[] = [
   { id: 'all', label: 'All', kinds: null },
   { id: 'received', label: 'Received', kinds: ['bulk_intake'] },
   { id: 'issued', label: 'Issued', kinds: ['warehouse_issue'] },
@@ -568,7 +570,7 @@ function MovementRow({
   );
 }
 
-function iconFor(kind: MovementEventKind): IconName {
+export function iconFor(kind: MovementEventKind): IconName {
   switch (kind) {
     case 'bulk_intake':
       return 'arrowDown';

@@ -169,6 +169,98 @@ export function nextCursor(rows: StockMovement[]): MovementCursor {
   return { event_at: last.event_at, event_id: last.event_id };
 }
 
+// ---------------------------------------------------------------------------
+// Cross-holder feed (Phase 1). Powers TWO oversight views off ONE RPC
+// (`list_stock_movements_global`): a per-client view (clientId set) and a
+// company-wide view (any subset of filters). Unlike the per-holder feed it is
+// NOT scoped to a single holder, so every row carries its holder + vendor, and
+// paired transfer legs are collapsed server-side to the source (negative) leg.
+// Ops-only on the server (admin/dispatcher/rep); agents/warehouse get 42501.
+// ---------------------------------------------------------------------------
+
+/** A movement row from the cross-holder feed: the per-holder shape plus the
+ *  holder and vendor each row belongs to (there is no single "viewer" holder). */
+export type GlobalMovement = StockMovement & {
+  holder_id: string;
+  holder_name: string | null;
+  client_id: string | null;
+  client_name: string | null;
+};
+
+/** Server-side filters for the cross-holder feed. All optional → company-wide
+ *  with no filter. `clientId` fixed (and the client filter hidden) in the
+ *  per-client view. */
+export type GlobalMovementFilters = {
+  clientId?: string | null;
+  productCatalogId?: string | null;
+  holderId?: string | null;
+  kinds?: MovementEventKind[] | null;
+};
+
+/** Fetch one page of the cross-holder movement feed. Same keyset contract as
+ *  {@link listStockMovements} — pass `cursor = null` for the newest page, then
+ *  {@link nextCursor} of the previous page for older ones. */
+export async function listGlobalStockMovements(
+  cursor: MovementCursor,
+  limit = 50,
+  filters?: GlobalMovementFilters,
+): Promise<GlobalMovement[]> {
+  const { data, error } = await rpcUntyped('list_stock_movements_global', {
+    p_client_id: filters?.clientId ?? null,
+    p_product_catalog_id: filters?.productCatalogId ?? null,
+    p_holder_id: filters?.holderId ?? null,
+    p_kinds: filters?.kinds && filters.kinds.length > 0 ? filters.kinds : null,
+    p_before_at: cursor?.event_at ?? null,
+    p_before_event_id: cursor?.event_id ?? null,
+    p_limit: limit,
+  });
+
+  if (error) throw error;
+
+  const rows = (data ?? []) as unknown as Array<
+    Record<keyof GlobalMovement, GlobalMovement[keyof GlobalMovement] | null>
+  >;
+
+  return rows
+    .map((row): GlobalMovement | null => {
+      if (
+        !row.source ||
+        !row.event_id ||
+        !row.event_at ||
+        !row.event_kind ||
+        !row.product_catalog_id ||
+        !row.product_name ||
+        row.quantity_delta == null ||
+        !row.holder_id
+      ) {
+        return null;
+      }
+      return {
+        source: row.source as MovementSource,
+        event_id: row.event_id as string,
+        event_at: row.event_at as string,
+        event_kind: row.event_kind as MovementEventKind,
+        product_catalog_id: row.product_catalog_id as string,
+        product_name: row.product_name as string,
+        quantity_delta: row.quantity_delta as number,
+        quantity_ordered: (row.quantity_ordered as number | null) ?? null,
+        notes: (row.notes as string | null) ?? null,
+        actor_id: (row.actor_id as string | null) ?? null,
+        actor_name: (row.actor_name as string | null) ?? null,
+        counterparty_holder_id: (row.counterparty_holder_id as string | null) ?? null,
+        counterparty_holder_name: (row.counterparty_holder_name as string | null) ?? null,
+        related_adjustment_id: (row.related_adjustment_id as string | null) ?? null,
+        delivery_id: (row.delivery_id as string | null) ?? null,
+        customer_name: (row.customer_name as string | null) ?? null,
+        holder_id: row.holder_id as string,
+        holder_name: (row.holder_name as string | null) ?? null,
+        client_id: (row.client_id as string | null) ?? null,
+        client_name: (row.client_name as string | null) ?? null,
+      };
+    })
+    .filter((m): m is GlobalMovement => m !== null);
+}
+
 export type MovementActor = { actor_id: string; actor_name: string };
 
 /** The distinct set of performers (actors) who appear in a holder's history —
