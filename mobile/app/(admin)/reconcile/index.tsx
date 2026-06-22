@@ -393,9 +393,7 @@ function ClientsList({
           onSettle={(note) => onSettle(item.client_id, note)}
           onVoid={onVoid}
           extra={[
-            { label: 'Customer owed', value: formatNaira(item.total_customer_price) },
             { label: 'Customer paid', value: formatNaira(item.total_paid) },
-            { label: 'Outstanding', value: formatNaira(item.outstanding) },
             { label: 'Reda fee', value: formatNaira(item.total_reda_fee) },
             { label: 'Cash POS fee', value: formatNaira(item.total_cash_pos_fee) },
           ]}
@@ -543,9 +541,10 @@ function SummaryTab({
 }) {
   const totals = useMemo(() => {
     const deliveries = clients.reduce((s, c) => s + Number(c.deliveries_count), 0);
-    const customerOwed = clients.reduce((s, c) => s + Number(c.total_customer_price), 0);
+    // Customer-owed / outstanding (quoted-price figures) are intentionally not
+    // surfaced: Reda only ever remits what was collected, so the gap against the
+    // quoted price is a customer↔vendor matter Reda never acts on.
     const customerPaid = clients.reduce((s, c) => s + Number(c.total_paid), 0);
-    const outstanding = clients.reduce((s, c) => s + Number(c.outstanding), 0);
     const redaFee = clients.reduce((s, c) => s + Number(c.total_reda_fee), 0);
     const cashPosFee = clients.reduce((s, c) => s + Number(c.total_cash_pos_fee), 0);
     const remitToClients = clients.reduce((s, c) => s + Number(c.total_remit), 0);
@@ -557,9 +556,7 @@ function SummaryTab({
     const margin = redaFee - agentPayments;
     return {
       deliveries,
-      customerOwed,
       customerPaid,
-      outstanding,
       redaFee,
       cashPosFee,
       remitToClients,
@@ -574,9 +571,7 @@ function SummaryTab({
       `Period: ${rangeLabel}`,
       ``,
       `Deliveries:        ${totals.deliveries}`,
-      `Customer owed:     ${formatNaira(totals.customerOwed)}`,
       `Customer paid:     ${formatNaira(totals.customerPaid)}`,
-      `Outstanding:       ${formatNaira(totals.outstanding)}`,
       ``,
       `Reda delivery fee: ${formatNaira(totals.redaFee)}`,
       `Cash POS fee:      ${formatNaira(totals.cashPosFee)}`,
@@ -609,13 +604,7 @@ function SummaryTab({
 
         <View style={{ marginTop: 16, gap: 10 }}>
           <SummaryRow label="Deliveries" value={String(totals.deliveries)} />
-          <SummaryRow label="Customer owed" value={formatNaira(totals.customerOwed)} />
           <SummaryRow label="Customer paid" value={formatNaira(totals.customerPaid)} />
-          <SummaryRow
-            label="Outstanding"
-            value={formatNaira(totals.outstanding)}
-            accent={totals.outstanding > 0 ? colors.red : undefined}
-          />
           <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 6 }} />
           <SummaryRow label="Reda delivery fee" value={formatNaira(totals.redaFee)} />
           <SummaryRow label="Cash POS fee" value={formatNaira(totals.cashPosFee)} />

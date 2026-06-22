@@ -66,7 +66,7 @@ You don't need to remember to cancel anything yourself. If the agents have **dif
 - Tap **Reconcile** (wallet icon in the tab bar). Defaults to **Today**.
 - Use the chip row to switch to **Yesterday** / **Last 7 days** / **Custom** when you need a different window.
 - Stay on **By client**. The big number is *Total remit owed* — what Reda collectively owes its clients today (paid − Reda's delivery fees).
-- Tap any client row → opens that client's per-delivery report. You see: *customer owed*, *customer paid*, *outstanding*, *Reda delivery fee*, and *remit to you*, plus a line for each delivery showing how each was paid + the Reda fee + the per-trip remit.
+- Tap any client row → opens that client's per-delivery report. You see: *customer paid*, *Reda delivery fee*, and *remit to you*, plus a line for each delivery showing how each was paid + the Reda fee + the per-trip remit.
 - Tap **Share with client** to open the share menu — pick WhatsApp and send the report straight to the client.
 
 ### Check by-agent
@@ -80,7 +80,7 @@ You don't need to remember to cancel anything yourself. If the agents have **dif
 ### Check the daily summary (Reda's own P&L)
 
 - Tap **Summary** (third tab).
-- Shows: deliveries count, customer-side totals (owed / paid / outstanding), Reda-side totals (delivery fee collected / remit owed to clients / agent payments) and **Reda margin** = delivery fee − agent payments.
+- Shows: deliveries count, customer paid, Reda-side totals (delivery fee collected / remit owed to clients / agent payments) and **Reda margin** = delivery fee − agent payments.
 - Tap **Share summary** to send the day's numbers out of the app (to yourself on WhatsApp, for your own records).`,
   },
   {
@@ -407,7 +407,7 @@ const REP = [
 - Tap **Reconcile** (wallet icon in the tab bar). Defaults to **Today**.
 - Use the chip row to switch to **Yesterday** / **Last 7 days** / **Custom** for a different window.
 - The big number is *Total to remit* — what Reda will send across all clients for the period.
-- Tap any client row → opens that client's per-delivery list: each delivery's customer, product, quantity delivered, and the amount to remit. A note flags a short delivery or an outstanding customer balance.
+- Tap any client row → opens that client's per-delivery list: each delivery's customer, product, quantity delivered, and the amount to remit. A note flags a short delivery.
 - Tap **Share with client** → pick WhatsApp and send the report straight to the client.`,
   },
 ] as const satisfies readonly HelpSection[];

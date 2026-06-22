@@ -43,15 +43,13 @@ export default function ClientReconcileDetail() {
   const rows = useMemo(() => detailQ.data ?? [], [detailQ.data]);
 
   const totals = useMemo(() => {
-    let customerOwed = 0,
-      paid = 0,
+    let paid = 0,
       paidToVendor = 0,
       redaFee = 0,
       cashPosFee = 0;
     for (const r of rows) {
       const cp = Number(r.customer_price ?? 0);
       const pd = Number(r.paid ?? 0);
-      customerOwed += cp;
       paid += pd;
       // vendor_direct: the customer settled the order value with the vendor
       // directly (paid-to-Reda = 0). Surfaced as its own line for clarity.
@@ -61,7 +59,6 @@ export default function ClientReconcileDetail() {
     }
     return {
       count: rows.length,
-      customerOwed,
       paid,
       paidToVendor,
       redaFee,
@@ -144,7 +141,6 @@ export default function ClientReconcileDetail() {
             </Text>
 
             <View style={{ marginTop: 14, gap: 6 }}>
-              <SmallRow label="Customer owed" value={formatNaira(totals.customerOwed)} />
               <SmallRow label="Customer paid" value={formatNaira(totals.paid)} />
               {totals.paidToVendor > 0 ? (
                 <SmallRow
