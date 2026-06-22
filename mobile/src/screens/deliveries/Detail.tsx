@@ -31,6 +31,7 @@ import {
   canClaimFollowup,
   canCorrectDeliveryLocation,
   canRevertDelivered,
+  canCallCustomer,
   canDeleteDelivery,
   canDeleteDeliveryByStatus,
   canEditDelivery,
@@ -393,7 +394,10 @@ export function DeliveryDetail() {
               >
                 {d.customer_name}
               </Text>
-              {d.customer_phone ? (
+              {/* Phone numbers shown only to roles that call the customer — reps
+                  coordinate with vendors, so the customer's number is hidden for
+                  them (same gate as the Call buttons below). */}
+              {canCallCustomer(user.role) && d.customer_phone ? (
                 <Text
                   style={{
                     fontFamily: fonts.mono,
@@ -405,7 +409,7 @@ export function DeliveryDetail() {
                   {d.customer_phone}
                 </Text>
               ) : null}
-              {d.customer_phone_alt ? (
+              {canCallCustomer(user.role) && d.customer_phone_alt ? (
                 <Text
                   style={{
                     fontFamily: fonts.mono,
@@ -421,18 +425,22 @@ export function DeliveryDetail() {
             <StatusPill status={status} />
           </View>
           <View style={{ marginTop: 14, flexDirection: 'row', gap: 8 }}>
-            <Button
-              variant="primary"
-              size="sm"
-              icon="phone"
-              onPress={() =>
-                d.customer_phone && Linking.openURL(`tel:${d.customer_phone.replace(/\s+/g, '')}`)
-              }
-              disabled={!d.customer_phone}
-            >
-              Call
-            </Button>
-            {d.customer_phone_alt ? (
+            {/* Customer-call actions — hidden for reps, who coordinate with
+                vendors, not customers (canCallCustomer). Map stays for everyone. */}
+            {canCallCustomer(user.role) ? (
+              <Button
+                variant="primary"
+                size="sm"
+                icon="phone"
+                onPress={() =>
+                  d.customer_phone && Linking.openURL(`tel:${d.customer_phone.replace(/\s+/g, '')}`)
+                }
+                disabled={!d.customer_phone}
+              >
+                Call
+              </Button>
+            ) : null}
+            {canCallCustomer(user.role) && d.customer_phone_alt ? (
               <Button
                 variant="secondary"
                 size="sm"

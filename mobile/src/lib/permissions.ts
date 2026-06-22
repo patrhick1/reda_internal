@@ -102,6 +102,14 @@ export function canSeeClientName(role: Role): boolean {
   return isOps(role);
 }
 
+/** Show the "Call customer" action on a delivery. Reps coordinate with VENDORS,
+ *  not customers, so they don't get a customer-call button — admins, dispatchers
+ *  and the assigned agent do. (Display-only gate; nothing stops a number being
+ *  dialled outside the app — it just declutters a surface reps don't use.) */
+export function canCallCustomer(role: Role): boolean {
+  return role === 'admin' || role === 'dispatcher' || role === 'agent';
+}
+
 /** Narrow the shared deliveries list by agent and/or customer-name. Operational
  *  set (admin + dispatcher + rep). These are pure CLIENT-SIDE filters over the
  *  ops-wide list every ops role already loads — no mutation, no extra data
