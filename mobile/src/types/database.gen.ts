@@ -2325,10 +2325,12 @@ export type Database = {
         Args: { p_client_id: string; p_from: string; p_to: string }
         Returns: {
           agent_name: string
+          cash_pos_fee: number
           customer_name: string
           delivery_id: string
           location_name: string
           outstanding: number
+          payment_method: string
           product_name: string
           quantity_delivered: number
           quantity_ordered: number

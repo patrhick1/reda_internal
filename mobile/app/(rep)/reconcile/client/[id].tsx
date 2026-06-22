@@ -66,6 +66,8 @@ export default function RepClientReconcileDetail() {
             quantityOrdered: q.ordered,
             quantityDelivered: q.delivered,
           }),
+          paymentMethod: r.payment_method,
+          cashPosFee: r.cash_pos_fee,
         };
       }),
     });

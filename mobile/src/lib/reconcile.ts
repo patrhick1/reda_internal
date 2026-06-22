@@ -57,7 +57,32 @@ export type ShareDeliveryLine = {
   /** What Reda remits the client for this delivery (net of Reda fee). */
   remit: number;
   note: string;
+  /** How the customer paid: 'cash' | 'transfer' | 'vendor_direct'. Drives the
+   *  client-facing "Paid:" line. Optional/nullable: legacy rows (and the rep RPC
+   *  before its passthrough columns land) omit it, in which case no Paid line
+   *  and no Cash/Transfer total breakdown is emitted. */
+  paymentMethod?: string | null;
+  /** ₦500 when the customer paid cash (passed through to / absorbed by the
+   *  client), 0 otherwise. Drives the per-delivery "POS charge:" line and the
+   *  Total "POS charges (already deducted):" line. */
+  cashPosFee?: number | null;
 };
+
+/** Client-facing label for a delivery's payment method. Returns null for an
+ *  unknown / legacy-null method so the caller omits the line entirely rather
+ *  than print "Paid: ". */
+function paymentMethodLabel(method: string | null | undefined): string | null {
+  switch (method) {
+    case 'cash':
+      return 'Cash';
+    case 'transfer':
+      return 'Transfer';
+    case 'vendor_direct':
+      return 'Direct to vendor';
+    default:
+      return null;
+  }
+}
 
 /** Normalize a reconcile row into share-ready product lines: prefer the RPC's
  *  per-item `products` array; fall back to the legacy single product for rows
@@ -125,22 +150,27 @@ function shareProductLines(products: ShareProduct[]): string[] {
 }
 
 // Builds the WhatsApp "Share with client" message in Uzo's preferred shape:
-// per-delivery blocks (Name / Product(s) / To Remit / Note), then a Total
-// block (delivered units per product + the single remit total), closing with
-// the thank-you line. Fee figures never appear — only client-facing numbers.
+// per-delivery blocks (Name / Product(s) / Paid / [POS charge] / To Remit /
+// Note), then a Total block (delivered units per product, a remit breakdown by
+// payment method, the POS charges already deducted, and the single remit
+// total), closing with the thank-you line. Reda's own fee never appears — only
+// client-facing numbers (how the customer paid, the ₦500 POS pass-through, the
+// remit). The payment lines self-omit when the row lacks payment_method, so a
+// caller without that data still produces the original fee-free shape.
 export function buildClientShareMessage(input: {
   clientName: string;
   rangeLabel: string;
   rows: ShareDeliveryLine[];
 }): string {
-  const blocks = input.rows.map((r) =>
-    [
-      `Name: ${r.customerName ?? 'Customer'}`,
-      ...shareProductLines(r.products),
-      `To Remit: ${formatNaira(Number(r.remit ?? 0))}`,
-      `Note: ${r.note}`,
-    ].join('\n'),
-  );
+  const blocks = input.rows.map((r) => {
+    const lines = [`Name: ${r.customerName ?? 'Customer'}`, ...shareProductLines(r.products)];
+    const method = paymentMethodLabel(r.paymentMethod);
+    if (method) lines.push(`Paid: ${method}`);
+    const pos = Number(r.cashPosFee ?? 0);
+    if (pos > 0) lines.push(`POS charge: ${formatNaira(pos)}`);
+    lines.push(`To Remit: ${formatNaira(Number(r.remit ?? 0))}`, `Note: ${r.note}`);
+    return lines.join('\n');
+  });
 
   const byProduct = new Map<string, number>();
   for (const r of input.rows) {
@@ -149,9 +179,34 @@ export function buildClientShareMessage(input: {
   const productLines = [...byProduct.entries()].map(([name, qty]) => `${name}: ${qty}`);
   const totalRemit = input.rows.reduce((s, r) => s + Number(r.remit ?? 0), 0);
 
+  // Remit broken down by how the customer paid. Only shown when EVERY row carries
+  // a known method — a partial breakdown (some rows method-less) wouldn't sum to
+  // the To Remit total and would mislead. Fixed order so the message is stable.
+  const methodTotals = new Map<string, number>();
+  let posTotal = 0;
+  let allMethodsKnown = input.rows.length > 0;
+  for (const r of input.rows) {
+    const method = paymentMethodLabel(r.paymentMethod);
+    if (method) methodTotals.set(method, (methodTotals.get(method) ?? 0) + Number(r.remit ?? 0));
+    else allMethodsKnown = false;
+    posTotal += Number(r.cashPosFee ?? 0);
+  }
+  const methodLines = allMethodsKnown
+    ? ['Cash', 'Transfer', 'Direct to vendor']
+        .filter((m) => methodTotals.has(m))
+        .map((m) => `${m}: ${formatNaira(methodTotals.get(m) ?? 0)}`)
+    : [];
+  const posLine = posTotal > 0 ? [`POS charges (already deducted): ${formatNaira(posTotal)}`] : [];
+
   const header = `Reda Logistics — ${input.clientName}\n${input.rangeLabel}`;
   const body = input.rows.length === 0 ? '(no deliveries in this range)' : blocks.join('\n\n');
-  const totalBlock = ['Total', ...productLines, `To Remit: ${formatNaira(totalRemit)}`].join('\n');
+  const totalBlock = [
+    'Total',
+    ...productLines,
+    ...methodLines,
+    ...posLine,
+    `To Remit: ${formatNaira(totalRemit)}`,
+  ].join('\n');
 
   return `${header}\n\n${body}\n\n\n${totalBlock}\n\n\nThank you for choosing REDA 🥂`;
 }

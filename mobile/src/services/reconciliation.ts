@@ -140,6 +140,13 @@ export type RepClientRemitDetailRow = {
   /** What Reda remits the client for this delivery (net of Reda fee). */
   remit: number;
   agent_name: string | null;
+  /** How the customer paid ('cash' | 'transfer' | 'vendor_direct'). Client-facing
+   *  (the client is told this in the share message); exposed by the rep RPC
+   *  passthrough alongside cash_pos_fee. `paid`/`reda_fee` stay stripped. */
+  payment_method: string | null;
+  /** ₦500 cash-banking fee passed through to the client (0 for transfer).
+   *  Client-facing — not Reda's own cut. */
+  cash_pos_fee: number;
 };
 
 export async function listRepClientRemit(from: string, to: string): Promise<RepClientRemitRow[]> {
