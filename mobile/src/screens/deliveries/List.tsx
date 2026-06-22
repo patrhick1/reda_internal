@@ -25,6 +25,7 @@ import { listActiveFollowups, type ActiveFollowup } from '@/services/followups';
 import { opsUnreadAgentCounts } from '@/services/delivery-messages';
 import { useSupabaseChannel } from '@/hooks/useSupabaseChannel';
 import { listUsers, type AppUser } from '@/services/users';
+import { listClients, type Client } from '@/services/clients';
 import {
   canBulkAssignDelivery,
   canBulkChangeStatus,
@@ -119,6 +120,10 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   // null = "All agents". Agents see only their own deliveries server-side,
   // so the picker stays hidden for them — narrowing has no work to do.
   const [agentId, setAgentId] = useState<string | null>(null);
+  // null = "All clients". Same ops-only client-side narrow as the agent picker
+  // (Uzo, 2026-06-22): slice the list to one vendor to gauge their pipeline —
+  // e.g. how many orders Decency has before sending more stock out.
+  const [clientId, setClientId] = useState<string | null>(null);
   // Apply deep-link params then consume them: ?filter= from the dashboard "View
   // all" card, ?agent= from a tapped Agent-workload row. Consuming (setParams →
   // undefined) keeps the URL from retaining a stale filter/agent after the user
@@ -138,11 +143,13 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     }
     if (Object.keys(cleared).length > 0) router.setParams(cleared);
   }, [params.filter, params.agent, router]);
-  // Read-only narrowing affordance, open to the full ops set (admin +
-  // dispatcher + rep). Reps coordinate with vendors and asked to scan
-  // "show me Tunde's queue" the same way managers do — it's a client-side
-  // filter, not the manager-only assign action.
-  const showAgentPicker = canFilterDeliveriesList(user.role);
+  // The list-narrowing affordances — customer-name search, agent picker, and
+  // client picker — all share one audience: the full ops set (admin +
+  // dispatcher + rep). Reps coordinate with vendors and asked to scan "show me
+  // Tunde's queue" / "show me Decency's orders" the same way managers do — these
+  // are client-side filters, not the manager-only assign action. One gate so the
+  // three can never drift apart.
+  const showListFilters = canFilterDeliveriesList(user.role);
   // Multi-select bulk reassign — Uzo's morning queue flow. Admin + dispatcher
   // only (canBulkAssignDelivery). Long-press a row to enter select mode; in
   // select mode rows toggle selection on tap and the bottom action bar
@@ -160,10 +167,6 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   // screen (`(agent)/today/index.tsx`) — this gate is defensive in case the
   // shared list is ever wired into an agent route.
   const showClient = canSeeClientName(user.role);
-  // Customer-name substring filter. Ops roles (admin / dispatcher / rep) —
-  // agents have at most a handful of rows on screen and don't need it. Plain
-  // client-side narrow over the already-fetched list; no extra round-trip.
-  const showNameSearch = canFilterDeliveriesList(user.role);
   const [nameQuery, setNameQuery] = useState('');
   const nameNeedle = nameQuery.trim().toLowerCase();
 
@@ -219,14 +222,22 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   // won't render (agents). Cached for the screen's lifetime — agents don't
   // get added/deactivated mid-session in practice.
   const agentsQ = useAsync<AppUser[]>(
-    () => (showAgentPicker ? listUsers() : Promise.resolve([])),
-    [showAgentPicker],
+    () => (showListFilters ? listUsers() : Promise.resolve([])),
+    [showListFilters],
   );
   const agents = useMemo(() => {
     return (agentsQ.data ?? [])
       .filter((u) => u.role === 'agent' && u.is_active)
       .sort((a, b) => (a.display_name ?? '').localeCompare(b.display_name ?? ''));
   }, [agentsQ.data]);
+  // Active clients for the client picker (listClients returns active-only,
+  // name-sorted). Same gate as the agent picker; agents can't read clients
+  // (anti-poaching RLS) but the picker never renders for them anyway.
+  const clientsQ = useAsync<Client[]>(
+    () => (showListFilters ? listClients() : Promise.resolve([])),
+    [showListFilters],
+  );
+  const clients = useMemo(() => clientsQ.data ?? [], [clientsQ.data]);
   // Pool for bulk-assign — only top-level agents (no sub-agents). Mirrors
   // bulk_assign_deliveries' server-side check so the sheet doesn't show
   // anyone the RPC would reject.
@@ -378,10 +389,11 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   const all = useMemo(() => {
     let rows = data ?? [];
     if (agentId) rows = rows.filter((d) => d.assigned_agent_id === agentId);
+    if (clientId) rows = rows.filter((d) => d.client_id === clientId);
     if (nameNeedle)
       rows = rows.filter((d) => (d.customer_name ?? '').toLowerCase().includes(nameNeedle));
     return rows;
-  }, [data, agentId, nameNeedle]);
+  }, [data, agentId, clientId, nameNeedle]);
   const buckets = useMemo(
     () => ({
       all,
@@ -460,10 +472,11 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   const postponedRows = useMemo(() => {
     let rows = postponedQ.data ?? [];
     if (agentId) rows = rows.filter((d) => d.assigned_agent_id === agentId);
+    if (clientId) rows = rows.filter((d) => d.client_id === clientId);
     if (nameNeedle)
       rows = rows.filter((d) => (d.customer_name ?? '').toLowerCase().includes(nameNeedle));
     return rows;
-  }, [postponedQ.data, agentId, nameNeedle]);
+  }, [postponedQ.data, agentId, clientId, nameNeedle]);
 
   // "To notify" must include postponed orders even when they're scheduled for a
   // FUTURE date (Uzo, 2026-06-20): postpone moves scheduled_date forward in place,
@@ -582,7 +595,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
           </View>
         ) : null}
         <FilterChips options={filterOptions} value={filter} onChange={setFilter} />
-        {showNameSearch ? (
+        {showListFilters ? (
           <View style={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 4 }}>
             <Input
               icon="search"
@@ -606,12 +619,20 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
             />
           </View>
         ) : null}
-        {showAgentPicker ? (
+        {showListFilters ? (
           <AgentPicker
             value={agentId}
             agents={agents}
             loading={agentsQ.loading}
             onChange={setAgentId}
+          />
+        ) : null}
+        {showListFilters ? (
+          <ClientPicker
+            value={clientId}
+            clients={clients}
+            loading={clientsQ.loading}
+            onChange={setClientId}
           />
         ) : null}
       </View>
@@ -716,6 +737,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
                 customDate,
                 agents.find((a) => a.id === agentId)?.display_name ?? null,
                 nameQuery.trim() || null,
+                clients.find((c) => c.id === clientId)?.name ?? null,
               )}
             />
           )
@@ -1146,6 +1168,7 @@ function emptySubtitle(
   customDate: string,
   agentName: string | null,
   nameQuery: string | null,
+  clientName: string | null,
 ): string {
   const when =
     preset === 'today'
@@ -1155,14 +1178,15 @@ function emptySubtitle(
         : preset === 'custom'
           ? customDate
           : 'any date';
-  if (nameQuery && agentName) {
-    return `No deliveries matching "${nameQuery}" for ${agentName} on ${when}. Try clearing the search or agent filter.`;
-  }
-  if (nameQuery) {
-    return `No deliveries matching "${nameQuery}" on ${when}. Try clearing the search or switching dates.`;
-  }
-  if (agentName) {
-    return `No deliveries for ${agentName} on ${when}. Try clearing the agent filter or switching dates.`;
+  // Compose a single message from whichever narrowers are active so any
+  // combination of client / agent / name reads correctly (client first since
+  // it's the broadest lens, then agent, then the free-text search).
+  const narrowers: string[] = [];
+  if (clientName) narrowers.push(clientName);
+  if (agentName) narrowers.push(agentName);
+  if (nameQuery) narrowers.push(`"${nameQuery}"`);
+  if (narrowers.length > 0) {
+    return `No deliveries for ${narrowers.join(' · ')} on ${when}. Try clearing the filters or switching dates.`;
   }
   switch (preset) {
     case 'today':
@@ -1312,6 +1336,180 @@ function AgentPicker({
               ItemSeparatorComponent={() => (
                 <View style={{ height: 1, backgroundColor: colors.border }} />
               )}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </View>
+  );
+}
+
+/** Compact dropdown that opens a bottom-sheet list of active clients, with an
+ *  in-sheet search box — there are dozens of vendors, so plain scrolling like
+ *  the agent picker wouldn't cut it. Ops set only (gated at the call site by
+ *  canFilterDeliveriesList). `value=null` means "All clients". Mirrors
+ *  AgentPicker otherwise. */
+function ClientPicker({
+  value,
+  clients,
+  onChange,
+  loading,
+}: {
+  value: string | null;
+  clients: Client[];
+  onChange: (v: string | null) => void;
+  loading: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const selected = clients.find((c) => c.id === value) ?? null;
+  const triggerLabel = loading
+    ? 'Loading clients…'
+    : selected
+      ? `Client: ${selected.name}`
+      : 'Client: All clients';
+  const needle = q.trim().toLowerCase();
+  const filtered = needle ? clients.filter((c) => c.name.toLowerCase().includes(needle)) : clients;
+  const close = () => {
+    setOpen(false);
+    setQ('');
+  };
+  return (
+    <View style={{ paddingHorizontal: 12, paddingTop: 4, paddingBottom: 8 }}>
+      <Pressable
+        onPress={() => {
+          if (!loading) setOpen(true);
+        }}
+        disabled={loading}
+        accessibilityRole="button"
+        accessibilityLabel="Filter by client"
+        style={({ pressed }) => [
+          {
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingVertical: 10,
+            paddingHorizontal: 14,
+            borderRadius: 999,
+            borderWidth: 1,
+            borderColor: colors.border,
+            backgroundColor: colors.white,
+          },
+          pressed && { opacity: 0.9 },
+        ]}
+      >
+        <Text
+          numberOfLines={1}
+          style={{
+            flex: 1,
+            fontFamily: fonts.semibold,
+            fontSize: 13,
+            color: selected ? colors.black : colors.textSecondary,
+          }}
+        >
+          {triggerLabel}
+        </Text>
+        <Icon name="chevronDown" size={16} color={colors.textSecondary} />
+      </Pressable>
+
+      <Modal visible={open} transparent animationType="fade" onRequestClose={close}>
+        <Pressable
+          style={{ flex: 1, backgroundColor: 'rgba(10,10,10,0.42)', justifyContent: 'flex-end' }}
+          onPress={close}
+        >
+          <Pressable
+            style={{
+              backgroundColor: colors.white,
+              borderTopLeftRadius: 20,
+              borderTopRightRadius: 20,
+              paddingBottom: 24,
+              maxHeight: '70%',
+            }}
+            onPress={() => undefined}
+          >
+            <View style={{ alignItems: 'center', paddingTop: 8 }}>
+              <View
+                style={{ width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2 }}
+              />
+            </View>
+            <Text
+              style={{
+                fontFamily: fonts.bold,
+                fontSize: 13,
+                color: colors.textSecondary,
+                textTransform: 'uppercase',
+                letterSpacing: 0.8,
+                paddingHorizontal: 20,
+                paddingTop: 8,
+                paddingBottom: 8,
+              }}
+            >
+              Filter by client
+            </Text>
+            <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+              <Input
+                icon="search"
+                value={q}
+                onChange={setQ}
+                placeholder="Search clients"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+            <FlatList
+              data={[null as string | null, ...filtered.map((c) => c.id)]}
+              keyExtractor={(v) => v ?? '__all__'}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) => {
+                const c = item ? clients.find((x) => x.id === item) : null;
+                const label = c ? c.name : 'All clients';
+                const active = (value ?? null) === item;
+                return (
+                  <Pressable
+                    onPress={() => {
+                      onChange(item);
+                      close();
+                    }}
+                    style={({ pressed }) => [
+                      {
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        paddingHorizontal: 20,
+                        paddingVertical: 14,
+                      },
+                      active && { backgroundColor: colors.surface },
+                      pressed && { opacity: 0.88 },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        flex: 1,
+                        fontFamily: fonts.semibold,
+                        fontSize: 15,
+                        color: colors.black,
+                      }}
+                    >
+                      {label}
+                    </Text>
+                    {active ? <Icon name="check" size={18} color={colors.black} /> : null}
+                  </Pressable>
+                );
+              }}
+              ItemSeparatorComponent={() => (
+                <View style={{ height: 1, backgroundColor: colors.border }} />
+              )}
+              ListEmptyComponent={
+                <Text
+                  style={{
+                    fontFamily: fonts.medium,
+                    fontSize: 13,
+                    color: colors.textSecondary,
+                    padding: 20,
+                  }}
+                >
+                  No clients match “{q.trim()}”.
+                </Text>
+              }
             />
           </Pressable>
         </Pressable>

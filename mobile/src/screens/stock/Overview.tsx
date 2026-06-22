@@ -16,6 +16,7 @@ import { useCurrentUser } from '@/hooks/useAuth';
 import {
   listCurrentStock,
   groupByClient,
+  mergeClientsWithStockGroups,
   type StockMatrixRow,
   type ClientStockGroup,
 } from '@/services/stock';
@@ -42,6 +43,7 @@ import {
   canAdjustOwnStock,
 } from '@/lib/permissions';
 import { getHolderStats, getOverviewStats, type HolderStats } from '@/lib/stock-helpers';
+import { ClientStockCard } from '@/components/stock/ClientStockCard';
 import { useBreakpoint } from '@/lib/useBreakpoint';
 
 type Tab = 'holder' | 'client';
@@ -294,7 +296,7 @@ export function StockOverview({ basePath }: { basePath: StockBasePath }) {
           data={clientGroups}
           keyExtractor={(c) => c.client_id}
           renderItem={({ item }) => (
-            <ClientCard
+            <ClientStockCard
               group={item}
               onPress={() =>
                 router.push(
@@ -614,62 +616,6 @@ function ActionRow({
   );
 }
 
-// --- Client card (unchanged, kept for the "By client" tab) ------------------
-
-function ClientCard({ group, onPress }: { group: ClientStockGroup; onPress: () => void }) {
-  const out = group.total_qty === 0;
-  return (
-    <Pressable onPress={onPress} style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}>
-      <Card>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontFamily: fonts.bold, fontSize: 15, color: colors.black }}>
-              {group.client_name}
-            </Text>
-            <Text
-              style={{
-                fontFamily: fonts.medium,
-                fontSize: 12,
-                color: colors.textSecondary,
-                marginTop: 2,
-              }}
-            >
-              {out
-                ? 'Nothing in stock right now'
-                : `${group.products_count} ${group.products_count === 1 ? 'product' : 'products'} · ${group.warehouse_qty} warehouse · ${group.agents_qty} with agents`}
-            </Text>
-          </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            <Text
-              style={{
-                fontFamily: fonts.extrabold,
-                fontSize: 20,
-                letterSpacing: -0.5,
-                color: out ? colors.red : colors.black,
-              }}
-            >
-              {group.total_qty}
-            </Text>
-            <Text
-              style={{
-                fontFamily: fonts.bold,
-                fontSize: 10,
-                color: colors.textSecondary,
-                letterSpacing: 0.6,
-                textTransform: 'uppercase',
-                marginTop: 2,
-              }}
-            >
-              total
-            </Text>
-          </View>
-          <Icon name="chevronRight" size={16} color={colors.textSecondary} />
-        </View>
-      </Card>
-    </Pressable>
-  );
-}
-
 // --- Builders / utilities ----------------------------------------------------
 
 /** Build the holder list — one entry per seeded holder (active warehouse PLACES
@@ -711,26 +657,6 @@ function buildHolders(rows: StockMatrixRow[], seedUsers: AppUser[]): Holder[] {
     if (aHas !== bHas) return aHas ? -1 : 1;
     return a.display_name.localeCompare(b.display_name);
   });
-}
-
-function mergeClientsWithStockGroups(
-  stockGroups: ClientStockGroup[],
-  clients: Client[],
-): ClientStockGroup[] {
-  const byId = new Map(stockGroups.map((g) => [g.client_id, g]));
-  for (const c of clients) {
-    if (byId.has(c.id)) continue;
-    byId.set(c.id, {
-      client_id: c.id,
-      client_name: c.name,
-      products: [],
-      total_qty: 0,
-      warehouse_qty: 0,
-      agents_qty: 0,
-      products_count: 0,
-    });
-  }
-  return Array.from(byId.values()).sort((a, b) => a.client_name.localeCompare(b.client_name));
 }
 
 function formatNumber(n: number): string {

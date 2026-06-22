@@ -39,8 +39,10 @@ export default function WarehouseHome() {
 
   // The holder = the warehouse PLACE this staff member acts on. For a staff
   // user that IS the place, warehouseId is null and we fall back to userId.
-  // RLS already restricts rows to (own warehouse_id, own user_id) so we
-  // don't risk leaking — this is just deciding which of those two to show.
+  // NOTE: current_stock is NOT row-restricted to this place — the view isn't
+  // security_invoker, so it returns the full matrix to any authenticated user.
+  // The scoping below (holderRows) is purely client-side: this home shows only
+  // the place's own stock. The cross-holder view lives on the By-client screen.
   const holderId = user.warehouseId ?? user.userId;
 
   const allRows = useMemo(() => stockQ.data ?? [], [stockQ.data]);
@@ -222,6 +224,41 @@ export default function WarehouseHome() {
                     {availableRows.length === 0
                       ? 'Nothing confirmed yet today'
                       : `${availableUnits} ${availableUnits === 1 ? 'unit' : 'units'} across ${availableAgents} ${availableAgents === 1 ? 'agent' : 'agents'}`}
+                  </Text>
+                </View>
+                <Icon name="chevronRight" size={20} color={colors.textSecondary} />
+              </View>
+            </Card>
+
+            {/* Stock-by-client roll-up — how much of each vendor's product is in
+                the system (warehouse + agents), to decide what to pull/send. */}
+            <Card dense onPress={() => router.push('/(warehouse)/by-client')}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 20,
+                    backgroundColor: colors.surface,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Icon name="package" size={18} color={colors.black} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>
+                    Stock by client
+                  </Text>
+                  <Text
+                    style={{
+                      fontFamily: fonts.medium,
+                      fontSize: 12,
+                      color: colors.textSecondary,
+                      marginTop: 2,
+                    }}
+                  >
+                    How much of each vendor’s stock is in the system
                   </Text>
                 </View>
                 <Icon name="chevronRight" size={20} color={colors.textSecondary} />

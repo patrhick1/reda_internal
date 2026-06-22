@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import type { Database } from '@/types/database.gen';
+import type { Client } from './clients';
 
 export type CurrentStockRow = Database['public']['Views']['current_stock']['Row'];
 
@@ -270,6 +271,31 @@ export function groupByClient(rows: StockMatrixRow[]): ClientStockGroup[] {
       };
     })
     .sort((a, b) => a.client_name.localeCompare(b.client_name));
+}
+
+/** Merge every (active) client over the stock groups so a vendor with no
+ *  current stock still surfaces as an explicit zero row — "do we have any
+ *  Decency?" resolves to "Nothing in stock" rather than a missing card.
+ *  Shared by the Stock Overview "By client" tab and the warehouse By-client
+ *  screen so the two can't drift. */
+export function mergeClientsWithStockGroups(
+  stockGroups: ClientStockGroup[],
+  clients: Client[],
+): ClientStockGroup[] {
+  const byId = new Map(stockGroups.map((g) => [g.client_id, g]));
+  for (const c of clients) {
+    if (byId.has(c.id)) continue;
+    byId.set(c.id, {
+      client_id: c.id,
+      client_name: c.name,
+      products: [],
+      total_qty: 0,
+      warehouse_qty: 0,
+      agents_qty: 0,
+      products_count: 0,
+    });
+  }
+  return Array.from(byId.values()).sort((a, b) => a.client_name.localeCompare(b.client_name));
 }
 
 export type CreateAdjustmentInput = {
