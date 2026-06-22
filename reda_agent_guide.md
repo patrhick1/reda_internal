@@ -120,22 +120,22 @@ there first delivers it. Two pushes you might see:
   Another agent already delivered. You don't need to do anything — the
   row is now cancelled in your list.
 
-### "Not my delivery" — when a row shouldn't be on your list
+### "Not my route" — when a row shouldn't be on your list
 
-Sometimes a delivery shows up on your list that isn't yours — wrong agent
-named in the forward, or you've tried for hours and the customer can't be
-reached and you're done with it. Use **Update status → "Not my delivery"**.
+Sometimes a delivery shows up on your list that isn't yours — the wrong agent
+was named in the forward, or it's outside your area. Tap the **⚠ flag** on the
+delivery and choose **"Not my route"**.
 
-- The row closes for you, but the **order itself stays live** for any other
-  agent in the race — you're not killing their delivery, just yours.
-- You'll be asked for a short reason ("not my customer", "couldn't reach
-  after 4 calls", etc.) — this helps Uzo spot patterns in the contractor's
-  forwards.
-- If you change your mind later, you can reopen it yourself (Update status →
-  back to Pending, with a reason).
+- This **doesn't change the order's status or close it** — it just alerts the
+  office. Uzo or a dispatcher reassigns the order to the right agent, so it
+  stays alive and still gets delivered.
+- You can add a short note ("not my customer", "wrong area") — this helps Uzo
+  spot patterns in the contractor's forwards.
+- Once ops reassigns it, the row simply drops off your list — nothing else for
+  you to do.
 
-Don't use **Cancelled** for this — that one means "the customer killed the
-order" and it closes everyone else's row too.
+Don't use **Customer Cancelled** for this — that one means "the customer killed
+the order" and it closes everyone else's row too.
 
 Both mean: stand down. Treat them as good news (one less stop).
 
