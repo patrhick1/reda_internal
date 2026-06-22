@@ -8,6 +8,7 @@ export type IssueType =
   | 'payment_dispute'
   | 'product_issue'
   | 'not_my_route'
+  | 'no_product'
   | 'other';
 
 export type AuthorRole = 'agent' | 'admin' | 'dispatcher' | 'rep';
@@ -245,6 +246,7 @@ export const ISSUE_LABELS: Record<IssueType, string> = {
   payment_dispute: 'Payment dispute',
   product_issue: 'Product issue',
   not_my_route: 'Not my route',
+  no_product: 'No product',
   other: 'Other',
 };
 
@@ -258,6 +260,10 @@ export const ISSUE_DEFAULT_STATUS: Record<IssueType, string | null> = {
   // 'Not my route' is a routing flag, not a customer-side outcome — the order is
   // fine, it just needs reassigning. No status change; ops gets the flag + reassigns.
   not_my_route: null,
+  // 'No product' sets the (now non-terminal soft-fail) no_product status: the
+  // rider isn't carrying the product. The flag seeds an ops thread so Uzo knows
+  // what to send; the order stays alive and is revertible once product arrives.
+  no_product: 'no_product',
   other: null,
 };
 
@@ -269,6 +275,7 @@ export const ISSUE_STATUS_OVERRIDES: Record<IssueType, string[]> = {
   payment_dispute: [],
   product_issue: [],
   not_my_route: [],
+  no_product: [],
   other: ['follow_up'],
 };
 

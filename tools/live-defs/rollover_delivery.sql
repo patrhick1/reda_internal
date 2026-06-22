@@ -67,7 +67,11 @@ begin
     'not_connecting','number_busy','switched_off'
   );
 
-  select sd.category in ('initial','soft_failure')
+  -- no_product is a soft_failure but is Reda's transient supply gap, not the
+  -- customer's fault — exclude it from the carry-cap so it rolls forward
+  -- indefinitely (rollover_count frozen) until it's delivered or explicitly
+  -- cancelled, instead of auto-closing to 'unserious' (Uzo, 2026-06-22).
+  select sd.category in ('initial','soft_failure') and v_old.current_status <> 'no_product'
     into v_cap_applies
     from public.delivery_status_defs sd
    where sd.status = v_old.current_status;

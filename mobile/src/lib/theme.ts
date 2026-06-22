@@ -97,7 +97,7 @@ export const STATUS_META: Record<
   },
   failed_delivery: { label: 'Failed', tone: 'gray', desc: 'Could not deliver' },
   unserious: { label: 'Unserious', tone: 'gray', desc: 'Customer not serious' },
-  no_product: { label: 'No product', tone: 'gray', desc: 'Out of stock' },
+  no_product: { label: 'No product', tone: 'amber', desc: "Rider doesn't have the product" },
   abandoned: { label: 'Abandoned', tone: 'gray', desc: 'Gave up on this order' },
   deferred_to_client: {
     label: 'Deferred to client',
@@ -178,6 +178,10 @@ export const STATUS_GROUPS: Record<'active' | 'soft' | 'done' | 'closed', string
     'tomorrow',
     'postponed',
     'follow_up',
+    // no_product is a transient supply blocker (rider isn't carrying the
+    // product), not an order outcome — a non-terminal soft-fail (Uzo,
+    // 2026-06-22). Revertible once Uzo sends the product; never cascades.
+    'no_product',
   ],
   done: ['delivered'],
   closed: [
@@ -185,7 +189,6 @@ export const STATUS_GROUPS: Record<'active' | 'soft' | 'done' | 'closed', string
     'agent_cancelled',
     'failed_delivery',
     'unserious',
-    'no_product',
     'abandoned',
     'deferred_to_client',
     'rolled_over',
@@ -235,6 +238,11 @@ export const STATUS_HIDDEN_FROM_PICKER = new Set<string>([
   // terminally cancelled. DB transitions + status def kept intact for historical
   // rows and the rollover sibling-exclusion machinery.
   'agent_cancelled',
+  // 'No product' (no_product) is entered via the "No product" flag (which seeds
+  // an ops thread so Uzo knows what to send), not the plain status list — keeps
+  // it off the rider's everyday status options (Uzo, 2026-06-22). Still a valid,
+  // revertible soft-fail status; reverting it back to available uses the picker.
+  'no_product',
 ]);
 
 export function statusBucket(s: string | null | undefined): keyof typeof STATUS_GROUPS {
@@ -259,8 +267,8 @@ export function isAssignedActive(d: {
 
 /** Statuses for which a rep is NOT expected to send the client a status update.
  *  Everything else — every "blue" worked active status (`available` /
- *  `available_evening`), every "yellow" soft-fail, AND every non-delivered terminal
- *  outcome (`cancelled`, `failed_delivery`, `no_product`, `abandoned`,
+ *  `available_evening`), every "yellow" soft-fail (incl. `no_product`), AND every
+ *  non-delivered terminal outcome (`cancelled`, `failed_delivery`, `abandoned`,
  *  `deferred_to_client`, `unserious`, `picked_up`, `waybilled`) — IS something the
  *  client should hear about (Uzo, 2026-06-20: "terminal statuses that aren't
  *  delivered should be notified"). Exempt, by design:
