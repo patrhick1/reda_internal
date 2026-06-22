@@ -115,15 +115,19 @@ export function MarkDeliveredSheet({
     () =>
       lines.map((l) => {
         const qd = Number(delivered[l.productCatalogId] ?? '');
-        const valid = Number.isInteger(qd) && qd > 0;
+        // 0 is allowed — a multi-product order can be partially delivered (the
+        // customer takes one product, not the other). The undelivered line stays
+        // on the agent's hand. We only require a non-negative integer per line;
+        // the "at least one delivered" rule is enforced on the total at submit.
+        const validQty = Number.isInteger(qd) && qd >= 0;
         const oh = onHand?.[l.productCatalogId];
-        const short = valid && oh != null && qd > oh;
-        return { ...l, qd, valid, onHand: oh, short };
+        const short = qd > 0 && oh != null && qd > oh;
+        return { ...l, qd, validQty, onHand: oh, short };
       }),
     [lines, delivered, onHand],
   );
   const anyShort = perLine.some((p) => p.short);
-  const totalDelivered = perLine.reduce((s, p) => s + (p.valid ? p.qd : 0), 0);
+  const totalDelivered = perLine.reduce((s, p) => s + (p.validQty && p.qd > 0 ? p.qd : 0), 0);
 
   // All money fields are per-delivery. Delivered quantity tracks stock movement
   // and partial state; it does NOT scale the money.
@@ -148,14 +152,20 @@ export function MarkDeliveredSheet({
       return;
     }
     for (const p of perLine) {
-      if (!p.valid) {
-        setError(`Enter a positive quantity for ${p.name}`);
+      if (!p.validQty) {
+        setError(`Enter a valid quantity for ${p.name} (0 if not delivered)`);
         return;
       }
-      if (p.onHand != null && p.qd > p.onHand) {
+      if (p.qd > 0 && p.onHand != null && p.qd > p.onHand) {
         setError(`You only have ${p.onHand} ${p.name} on hand`);
         return;
       }
+    }
+    // At least one product must actually be delivered — an all-zero submit is
+    // not a delivery (the server also requires the total > 0).
+    if (totalDelivered <= 0) {
+      setError('Enter how many were delivered — at least one item.');
+      return;
     }
     if (!isVendorDirect && (!Number.isFinite(paidNum) || paidNum < 0)) {
       setError('Paid must be ≥ 0');
