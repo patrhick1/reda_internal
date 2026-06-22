@@ -48,7 +48,7 @@ const BUCKET_ACCENT: Record<keyof typeof STATUS_GROUPS, string> = {
 // already assigned to this agent). Mirrors the ops list's bucket definitions.
 // 'postponed' is the exception: it's a FUTURE-dated slice (orders this agent
 // pushed to a later day) fetched via a separate query, not part of today's set.
-type Filter = 'all' | 'active' | 'available' | 'soft' | 'postponed' | 'done' | 'closed';
+type Filter = 'all' | 'pending' | 'active' | 'available' | 'soft' | 'postponed' | 'done' | 'closed';
 
 function todayLagosLabel(): string {
   const lagos = new Date(new Date().getTime() + 60 * 60 * 1000);
@@ -182,6 +182,11 @@ export default function AgentToday() {
   const buckets = useMemo(
     () => ({
       all,
+      // The un-called pile: orders still 'pending' are awaiting the rider's
+      // first action (a call). Surfaced as its own chip so riders can't skip
+      // them — it's a subset of Active (which also holds available/postponed),
+      // the same way Available is a subset of Active.
+      pending: all.filter((d) => d.current_status === 'pending'),
       // A 'postponed' row in the today list is, by definition, due TODAY (the
       // list is date-scoped to today) — so present it as live work under Active,
       // not buried under Soft fail. It keeps its amber Postponed pill. Future-
@@ -212,6 +217,7 @@ export default function AgentToday() {
   const list = filter === 'postponed' ? postponedRows : buckets[filter];
   const filterOptions = [
     { id: 'all' as const, label: 'All', count: buckets.all.length },
+    { id: 'pending' as const, label: 'Pending', count: buckets.pending.length },
     { id: 'active' as const, label: 'Active', count: buckets.active.length },
     { id: 'available' as const, label: 'Available', count: buckets.available.length },
     { id: 'soft' as const, label: 'Soft fail', count: buckets.soft.length },
