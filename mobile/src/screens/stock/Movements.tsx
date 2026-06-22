@@ -61,7 +61,7 @@ export const KIND_CATEGORIES: KindCategory[] = [
   { id: 'issued', label: 'Issued', kinds: ['warehouse_issue'] },
   { id: 'returns', label: 'Returns', kinds: ['warehouse_return'] },
   { id: 'transfers', label: 'Transfers', kinds: ['transfer'] },
-  { id: 'delivered', label: 'Delivered', kinds: ['delivered'] },
+  { id: 'delivered', label: 'Delivered', kinds: ['delivered', 'delivery_returned'] },
   {
     id: 'adjustments',
     label: 'Adjustments',
@@ -584,6 +584,9 @@ export function iconFor(kind: MovementEventKind): IconName {
       return 'arrowDown';
     case 'delivered':
       return 'truck';
+    case 'delivery_returned':
+      // Stock coming back onto the shelf after a delivered order was reverted.
+      return 'arrowDown';
     case 'correction':
     case 'found':
       return 'edit';
@@ -657,6 +660,8 @@ function subtitleFor(row: StockMovement, holderId: string): string {
       return row.actor_name ? `Found · by ${row.actor_name}` : 'Found';
     case 'delivered':
       return row.customer_name ? `Delivered to ${row.customer_name}` : 'Delivered';
+    case 'delivery_returned':
+      return row.customer_name ? `Delivery reverted · ${row.customer_name}` : 'Delivery reverted';
     default:
       return row.event_kind;
   }

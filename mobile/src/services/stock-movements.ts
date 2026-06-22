@@ -40,7 +40,9 @@ export type MovementEventKind =
   | 'theft'
   | 'damaged'
   | 'found'
-  | 'delivered';
+  | 'delivered'
+  // [Phase 2] the +qty release written when a delivered order is reverted.
+  | 'delivery_returned';
 
 export type StockMovement = {
   source: MovementSource;
