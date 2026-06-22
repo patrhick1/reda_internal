@@ -20,7 +20,9 @@ import {
   getDelivery,
   listDeliveryHistoryChain,
   listStatusDefs,
+  getSiblingContact,
   type DeliveryChainHistoryRow,
+  type SiblingContact,
 } from '@/services/deliveries';
 import { listSubAgents } from '@/services/users';
 import { canHandoffToSubAgent } from '@/lib/permissions';
@@ -47,6 +49,10 @@ export default function AgentDeliveryDetail() {
   const deliveryQ = useAsync(() => getDelivery(user.role, id), [user.role, id]);
   const historyQ = useAsync(() => listDeliveryHistoryChain(id), [id]);
   const defsQ = useAsync(() => listStatusDefs(), []);
+  // "Another agent is also on this order" — the cross-agent race. Surfaces the
+  // sibling's latest contact so this agent doesn't call the customer a second
+  // time (see get_sibling_contact). Null when there's no worked sibling.
+  const siblingQ = useAsync<SiblingContact | null>(() => getSiblingContact(id), [id]);
 
   const [markOpen, setMarkOpen] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
@@ -74,6 +80,7 @@ export default function AgentDeliveryDetail() {
     useCallback(() => {
       deliveryQ.reload();
       historyQ.reload();
+      siblingQ.reload();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []),
   );
@@ -220,6 +227,16 @@ export default function AgentDeliveryDetail() {
           gap: 12,
         }}
       >
+        {/* Sibling-contact banner: another agent has the SAME order (the allowed
+            cross-agent race) and already reached/tried the customer. Shown while
+            this row is still actionable so the agent coordinates instead of
+            calling the customer a second time. */}
+        {siblingQ.data && !isTerminal ? (
+          <Banner tone="warn" icon="user" title="Also being handled">
+            {siblingContactLine(siblingQ.data)}
+          </Banner>
+        ) : null}
+
         {/* Handoff banner (Gap 5): surfaced when this order was last worked by
             someone else — i.e. reassigned to this agent. */}
         {latestHistory && handedToYou ? (
@@ -783,6 +800,21 @@ const kicker = {
   letterSpacing: 0.8,
   textTransform: 'uppercase' as const,
 };
+
+// One-line "another agent is also on this order" message. The verb is keyed off
+// the sibling's status: fulfilled = handled, active = reached, soft-fail = tried.
+function siblingContactLine(s: SiblingContact): string {
+  const when = s.worked_at ? ` · ${formatDateTime(s.worked_at)}` : '';
+  const fulfilled =
+    s.status === 'delivered' || s.status === 'picked_up' || s.status === 'waybilled';
+  if (fulfilled) {
+    return `${s.agent_name} already ${s.status_label.toLowerCase()} this order${when}. It's being handled — check with the team before calling.`;
+  }
+  if (s.category === 'active') {
+    return `${s.agent_name} already reached this customer (${s.status_label})${when}. Check with the team before calling — they may already have been contacted.`;
+  }
+  return `${s.agent_name} already tried this customer (${s.status_label})${when}. Coordinate before calling so the customer isn't called twice.`;
+}
 
 function openMaps(addr: string | null | undefined) {
   if (!addr) return;

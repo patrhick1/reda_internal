@@ -2632,6 +2632,18 @@ export type Database = {
           to_status: string
         }[]
       }
+      get_sibling_contact: {
+        Args: { p_delivery_id: string }
+        Returns: {
+          agent_id: string
+          agent_name: string
+          category: string
+          sibling_delivery_id: string
+          status: string
+          status_label: string
+          worked_at: string
+        }[]
+      }
       list_location_changes: {
         Args: { p_states?: string[] }
         Returns: {

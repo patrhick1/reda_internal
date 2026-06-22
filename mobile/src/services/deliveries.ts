@@ -950,6 +950,25 @@ export async function listDeliveryHistoryChain(
   return (data ?? []) as DeliveryChainHistoryRow[];
 }
 
+export type SiblingContact =
+  Database['public']['Functions']['get_sibling_contact']['Returns'][number];
+
+/** "Another agent is also on this order" — the most-recently-worked SIBLING
+ *  delivery (same customer order, different agent — the allowed cross-agent
+ *  race) that has already been contacted (active / soft-fail) or fulfilled.
+ *  Returns null when there's no sibling or none has been worked yet. Backed by
+ *  a SECURITY DEFINER RPC so it sees the sibling row RLS hides from the agent;
+ *  powers the agent-detail "coordinate before calling" banner so the customer
+ *  isn't called twice. */
+export async function getSiblingContact(deliveryId: string): Promise<SiblingContact | null> {
+  const { data, error } = await supabase.rpc('get_sibling_contact', {
+    p_delivery_id: deliveryId,
+  });
+  if (error) throw error;
+  const rows = (data ?? []) as SiblingContact[];
+  return rows[0] ?? null;
+}
+
 // State machine reads — same surface for everyone, RLS allows select-all on these tables.
 
 export async function listStatusDefs(): Promise<DeliveryStatusDef[]> {
