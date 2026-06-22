@@ -383,11 +383,11 @@ export default function AgentToday() {
         }}
         ItemSeparatorComponent={SeparatorH12}
         ListHeaderComponent={
-          <SectionHeader>
-            {filter === 'postponed'
-              ? `Postponed · ${list.length} ${list.length === 1 ? 'order' : 'orders'}`
-              : `Today · ${list.length} ${list.length === 1 ? 'stop' : 'stops'}`}
-          </SectionHeader>
+          filter === 'postponed' ? (
+            <SectionHeader>
+              {`Postponed · ${list.length} ${list.length === 1 ? 'order' : 'orders'}`}
+            </SectionHeader>
+          ) : null
         }
         ListEmptyComponent={
           filter === 'postponed' ? (
