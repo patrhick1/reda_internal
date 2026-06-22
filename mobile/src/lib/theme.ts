@@ -78,7 +78,13 @@ export const STATUS_META: Record<
   number_busy: { label: 'Number busy', tone: 'amber', desc: 'Line busy' },
   switched_off: { label: 'Switched off', tone: 'amber', desc: 'Phone off' },
   not_connecting: { label: 'Number not reachable', tone: 'amber', desc: 'Number not reachable' },
-  not_around: { label: 'Not around', tone: 'amber', desc: 'Customer not at location' },
+  not_around: {
+    label: 'Not around',
+    tone: 'gray',
+    desc: "Customer doesn't want it — closes the order",
+    warning:
+      'Closes the whole order — every agent racing this customer is cancelled. Use only when the customer does not want the product. If they want it later, use Postponed instead.',
+  },
   will_call_back: { label: 'Will call back', tone: 'amber', desc: 'Customer asked to call later' },
   not_available: { label: 'Not available', tone: 'amber', desc: "Customer can't take it now" },
   tomorrow: { label: 'Tomorrow', tone: 'amber', desc: 'Customer rescheduled' },
@@ -172,7 +178,6 @@ export const STATUS_GROUPS: Record<'active' | 'soft' | 'done' | 'closed', string
     'number_busy',
     'switched_off',
     'not_connecting',
-    'not_around',
     'will_call_back',
     'not_available',
     'tomorrow',
@@ -187,6 +192,11 @@ export const STATUS_GROUPS: Record<'active' | 'soft' | 'done' | 'closed', string
   closed: [
     'cancelled',
     'agent_cancelled',
+    // 'Not around' reclassified terminal (Uzo, 2026-06-22): saying "not around"
+    // means the customer doesn't want the product, not "try later" — so it closes
+    // the order outright and cascade-cancels open siblings (a customer who wants it
+    // postpones instead). Mirrors delivery_status_defs.category='terminal'.
+    'not_around',
     'failed_delivery',
     'unserious',
     'abandoned',

@@ -286,10 +286,12 @@ export const ISSUE_STATUS_OVERRIDES: Record<IssueType, string[]> = {
  *  intentionally only covers the customer-unreachable subset of soft_failure;
  *  customer-deferral statuses (tomorrow / postponed / will_call_back) and
  *  in-transit statuses (picked_up / waybilled) keep using the plain status
- *  RPC because they don't need ops escalation. */
+ *  RPC because they don't need ops escalation. `not_around` is intentionally
+ *  absent: it was reclassified terminal (Uzo, 2026-06-22) — picking it closes the
+ *  order (and cascade-cancels siblings), so there is no customer left to reach and
+ *  no ops thread to seed; it routes through the plain status RPC. */
 export const STATUS_AUTO_ISSUE: Record<string, IssueType> = {
   not_answering: 'cant_reach_client',
-  not_around: 'cant_reach_client',
   not_available: 'cant_reach_client',
   not_connecting: 'cant_reach_client',
   number_busy: 'cant_reach_client',
