@@ -128,6 +128,16 @@ export default function AdminLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="rep-performance"
+        options={{
+          title: 'Rep performance',
+          tabBarIcon: ({ color, focused }) => (
+            <Icon name="users" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
+          ),
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }

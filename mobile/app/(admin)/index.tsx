@@ -178,6 +178,12 @@ export default function AdminHome() {
             accent={colors.black}
             onPress={() => router.push('/(admin)/catalog')}
           />
+          <QuickAction
+            icon="users"
+            label="Rep performance"
+            accent={colors.black}
+            onPress={() => router.push('/(admin)/rep-performance')}
+          />
         </View>
 
         {/* Recent activity */}
