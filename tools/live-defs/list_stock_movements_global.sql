@@ -20,6 +20,12 @@
 --
 -- Auth: ops only (admin/dispatcher/rep via is_admin_or_dispatcher()). Agents and
 -- warehouse keep the per-holder screen and are denied here.
+--
+-- Keyset note: event_id is a stock_adjustments.id in the adj branch and a
+-- delivery_items.id in the del branch. The cross-branch tiebreak therefore only
+-- matters when an adjustment and a delivery share the EXACT same event_at (to the
+-- microsecond) — effectively never. Same trade-off as the per-holder
+-- list_stock_movements; documented rather than engineered around.
 
 -- Indexes (run CONCURRENTLY, outside a transaction):
 create index concurrently if not exists idx_stock_adj_created_at_id

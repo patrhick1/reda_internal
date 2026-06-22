@@ -15,7 +15,7 @@
 // Pagination is keyset-cursor on (event_at, event_id), identical to Movements;
 // all four filters are server-side (the list is infinite history, so a
 // client-side filter would only narrow the loaded page).
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { SectionList, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
@@ -144,11 +144,6 @@ export function GlobalMovements({
     }, [loadFirstPage]),
   );
 
-  // Drop a product filter that no longer belongs to the selected client.
-  useEffect(() => {
-    setProductId(null);
-  }, [effectiveClientId]);
-
   const sections = useMemo(() => {
     const groups: { key: string; title: string; data: GlobalMovement[] }[] = [];
     let current: (typeof groups)[number] | null = null;
@@ -215,7 +210,13 @@ export function GlobalMovements({
               label="Client"
               value={clientFilterId ?? ALL}
               options={clientOptions}
-              onChange={(v) => setClientFilterId(v === ALL ? null : v)}
+              onChange={(v) => {
+                setClientFilterId(v === ALL ? null : v);
+                // A product belongs to one client, so a vendor change can't keep
+                // the old product filter — reset it here (not via an effect, which
+                // would double-fire the page fetch).
+                setProductId(null);
+              }}
               searchable
               searchPlaceholder="Search clients"
             />
@@ -259,7 +260,11 @@ export function GlobalMovements({
             <Empty
               icon="filter"
               title="No matching movements"
-              sub="Try a different product, client, holder, or type."
+              sub={
+                clientMode
+                  ? 'Try a different product, holder, or type.'
+                  : 'Try a different product, client, holder, or type.'
+              }
             />
           ) : (
             <Empty

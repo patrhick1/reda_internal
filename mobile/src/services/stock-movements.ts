@@ -217,9 +217,30 @@ export async function listGlobalStockMovements(
 
   if (error) throw error;
 
-  const rows = (data ?? []) as unknown as Array<
-    Record<keyof GlobalMovement, GlobalMovement[keyof GlobalMovement] | null>
-  >;
+  // Explicit raw-row shape (matches listStockMovements' style) so the null-guard
+  // below narrows each required field and the mapper needs no per-field casts.
+  const rows = (data ?? []) as unknown as Array<{
+    source: MovementSource | null;
+    event_id: string | null;
+    event_at: string | null;
+    event_kind: MovementEventKind | null;
+    product_catalog_id: string | null;
+    product_name: string | null;
+    quantity_delta: number | null;
+    quantity_ordered: number | null;
+    notes: string | null;
+    actor_id: string | null;
+    actor_name: string | null;
+    counterparty_holder_id: string | null;
+    counterparty_holder_name: string | null;
+    related_adjustment_id: string | null;
+    delivery_id: string | null;
+    customer_name: string | null;
+    holder_id: string | null;
+    holder_name: string | null;
+    client_id: string | null;
+    client_name: string | null;
+  }>;
 
   return rows
     .map((row): GlobalMovement | null => {
@@ -236,26 +257,26 @@ export async function listGlobalStockMovements(
         return null;
       }
       return {
-        source: row.source as MovementSource,
-        event_id: row.event_id as string,
-        event_at: row.event_at as string,
-        event_kind: row.event_kind as MovementEventKind,
-        product_catalog_id: row.product_catalog_id as string,
-        product_name: row.product_name as string,
-        quantity_delta: row.quantity_delta as number,
-        quantity_ordered: (row.quantity_ordered as number | null) ?? null,
-        notes: (row.notes as string | null) ?? null,
-        actor_id: (row.actor_id as string | null) ?? null,
-        actor_name: (row.actor_name as string | null) ?? null,
-        counterparty_holder_id: (row.counterparty_holder_id as string | null) ?? null,
-        counterparty_holder_name: (row.counterparty_holder_name as string | null) ?? null,
-        related_adjustment_id: (row.related_adjustment_id as string | null) ?? null,
-        delivery_id: (row.delivery_id as string | null) ?? null,
-        customer_name: (row.customer_name as string | null) ?? null,
-        holder_id: row.holder_id as string,
-        holder_name: (row.holder_name as string | null) ?? null,
-        client_id: (row.client_id as string | null) ?? null,
-        client_name: (row.client_name as string | null) ?? null,
+        source: row.source,
+        event_id: row.event_id,
+        event_at: row.event_at,
+        event_kind: row.event_kind,
+        product_catalog_id: row.product_catalog_id,
+        product_name: row.product_name,
+        quantity_delta: row.quantity_delta,
+        quantity_ordered: row.quantity_ordered,
+        notes: row.notes,
+        actor_id: row.actor_id,
+        actor_name: row.actor_name,
+        counterparty_holder_id: row.counterparty_holder_id,
+        counterparty_holder_name: row.counterparty_holder_name,
+        related_adjustment_id: row.related_adjustment_id,
+        delivery_id: row.delivery_id,
+        customer_name: row.customer_name,
+        holder_id: row.holder_id,
+        holder_name: row.holder_name,
+        client_id: row.client_id,
+        client_name: row.client_name,
       };
     })
     .filter((m): m is GlobalMovement => m !== null);
