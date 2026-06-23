@@ -94,14 +94,14 @@ export function HolderDetail({
   const goPrev = () => {
     if (!prevHolderId) return;
     router.replace({
-      pathname: `${basePath}/stock/holder/[holderId]` as const,
+      pathname: holderRoute(basePath),
       params: { holderId: prevHolderId },
     });
   };
   const goNext = () => {
     if (!nextHolderId) return;
     router.replace({
-      pathname: `${basePath}/stock/holder/[holderId]` as const,
+      pathname: holderRoute(basePath),
       params: { holderId: nextHolderId },
     });
   };
@@ -121,7 +121,7 @@ export function HolderDetail({
             <Pressable
               onPress={() =>
                 router.push({
-                  pathname: `${basePath}/stock/movements/[holderId]` as const,
+                  pathname: movementsRoute(basePath),
                   params: { holderId },
                 })
               }
@@ -356,6 +356,18 @@ function roleLabel(role: string): string {
     default:
       return role;
   }
+}
+
+function holderRoute(basePath: DetailBasePath) {
+  if (basePath === '/(warehouse)') return '/(warehouse)/holder/[holderId]' as const;
+  if (basePath === '/(admin)') return '/(admin)/stock/holder/[holderId]' as const;
+  return '/(dispatcher)/stock/holder/[holderId]' as const;
+}
+
+function movementsRoute(basePath: DetailBasePath) {
+  if (basePath === '/(warehouse)') return '/(warehouse)/movements/[holderId]' as const;
+  if (basePath === '/(admin)') return '/(admin)/stock/movements/[holderId]' as const;
+  return '/(dispatcher)/stock/movements/[holderId]' as const;
 }
 
 /** Ordered list of holder ids the prev/next arrows step through. Must mirror

@@ -230,6 +230,41 @@ export default function WarehouseHome() {
               </View>
             </Card>
 
+            {/* Agent-stock drilldown — read-only per-rider stock visibility for
+                warehouse users. Transfers and returns stay in the Transfer flow. */}
+            <Card dense onPress={() => router.push('/(warehouse)/agents')}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 20,
+                    backgroundColor: colors.surface,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Icon name="user" size={18} color={colors.black} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>
+                    Agent stock
+                  </Text>
+                  <Text
+                    style={{
+                      fontFamily: fonts.medium,
+                      fontSize: 12,
+                      color: colors.textSecondary,
+                      marginTop: 2,
+                    }}
+                  >
+                    See what each rider has on hand
+                  </Text>
+                </View>
+                <Icon name="chevronRight" size={20} color={colors.textSecondary} />
+              </View>
+            </Card>
+
             {/* Stock-by-client roll-up — how much of each vendor's product is in
                 the system (warehouse + agents), to decide what to pull/send. */}
             <Card dense onPress={() => router.push('/(warehouse)/by-client')}>
