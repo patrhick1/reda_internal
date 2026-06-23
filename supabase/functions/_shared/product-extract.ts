@@ -192,6 +192,70 @@ export function stripJsonFences(s: string): string {
   return t.trim();
 }
 
+// --- known multi-SKU combos -------------------------------------------------
+// A few catalog products were SPLIT into separate SKUs (e.g. "Oratox Capsule" +
+// "Oratox Powder"), but clients still order the SET as one line ("Oratox
+// Capsule and Powder ... 1 unit"). The LLM is inconsistent about splitting that
+// into two line items, so it often records only ONE variant — the other never
+// leaves stock and is missing from the client's delivery report.
+//
+// expandKnownCombos deterministically forces the two member SKUs whenever the
+// RAW message (the one signal the LLM can't silently drop) contains the combo
+// phrase. It is a TIGHT allowlist anchored on the exact base name + BOTH variant
+// words joined by and/&/+/,/slash — it NEVER generic-splits on "and"/"/", so it
+// cannot touch another client's product (e.g. "D&N Arabian Tea", "Wine
+// Opener/Beer Opener") and leaves a single-variant order (just "Oratox Capsule",
+// no "...and powder") untouched. Each canonical part name matches its SKU at 1.0.
+type KnownCombo = { rx: RegExp; belongsTo: RegExp; parts: [string, string] };
+
+const COMBO_SEP = String.raw`\s*(?:and|&|\+|/|,)\s*`;
+const COMBO_GAP = String.raw`[ \t.\-]*`;
+function comboRx(base: string, v1: string, v2: string): RegExp {
+  // base immediately followed (small gap) by the two variant words in EITHER
+  // order, joined by a separator — kept tight so it can't span unrelated lines.
+  return new RegExp(
+    String.raw`\b${base}\b${COMBO_GAP}(?:\b${v1}\b${COMBO_SEP}\b${v2}\b|\b${v2}\b${COMBO_SEP}\b${v1}\b)`,
+    'i',
+  );
+}
+
+export const KNOWN_COMBOS: KnownCombo[] = [
+  {
+    rx: comboRx('oratox', 'capsule', 'powder'),
+    belongsTo: /\boratox\b/i,
+    parts: ['Oratox Capsule', 'Oratox Powder'],
+  },
+  {
+    rx: comboRx('clovofresh', 'capsule', 'spray'),
+    belongsTo: /\bclovofresh\b/i,
+    parts: ['Clovofresh Capsule', 'Clovofresh Spray'],
+  },
+];
+
+/** If the raw message contains a known combo phrase, replace whatever the LLM
+ *  produced for that product with EXACTLY its two member SKUs (carrying the
+ *  combo line's quantity; price on line 1 only — record-keeping, fees are
+ *  per-delivery). Lines for other products pass through untouched. Idempotent:
+ *  if the LLM already split into the two variants, they're dropped and re-added,
+ *  so there's no duplication. */
+export function expandKnownCombos(products: LineItem[], rawText: string): LineItem[] {
+  let out = products;
+  for (const combo of KNOWN_COMBOS) {
+    if (!combo.rx.test(rawText ?? '')) continue;
+    const mine = out.filter((p) => p.product_name && combo.belongsTo.test(p.product_name));
+    if (mine.length === 0) continue;
+    const qty = Math.max(1, ...mine.map((m) => (m.quantity && m.quantity > 0 ? m.quantity : 1)));
+    const price = mine.find((m) => m.customer_price != null)?.customer_price ?? null;
+    const free = mine.every((m) => m.free === true);
+    out = out.filter((p) => !mine.includes(p));
+    out.push(
+      { product_name: combo.parts[0], quantity: qty, customer_price: price, free },
+      { product_name: combo.parts[1], quantity: qty, customer_price: null, free },
+    );
+  }
+  return out;
+}
+
 // --- per-line match disambiguation -----------------------------------------
 // Identical rules to today's single-product matcher, applied PER line item so
 // multi-product rows behave exactly like single-product rows:

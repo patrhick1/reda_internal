@@ -32,6 +32,7 @@ import {
   PRODUCT_EXTRACTION_SCHEMA,
   PRODUCT_EXTRACTION_PROMPT,
   coerceExtractedProducts,
+  expandKnownCombos,
   stripJsonFences as stripFencesShared,
   pickMatch,
   type ExtractedProducts,
@@ -520,6 +521,11 @@ Deno.serve(async (req) => {
   //    whole order must resolve to ONE client (all matched lines agree); a
   //    bundle whose lines span clients → multi-vendor → needs_review. Any
   //    unmatched line also forces needs_review — never silently collapse.
+  // [combo-split] Force known two-SKU combos ("Oratox Capsule and Powder",
+  // "Clovofresh Capsule and Spray") into BOTH member SKUs, anchored on the raw
+  // message so it works even when the LLM collapsed the set to one variant.
+  lineItems = expandKnownCombos(lineItems, row.raw_text ?? '');
+
   const lineMatches: Array<{ line: LineItem; match: ProductMatch | null; candidates: any[] }> = [];
   for (const li of lineItems) {
     const name = li.product_name?.trim();
