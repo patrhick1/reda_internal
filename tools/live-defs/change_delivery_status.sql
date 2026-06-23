@@ -199,11 +199,15 @@ begin
         from public.current_stock
        where agent_id = v_delivery.assigned_agent_id and product_catalog_id = v_guard.pid;
       if coalesce(v_on_hand, 0) < v_guard.qd then
-        raise exception 'insufficient_stock: agent has % units of product %, delivery needs %',
-          coalesce(v_on_hand, 0), v_guard.pid, v_guard.qd
+        raise exception 'insufficient_stock: agent has % units of "%", delivery needs %',
+          coalesce(v_on_hand, 0),
+          coalesce((select product_name from public.product_catalog where id = v_guard.pid), v_guard.pid::text),
+          v_guard.qd
           using errcode = 'P0001',
                 hint = jsonb_build_object('code','insufficient_stock',
-                  'product_catalog_id', v_guard.pid, 'on_hand', coalesce(v_on_hand, 0), 'needed', v_guard.qd)::text;
+                  'product_catalog_id', v_guard.pid,
+                  'product_name', (select product_name from public.product_catalog where id = v_guard.pid),
+                  'on_hand', coalesce(v_on_hand, 0), 'needed', v_guard.qd)::text;
       end if;
     end loop;
   end if;
