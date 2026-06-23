@@ -75,14 +75,16 @@ A top-of-screen health panel for a date range (default today):
 | Call | `calls` | `caller_id` | `created_at` | `related_delivery_id` | low volume today |
 | Status update (denominator) | `delivery_status_history` | `changed_by_user_id` (agent) | `effective_at` | `delivery_id`, `to_status` | the update a rep is meant to communicate |
 
-- **"Notifiable" definition (LOCKED by Greg 2026-06-22):** tie the SLA denominator to the
-  **same predicate that drives the "To notify" pill** — `awaitsClientNotification` in
-  `mobile/src/lib/theme.ts`. That is an **exclusion list**: a status update is notifiable
-  unless its `to_status` is one of `NOTIFY_EXEMPT_STATUSES` = `{pending, delivered,
-  rolled_over, agent_cancelled}`. So notifiable = available, available_evening, every
-  soft-fail, **and every non-delivered terminal** (cancelled, failed_delivery, no_product,
-  abandoned, deferred_to_client, unserious, picked_up, waybilled). The backend RPC must mirror
-  this exact exempt set (read it from one shared source of truth so the metric and the pill can
+- **"Notifiable" definition (LOCKED by Greg 2026-06-22; exempt set widened 2026-06-23):** tie
+  the SLA denominator to the **same predicate that drives the "To notify" pill** —
+  `awaitsClientNotification` in `mobile/src/lib/theme.ts`. That is an **exclusion list**: a
+  status update is notifiable unless its `to_status` is one of `NOTIFY_EXEMPT_STATUSES` =
+  `{pending, delivered, rolled_over, agent_cancelled, deferred_to_client, unserious, picked_up,
+  waybilled}` (the last four added 2026-06-23 — terminal outcomes the client doesn't need a
+  per-row ping for). So notifiable = available, available_evening, every soft-fail, **and the
+  remaining non-delivered terminals** (cancelled, failed_delivery, no_product, abandoned). The
+  backend RPC must mirror this exact exempt set (read it from one shared source of truth so the
+  metric and the pill can
   never drift apart). **Implication:** this is broader than the original "active + soft_failure"
   proposal, so the coverage % will not match the 54.6% measured in §2 (that used the narrower
   set) — recompute against the new denominator before quoting a baseline to Greg.
@@ -150,8 +152,9 @@ and dispatchers do not see it. Layout:
 
 1. **Which status updates "require" a client notification?** → **Use the "To notify" pill set.**
    Denominator = the `awaitsClientNotification` predicate (exclusion list: not pending /
-   delivered / rolled_over / agent_cancelled). See §4 for the full implication and the
-   measurement grain (per-transition). Backend mirrors the same exempt set.
+   delivered / rolled_over / agent_cancelled — **and, from 2026-06-23, not deferred_to_client /
+   unserious / picked_up / waybilled**). See §4 for the full implication and the measurement
+   grain (per-transition). Backend mirrors the same exempt set.
 2. **Target time-to-notify?** → **5 minutes.** Drives the thresholds: green ≤ 5 min,
    amber/red beyond. The live "last team action" indicator and any silence alert key off 5 min.
 3. **Live alerts vs on-demand report?** → **Implementer's choice, optimise for efficiency.**

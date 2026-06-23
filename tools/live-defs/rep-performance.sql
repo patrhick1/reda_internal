@@ -13,8 +13,9 @@
 -- SLA decisions (locked by Greg 2026-06-22, see rep_performance_scope.md):
 --   * "Notifiable" = same set as the app's "To notify" pill -> EXCLUSION list:
 --     a status transition is notifiable unless its to_status is one of
---     {pending, delivered, rolled_over, agent_cancelled}. Mirrors
---     NOTIFY_EXEMPT_STATUSES in mobile/src/lib/theme.ts. Declared ONCE below.
+--     {pending, delivered, rolled_over, agent_cancelled, deferred_to_client,
+--      unserious, picked_up, waybilled}. Mirrors NOTIFY_EXEMPT_STATUSES in
+--     mobile/src/lib/theme.ts. Declared ONCE below. (Last 4 added 2026-06-23.)
 --   * Grain = per status-history transition (no dedupe by delivery).
 --   * Time-to-notify uses changed_at (the record time, when a rep could first
 --     act), target 5 min. Admin-only (is_admin); reps/dispatchers get 42501.
@@ -138,7 +139,11 @@ declare
   -- SINGLE source of truth, mirrors mobile/src/lib/theme.ts NOTIFY_EXEMPT_STATUSES.
   -- A transition is notifiable when its to_status is NOT in this set (exclusion
   -- list -> any new customer-facing status auto-qualifies).
-  k_notify_exempt constant text[] := array['pending','delivered','rolled_over','agent_cancelled'];
+  -- deferred_to_client/unserious/picked_up/waybilled added 2026-06-23 (Uzo): these
+  -- terminal outcomes are exempt from the "To notify" pill, so drop them here too.
+  k_notify_exempt constant text[] := array[
+    'pending','delivered','rolled_over','agent_cancelled',
+    'deferred_to_client','unserious','picked_up','waybilled'];
 begin
   if not coalesce(public.is_admin(), false) then
     raise exception 'not authorised to view rep performance' using errcode = '42501';

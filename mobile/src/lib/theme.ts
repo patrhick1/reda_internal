@@ -277,11 +277,10 @@ export function isAssignedActive(d: {
 
 /** Statuses for which a rep is NOT expected to send the client a status update.
  *  Everything else — every "blue" worked active status (`available` /
- *  `available_evening`), every "yellow" soft-fail (incl. `no_product`), AND every
- *  non-delivered terminal outcome (`cancelled`, `failed_delivery`, `abandoned`,
- *  `deferred_to_client`, `unserious`, `picked_up`, `waybilled`) — IS something the
- *  client should hear about (Uzo, 2026-06-20: "terminal statuses that aren't
- *  delivered should be notified"). Exempt, by design:
+ *  `available_evening`), every "yellow" soft-fail (incl. `no_product`), AND the
+ *  non-delivered terminal outcomes that still warrant a heads-up (`cancelled`,
+ *  `failed_delivery`, `abandoned`) — IS something the client should hear about.
+ *  Exempt, by design:
  *    - `pending`     — the not-yet-worked default;
  *    - `delivered`   — relayed in the once-a-day NIGHT BATCH of delivered reports,
  *                      not per-row (the change from the 2026-06-18 behaviour where
@@ -290,14 +289,23 @@ export function isAssignedActive(d: {
  *                      on as a fresh child for the next day, so there's nothing new
  *                      to tell the client (and it would flood the queue nightly);
  *    - `agent_cancelled` — an agent passing on their own race/route row; the order is
- *                      reassigned and stays alive, so the customer was NOT cancelled.
+ *                      reassigned and stays alive, so the customer was NOT cancelled;
+ *    - `deferred_to_client`, `unserious`, `picked_up`, `waybilled` — terminal
+ *                      outcomes the client doesn't need a per-row status ping for
+ *                      (Uzo, 2026-06-23: exempt these from "To notify"). This narrows
+ *                      the 2026-06-20 "notify every non-delivered terminal" rule.
  *  Deliberately an exclusion list, not an include list, so a new customer-facing
- *  status added later auto-qualifies. */
+ *  status added later auto-qualifies. Mirrored by k_notify_exempt in
+ *  tools/live-defs/rep-performance.sql (rep-performance SLA denominator). */
 const NOTIFY_EXEMPT_STATUSES = new Set<string>([
   'pending',
   'delivered',
   'rolled_over',
   'agent_cancelled',
+  'deferred_to_client',
+  'unserious',
+  'picked_up',
+  'waybilled',
 ]);
 
 /** True when the delivery's LATEST status change is one the client should be told
