@@ -25,6 +25,10 @@ import {
   type SiblingContact,
 } from '@/services/deliveries';
 import { listSubAgents } from '@/services/users';
+import {
+  listClientNotificationsForDelivery,
+  type ClientNotificationRow,
+} from '@/services/clientNotifications';
 import { canHandoffToSubAgent } from '@/lib/permissions';
 import { AppBar, Banner, Button, Card, Empty, Icon, StatusPill } from '@/components/ui';
 import { colors, fonts, historyReasonLine, STATUS_META, TERMINAL_STATUSES } from '@/lib/theme';
@@ -48,6 +52,11 @@ export default function AgentDeliveryDetail() {
 
   const deliveryQ = useAsync(() => getDelivery(user.role, id), [user.role, id]);
   const historyQ = useAsync(() => listDeliveryHistoryChain(id), [id]);
+  // Per-status "client notified" tags (who on the ops team told the vendor, and
+  // when) keyed by status_history_id. Same source the ops detail uses; RLS lets
+  // an agent read tags for their own delivery. Read-only here — agents don't
+  // notify — so the rider can see e.g. "Client notified · Moyo" on each status.
+  const notifQ = useAsync(() => listClientNotificationsForDelivery(id), [id]);
   const defsQ = useAsync(() => listStatusDefs(), []);
   // "Another agent is also on this order" — the cross-agent race. Surfaces the
   // sibling's latest contact so this agent doesn't call the customer a second
@@ -81,6 +90,7 @@ export default function AgentDeliveryDetail() {
       deliveryQ.reload();
       historyQ.reload();
       siblingQ.reload();
+      notifQ.reload();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []),
   );
@@ -171,6 +181,7 @@ export default function AgentDeliveryDetail() {
     setUpdateOpen(false);
     deliveryQ.reload();
     historyQ.reload();
+    notifQ.reload();
   };
 
   // FlagDeliverySheet hits an RPC synchronously (not queued), so the next
@@ -181,6 +192,7 @@ export default function AgentDeliveryDetail() {
     setFlagOpen(false);
     deliveryQ.reload();
     historyQ.reload();
+    notifQ.reload();
   };
 
   return (
@@ -624,6 +636,7 @@ export default function AgentDeliveryDetail() {
                         first={i === 0}
                         last={i === arr.length - 1}
                         labelByStatus={labelByStatus}
+                        notification={notifQ.data?.get(h.id)}
                       />
                     </View>
                   </Fragment>
@@ -727,11 +740,14 @@ function HistoryRow({
   first,
   last,
   labelByStatus: _labelByStatus,
+  notification,
 }: {
   row: DeliveryChainHistoryRow;
   first: boolean;
   last: boolean;
   labelByStatus: Map<string, string>;
+  /** When ops has tagged this status "client notified", who + when. Read-only. */
+  notification?: ClientNotificationRow;
 }) {
   const reasonLine = historyReasonLine(row.to_status, row.reason);
   return (
@@ -787,6 +803,18 @@ function HistoryRow({
           >
             {row.notes}
           </Text>
+        ) : null}
+        {/* Read-only "client notified" tag — mirrors the ops detail so the rider
+            can see ops told the vendor about this status (who + when). Agents
+            never notify, so there's no "Mark notified" affordance here. */}
+        {notification ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
+            <Icon name="check" size={14} color={colors.success} />
+            <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.success }}>
+              Client notified · {notification.holderName} ·{' '}
+              {formatDateTime(notification.notifiedAt)}
+            </Text>
+          </View>
         ) : null}
       </View>
     </View>
