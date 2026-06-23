@@ -120,7 +120,7 @@ export async function markRead(deliveryId: string): Promise<void> {
  *  for TODAY, keyed by delivery_id → count. Powers the Today row dot + bottom-tab
  *  badge (see useAgentUnreadMessages).
  *
- *  Two filters do the scoping:
+ *  Three filters do the scoping:
  *   - RLS: the delivery_messages SELECT policy already restricts an agent to
  *     their own deliveries' messages, so `author_role <> 'agent' AND read_at IS
  *     NULL` returns exactly the ops replies waiting for this agent.
@@ -130,17 +130,23 @@ export async function markRead(deliveryId: string): Promise<void> {
  *     over (parent goes terminal, child is unassigned), so it's no longer the
  *     agent's live work. The embed reuses base-`deliveries` RLS (agent sees only
  *     their own assigned rows), matching the same `todayLagos()` the Today list
- *     queries with so the badge and the rows always agree. */
+ *     queries with so the badge and the rows always agree.
+ *   - terminal parent rows are ignored below because delivered/closed orders
+ *     auto-close the rider chat and should not keep unread badges alive. */
 export async function agentUnreadCounts(): Promise<Map<string, number>> {
   const { data, error } = await supabase
     .from('delivery_messages')
-    .select('delivery_id, deliveries!inner(scheduled_date)')
+    .select('delivery_id, deliveries!inner(scheduled_date, current_status)')
     .neq('author_role', 'agent')
     .is('read_at', null)
     .eq('deliveries.scheduled_date', todayLagos());
   if (error) throw error;
   const map = new Map<string, number>();
-  for (const r of (data ?? []) as { delivery_id: string }[]) {
+  for (const r of (data ?? []) as {
+    delivery_id: string;
+    deliveries: { current_status: string | null } | null;
+  }[]) {
+    if (TERMINAL_STATUSES.has(r.deliveries?.current_status ?? '')) continue;
     map.set(r.delivery_id, (map.get(r.delivery_id) ?? 0) + 1);
   }
   return map;

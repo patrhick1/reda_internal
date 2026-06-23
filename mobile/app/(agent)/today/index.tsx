@@ -351,7 +351,8 @@ export default function AgentToday() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>
-                  {unreadTotal} unread {unreadTotal === 1 ? 'message' : 'messages'} from the team
+                  {unreadRows.length} {unreadRows.length === 1 ? 'delivery' : 'deliveries'} with
+                  unread replies
                 </Text>
                 <Text
                   style={{
@@ -361,8 +362,7 @@ export default function AgentToday() {
                     marginTop: 2,
                   }}
                 >
-                  {unreadRows.length} {unreadRows.length === 1 ? 'delivery is' : 'deliveries are'}{' '}
-                  waiting on your reply
+                  {unreadTotal} unread {unreadTotal === 1 ? 'message' : 'messages'} from the team
                 </Text>
               </View>
               <Icon name="chevronRight" size={20} color={colors.textSecondary} />
