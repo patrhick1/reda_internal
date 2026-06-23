@@ -48,7 +48,16 @@ const BUCKET_ACCENT: Record<keyof typeof STATUS_GROUPS, string> = {
 // already assigned to this agent). Mirrors the ops list's bucket definitions.
 // 'postponed' is the exception: it's a FUTURE-dated slice (orders this agent
 // pushed to a later day) fetched via a separate query, not part of today's set.
-type Filter = 'all' | 'pending' | 'active' | 'available' | 'soft' | 'postponed' | 'done' | 'closed';
+type Filter =
+  | 'all'
+  | 'unread'
+  | 'pending'
+  | 'active'
+  | 'available'
+  | 'soft'
+  | 'postponed'
+  | 'done'
+  | 'closed';
 
 function todayLagosLabel(): string {
   const lagos = new Date(new Date().getTime() + 60 * 60 * 1000);
@@ -214,9 +223,19 @@ export default function AgentToday() {
       : rows;
   }, [postponedData, nameNeedle]);
 
-  const list = filter === 'postponed' ? postponedRows : buckets[filter];
+  // Today's deliveries with an unread team reply waiting on this agent. Built
+  // from the on-screen rows ∩ the shared unread map (agentUnreadCounts is already
+  // today- and RLS-scoped to this agent), so the chip count matches the rows.
+  const unreadRows = useMemo(
+    () => all.filter((d) => (d.id ? (unreadByDelivery.get(d.id) ?? 0) > 0 : false)),
+    [all, unreadByDelivery],
+  );
+
+  const list =
+    filter === 'postponed' ? postponedRows : filter === 'unread' ? unreadRows : buckets[filter];
   const filterOptions = [
     { id: 'all' as const, label: 'All', count: buckets.all.length },
+    { id: 'unread' as const, label: 'Unread', count: unreadRows.length },
     { id: 'pending' as const, label: 'Pending', count: buckets.pending.length },
     { id: 'active' as const, label: 'Active', count: buckets.active.length },
     { id: 'available' as const, label: 'Available', count: buckets.available.length },
@@ -309,6 +328,48 @@ export default function AgentToday() {
           />
         </View>
       </View>
+
+      {/* Unread replies card — durable in-app cue that the ops team has replied
+          on one of today's orders (pushes are transient / ~1/3 of agents have no
+          token). Tapping jumps to the Unread filter. Renders only when there's
+          something unread so the screen stays tight. */}
+      {unreadRows.length > 0 ? (
+        <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
+          <Card dense onPress={() => setFilter('unread')}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <View
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
+                  backgroundColor: colors.redSoft,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Icon name="message" size={18} color={colors.red} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>
+                  {unreadTotal} unread {unreadTotal === 1 ? 'message' : 'messages'} from the team
+                </Text>
+                <Text
+                  style={{
+                    fontFamily: fonts.medium,
+                    fontSize: 12,
+                    color: colors.textSecondary,
+                    marginTop: 2,
+                  }}
+                >
+                  {unreadRows.length} {unreadRows.length === 1 ? 'delivery is' : 'deliveries are'}{' '}
+                  waiting on your reply
+                </Text>
+              </View>
+              <Icon name="chevronRight" size={20} color={colors.textSecondary} />
+            </View>
+          </Card>
+        </View>
+      ) : null}
 
       {/* Filter + search. No date filter (today only) and no Unassigned
           segment — mirrors the ops deliveries list otherwise. */}

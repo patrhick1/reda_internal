@@ -93,6 +93,7 @@ type BasePath = '/(admin)' | '/(dispatcher)' | '/(rep)';
 const FILTER_IDS_LIST = [
   'all',
   'to_notify',
+  'unread',
   'active',
   'available',
   'soft',
@@ -516,17 +517,29 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     return out;
   }, [buckets.all, postponedRows]);
 
+  // Deliveries with an unread agent message — the per-row "agent replied" chip,
+  // promoted to a list filter. Built from the on-screen rows (allRows) ∩ the
+  // unread map so the count matches what's visible (the map itself isn't
+  // date-scoped — see opsUnreadAgentCounts). Ops only; read state is team-shared.
+  const unreadRows = useMemo(
+    () => allRows.filter((d) => (d.id ? (unreadByDelivery.get(d.id) ?? 0) > 0 : false)),
+    [allRows, unreadByDelivery],
+  );
+
   const list =
     filter === 'postponed'
       ? postponedRows
       : filter === 'to_notify'
         ? toNotifyRows
-        : filter === 'all'
-          ? allRows
-          : (unassignedSorted ?? buckets[filter]);
+        : filter === 'unread'
+          ? unreadRows
+          : filter === 'all'
+            ? allRows
+            : (unassignedSorted ?? buckets[filter]);
   const filterOptions = [
     { id: 'all' as const, label: 'All', count: allRows.length },
     { id: 'to_notify' as const, label: 'To notify', count: toNotifyRows.length },
+    ...(canSeeClaims ? [{ id: 'unread' as const, label: 'Unread', count: unreadRows.length }] : []),
     { id: 'active' as const, label: 'Active', count: buckets.active.length },
     { id: 'available' as const, label: 'Available', count: buckets.available.length },
     { id: 'soft' as const, label: 'Soft fail', count: buckets.soft.length },

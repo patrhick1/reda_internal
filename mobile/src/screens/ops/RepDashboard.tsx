@@ -20,7 +20,7 @@ import {
   type DeliveryRow,
 } from '@/services/deliveries';
 import { listUsers } from '@/services/users';
-import { listOpenIssuesForOps } from '@/services/delivery-messages';
+import { listOpenIssuesForOps, opsUnreadAgentCounts } from '@/services/delivery-messages';
 import { AppBar, Card, Icon } from '@/components/ui';
 import { AgentWorkloadCard } from '@/components/delivery/AgentWorkloadCard';
 import { IssuesAttentionBlock } from '@/components/delivery/IssuesAttentionBlock';
@@ -53,12 +53,17 @@ export function RepDashboard() {
   // RLS (is_admin_or_dispatcher) already covers reps, so this is the parity the
   // role was missing: a durable home cue that an agent needs a follow-up.
   const issuesQ = useAsync(() => listOpenIssuesForOps(), []);
+  // Unread agent messages keyed by delivery_id (deliberate contact only — see
+  // opsUnreadAgentCounts). Read state is team-shared, so this is "unread by the
+  // ops team", matching the per-row chip on the deliveries list.
+  const unreadQ = useAsync(() => opsUnreadAgentCounts(), []);
 
   useFocusEffect(
     useCallback(() => {
       deliveriesQ.reload();
       postponedQ.reload();
       issuesQ.reload();
+      unreadQ.reload();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []),
   );
@@ -70,6 +75,19 @@ export function RepDashboard() {
   );
 
   const stats = useMemo(() => bucketCounts(deliveries), [deliveries]);
+
+  // Today's deliveries with an unread agent message (today-scoped via the loaded
+  // `deliveries`; the unread map itself isn't date-scoped). Drives the home card;
+  // tapping deep-links the deliveries list to its Unread filter.
+  const unreadDeliveries = useMemo(() => {
+    const map = unreadQ.data;
+    if (!map || map.size === 0) return [];
+    return deliveries.filter((d) => d.id && (map.get(d.id) ?? 0) > 0);
+  }, [deliveries, unreadQ.data]);
+  const unreadMsgTotal = useMemo(
+    () => unreadDeliveries.reduce((s, d) => s + (unreadQ.data?.get(d.id ?? '') ?? 0), 0),
+    [unreadDeliveries, unreadQ.data],
+  );
 
   // Deliveries whose latest status the client hasn't been told about yet, freshest
   // first — the rep's #1 daily task. Built from the loaded today-list PLUS the
@@ -192,6 +210,54 @@ export function RepDashboard() {
               })
             }
           />
+        ) : null}
+
+        {/* Unread agent messages — durable cue that an agent has replied on a
+            delivery thread. Renders only when there's something unread; tapping
+            deep-links to the deliveries "Unread" filter. Team-shared read state. */}
+        {unreadDeliveries.length > 0 ? (
+          <Card
+            dense
+            onPress={() =>
+              router.push({
+                pathname: `${REP_BASE}/deliveries` as `/(rep)/deliveries`,
+                params: { filter: 'unread' },
+              })
+            }
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <View
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
+                  backgroundColor: colors.redSoft,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Icon name="message" size={18} color={colors.red} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>
+                  {unreadMsgTotal} unread {unreadMsgTotal === 1 ? 'message' : 'messages'} from
+                  agents
+                </Text>
+                <Text
+                  style={{
+                    fontFamily: fonts.medium,
+                    fontSize: 12,
+                    color: colors.textSecondary,
+                    marginTop: 2,
+                  }}
+                >
+                  {unreadDeliveries.length}{' '}
+                  {unreadDeliveries.length === 1 ? 'delivery needs' : 'deliveries need'} a look
+                </Text>
+              </View>
+              <Icon name="chevronRight" size={20} color={colors.textSecondary} />
+            </View>
+          </Card>
         ) : null}
 
         {/* Recent activity — shared with admin */}
