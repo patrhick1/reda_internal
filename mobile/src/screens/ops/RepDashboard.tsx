@@ -76,14 +76,21 @@ export function RepDashboard() {
 
   const stats = useMemo(() => bucketCounts(deliveries), [deliveries]);
 
-  // Today's deliveries with an unread agent message (today-scoped via the loaded
-  // `deliveries`; the unread map itself isn't date-scoped). Drives the home card;
-  // tapping deep-links the deliveries list to its Unread filter.
+  // Deliveries with an unread agent message. Mirrors the deliveries list's
+  // "All" pool: today's rows plus the cross-date postponed slice, deduped by id.
+  // That keeps this home card's count aligned with the Unread chip it opens.
   const unreadDeliveries = useMemo(() => {
     const map = unreadQ.data;
     if (!map || map.size === 0) return [];
-    return deliveries.filter((d) => d.id && (map.get(d.id) ?? 0) > 0);
-  }, [deliveries, unreadQ.data]);
+    const seen = new Set<string>();
+    const rows: DeliveryRow[] = [];
+    for (const d of [...deliveries, ...(postponedQ.data ?? [])]) {
+      if (!d.id || seen.has(d.id) || (map.get(d.id) ?? 0) <= 0) continue;
+      seen.add(d.id);
+      rows.push(d);
+    }
+    return rows;
+  }, [deliveries, postponedQ.data, unreadQ.data]);
   const unreadMsgTotal = useMemo(
     () => unreadDeliveries.reduce((s, d) => s + (unreadQ.data?.get(d.id ?? '') ?? 0), 0),
     [unreadDeliveries, unreadQ.data],
@@ -240,8 +247,8 @@ export function RepDashboard() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>
-                  {unreadMsgTotal} unread {unreadMsgTotal === 1 ? 'message' : 'messages'} from
-                  agents
+                  {unreadDeliveries.length} unread{' '}
+                  {unreadDeliveries.length === 1 ? 'delivery' : 'deliveries'} from agents
                 </Text>
                 <Text
                   style={{
@@ -251,8 +258,8 @@ export function RepDashboard() {
                     marginTop: 2,
                   }}
                 >
-                  {unreadDeliveries.length}{' '}
-                  {unreadDeliveries.length === 1 ? 'delivery needs' : 'deliveries need'} a look
+                  {unreadMsgTotal} unread {unreadMsgTotal === 1 ? 'message needs' : 'messages need'}{' '}
+                  a look
                 </Text>
               </View>
               <Icon name="chevronRight" size={20} color={colors.textSecondary} />

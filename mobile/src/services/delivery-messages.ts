@@ -181,12 +181,17 @@ export async function agentUnreadCounts(): Promise<Map<string, number>> {
 export async function opsUnreadAgentCounts(): Promise<Map<string, number>> {
   const { data, error } = await supabase
     .from('delivery_messages')
-    .select('delivery_id, issue_type')
+    .select('delivery_id, issue_type, deliveries!inner(current_status)')
     .eq('author_role', 'agent')
     .is('read_at', null);
   if (error) throw error;
   const map = new Map<string, number>();
-  for (const r of (data ?? []) as { delivery_id: string; issue_type: IssueType | null }[]) {
+  for (const r of (data ?? []) as {
+    delivery_id: string;
+    issue_type: IssueType | null;
+    deliveries: { current_status: string | null } | null;
+  }[]) {
+    if (TERMINAL_STATUSES.has(r.deliveries?.current_status ?? '')) continue;
     // Skip auto-seeded soft-fail notes — badge deliberate contact only.
     if (r.issue_type && AUTO_SEEDED_ISSUE_TYPES.has(r.issue_type)) continue;
     map.set(r.delivery_id, (map.get(r.delivery_id) ?? 0) + 1);
