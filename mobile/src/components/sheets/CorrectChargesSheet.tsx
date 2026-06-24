@@ -18,7 +18,6 @@ export function CorrectChargesSheet({
   deliveryId,
   currentCharged,
   currentAgentPayment,
-  currentStatus,
   customerName,
   onClose,
   onCorrected,
@@ -27,9 +26,6 @@ export function CorrectChargesSheet({
   deliveryId: string | null;
   currentCharged: number | null;
   currentAgentPayment: number | null;
-  /** Current delivery status — drives the "already reconciled" caveat on
-   *  delivered rows (a correction won't retroactively adjust a past settlement). */
-  currentStatus: string | null;
   customerName: string | null;
   onClose: () => void;
   onCorrected: () => void;
@@ -112,14 +108,6 @@ export function CorrectChargesSheet({
           contributes to Reda&apos;s and the agent&apos;s totals — use it to fix a charge that was
           capped below the agent payout.
         </Banner>
-
-        {currentStatus === 'delivered' ? (
-          <Banner tone="error" icon="alert">
-            This order is already delivered and may have been reconciled. Correcting it now will not
-            adjust a settlement that already went out — double-check before changing a settled
-            order.
-          </Banner>
-        ) : null}
 
         <Input
           label="Reda charge (₦)"

@@ -15,9 +15,15 @@
 -- corrected snapshots make margin >= 0 the row simply drops off the list —
 -- there is no separate "resolved" flag to clear.
 --
--- Allowed on ANY status (admin override) — a wrong charge on an already-
--- delivered row is exactly the thing we want to fix, and these snapshots feed
--- reconciliation directly. Mirrors correct_delivery_location's pattern.
+-- Allowed on any status EXCEPT where it would desync a frozen settlement: a
+-- settlement (settle_period) freezes the figures for a (subject, scheduled_date)
+-- into settlements.snapshot and that money is remitted. Editing a snapshot whose
+-- side is already settled would make the live reconcile view diverge from what
+-- was paid. So we block, per side, exactly what's frozen:
+--   * changing charged_snapshot       -> blocked if the CLIENT day is settled
+--   * changing agent_payment_snapshot -> blocked if the AGENT day is settled
+-- (mirrors settle_period's own "void the existing settlement first" contract).
+-- An unsettled side is freely correctable.
 -- ============================================================================
 
 create or replace function public.correct_delivery_charge(
@@ -32,8 +38,10 @@ security definer
 set search_path to 'public', 'auth'
 as $function$
 declare
-  v_actor uuid := auth.uid();
-  v_row   public.deliveries%rowtype;
+  v_actor          uuid := auth.uid();
+  v_row            public.deliveries%rowtype;
+  v_charge_changed boolean;
+  v_agent_changed  boolean;
 begin
   if not public.is_admin() then
     raise exception 'correcting delivery charges requires admin role'
@@ -58,10 +66,41 @@ begin
     raise exception 'cannot correct a deleted delivery' using errcode = '22023';
   end if;
 
+  v_charge_changed := p_charged       is distinct from v_row.charged_snapshot;
+  v_agent_changed  := p_agent_payment is distinct from v_row.agent_payment_snapshot;
+
   -- No-op guard: nothing to change.
-  if p_charged = v_row.charged_snapshot
-     and p_agent_payment = v_row.agent_payment_snapshot then
+  if not v_charge_changed and not v_agent_changed then
     raise exception 'charges are unchanged' using errcode = '22023';
+  end if;
+
+  -- Settled-side guard: refuse to edit a snapshot whose settlement is frozen.
+  -- The figures were remitted from the old value; correcting them here would
+  -- desync the live reconcile view from what was actually settled/paid.
+  if v_charge_changed and exists (
+    select 1 from public.settlements s
+     where s.subject_type = 'client'
+       and s.subject_id   = v_row.client_id
+       and s.period_date  = v_row.scheduled_date
+       and s.voided_at is null
+  ) then
+    raise exception
+      'cannot change the Reda charge: the client is already settled for %', v_row.scheduled_date
+      using errcode = '23505',
+            hint   = 'void the client settlement for this day, then correct and re-settle';
+  end if;
+
+  if v_agent_changed and exists (
+    select 1 from public.settlements s
+     where s.subject_type = 'agent'
+       and s.subject_id   = v_row.assigned_agent_id
+       and s.period_date  = v_row.scheduled_date
+       and s.voided_at is null
+  ) then
+    raise exception
+      'cannot change the agent payout: the agent is already settled for %', v_row.scheduled_date
+      using errcode = '23505',
+            hint   = 'void the agent settlement for this day, then correct and re-settle';
   end if;
 
   update public.deliveries
