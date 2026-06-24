@@ -9,6 +9,7 @@ import {
   ScrollView,
   Share,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -62,6 +63,8 @@ const EMPTY_SETTLEMENTS: Map<string, SettlementRow> = new Map();
 export default function AdminReconcile() {
   const router = useRouter();
   const user = useCurrentUser();
+  const { width } = useWindowDimensions();
+  const isWide = width >= 900;
   const [tab, setTab] = useState<Tab>('clients');
   const [from, setFrom] = useState<string>(todayLagos());
   const [to, setTo] = useState<string>(todayLagos());
@@ -290,7 +293,7 @@ export default function AdminReconcile() {
       {/* Cross-cutting one-time hint: the AppBar `?` icon is new and worth
           pointing at once. Dismissing here suppresses it on every other
           helpTopic-bearing screen too (single hint id). */}
-      <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
+      <View style={pageSectionStyle}>
         <Hint id={HINTS.HELP_ICON_DISCOVERY} title="Tip — In-app help">
           See the <Text style={{ fontFamily: fonts.bold }}>?</Text> in the top-right? Tap it on any
           screen to read the help for that screen. Full guide also lives in Profile → Help &amp;
@@ -298,18 +301,20 @@ export default function AdminReconcile() {
         </Hint>
       </View>
 
-      <Tabs<Tab>
-        value={tab}
-        tabs={[
-          { id: 'clients', label: 'By client' },
-          { id: 'agents', label: 'By agent' },
-          { id: 'summary', label: 'Summary' },
-        ]}
-        onChange={setTab}
-      />
+      <View style={pageWidthStyle}>
+        <Tabs<Tab>
+          value={tab}
+          tabs={[
+            { id: 'clients', label: 'By client' },
+            { id: 'agents', label: 'By agent' },
+            { id: 'summary', label: 'Summary' },
+          ]}
+          onChange={setTab}
+        />
+      </View>
 
       {/* Preset chips */}
-      <View style={{ paddingTop: 12, backgroundColor: colors.surface }}>
+      <View style={{ ...pageWidthStyle, paddingTop: 6, backgroundColor: colors.surface }}>
         <FilterChips
           value={activePreset}
           onChange={(v) => applyPreset(v as Preset)}
@@ -323,7 +328,15 @@ export default function AdminReconcile() {
       </View>
 
       {/* Date range inputs — used directly when "Custom" is selected; also reflect any preset choice. */}
-      <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 16 }}>
+      <View
+        style={{
+          ...pageWidthStyle,
+          flexDirection: 'row',
+          gap: 12,
+          paddingHorizontal: 16,
+          paddingBottom: 10,
+        }}
+      >
         <View style={{ flex: 1 }}>
           <Input
             label="From"
@@ -354,7 +367,10 @@ export default function AdminReconcile() {
           settlements={settlementsQ.data ?? EMPTY_SETTLEMENTS}
           canSettle={canSettle}
           showDownload={canSettle}
+          isWide={isWide}
+          eodDate={to}
           onDownloadCsv={onDownloadPayoutCsv}
+          onRunEod={onRunEod}
           onSettle={(id, note) => handleSettle('client', id, note)}
           onVoid={handleVoid}
           onOpenClient={(c) =>
@@ -371,6 +387,9 @@ export default function AdminReconcile() {
           setOpenId={setOpenId}
           settlements={settlementsQ.data ?? EMPTY_SETTLEMENTS}
           canSettle={canSettle}
+          isWide={isWide}
+          eodDate={to}
+          onRunEod={onRunEod}
           onSettle={(id, note) => handleSettle('agent', id, note)}
           onVoid={handleVoid}
         />
@@ -380,22 +399,11 @@ export default function AdminReconcile() {
           agents={agentsQ.data ?? []}
           loading={(clientsQ.loading && !clientsQ.data) || (agentsQ.loading && !agentsQ.data)}
           rangeLabel={rangeLabel}
+          isWide={isWide}
+          eodDate={to}
+          onRunEod={onRunEod}
         />
       )}
-
-      <View
-        style={{
-          paddingHorizontal: 16,
-          paddingVertical: 12,
-          borderTopWidth: 1,
-          borderTopColor: colors.border,
-          backgroundColor: colors.white,
-        }}
-      >
-        <Button variant="secondary" full icon="calendar" onPress={onRunEod}>
-          {`Run EOD rollover for ${to}`}
-        </Button>
-      </View>
     </View>
   );
 }
@@ -408,7 +416,10 @@ function ClientsList({
   settlements,
   canSettle,
   showDownload,
+  isWide,
+  eodDate,
   onDownloadCsv,
+  onRunEod,
   onSettle,
   onVoid,
 }: {
@@ -420,7 +431,10 @@ function ClientsList({
   canSettle: boolean;
   /** Show the "Download Moniepoint payout file" button (admin + single day). */
   showDownload?: boolean;
+  isWide: boolean;
+  eodDate: string;
   onDownloadCsv?: () => void;
+  onRunEod: () => void;
   onSettle: (subjectId: string, note: string | null) => void;
   onVoid: (settlementId: string) => void;
 }) {
@@ -439,7 +453,7 @@ function ClientsList({
     <FlatList
       data={state.data ?? []}
       keyExtractor={(r) => r.client_id}
-      contentContainerStyle={{ padding: 16, paddingBottom: 32, gap: 8 }}
+      contentContainerStyle={{ ...listContentStyle, gap: 8 }}
       refreshControl={
         <RefreshControl
           refreshing={state.loading && !!state.data}
@@ -475,9 +489,14 @@ function ClientsList({
           </Card>
           {showDownload && onDownloadCsv ? (
             <Button variant="secondary" full icon="share" onPress={onDownloadCsv}>
-              Download Moniepoint payout file
+              {isWide ? 'Download Moniepoint payout file' : 'Download payout CSV'}
             </Button>
           ) : null}
+          <View style={{ marginTop: 8 }}>
+            <Button variant="secondary" full icon="calendar" onPress={onRunEod}>
+              {`Run EOD rollover · ${eodDate}`}
+            </Button>
+          </View>
         </View>
       }
       renderItem={({ item }) => (
@@ -529,6 +548,9 @@ function AgentsList({
   setOpenId,
   settlements,
   canSettle,
+  isWide,
+  eodDate,
+  onRunEod,
   onSettle,
   onVoid,
 }: {
@@ -537,6 +559,9 @@ function AgentsList({
   setOpenId: (id: string | null) => void;
   settlements: Map<string, SettlementRow>;
   canSettle: boolean;
+  isWide: boolean;
+  eodDate: string;
+  onRunEod: () => void;
   onSettle: (subjectId: string, note: string | null) => void;
   onVoid: (settlementId: string) => void;
 }) {
@@ -556,7 +581,7 @@ function AgentsList({
     <FlatList
       data={state.data ?? []}
       keyExtractor={(r) => r.agent_id}
-      contentContainerStyle={{ padding: 16, paddingBottom: 32, gap: 8 }}
+      contentContainerStyle={{ ...listContentStyle, gap: 8 }}
       refreshControl={
         <RefreshControl
           refreshing={state.loading && !!state.data}
@@ -565,32 +590,39 @@ function AgentsList({
         />
       }
       ListHeaderComponent={
-        <Card style={{ marginBottom: 12 }}>
-          <Text style={kicker}>Total to collect from agents</Text>
-          <Text
-            style={{
-              fontFamily: fonts.extrabold,
-              fontSize: 36,
-              // Net can go negative (riders Reda owes outweigh those who owe Reda);
-              // don't render a negative total in success-green.
-              color: total >= 0 ? colors.success : colors.red,
-              letterSpacing: -1,
-              marginTop: 4,
-            }}
-          >
-            {formatNaira(total)}
-          </Text>
-          <Text
-            style={{
-              fontFamily: fonts.medium,
-              fontSize: 13,
-              color: colors.textSecondary,
-              marginTop: 2,
-            }}
-          >
-            {deliveriesTotal} deliveries · {count} {count === 1 ? 'agent' : 'agents'}
-          </Text>
-        </Card>
+        <View style={{ marginBottom: 12 }}>
+          <Card>
+            <Text style={kicker}>Total to collect from agents</Text>
+            <Text
+              style={{
+                fontFamily: fonts.extrabold,
+                fontSize: 36,
+                // Net can go negative (riders Reda owes outweigh those who owe Reda);
+                // don't render a negative total in success-green.
+                color: total >= 0 ? colors.success : colors.red,
+                letterSpacing: -1,
+                marginTop: 4,
+              }}
+            >
+              {formatNaira(total)}
+            </Text>
+            <Text
+              style={{
+                fontFamily: fonts.medium,
+                fontSize: 13,
+                color: colors.textSecondary,
+                marginTop: 2,
+              }}
+            >
+              {deliveriesTotal} deliveries · {count} {count === 1 ? 'agent' : 'agents'}
+            </Text>
+          </Card>
+          <View style={{ marginTop: 8 }}>
+            <Button variant="secondary" full icon="calendar" onPress={onRunEod}>
+              {`${isWide ? 'Run EOD rollover' : 'Run EOD'} · ${eodDate}`}
+            </Button>
+          </View>
+        </View>
       }
       renderItem={({ item }) => (
         <ExpandableRow
@@ -638,11 +670,17 @@ function SummaryTab({
   agents,
   loading,
   rangeLabel,
+  isWide,
+  eodDate,
+  onRunEod,
 }: {
   clients: ClientRemitRow[];
   agents: AgentEarningsRow[];
   loading: boolean;
   rangeLabel: string;
+  isWide: boolean;
+  eodDate: string;
+  onRunEod: () => void;
 }) {
   const totals = useMemo(() => {
     const deliveries = clients.reduce((s, c) => s + Number(c.deliveries_count), 0);
@@ -702,7 +740,7 @@ function SummaryTab({
   return (
     <ScrollView
       style={{ flex: 1 }}
-      contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
+      contentContainerStyle={listContentStyle}
       showsVerticalScrollIndicator={false}
     >
       <Card>
@@ -729,10 +767,23 @@ function SummaryTab({
         </View>
       </Card>
 
-      <View style={{ marginTop: 16 }}>
-        <Button variant="emphasis" full icon="share" onPress={onShare}>
-          Share summary
-        </Button>
+      <View
+        style={{
+          marginTop: 12,
+          flexDirection: isWide ? 'row' : 'column',
+          gap: 8,
+        }}
+      >
+        <View style={{ flex: 1 }}>
+          <Button variant="emphasis" full icon="share" onPress={onShare}>
+            Share summary
+          </Button>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Button variant="secondary" full icon="calendar" onPress={onRunEod}>
+            {`Run EOD rollover · ${eodDate}`}
+          </Button>
+        </View>
       </View>
     </ScrollView>
   );
@@ -1040,4 +1091,22 @@ const kicker = {
   color: colors.textSecondary,
   letterSpacing: 0.8,
   textTransform: 'uppercase' as const,
+};
+
+const pageWidthStyle = {
+  width: '100%' as const,
+  maxWidth: 1200,
+  alignSelf: 'center' as const,
+};
+
+const pageSectionStyle = {
+  ...pageWidthStyle,
+  paddingHorizontal: 16,
+  paddingTop: 12,
+};
+
+const listContentStyle = {
+  ...pageWidthStyle,
+  padding: 16,
+  paddingBottom: 32,
 };
