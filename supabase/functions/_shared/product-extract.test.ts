@@ -41,6 +41,21 @@ Deno.test('combo: clovofresh capsule and spray → two SKUs', () => {
   assertEquals(names(out), ['Clovofresh Capsule x1', 'Clovofresh Spray x1']);
 });
 
+Deno.test('combo: brand-less variant fragment is absorbed, not orphaned', () => {
+  // The LLM split "Clovofresh Capsule and Spray" into a branded line + a bare
+  // "Spray" (no brand). Both must collapse to exactly the two canonical SKUs —
+  // the bare "Spray" must NOT survive as a spurious third line.
+  const raw = 'Product: Clovofresh Capsule and Spray Price: NGN19500';
+  const out = expandKnownCombos([li('Clovofresh Capsule', 1, 19500), li('Spray', 1)], raw);
+  assertEquals(names(out), ['Clovofresh Capsule x1', 'Clovofresh Spray x1']);
+});
+
+Deno.test('combo: bare variant word WITHOUT its combo phrase is left untouched', () => {
+  // Absorption only fires when the combo phrase is confirmed in the raw text.
+  const out = expandKnownCombos([li('Spray', 1, 3000)], 'Product: Spray 1 unit');
+  assertEquals(names(out), ['Spray x1']);
+});
+
 Deno.test('combo: idempotent — already-split lines do not duplicate', () => {
   const raw = 'Product: Oratox Capsule and Powder 1 unit';
   const out = expandKnownCombos([li('Oratox Capsule', 1, 19500), li('Oratox Powder', 1)], raw);

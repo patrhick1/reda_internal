@@ -272,7 +272,7 @@ export function extractTrailingRep(rawText: string | null | undefined): string |
 // cannot touch another client's product (e.g. "D&N Arabian Tea", "Wine
 // Opener/Beer Opener") and leaves a single-variant order (just "Oratox Capsule",
 // no "...and powder") untouched. Each canonical part name matches its SKU at 1.0.
-type KnownCombo = { rx: RegExp; belongsTo: RegExp; parts: [string, string] };
+type KnownCombo = { rx: RegExp; belongsTo: RegExp; variant: RegExp; parts: [string, string] };
 
 const COMBO_SEP = String.raw`\s*(?:and|&|\+|/|,)\s*`;
 const COMBO_GAP = String.raw`[ \t.\-]*`;
@@ -284,16 +284,25 @@ function comboRx(base: string, v1: string, v2: string): RegExp {
     'i',
   );
 }
+// Matches a line that is ONLY a bare variant word (e.g. "Spray", "Powder") —
+// the fragment the LLM leaves when it splits "<Base> Capsule and Spray" into
+// "<Base> Capsule" + a brand-less "Spray". Anchored whole-string so it can't
+// catch a real product that merely contains the word ("Capsule Holder").
+function variantRx(v1: string, v2: string): RegExp {
+  return new RegExp(String.raw`^\s*(?:${v1}|${v2})s?\s*$`, 'i');
+}
 
 export const KNOWN_COMBOS: KnownCombo[] = [
   {
     rx: comboRx('oratox', 'capsule', 'powder'),
     belongsTo: /\boratox\b/i,
+    variant: variantRx('capsule', 'powder'),
     parts: ['Oratox Capsule', 'Oratox Powder'],
   },
   {
     rx: comboRx('clovofresh', 'capsule', 'spray'),
     belongsTo: /\bclovofresh\b/i,
+    variant: variantRx('capsule', 'spray'),
     parts: ['Clovofresh Capsule', 'Clovofresh Spray'],
   },
 ];
@@ -303,12 +312,18 @@ export const KNOWN_COMBOS: KnownCombo[] = [
  *  combo line's quantity; price on line 1 only — record-keeping, fees are
  *  per-delivery). Lines for other products pass through untouched. Idempotent:
  *  if the LLM already split into the two variants, they're dropped and re-added,
- *  so there's no duplication. */
+ *  so there's no duplication. Also absorbs a brand-less variant fragment (a bare
+ *  "Spray"/"Powder" the LLM split off) so it can't survive as an orphan line. */
 export function expandKnownCombos(products: LineItem[], rawText: string): LineItem[] {
   let out = products;
   for (const combo of KNOWN_COMBOS) {
     if (!combo.rx.test(rawText ?? '')) continue;
-    const mine = out.filter((p) => p.product_name && combo.belongsTo.test(p.product_name));
+    // The combo phrase is confirmed in the raw message, so any line that is
+    // either branded for this combo OR a bare variant fragment ("Spray") the LLM
+    // split off without the brand belongs to it — absorb both so neither orphans.
+    const mine = out.filter(
+      (p) => p.product_name && (combo.belongsTo.test(p.product_name) || combo.variant.test(p.product_name)),
+    );
     if (mine.length === 0) continue;
     const qty = Math.max(1, ...mine.map((m) => (m.quantity && m.quantity > 0 ? m.quantity : 1)));
     const price = mine.find((m) => m.customer_price != null)?.customer_price ?? null;
