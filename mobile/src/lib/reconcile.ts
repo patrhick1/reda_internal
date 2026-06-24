@@ -161,10 +161,13 @@ export type MoniepointPayoutRow = {
 
 const MONIEPOINT_CSV_HEADERS = ['Account Name', 'Account Number', 'Amount', 'Bank'] as const;
 
-/** RFC-4180 cell escaping: quote + double inner quotes when the value contains a
- *  comma, quote, or newline. Account names can contain commas (e.g. "X, Y Ltd"). */
+/** RFC-4180 cell escaping with CSV-injection hardening. Quotes + doubles inner
+ *  quotes when the value contains a comma, quote, or newline (account names can
+ *  contain commas, e.g. "X, Y Ltd"); and prefixes a leading =/+/-/@ with a
+ *  single quote so a spreadsheet app can't interpret the cell as a formula. */
 function csvCell(value: string): string {
-  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+  const safe = /^[=+\-@]/.test(value) ? `'${value}` : value;
+  return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
 /** Plain numeric amount for the CSV — no currency symbol or thousands separators

@@ -104,11 +104,15 @@ export default function AdminReconcile() {
       clientsQ.reload();
       agentsQ.reload();
       settlementsQ.reload();
+      // Bank details can be edited on another screen between visits — refresh so
+      // the payout file reflects newly-added details instead of treating the
+      // vendor as still missing.
+      clientBanksQ.reload();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [from, to, rangeValid]),
   );
 
-  const notifyErr = useCallback((title: string, msg: string) => {
+  const notify = useCallback((title: string, msg: string) => {
     if (Platform.OS === 'web') {
       if (typeof window !== 'undefined') window.alert(`${title}\n\n${msg}`);
     } else {
@@ -122,10 +126,10 @@ export default function AdminReconcile() {
         await settlePeriod(subjectType, subjectId, to, note);
         settlementsQ.reload();
       } catch (e) {
-        notifyErr('Could not settle', errorMessage(e));
+        notify('Could not settle', errorMessage(e));
       }
     },
-    [to, settlementsQ, notifyErr],
+    [to, settlementsQ, notify],
   );
 
   const handleVoid = useCallback(
@@ -135,7 +139,7 @@ export default function AdminReconcile() {
           await voidSettlement(settlementId, 'un-settled from reconcile');
           settlementsQ.reload();
         } catch (e) {
-          notifyErr('Could not un-settle', errorMessage(e));
+          notify('Could not un-settle', errorMessage(e));
         }
       };
       if (Platform.OS === 'web') {
@@ -157,7 +161,7 @@ export default function AdminReconcile() {
         ],
       );
     },
-    [settlementsQ, notifyErr],
+    [settlementsQ, notify],
   );
 
   const applyPreset = useCallback((p: Preset) => {
@@ -204,17 +208,25 @@ export default function AdminReconcile() {
   }, [to, clientsQ, agentsQ]);
 
   // Build + download the Moniepoint bulk-transfer CSV for the selected day.
-  // Includes every vendor with a POSITIVE remit AND complete bank details;
-  // vendors owed money but missing bank details are reported so Uzo can fix
-  // them (they'd silently be unpaid otherwise). Web-only download.
+  // Includes every vendor with a POSITIVE remit AND complete bank details, and
+  // that is NOT already marked transferred (settled) for the day — the latter is
+  // the double-payment guard: a re-download after settling won't re-pay anyone.
+  // Vendors owed money but missing bank details are reported so they can be
+  // fixed (they'd silently be unpaid otherwise). Web-only download.
   const onDownloadPayoutCsv = useCallback(() => {
     const remit = clientsQ.data ?? [];
+    const settled = settlementsQ.data ?? EMPTY_SETTLEMENTS;
     const bankById = new Map((clientBanksQ.data ?? []).map((c) => [c.id, c] as const));
     const payable: MoniepointPayoutRow[] = [];
     const missing: string[] = [];
+    let alreadySettled = 0;
     for (const r of remit) {
       const amount = Number(r.total_remit);
       if (!(amount > 0)) continue; // only positive remits get paid out
+      if (settled.has(`client:${r.client_id}`)) {
+        alreadySettled += 1; // already transferred — exclude to avoid double-pay
+        continue;
+      }
       const c = bankById.get(r.client_id);
       if (c && c.bank_account_name && c.bank_account_number && c.bank_name) {
         payable.push({
@@ -228,35 +240,45 @@ export default function AdminReconcile() {
       }
     }
     if (payable.length === 0) {
-      notifyErr(
+      notify(
         'No payout file',
         missing.length
-          ? `These vendors are owed money but have no bank details: ${missing.join(
+          ? `These vendors are owed money but have incomplete bank details: ${missing.join(
               ', ',
             )}.\n\nAdd their Account Name, Account Number and Bank under Catalog → Clients, then try again.`
-          : 'No vendor has a positive remit for this day.',
+          : alreadySettled > 0
+            ? 'Every vendor owed for this day is already marked transferred — nothing left to pay.'
+            : 'No vendor has a positive remit for this day.',
       );
       return;
     }
     const csv = buildMoniepointPayoutCsv(payable);
     const ok = downloadTextFile(`reda-moniepoint-payout-${to}.csv`, csv);
     if (!ok) {
-      notifyErr(
+      notify(
         'Use the web app',
         'The Moniepoint payout file download is available on the web app (desktop browser).',
       );
       return;
     }
-    if (missing.length) {
-      const total = payable.reduce((s, p) => s + p.amount, 0);
-      notifyErr(
-        'Payout file downloaded — some skipped',
-        `${payable.length} vendor${payable.length === 1 ? '' : 's'} · ${formatNaira(
-          total,
-        )}.\n\nSkipped (no bank details): ${missing.join(', ')}.`,
+    // Only surface a follow-up note when something was held back.
+    const notes: string[] = [];
+    if (missing.length) notes.push(`Skipped — incomplete bank details: ${missing.join(', ')}.`);
+    if (alreadySettled > 0) {
+      notes.push(
+        `${alreadySettled} already marked transferred (excluded to avoid double payment).`,
       );
     }
-  }, [clientsQ.data, clientBanksQ.data, to, notifyErr]);
+    if (notes.length) {
+      const total = payable.reduce((s, p) => s + p.amount, 0);
+      notify(
+        'Payout file downloaded',
+        `${payable.length} vendor${payable.length === 1 ? '' : 's'} · ${formatNaira(
+          total,
+        )}.\n\n${notes.join('\n\n')}`,
+      );
+    }
+  }, [clientsQ.data, clientBanksQ.data, settlementsQ.data, to, notify]);
 
   const rangeLabel = formatRangeLagos(from, to);
   const activePreset = detectPreset(from, to);
