@@ -4,7 +4,12 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { usePendingLocationChangesCount } from '@/hooks/usePendingLocationChangesCount';
-import { listDeliveries, siblingGroupKey, type DeliveryRow } from '@/services/deliveries';
+import {
+  listDeliveries,
+  listNegativeMarginDeliveries,
+  siblingGroupKey,
+  type DeliveryRow,
+} from '@/services/deliveries';
 import { listBotInbound } from '@/services/bot';
 import { listUsers } from '@/services/users';
 import { listOpenIssuesForOps } from '@/services/delivery-messages';
@@ -32,18 +37,21 @@ export default function AdminHome() {
   const reviewQ = useAsync(() => listBotInbound('needs_review', 100), []);
   const issuesQ = useAsync(() => listOpenIssuesForOps(), []);
   const usersQ = useAsync(() => listUsers(), []);
+  const negMarginQ = useAsync(() => listNegativeMarginDeliveries(), []);
 
   useFocusEffect(
     useCallback(() => {
       todayQ.reload();
       reviewQ.reload();
       issuesQ.reload();
+      negMarginQ.reload();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []),
   );
 
   const stats = useMemo(() => summarize(todayQ.data ?? []), [todayQ.data]);
   const reviewCount = (reviewQ.data ?? []).length;
+  const negMarginCount = (negMarginQ.data ?? []).length;
   const pendingZoneCount = usePendingLocationChangesCount();
   const openIssues = issuesQ.data ?? [];
   const agents = useMemo(
@@ -102,7 +110,11 @@ export default function AdminHome() {
         </Card>
 
         {/* Needs attention */}
-        {reviewCount > 0 || stats.stale > 0 || openIssues.length > 0 || pendingZoneCount > 0 ? (
+        {reviewCount > 0 ||
+        stats.stale > 0 ||
+        openIssues.length > 0 ||
+        pendingZoneCount > 0 ||
+        negMarginCount > 0 ? (
           <>
             <SectionHeader>Needs attention</SectionHeader>
             <View style={{ gap: 8 }}>
@@ -135,6 +147,16 @@ export default function AdminHome() {
                   title={`${pendingZoneCount} zone ${pendingZoneCount === 1 ? 'change' : 'changes'} to approve`}
                   sub="Agent delivered elsewhere — raises their pay"
                   onPress={() => router.push('/(admin)/location-approvals')}
+                />
+              ) : null}
+              {negMarginCount > 0 ? (
+                <AttentionRow
+                  icon="alert"
+                  iconBg={colors.redSoft}
+                  iconColor={colors.red}
+                  title={`${negMarginCount} negative-margin ${negMarginCount === 1 ? 'order' : 'orders'}`}
+                  sub="Reda pays the agent more than it collects — correct the charges"
+                  onPress={() => router.push('/(admin)/negative-margin')}
                 />
               ) : null}
               {stats.stale > 0 ? (

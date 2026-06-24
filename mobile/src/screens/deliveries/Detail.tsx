@@ -57,6 +57,7 @@ import { formatDateTime, formatNaira } from '@/lib/format';
 import { ChainDivider } from '@/components/delivery/ChainDivider';
 import { MarkDeliveredSheet } from '@/components/sheets/MarkDeliveredSheet';
 import { CorrectLocationSheet } from '@/components/sheets/CorrectLocationSheet';
+import { CorrectChargesSheet } from '@/components/sheets/CorrectChargesSheet';
 import { RevertDeliveredSheet } from '@/components/sheets/RevertDeliveredSheet';
 import { UpdateStatusSheet } from '@/components/sheets/UpdateStatusSheet';
 import { HandoffToSubAgentSheet } from '@/components/sheets/HandoffToSubAgentSheet';
@@ -82,6 +83,7 @@ export function DeliveryDetail() {
   const [handoffOpen, setHandoffOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [correctLocOpen, setCorrectLocOpen] = useState(false);
+  const [correctChargeOpen, setCorrectChargeOpen] = useState(false);
   const [revertOpen, setRevertOpen] = useState(false);
   const [callBusy, setCallBusy] = useState(false);
   // Optimistic status + (when queued) the job ID to watch. The veil clears
@@ -740,6 +742,37 @@ export function DeliveryDetail() {
               <MoneyRow label="Margin" value={formatNaira(Number(d.margin))} accent />
             ) : null}
           </View>
+          {showMargin && d.margin != null && Number(d.margin) < 0 ? (
+            <View
+              style={{
+                marginTop: 12,
+                padding: 12,
+                borderRadius: 10,
+                backgroundColor: colors.redSoft,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+              }}
+            >
+              <Icon name="alert" size={18} color={colors.red} />
+              <Text
+                style={{
+                  flex: 1,
+                  fontFamily: fonts.medium,
+                  fontSize: 12,
+                  color: colors.red,
+                  lineHeight: 16,
+                }}
+              >
+                Negative margin — Reda pays the agent more than it collects.
+              </Text>
+              <TouchableOpacity onPress={() => setCorrectChargeOpen(true)} hitSlop={8}>
+                <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.red }}>
+                  Correct
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
         </Card>
 
         {/* Vendor + Assignment */}
@@ -949,6 +982,21 @@ export function DeliveryDetail() {
         onClose={() => setRevertOpen(false)}
         onReverted={() => {
           setRevertOpen(false);
+          deliveryQ.reload();
+          historyQ.reload();
+        }}
+      />
+      <CorrectChargesSheet
+        open={correctChargeOpen}
+        deliveryId={d.id ?? null}
+        currentCharged={charged != null ? Number(charged) : null}
+        currentAgentPayment={
+          d.agent_payment_snapshot != null ? Number(d.agent_payment_snapshot) : null
+        }
+        customerName={d.customer_name ?? null}
+        onClose={() => setCorrectChargeOpen(false)}
+        onCorrected={() => {
+          setCorrectChargeOpen(false);
           deliveryQ.reload();
           historyQ.reload();
         }}

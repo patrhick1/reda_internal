@@ -138,6 +138,16 @@ export default function AdminLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="negative-margin"
+        options={{
+          title: 'Negative margin',
+          tabBarIcon: ({ color, focused }) => (
+            <Icon name="alert" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
+          ),
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }

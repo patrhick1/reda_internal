@@ -2363,6 +2363,15 @@ export type Database = {
           total_remit: number
         }[]
       }
+      correct_delivery_charge: {
+        Args: {
+          p_delivery_id: string
+          p_charged: number
+          p_agent_payment: number
+          p_reason: string
+        }
+        Returns: undefined
+      }
       correct_delivery_location: {
         Args: { p_delivery_id: string; p_location_id: string; p_reason: string }
         Returns: undefined

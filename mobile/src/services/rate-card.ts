@@ -46,24 +46,6 @@ export async function listCurrentRates(): Promise<LocationRate[]> {
   });
 }
 
-/** The highest agent payout across all active location rate cards, with the
- *  location it comes from. This is the floor a per-client charge cap must not
- *  go below: the cap clamps Reda's charge but never the agent fee, so a cap
- *  under this amount forces a negative margin on deliveries to that location.
- *  Mirrors the server-side guard in update_client (tools/live-defs/update_client.sql). */
-export type AgentPaymentFloor = { amount: number; location_name: string | null };
-
-export async function getAgentPaymentFloor(): Promise<AgentPaymentFloor> {
-  const rates = await listCurrentRates();
-  let best: AgentPaymentFloor = { amount: 0, location_name: null };
-  for (const r of rates) {
-    if (r.agent_payment != null && r.agent_payment > best.amount) {
-      best = { amount: r.agent_payment, location_name: r.location_name };
-    }
-  }
-  return best;
-}
-
 /** All historical rate rows for a location, newest first. */
 export async function listRateHistory(locationId: string): Promise<RateHistory[]> {
   const { data, error } = await supabase

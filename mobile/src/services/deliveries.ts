@@ -433,6 +433,27 @@ export async function listPostponed(role: Role): Promise<DeliveryRow[]> {
   return (await attachItemsToRows(joined)) as DeliveryRow[];
 }
 
+/** Admin "Negative margin" review list: every live delivery whose snapshotted
+ *  Reda charge is below the agent payout (margin < 0). This happens when a
+ *  client charge cap sits under a location's agent fee — the cap clamps the
+ *  charge but not the agent fee. The "flag" is purely derived (margin is a
+ *  column on deliveries_admin), so once an admin corrects the charges via
+ *  correctDeliveryCharge and margin returns to >= 0, the row drops off this
+ *  list automatically — no resolved/ack state to maintain. All dates; newest
+ *  first. deliveries_admin is already admin-gated + excludes deleted rows. */
+export async function listNegativeMarginDeliveries(): Promise<DeliveryRow[]> {
+  const { data, error } = await supabase
+    .from('deliveries_admin')
+    .select(`*, ${JOIN_FRAGMENT}`)
+    .lt('margin', 0)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  const joined = (data ?? []).map((row) =>
+    attachJoins(row as unknown as JoinShape & object),
+  ) as Omit<DeliveryRow, 'items'>[];
+  return (await attachItemsToRows(joined)) as DeliveryRow[];
+}
+
 /** Most recent activity timestamp for list ordering: the max of the row's last
  *  status change, last thread message, and creation time. ISO timestamptz
  *  strings share one format, so lexical comparison is chronological. */
@@ -796,6 +817,26 @@ export async function correctDeliveryLocation(
   const { error } = await supabase.rpc('correct_delivery_location', {
     p_delivery_id: deliveryId,
     p_location_id: locationId,
+    p_reason: reason,
+  });
+  if (error) throw error;
+}
+
+/** Admin: manually override a delivery's snapshotted Reda charge + agent payout.
+ *  Used from the Negative-margin review flow to fix a row whose cap clamped the
+ *  charge below the agent fee. Reason required (audit-prefixed
+ *  'charge_correction:'). Server raises on non-admin, deleted rows, negatives,
+ *  or an unchanged pair; allowed on any status (admin override). */
+export async function correctDeliveryCharge(
+  deliveryId: string,
+  charged: number,
+  agentPayment: number,
+  reason: string,
+): Promise<void> {
+  const { error } = await supabase.rpc('correct_delivery_charge', {
+    p_delivery_id: deliveryId,
+    p_charged: charged,
+    p_agent_payment: agentPayment,
     p_reason: reason,
   });
   if (error) throw error;
