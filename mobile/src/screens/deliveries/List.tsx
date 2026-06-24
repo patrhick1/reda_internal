@@ -158,6 +158,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   const canBulkAssign = canBulkAssignDelivery(user.role);
   const canBulkStatus = canBulkChangeStatus(user.role);
   const canBulkDelete = canBulkDeleteDeliveries(user.role);
+  const canBulkSelect = canBulkAssign || canBulkStatus || canBulkDelete;
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set());
   const [bulkSheetOpen, setBulkSheetOpen] = useState(false);
@@ -265,6 +266,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
       setBulkSheetOpen(false);
       exitSelect();
       reload();
+      postponedQ.reload();
       const msg = `Assigned ${updated} ${updated === 1 ? 'delivery' : 'deliveries'}.`;
       if (Platform.OS === 'web') {
         if (typeof window !== 'undefined') window.alert(msg);
@@ -272,13 +274,14 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         Alert.alert('Done', msg);
       }
     },
-    [exitSelect, reload],
+    [exitSelect, reload, postponedQ],
   );
   const onBulkStatusChanged = useCallback(
     (counts: { changedCount: number; skippedCount: number }) => {
       setBulkStatusSheetOpen(false);
       exitSelect();
       reload();
+      postponedQ.reload();
       const msg =
         counts.skippedCount > 0
           ? `Changed ${counts.changedCount}, skipped ${counts.skippedCount}.`
@@ -289,13 +292,14 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         Alert.alert('Done', msg);
       }
     },
-    [exitSelect, reload],
+    [exitSelect, reload, postponedQ],
   );
   const onBulkDeleted = useCallback(
     (counts: { deletedCount: number; skippedCount: number }) => {
       setBulkDeleteSheetOpen(false);
       exitSelect();
       reload();
+      postponedQ.reload();
       const msg =
         counts.skippedCount > 0
           ? `Deleted ${counts.deletedCount}, skipped ${counts.skippedCount}.`
@@ -306,16 +310,8 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         Alert.alert('Done', msg);
       }
     },
-    [exitSelect, reload],
+    [exitSelect, reload, postponedQ],
   );
-
-  // Resolve the selected IDs back to full DeliveryRow objects so the bulk
-  // sheets can preview eligibility (FINAL_STATUSES, already-deleted) without
-  // a second roundtrip. Memoised against the underlying list + selection set.
-  const selectedRows = useMemo<DeliveryRow[]>(() => {
-    if (!selectMode || selectedIds.size === 0 || !data) return [];
-    return data.filter((d) => d.id && selectedIds.has(d.id));
-  }, [data, selectMode, selectedIds]);
 
   useFocusEffect(
     useCallback(() => {
@@ -329,14 +325,12 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     }, [reload, canSeeClaims]),
   );
 
-  // Bulk actions resolve `selectedRows` from the date-scoped `data`. The
-  // Postponed view is a separate cross-date pool not in `data`, so leaving
-  // select mode active across that boundary would act on a stale set. Drop out
-  // of select mode whenever we cross into (or out of) the Postponed view.
-  const isPostponedView = filter === 'postponed';
+  // Selection belongs to the current list scope. Changing status/date filters
+  // clears it so a hidden row can never remain selected after the visible pool
+  // changes underneath the action bar.
   useEffect(() => {
     exitSelect();
-  }, [isPostponedView, exitSelect]);
+  }, [filter, datePreset, customDate, agentId, clientId, nameNeedle, exitSelect]);
 
   // Realtime: keep the per-row claimer avatar pill live for the ops set.
   // Mirrors FollowupClaimBanner's per-delivery sub but unfiltered at the
@@ -536,6 +530,14 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
           : filter === 'all'
             ? allRows
             : (unassignedSorted ?? buckets[filter]);
+
+  // Resolve IDs from the list currently visible on screen. This includes the
+  // separate cross-date Postponed query and postponed rows merged into All, so
+  // bulk status/delete previews receive the same rows the user highlighted.
+  const selectedRows = useMemo<DeliveryRow[]>(() => {
+    if (!selectMode || selectedIds.size === 0) return [];
+    return list.filter((d) => d.id && selectedIds.has(d.id));
+  }, [list, selectMode, selectedIds]);
   const filterOptions = [
     { id: 'all' as const, label: 'All', count: allRows.length },
     { id: 'to_notify' as const, label: 'To notify', count: toNotifyRows.length },
@@ -687,7 +689,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
                   });
                 }}
                 onLongPress={
-                  canBulkAssign && itemId && filter !== 'postponed'
+                  canBulkSelect && itemId
                     ? () => {
                         if (!selectMode) enterSelect(itemId);
                         else toggleSelected(itemId);
