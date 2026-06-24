@@ -12,6 +12,7 @@ import {
   reactivateClient,
   updateClient,
 } from '@/services/clients';
+import { getAgentPaymentFloor } from '@/services/rate-card';
 import { errorMessage } from '@/lib/errors';
 import { formatNaira } from '@/lib/format';
 
@@ -22,6 +23,8 @@ function ceilingToString(v: number | null | undefined): string {
 export default function EditClient() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { data: client, loading, error, reload } = useAsync(() => getClient(id), [id]);
+  // Floor a charge cap can't go below (highest agent payout at any location).
+  const { data: floor } = useAsync(getAgentPaymentFloor, []);
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -88,6 +91,17 @@ export default function EditClient() {
       const parsed = Number(raw);
       if (!Number.isFinite(parsed) || parsed < 0) {
         setActionError('Max Reda charge must be a non-negative number');
+        return;
+      }
+      // A cap below the highest agent payout forces a negative margin on
+      // deliveries to that location (cap clamps the charge, never the agent
+      // fee). Block it here too — the server enforces the same rule.
+      if (floor && parsed < floor.amount) {
+        setActionError(
+          `Cap of ${formatNaira(parsed)} is below the highest agent payout ` +
+            `(${formatNaira(floor.amount)}${floor.location_name ? ` at ${floor.location_name}` : ''}). ` +
+            `Deliveries there would lose money. Set at least ${formatNaira(floor.amount)}, or remove the cap.`,
+        );
         return;
       }
       maxChargeToSend = parsed;
@@ -240,6 +254,9 @@ export default function EditClient() {
         {client.max_charge_per_delivery != null
           ? `Currently capped at ${formatNaira(client.max_charge_per_delivery)} per delivery. Rate-card charges above this are clamped to the cap.`
           : 'No cap — Reda charges the full rate-card amount for the delivery location.'}
+        {floor && floor.amount > 0
+          ? ` Must be at least ${formatNaira(floor.amount)} (highest agent payout${floor.location_name ? `, at ${floor.location_name}` : ''}) so no delivery loses money.`
+          : ''}
       </Text>
 
       <View style={styles.toggleRow}>
