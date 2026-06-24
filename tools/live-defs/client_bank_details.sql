@@ -39,10 +39,11 @@ begin
   if not found then
     raise exception 'client not found' using errcode = 'P0002';
   end if;
-  -- Nigerian NUBAN is 10 digits. Validate only when provided so the field stays
-  -- optional; a bad number would otherwise silently fail the Moniepoint upload.
-  if v_acct_no is not null and v_acct_no !~ '^[0-9]{10}$' then
-    raise exception 'bank account number must be exactly 10 digits' using errcode = '23514';
+  -- Bank NUBAN is 10 digits; fintech wallets (OPay, PalmPay, Moniepoint) use the
+  -- 11-digit phone-based account. Allow both. Validate only when provided so the
+  -- field stays optional; a bad number would silently fail the Moniepoint upload.
+  if v_acct_no is not null and v_acct_no !~ '^[0-9]{10,11}$' then
+    raise exception 'bank account number must be 10 or 11 digits' using errcode = '23514';
   end if;
 
   -- Sets (not coalesces) all three: the edit form always submits the full set

@@ -123,11 +123,11 @@ export default function EditClient() {
       }
       maxChargeToSend = parsed;
     }
-    // Account number must be a 10-digit NUBAN when provided (server validates too,
-    // but catch it here so the Moniepoint upload never gets a bad row).
+    // Bank NUBAN is 10 digits; fintech wallets (OPay, PalmPay, Moniepoint) use an
+    // 11-digit phone-based account. Allow both (server validates too).
     const acctNo = bankAccountNumber.trim();
-    if (bankDirty && acctNo !== '' && !/^\d{10}$/.test(acctNo)) {
-      setActionError('Bank account number must be exactly 10 digits');
+    if (bankDirty && acctNo !== '' && !/^\d{10,11}$/.test(acctNo)) {
+      setActionError('Bank account number must be 10 or 11 digits');
       return;
     }
     setSubmitting(true);
