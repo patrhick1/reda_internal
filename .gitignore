@@ -77,3 +77,6 @@ mobile/*-firebase-adminsdk-*.json
 
 # Generated — committed deliberately, not ignored:
 # mobile/src/types/database.gen.ts
+
+# Local review notes
+bot-pipeline-prompt-review.md

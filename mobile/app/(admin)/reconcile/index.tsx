@@ -6,6 +6,7 @@ import {
   Platform,
   Pressable,
   RefreshControl,
+  ScrollView,
   Share,
   Text,
   View,
@@ -595,7 +596,11 @@ function SummaryTab({
   }
 
   return (
-    <View style={{ flex: 1, padding: 16 }}>
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
+      showsVerticalScrollIndicator={false}
+    >
       <Card>
         <Text style={kicker}>Period</Text>
         <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black, marginTop: 4 }}>
@@ -625,7 +630,7 @@ function SummaryTab({
           Share summary
         </Button>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
