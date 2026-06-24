@@ -40,7 +40,7 @@ import {
   type ProductMatch,
 } from '../_shared/product-extract.ts';
 
-const EXTRACTION_PROMPT_VERSION = 'bot-parse-v4-gpt-4.1-mini';
+const EXTRACTION_PROMPT_VERSION = 'bot-parse-v5-client-rep-gpt-4.1-mini';
 const EXTRACTION_MODEL          = 'openai/gpt-4.1-mini';
 
 // Hard cap on the OpenRouter request so a hung inference can't park a row in
@@ -397,6 +397,9 @@ Deno.serve(async (req) => {
   // Delivery instructions are self-extracted from the raw message by our LLM —
   // the contractor doesn't send them, so there's no contractor field to merge.
   let deliveryInstructionsRaw: string | null = null;
+  // Client's sales rep / closer named at the END of the forward. LLM-only (no
+  // contractor field). Optional — null on most orders. Used at reconciliation.
+  let clientRepRaw: string | null = null;
   let lineItems: LineItem[] = contractorProducts ?? [];
   let orderTotal: number | null =
     typeof contractorFields.customer_price === 'number' ? contractorFields.customer_price : null;
@@ -442,6 +445,9 @@ Deno.serve(async (req) => {
     // Instructions: LLM-only (no contractor source). Best-effort, conservative
     // prompt — null on the vast majority of orders that carry no handling note.
     deliveryInstructionsRaw = out.parsed.instructions ?? null;
+    // Client rep: LLM-only, the trailing closer name. null when the forward
+    // doesn't end with one (most orders).
+    clientRepRaw = out.parsed.client_rep ?? null;
     // Products: prefer a contractor-supplied array, else the LLM's array.
     if (lineItems.length === 0) lineItems = out.parsed.products ?? [];
     // Order total: LLM's Total line, else sum of line prices, else contractor's.
@@ -492,6 +498,7 @@ Deno.serve(async (req) => {
   if (customerPhoneAlt && customerPhoneAlt === customerPhone) customerPhoneAlt = null;
   const rawAddress    = rawAddressRaw?.trim() || null;
   const deliveryInstructions = deliveryInstructionsRaw?.trim() || null;
+  const clientRep     = clientRepRaw?.trim() || null;
   const customerPrice = orderTotal !== null && orderTotal >= 0 ? orderTotal : null;
 
   // Optional client hint from contractor — disambiguates "same product name,
@@ -653,6 +660,7 @@ Deno.serve(async (req) => {
       customer_phone_alt: customerPhoneAltRaw,
       raw_address:        rawAddressRaw,
       instructions:       deliveryInstructions,   // self-extracted handling note (null if none)
+      client_rep:         clientRep,              // client's trailing rep/closer name (null if none)
       total_amount:       orderTotal,
       products:           lineItems,    // [Feature A] the full extracted line set
     },
@@ -726,6 +734,7 @@ Deno.serve(async (req) => {
     p_assigned_agent_id:  agentResolution.agent_id,
     p_items:              resolvedItems,                    // [Feature A] line items
     p_delivery_instructions: deliveryInstructions,         // self-extracted handling note (null if none)
+    p_client_rep:         clientRep,                        // client's trailing rep/closer name (null if none)
   });
 
   if (createErr) {
