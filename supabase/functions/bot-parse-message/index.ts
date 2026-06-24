@@ -41,7 +41,7 @@ import {
   type ProductMatch,
 } from '../_shared/product-extract.ts';
 
-const EXTRACTION_PROMPT_VERSION = 'bot-parse-v5-client-rep-gpt-4.1-mini';
+const EXTRACTION_PROMPT_VERSION = 'bot-parse-v6-quantity-examples-gpt-4.1-mini';
 const EXTRACTION_MODEL          = 'openai/gpt-4.1-mini';
 
 // Hard cap on the OpenRouter request so a hung inference can't park a row in

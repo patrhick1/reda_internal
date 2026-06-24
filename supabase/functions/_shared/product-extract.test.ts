@@ -1,6 +1,12 @@
-// Tests for expandKnownCombos — run: deno test supabase/functions/_shared/product-extract.test.ts
-import { assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts';
+// Prompt-contract and extraction-helper regression tests.
+// Run: deno test supabase/functions/_shared/product-extract.test.ts
 import {
+  assert,
+  assertEquals,
+  assertStringIncludes,
+} from 'https://deno.land/std@0.224.0/assert/mod.ts';
+import {
+  PRODUCT_EXTRACTION_PROMPT,
   coerceExtractedProducts,
   expandKnownCombos,
   extractTrailingRep,
@@ -86,32 +92,92 @@ Deno.test('client_rep: trimmed, and blank/absent → null', () => {
   assertEquals(coerceExtractedProducts({ products: [] })?.client_rep, null); // field omitted
 });
 
+// --- prompt contract ---------------------------------------------------------
+
+Deno.test('prompt: explicit quantity survives package-selection wording', () => {
+  assertStringIncludes(
+    PRODUCT_EXTRACTION_PROMPT,
+    'SELECT YOUR PACKAGE 2 Dashboard Umbrella = ₦55,000',
+  );
+  assertStringIncludes(
+    PRODUCT_EXTRACTION_PROMPT,
+    '"product_name":"Dashboard Umbrella","quantity":2',
+  );
+});
+
+Deno.test('prompt: quantity rules cover same-product extras and independent line quantities', () => {
+  assertStringIncludes(
+    PRODUCT_EXTRACTION_PROMPT,
+    'A number immediately before a product name is normally that product\'s quantity',
+  );
+  assertStringIncludes(
+    PRODUCT_EXTRACTION_PROMPT,
+    '"product_name":"Stand Again Oil","quantity":3',
+  );
+  assertStringIncludes(
+    PRODUCT_EXTRACTION_PROMPT,
+    '"product_name":"Normal Arabian Tea","quantity":2',
+  );
+  assertStringIncludes(
+    PRODUCT_EXTRACTION_PROMPT,
+    '"product_name":"Double Arabian Tea","quantity":3',
+  );
+});
+
+Deno.test('prompt: complete examples preserve strict-schema fields and field boundaries', () => {
+  const exampleOutputs = PRODUCT_EXTRACTION_PROMPT.match(/Output: \{[^\n]+\}/g) ?? [];
+  assertEquals(exampleOutputs.length, 5);
+  for (const output of exampleOutputs) {
+    const parsed = JSON.parse(output.slice('Output: '.length));
+    assertEquals(Object.keys(parsed).sort(), [
+      'client_rep',
+      'customer_name',
+      'customer_phone',
+      'customer_phone_alt',
+      'instructions',
+      'products',
+      'raw_address',
+      'total_amount',
+    ]);
+    for (const product of parsed.products) {
+      assertEquals(Object.keys(product).sort(), [
+        'customer_price',
+        'free',
+        'product_name',
+        'quantity',
+      ]);
+    }
+  }
+  assertStringIncludes(PRODUCT_EXTRACTION_PROMPT, 'Do NOT put');
+  assertStringIncludes(PRODUCT_EXTRACTION_PROMPT, '"Payment on Delivery"');
+  assertStringIncludes(PRODUCT_EXTRACTION_PROMPT, '"Assigned to:"');
+});
+
 // --- extractTrailingRep (deterministic fallback for the LLM-skip path) -------
 
-Deno.test('extractTrailingRep: "Available for delivery <Name>" tail', () => {
+Deno.test('extractTrailingRep: clean standalone final name', () => {
   const raw = [
     'CUSTOMER NAME: Amaka',
     'PRODUCT: Buy 3 Water Filter Get 2 FREE (5) — ₦60,000',
     '',
-    '👤 Available for delivery Linda',
-    '📞',
+    'Linda',
   ].join('\n');
   assertEquals(extractTrailingRep(raw), 'Linda');
+  assertEquals(extractTrailingRep(`${raw}\nMary Ribue Ofre`), 'Mary Ribue Ofre');
 });
 
-Deno.test('extractTrailingRep: "Available for delivery <Name>" survives trailing emoji line', () => {
-  const raw = 'PRODUCT: x\n👤 Available for delivery Linda\n📞';
-  assertEquals(extractTrailingRep(raw), 'Linda');
-});
-
-Deno.test('extractTrailingRep: lone parenthesised token is NOT captured (place/day/landmark ambiguity)', () => {
-  // A bare "(Name)" is structurally identical to a place/day/note — we skip it
-  // rather than risk storing a location as a rep. The LLM handles "(Cynthia)" on
-  // the live path; this fallback intentionally misses it.
+Deno.test('extractTrailingRep: legacy labels and decorated names are not captured', () => {
+  assertEquals(extractTrailingRep('PRODUCT: Water Filter\nAvailable for delivery Linda'), null);
+  assertEquals(extractTrailingRep('PRODUCT: Water Filter\nCloser: Linda'), null);
+  assertEquals(extractTrailingRep('PRODUCT: Water Filter\nAssigned to: Miracle'), null);
   assertEquals(extractTrailingRep('PRODUCT NAME: Gold Package\n\n(Cynthia)'), null);
+});
+
+Deno.test('extractTrailingRep: ambiguous place/day/landmark tokens are not captured', () => {
   assertEquals(extractTrailingRep('(Ikorodu)'), null);
   assertEquals(extractTrailingRep('(Chevron)'), null);
   assertEquals(extractTrailingRep('(Monday)'), null);
+  assertEquals(extractTrailingRep('Available for delivery'), null);
 });
 
 Deno.test('extractTrailingRep: no rep present → null (no false positives)', () => {
@@ -121,4 +187,5 @@ Deno.test('extractTrailingRep: no rep present → null (no false positives)', ()
   assertEquals(extractTrailingRep('09079700010'), null); // bare phone
   assertEquals(extractTrailingRep(''), null);
   assertEquals(extractTrailingRep(null), null);
+  assert(!PRODUCT_EXTRACTION_PROMPT.includes('Available for delivery Linda" → "Linda'));
 });
