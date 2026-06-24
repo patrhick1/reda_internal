@@ -43,7 +43,15 @@ import { colors, fonts } from '@/lib/theme';
 import { formatNaira } from '@/lib/format';
 import { errorMessage } from '@/lib/errors';
 import { formatRangeLagos, isYmd, todayLagos } from '@/lib/date';
-import { detectPreset, presetRange, type Preset } from '@/lib/reconcile';
+import {
+  buildMoniepointPayoutCsv,
+  detectPreset,
+  presetRange,
+  type MoniepointPayoutRow,
+  type Preset,
+} from '@/lib/reconcile';
+import { listClients } from '@/services/clients';
+import { downloadTextFile } from '@/lib/download';
 
 type Tab = 'clients' | 'agents' | 'summary';
 
@@ -84,6 +92,11 @@ export default function AdminReconcile() {
       isSingleDay ? listSettlementsForDate(to) : Promise.resolve(new Map<string, SettlementRow>()),
     [from, to, isSingleDay],
   );
+
+  // Vendor bank details for the Moniepoint payout CSV. Date-independent, so it
+  // loads once. Includes inactive clients so a deactivated vendor still owed
+  // money this day isn't silently dropped from the file.
+  const clientBanksQ = useAsync(() => listClients({ includeInactive: true }), []);
 
   useFocusEffect(
     useCallback(() => {
@@ -190,6 +203,61 @@ export default function AdminReconcile() {
     );
   }, [to, clientsQ, agentsQ]);
 
+  // Build + download the Moniepoint bulk-transfer CSV for the selected day.
+  // Includes every vendor with a POSITIVE remit AND complete bank details;
+  // vendors owed money but missing bank details are reported so Uzo can fix
+  // them (they'd silently be unpaid otherwise). Web-only download.
+  const onDownloadPayoutCsv = useCallback(() => {
+    const remit = clientsQ.data ?? [];
+    const bankById = new Map((clientBanksQ.data ?? []).map((c) => [c.id, c] as const));
+    const payable: MoniepointPayoutRow[] = [];
+    const missing: string[] = [];
+    for (const r of remit) {
+      const amount = Number(r.total_remit);
+      if (!(amount > 0)) continue; // only positive remits get paid out
+      const c = bankById.get(r.client_id);
+      if (c && c.bank_account_name && c.bank_account_number && c.bank_name) {
+        payable.push({
+          accountName: c.bank_account_name,
+          accountNumber: c.bank_account_number,
+          amount,
+          bank: c.bank_name,
+        });
+      } else {
+        missing.push(r.client_name);
+      }
+    }
+    if (payable.length === 0) {
+      notifyErr(
+        'No payout file',
+        missing.length
+          ? `These vendors are owed money but have no bank details: ${missing.join(
+              ', ',
+            )}.\n\nAdd their Account Name, Account Number and Bank under Catalog → Clients, then try again.`
+          : 'No vendor has a positive remit for this day.',
+      );
+      return;
+    }
+    const csv = buildMoniepointPayoutCsv(payable);
+    const ok = downloadTextFile(`reda-moniepoint-payout-${to}.csv`, csv);
+    if (!ok) {
+      notifyErr(
+        'Use the web app',
+        'The Moniepoint payout file download is available on the web app (desktop browser).',
+      );
+      return;
+    }
+    if (missing.length) {
+      const total = payable.reduce((s, p) => s + p.amount, 0);
+      notifyErr(
+        'Payout file downloaded — some skipped',
+        `${payable.length} vendor${payable.length === 1 ? '' : 's'} · ${formatNaira(
+          total,
+        )}.\n\nSkipped (no bank details): ${missing.join(', ')}.`,
+      );
+    }
+  }, [clientsQ.data, clientBanksQ.data, to, notifyErr]);
+
   const rangeLabel = formatRangeLagos(from, to);
   const activePreset = detectPreset(from, to);
 
@@ -263,6 +331,8 @@ export default function AdminReconcile() {
           setOpenId={setOpenId}
           settlements={settlementsQ.data ?? EMPTY_SETTLEMENTS}
           canSettle={canSettle}
+          showDownload={canSettle}
+          onDownloadCsv={onDownloadPayoutCsv}
           onSettle={(id, note) => handleSettle('client', id, note)}
           onVoid={handleVoid}
           onOpenClient={(c) =>
@@ -315,6 +385,8 @@ function ClientsList({
   onOpenClient,
   settlements,
   canSettle,
+  showDownload,
+  onDownloadCsv,
   onSettle,
   onVoid,
 }: {
@@ -324,6 +396,9 @@ function ClientsList({
   onOpenClient: (c: ClientRemitRow) => void;
   settlements: Map<string, SettlementRow>;
   canSettle: boolean;
+  /** Show the "Download Moniepoint payout file" button (admin + single day). */
+  showDownload?: boolean;
+  onDownloadCsv?: () => void;
   onSettle: (subjectId: string, note: string | null) => void;
   onVoid: (settlementId: string) => void;
 }) {
@@ -351,30 +426,37 @@ function ClientsList({
         />
       }
       ListHeaderComponent={
-        <Card style={{ marginBottom: 12 }}>
-          <Text style={kicker}>Total remit owed</Text>
-          <Text
-            style={{
-              fontFamily: fonts.extrabold,
-              fontSize: 36,
-              color: colors.black,
-              letterSpacing: -1,
-              marginTop: 4,
-            }}
-          >
-            {formatNaira(totalRemit)}
-          </Text>
-          <Text
-            style={{
-              fontFamily: fonts.medium,
-              fontSize: 13,
-              color: colors.textSecondary,
-              marginTop: 2,
-            }}
-          >
-            {deliveriesTotal} deliveries · {count} {count === 1 ? 'client' : 'clients'}
-          </Text>
-        </Card>
+        <View style={{ marginBottom: 12 }}>
+          <Card style={{ marginBottom: showDownload && onDownloadCsv ? 10 : 0 }}>
+            <Text style={kicker}>Total remit owed</Text>
+            <Text
+              style={{
+                fontFamily: fonts.extrabold,
+                fontSize: 36,
+                color: colors.black,
+                letterSpacing: -1,
+                marginTop: 4,
+              }}
+            >
+              {formatNaira(totalRemit)}
+            </Text>
+            <Text
+              style={{
+                fontFamily: fonts.medium,
+                fontSize: 13,
+                color: colors.textSecondary,
+                marginTop: 2,
+              }}
+            >
+              {deliveriesTotal} deliveries · {count} {count === 1 ? 'client' : 'clients'}
+            </Text>
+          </Card>
+          {showDownload && onDownloadCsv ? (
+            <Button variant="secondary" full icon="share" onPress={onDownloadCsv}>
+              Download Moniepoint payout file
+            </Button>
+          ) : null}
+        </View>
       }
       renderItem={({ item }) => (
         <ExpandableRow

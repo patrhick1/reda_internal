@@ -141,6 +141,56 @@ export function clientShareNote(clientRep: string | null | undefined, note: stri
   return note === '—' ? `${rep} —` : `${rep} — ${note}`;
 }
 
+// ---------------------------------------------------------------------------
+// Moniepoint bulk-payout CSV. Uzo downloads this at EOD and uploads it to the
+// Moniepoint bulk-transfer screen to pay every vendor in one batch. Columns and
+// order match Moniepoint's official template EXACTLY (Bulk-transfer-template.xlsx):
+//   Account Name, Account Number, Amount, Bank
+// The `Bank` value must be a name Moniepoint recognises — the client form picks
+// it from MONIEPOINT_BANKS, so by the time a row reaches here it's already valid.
+// ---------------------------------------------------------------------------
+
+/** One beneficiary line for the Moniepoint bulk-transfer file. Callers pass only
+ *  vendors with complete bank details and a positive payout. */
+export type MoniepointPayoutRow = {
+  accountName: string;
+  accountNumber: string;
+  amount: number;
+  bank: string;
+};
+
+const MONIEPOINT_CSV_HEADERS = ['Account Name', 'Account Number', 'Amount', 'Bank'] as const;
+
+/** RFC-4180 cell escaping: quote + double inner quotes when the value contains a
+ *  comma, quote, or newline. Account names can contain commas (e.g. "X, Y Ltd"). */
+function csvCell(value: string): string {
+  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+/** Plain numeric amount for the CSV — no currency symbol or thousands separators
+ *  (Moniepoint parses the raw number). Whole naira stays integer; kobo keeps 2dp. */
+function moniepointAmount(n: number): string {
+  const r = Math.round(n * 100) / 100;
+  return Number.isInteger(r) ? String(r) : r.toFixed(2);
+}
+
+/** Build the Moniepoint bulk-transfer CSV from already-validated payout rows.
+ *  Header row + CRLF line endings (what spreadsheet/upload parsers expect). */
+export function buildMoniepointPayoutCsv(rows: MoniepointPayoutRow[]): string {
+  const lines = [MONIEPOINT_CSV_HEADERS.join(',')];
+  for (const r of rows) {
+    lines.push(
+      [
+        csvCell(r.accountName),
+        csvCell(r.accountNumber),
+        moniepointAmount(r.amount),
+        csvCell(r.bank),
+      ].join(','),
+    );
+  }
+  return lines.join('\r\n') + '\r\n';
+}
+
 // Builds the WhatsApp "Share with client" message in Uzo's preferred shape:
 // per-delivery blocks (Name / Product(s) / Paid: Cash when applicable /
 // To Remit / Note), then a Total block (delivered units per product and the

@@ -470,6 +470,9 @@ export type Database = {
       clients: {
         Row: {
           auto_cancel_soft_fails: boolean
+          bank_account_name: string | null
+          bank_account_number: string | null
+          bank_name: string | null
           contact_email: string | null
           contact_phone: string | null
           created_at: string
@@ -481,6 +484,9 @@ export type Database = {
         }
         Insert: {
           auto_cancel_soft_fails?: boolean
+          bank_account_name?: string | null
+          bank_account_number?: string | null
+          bank_name?: string | null
           contact_email?: string | null
           contact_phone?: string | null
           created_at?: string
@@ -492,6 +498,9 @@ export type Database = {
         }
         Update: {
           auto_cancel_soft_fails?: boolean
+          bank_account_name?: string | null
+          bank_account_number?: string | null
+          bank_name?: string | null
           contact_email?: string | null
           contact_phone?: string | null
           created_at?: string

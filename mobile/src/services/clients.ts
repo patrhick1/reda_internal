@@ -24,6 +24,26 @@ export type ClientInput = {
 // pass null cleanly.
 type RpcText = string | null;
 
+// `set_client_bank_details` is a hand-written RPC not yet in the generated DB
+// types, so the typed `supabase.rpc` chain rejects its name. Cast through this
+// one helper (mirrors the pattern in services/stock-movements.ts).
+function rpcUntyped(fn: string, args: Record<string, unknown>) {
+  return (
+    supabase as unknown as {
+      rpc: (
+        fn: string,
+        args: Record<string, unknown>,
+      ) => Promise<{ data: unknown; error: { message: string } | null }>;
+    }
+  ).rpc(fn, args);
+}
+
+export type ClientBankInput = {
+  bankAccountName: string | null;
+  bankAccountNumber: string | null;
+  bankName: string | null;
+};
+
 /** List clients ordered by name. Excludes inactive by default. */
 export async function listClients(opts: { includeInactive?: boolean } = {}): Promise<Client[]> {
   let query = supabase.from('clients').select('*').order('name');
@@ -62,6 +82,24 @@ export async function updateClient(id: string, input: ClientInput, reason: RpcTe
     p_reason: reason as unknown as string,
     p_max_charge_per_delivery: input.maxChargePerDelivery as unknown as number,
     p_auto_cancel_soft_fails: input.autoCancelSoftFails as unknown as boolean,
+  });
+  if (error) throw error;
+}
+
+/** Set (overwrite) a client's bank details for the Moniepoint payout CSV. All
+ *  three fields are written together — the edit form submits the full set
+ *  pre-filled, so clearing one intentionally nulls it. Admin-only server-side. */
+export async function setClientBankDetails(
+  id: string,
+  input: ClientBankInput,
+  reason: RpcText,
+): Promise<void> {
+  const { error } = await rpcUntyped('set_client_bank_details', {
+    p_id: id,
+    p_bank_account_name: input.bankAccountName,
+    p_bank_account_number: input.bankAccountNumber,
+    p_bank_name: input.bankName,
+    p_reason: reason,
   });
   if (error) throw error;
 }
