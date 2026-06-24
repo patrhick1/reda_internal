@@ -33,7 +33,7 @@ export default function NewWaybill() {
   const clientsQ = useAsync<Client[]>(() => listClients(), []);
 
   const [clientId, setClientId] = useState<string | null>(null);
-  const [label, setLabel] = useState('Waybill');
+  const [orderType, setOrderType] = useState<'Pickup' | 'Waybill'>('Pickup');
   const [fare, setFare] = useState(''); // trip fare Reda paid (Uber / driver)
   const [fee, setFee] = useState(''); // fee Reda charges the client
   const [extras, setExtras] = useState<Extra[]>([]);
@@ -68,7 +68,7 @@ export default function NewWaybill() {
 
   /** Breakdown of the CHARGED column: the fee, then each pass-through. */
   function buildNote(): string {
-    const lines = [`Pickup ${formatNaira(feeNum)}`];
+    const lines = [`${orderType} ${formatNaira(feeNum)}`];
     for (const e of extras) {
       const label = e.label.trim() || 'Extra';
       if (num(e.amount) > 0) lines.push(`${label} ${formatNaira(num(e.amount))}`);
@@ -93,7 +93,7 @@ export default function NewWaybill() {
         charged,
         paid,
         note: buildNote(),
-        label: label.trim() || 'Waybill',
+        label: orderType,
       });
       router.back();
     } catch (e) {
@@ -104,7 +104,7 @@ export default function NewWaybill() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
-      <AppBar title="New waybill / pickup" onBack={() => router.back()} />
+      <AppBar title="New pickup / waybill" onBack={() => router.back()} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -124,11 +124,14 @@ export default function NewWaybill() {
             searchable
           />
 
-          <Input
-            label="Label (shown as the customer name)"
-            value={label}
-            onChange={setLabel}
-            placeholder="Waybill"
+          <Select
+            label="Type"
+            value={orderType}
+            options={[
+              { value: 'Pickup', label: 'Pickup' },
+              { value: 'Waybill', label: 'Waybill' },
+            ]}
+            onChange={setOrderType}
           />
 
           <Input

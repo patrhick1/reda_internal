@@ -184,7 +184,7 @@ export default function AdminHome() {
           />
           <QuickAction
             icon="truck"
-            label="New waybill"
+            label="Pickup / Waybill"
             accent={colors.black}
             onPress={() => router.push('/(admin)/waybill-new')}
           />
