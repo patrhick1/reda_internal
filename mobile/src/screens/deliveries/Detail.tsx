@@ -371,7 +371,7 @@ export function DeliveryDetail() {
       <ScrollView
         contentContainerStyle={{
           padding: 16,
-          paddingBottom: (canEdit ? 130 : 32) + insets.bottom,
+          paddingBottom: (canEdit ? (canHandoff ? 194 : 130) : 32) + insets.bottom,
           gap: 12,
         }}
       >
@@ -951,23 +951,45 @@ export function DeliveryDetail() {
             backgroundColor: colors.surface,
             borderTopWidth: 1,
             borderTopColor: colors.border,
-            flexDirection: 'row',
             gap: 8,
           }}
         >
           {canHandoff ? (
-            <Button variant="secondary" icon="user" onPress={() => setHandoffOpen(true)}>
+            <Button
+              variant="secondary"
+              full
+              icon="user"
+              style={{ paddingHorizontal: 14 }}
+              onPress={() => setHandoffOpen(true)}
+            >
               Hand off
             </Button>
           ) : null}
-          <Button variant="secondary" full={isTerminal} onPress={() => setUpdateOpen(true)}>
-            Update status
-          </Button>
-          {!isTerminal ? (
-            <Button variant="emphasis" full icon="check" onPress={() => setMarkOpen(true)}>
-              Mark delivered
-            </Button>
-          ) : null}
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Button
+                variant="secondary"
+                full
+                style={{ paddingHorizontal: 14 }}
+                onPress={() => setUpdateOpen(true)}
+              >
+                Update status
+              </Button>
+            </View>
+            {!isTerminal ? (
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Button
+                  variant="emphasis"
+                  full
+                  icon="check"
+                  style={{ paddingHorizontal: 14 }}
+                  onPress={() => setMarkOpen(true)}
+                >
+                  Mark delivered
+                </Button>
+              </View>
+            ) : null}
+          </View>
         </View>
       ) : null}
 

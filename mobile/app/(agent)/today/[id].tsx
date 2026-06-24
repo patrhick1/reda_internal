@@ -226,7 +226,7 @@ export default function AgentDeliveryDetail() {
       <ScrollView
         contentContainerStyle={{
           padding: 16,
-          paddingBottom: 130 + insets.bottom,
+          paddingBottom: (canHandoff ? 194 : 130) + insets.bottom,
           gap: 12,
         }}
       >
@@ -654,29 +654,44 @@ export default function AgentDeliveryDetail() {
           backgroundColor: colors.surface,
           borderTopWidth: 1,
           borderTopColor: colors.border,
-          flexDirection: 'row',
           gap: 8,
         }}
       >
         {canHandoff ? (
-          <View style={{ flex: 1 }}>
-            <Button variant="secondary" full icon="user" onPress={() => setHandoffOpen(true)}>
-              Hand off
-            </Button>
-          </View>
-        ) : null}
-        <View style={{ flex: 1 }}>
-          <Button variant="secondary" full onPress={() => setUpdateOpen(true)}>
-            Update status
+          <Button
+            variant="secondary"
+            full
+            icon="user"
+            style={{ paddingHorizontal: 14 }}
+            onPress={() => setHandoffOpen(true)}
+          >
+            Hand off
           </Button>
-        </View>
-        {!isTerminal ? (
-          <View style={{ flex: 1 }}>
-            <Button variant="emphasis" full onPress={() => setMarkOpen(true)}>
-              Mark delivered
+        ) : null}
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Button
+              variant="secondary"
+              full
+              style={{ paddingHorizontal: 14 }}
+              onPress={() => setUpdateOpen(true)}
+            >
+              Update status
             </Button>
           </View>
-        ) : null}
+          {!isTerminal ? (
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Button
+                variant="emphasis"
+                full
+                style={{ paddingHorizontal: 14 }}
+                onPress={() => setMarkOpen(true)}
+              >
+                Mark delivered
+              </Button>
+            </View>
+          ) : null}
+        </View>
       </View>
 
       <MarkDeliveredSheet
