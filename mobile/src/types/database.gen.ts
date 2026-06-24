@@ -1800,6 +1800,7 @@ export type Database = {
           latest_notified: boolean | null
           location_id: string | null
           margin: number | null
+          order_type: string | null
           paid: number | null
           parent_delivery_id: string | null
           payment_method: string | null
@@ -1909,6 +1910,7 @@ export type Database = {
           latest_message_at: string | null
           latest_notified: boolean | null
           location_id: string | null
+          order_type: string | null
           paid: number | null
           parent_delivery_id: string | null
           payment_method: string | null
@@ -2377,6 +2379,17 @@ export type Database = {
       correct_delivery_location: {
         Args: { p_delivery_id: string; p_location_id: string; p_reason: string }
         Returns: undefined
+      }
+      create_waybill: {
+        Args: {
+          p_client_id: string
+          p_charged: number
+          p_paid: number
+          p_note?: string
+          p_label?: string
+          p_scheduled_date?: string
+        }
+        Returns: string
       }
       create_app_user: {
         Args: {

@@ -148,6 +148,16 @@ export default function AdminLayout() {
           href: null,
         }}
       />
+      <Tabs.Screen
+        name="waybill-new"
+        options={{
+          title: 'New waybill',
+          tabBarIcon: ({ color, focused }) => (
+            <Icon name="truck" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
+          ),
+          href: null,
+        }}
+      />
     </Tabs>
   );
 }

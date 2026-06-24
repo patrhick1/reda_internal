@@ -278,6 +278,8 @@ export function DeliveryDetail() {
   const expectedTotal = Number(d.customer_price ?? 0);
   const showCharged = canSeeCharged(user.role);
   const showMargin = canSeeMargin(user.role);
+  // Waybill/pickup: a money-only order with no product, customer, or address.
+  const isWaybill = d.order_type === 'waybill';
   const showAgentPayment =
     user.role === 'admin' || (user.role === 'agent' && d.assigned_agent_id === user.userId);
 
@@ -500,49 +502,55 @@ export function DeliveryDetail() {
             style={{
               fontFamily: fonts.semibold,
               fontSize: 15,
-              color: colors.black,
+              color: isWaybill ? colors.textSecondary : colors.black,
               lineHeight: 22,
               marginTop: 6,
             }}
           >
-            {d.raw_address}
+            {isWaybill ? 'No customer address — pickup / waybill order' : d.raw_address}
           </Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 }}>
-            <Icon name="mapPin" size={13} color={colors.textSecondary} />
-            <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary }}>
-              {d.location_name ?? 'Unmatched location'}
-            </Text>
-          </View>
-          {/* Post-delivery location correction. Delivered rows are locked out
+          {isWaybill ? null : (
+            <>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 }}>
+                <Icon name="mapPin" size={13} color={colors.textSecondary} />
+                <Text
+                  style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary }}
+                >
+                  {d.location_name ?? 'Unmatched location'}
+                </Text>
+              </View>
+              {/* Post-delivery location correction. Delivered rows are locked out
               of the Edit screen, but a wrong location means charged_snapshot
               and agent_payment_snapshot were frozen at the wrong rate and feed
               reconciliation. Admin-only; the dedicated correct_delivery_location
               RPC re-snapshots both and audit-logs the change. */}
-          {canCorrectDeliveryLocation(user.role, status) ? (
-            <TouchableOpacity
-              onPress={() => setCorrectLocOpen(true)}
-              accessibilityRole="button"
-              accessibilityLabel="Correct delivery location"
-              style={{
-                marginTop: 12,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                paddingVertical: 10,
-                paddingHorizontal: 14,
-                borderRadius: 999,
-                borderWidth: 1.5,
-                borderColor: colors.black,
-                backgroundColor: colors.white,
-              }}
-            >
-              <Icon name="mapPin" size={15} color={colors.black} />
-              <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.black }}>
-                Correct location
-              </Text>
-            </TouchableOpacity>
-          ) : null}
+              {canCorrectDeliveryLocation(user.role, status) ? (
+                <TouchableOpacity
+                  onPress={() => setCorrectLocOpen(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Correct delivery location"
+                  style={{
+                    marginTop: 12,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    paddingVertical: 10,
+                    paddingHorizontal: 14,
+                    borderRadius: 999,
+                    borderWidth: 1.5,
+                    borderColor: colors.black,
+                    backgroundColor: colors.white,
+                  }}
+                >
+                  <Icon name="mapPin" size={15} color={colors.black} />
+                  <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.black }}>
+                    Correct location
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+            </>
+          )}
           {/* Admin escape hatch for a wrongly-marked Delivered. Nulls the
               delivered-only columns (qty, paid, payment_method, cash POS
               fee) and flips status back to pending; stock auto-recovers.
@@ -592,8 +600,21 @@ export function DeliveryDetail() {
             }}
           >
             <View style={{ flex: 1 }}>
-              <Text style={kicker}>{(d.items?.length ?? 0) > 1 ? 'Products' : 'Product'}</Text>
-              {d.items && d.items.length > 0 ? (
+              <Text style={kicker}>
+                {isWaybill ? 'Type' : (d.items?.length ?? 0) > 1 ? 'Products' : 'Product'}
+              </Text>
+              {isWaybill ? (
+                <Text
+                  style={{
+                    fontFamily: fonts.bold,
+                    fontSize: 16,
+                    color: colors.black,
+                    marginTop: 4,
+                  }}
+                >
+                  Waybill / pickup
+                </Text>
+              ) : d.items && d.items.length > 0 ? (
                 // [Feature A] itemized — one block per product line
                 <View style={{ marginTop: 4, gap: 6 }}>
                   {d.items.map((it) => {

@@ -183,6 +183,12 @@ export default function AdminHome() {
             onPress={() => router.push('/(admin)/deliveries/new')}
           />
           <QuickAction
+            icon="truck"
+            label="New waybill"
+            accent={colors.black}
+            onPress={() => router.push('/(admin)/waybill-new')}
+          />
+          <QuickAction
             icon="calendar"
             label="End of day"
             accent={colors.black}

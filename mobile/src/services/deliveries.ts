@@ -446,6 +446,9 @@ export async function listNegativeMarginDeliveries(): Promise<DeliveryRow[]> {
     .from('deliveries_admin')
     .select(`*, ${JOIN_FRAGMENT}`)
     .lt('margin', 0)
+    // Waybills/pickups are intentionally margin-negative (Reda subsidises the
+    // trip) — they are not mistakes to correct, so keep them out of the review.
+    .neq('order_type', 'waybill')
     .order('created_at', { ascending: false })
     // Safety cap — negative-margin rows should be rare; a large result set
     // signals a systemic problem (e.g. a bad rate card) worth surfacing rather
@@ -465,7 +468,8 @@ export async function countNegativeMarginDeliveries(): Promise<number> {
   const { count, error } = await supabase
     .from('deliveries_admin')
     .select('id', { count: 'exact', head: true })
-    .lt('margin', 0);
+    .lt('margin', 0)
+    .neq('order_type', 'waybill');
   if (error) throw error;
   return count ?? 0;
 }
@@ -856,6 +860,30 @@ export async function correctDeliveryCharge(
     p_reason: reason,
   });
   if (error) throw error;
+}
+
+/** Create a waybill / pickup order: a money-only record (no product, customer,
+ *  phone, address, or agent) that lands in the delivery report + client
+ *  remittance. `charged` = total billed to the client, `paid` = total Reda paid
+ *  out (trip + pass-throughs); the server stores agent_payment = paid so margin
+ *  reads charged − paid. `note` is the cost breakdown shown on the order.
+ *  Returns the new delivery id. Admin/dispatcher only (server-enforced). */
+export async function createWaybill(input: {
+  clientId: string;
+  charged: number;
+  paid: number;
+  note?: string | null;
+  label?: string | null;
+}): Promise<string> {
+  const { data, error } = await supabase.rpc('create_waybill', {
+    p_client_id: input.clientId,
+    p_charged: input.charged,
+    p_paid: input.paid,
+    p_note: (input.note ?? undefined) as unknown as string,
+    p_label: (input.label ?? undefined) as unknown as string,
+  });
+  if (error) throw error;
+  return data as string;
 }
 
 /** Admin: revert a wrongly-`delivered` row back to `pending`. The server
