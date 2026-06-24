@@ -993,6 +993,7 @@ export function DeliveryDetail() {
         currentAgentPayment={
           d.agent_payment_snapshot != null ? Number(d.agent_payment_snapshot) : null
         }
+        currentStatus={d.current_status ?? null}
         customerName={d.customer_name ?? null}
         onClose={() => setCorrectChargeOpen(false)}
         onCorrected={() => {

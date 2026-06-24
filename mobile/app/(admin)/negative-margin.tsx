@@ -56,7 +56,7 @@ export default function AdminNegativeMargin() {
       ) : (
         <FlatList
           data={rows}
-          keyExtractor={(d) => d.id ?? Math.random().toString()}
+          keyExtractor={(d, i) => d.id ?? String(i)}
           contentContainerStyle={{ padding: 16, paddingBottom: 40, gap: 8 }}
           refreshControl={
             <RefreshControl

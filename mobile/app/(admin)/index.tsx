@@ -5,8 +5,8 @@ import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { usePendingLocationChangesCount } from '@/hooks/usePendingLocationChangesCount';
 import {
+  countNegativeMarginDeliveries,
   listDeliveries,
-  listNegativeMarginDeliveries,
   siblingGroupKey,
   type DeliveryRow,
 } from '@/services/deliveries';
@@ -37,7 +37,7 @@ export default function AdminHome() {
   const reviewQ = useAsync(() => listBotInbound('needs_review', 100), []);
   const issuesQ = useAsync(() => listOpenIssuesForOps(), []);
   const usersQ = useAsync(() => listUsers(), []);
-  const negMarginQ = useAsync(() => listNegativeMarginDeliveries(), []);
+  const negMarginQ = useAsync(() => countNegativeMarginDeliveries(), []);
 
   useFocusEffect(
     useCallback(() => {
@@ -51,7 +51,7 @@ export default function AdminHome() {
 
   const stats = useMemo(() => summarize(todayQ.data ?? []), [todayQ.data]);
   const reviewCount = (reviewQ.data ?? []).length;
-  const negMarginCount = (negMarginQ.data ?? []).length;
+  const negMarginCount = negMarginQ.data ?? 0;
   const pendingZoneCount = usePendingLocationChangesCount();
   const openIssues = issuesQ.data ?? [];
   const agents = useMemo(

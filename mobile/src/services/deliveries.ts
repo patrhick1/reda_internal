@@ -446,12 +446,28 @@ export async function listNegativeMarginDeliveries(): Promise<DeliveryRow[]> {
     .from('deliveries_admin')
     .select(`*, ${JOIN_FRAGMENT}`)
     .lt('margin', 0)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    // Safety cap — negative-margin rows should be rare; a large result set
+    // signals a systemic problem (e.g. a bad rate card) worth surfacing rather
+    // than silently loading thousands of rows into the review screen.
+    .limit(200);
   if (error) throw error;
   const joined = (data ?? []).map((row) =>
     attachJoins(row as unknown as JoinShape & object),
   ) as Omit<DeliveryRow, 'items'>[];
   return (await attachItemsToRows(joined)) as DeliveryRow[];
+}
+
+/** Count of negative-margin deliveries — for the admin Home attention badge.
+ *  Head-only count query (no rows, no line-item round trip), unlike
+ *  listNegativeMarginDeliveries which hydrates the full rows for the list. */
+export async function countNegativeMarginDeliveries(): Promise<number> {
+  const { count, error } = await supabase
+    .from('deliveries_admin')
+    .select('id', { count: 'exact', head: true })
+    .lt('margin', 0);
+  if (error) throw error;
+  return count ?? 0;
 }
 
 /** Most recent activity timestamp for list ordering: the max of the row's last

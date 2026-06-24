@@ -18,6 +18,7 @@ export function CorrectChargesSheet({
   deliveryId,
   currentCharged,
   currentAgentPayment,
+  currentStatus,
   customerName,
   onClose,
   onCorrected,
@@ -26,6 +27,9 @@ export function CorrectChargesSheet({
   deliveryId: string | null;
   currentCharged: number | null;
   currentAgentPayment: number | null;
+  /** Current delivery status — drives the "already reconciled" caveat on
+   *  delivered rows (a correction won't retroactively adjust a past settlement). */
+  currentStatus: string | null;
   customerName: string | null;
   onClose: () => void;
   onCorrected: () => void;
@@ -56,6 +60,9 @@ export function CorrectChargesSheet({
     chargedNum >= 0 &&
     agentNum >= 0;
   const margin = bothValid ? chargedNum - agentNum : null;
+  // Nothing to save when both values match the current snapshots — the server
+  // rejects an unchanged pair, so disable Save rather than round-trip to an error.
+  const unchanged = bothValid && chargedNum === currentCharged && agentNum === currentAgentPayment;
 
   function reset() {
     setCharged('');
@@ -105,6 +112,14 @@ export function CorrectChargesSheet({
           contributes to Reda&apos;s and the agent&apos;s totals — use it to fix a charge that was
           capped below the agent payout.
         </Banner>
+
+        {currentStatus === 'delivered' ? (
+          <Banner tone="error" icon="alert">
+            This order is already delivered and may have been reconciled. Correcting it now will not
+            adjust a settlement that already went out — double-check before changing a settled
+            order.
+          </Banner>
+        ) : null}
 
         <Input
           label="Reda charge (₦)"
@@ -181,7 +196,7 @@ export function CorrectChargesSheet({
           </Pressable>
           <Pressable
             onPress={submit}
-            disabled={submitting || !deliveryId}
+            disabled={submitting || !deliveryId || unchanged}
             style={({ pressed }) => [
               {
                 flex: 1,
@@ -190,13 +205,13 @@ export function CorrectChargesSheet({
                 borderRadius: 999,
                 backgroundColor: colors.black,
                 alignItems: 'center',
-                opacity: submitting || !deliveryId ? 0.6 : 1,
+                opacity: submitting || !deliveryId || unchanged ? 0.6 : 1,
               },
-              pressed && !submitting && deliveryId && { opacity: 0.92 },
+              pressed && !submitting && deliveryId && !unchanged && { opacity: 0.92 },
             ]}
           >
             <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.white }}>
-              {submitting ? 'Saving…' : 'Save charges'}
+              {submitting ? 'Saving…' : unchanged ? 'No changes' : 'Save charges'}
             </Text>
           </Pressable>
         </View>
