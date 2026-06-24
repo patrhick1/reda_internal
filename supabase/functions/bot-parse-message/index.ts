@@ -33,6 +33,7 @@ import {
   PRODUCT_EXTRACTION_PROMPT,
   coerceExtractedProducts,
   expandKnownCombos,
+  extractTrailingRep,
   stripJsonFences as stripFencesShared,
   pickMatch,
   type ExtractedProducts,
@@ -409,6 +410,11 @@ Deno.serve(async (req) => {
   const needLlm = envelopeNeedsLlm || !contractorProducts;
   if (!needLlm) {
     source = 'contractor';
+    // LLM didn't run, so the LLM-only client_rep would be lost. Recover it with a
+    // tight deterministic trailing-name parse (the only signal is raw_text). We
+    // do NOT run this on the LLM path — the model judges "no rep" correctly,
+    // whereas a regex would invent one on the many no-rep messages.
+    clientRepRaw = extractTrailingRep(row.raw_text);
   } else {
     const apiKey = Deno.env.get('OPENROUTER_API_KEY');
     if (!apiKey) {

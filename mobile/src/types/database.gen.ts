@@ -2307,6 +2307,7 @@ export type Database = {
         Returns: {
           agent_name: string
           cash_pos_fee: number
+          client_rep: string | null
           customer_name: string
           customer_price: number
           delivery_id: string
@@ -2326,6 +2327,7 @@ export type Database = {
         Returns: {
           agent_name: string
           cash_pos_fee: number
+          client_rep: string | null
           customer_name: string
           delivery_id: string
           location_name: string

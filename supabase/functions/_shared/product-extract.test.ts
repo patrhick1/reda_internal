@@ -1,6 +1,11 @@
 // Tests for expandKnownCombos — run: deno test supabase/functions/_shared/product-extract.test.ts
 import { assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts';
-import { coerceExtractedProducts, expandKnownCombos, type LineItem } from './product-extract.ts';
+import {
+  coerceExtractedProducts,
+  expandKnownCombos,
+  extractTrailingRep,
+  type LineItem,
+} from './product-extract.ts';
 
 const li = (p: string, q = 1, price: number | null = null, free = false): LineItem => ({
   product_name: p,
@@ -79,4 +84,41 @@ Deno.test('client_rep: trimmed, and blank/absent → null', () => {
   assertEquals(coerceExtractedProducts({ client_rep: '  Cynthia ', products: [] })?.client_rep, 'Cynthia');
   assertEquals(coerceExtractedProducts({ client_rep: '   ', products: [] })?.client_rep, null);
   assertEquals(coerceExtractedProducts({ products: [] })?.client_rep, null); // field omitted
+});
+
+// --- extractTrailingRep (deterministic fallback for the LLM-skip path) -------
+
+Deno.test('extractTrailingRep: "Available for delivery <Name>" tail', () => {
+  const raw = [
+    'CUSTOMER NAME: Amaka',
+    'PRODUCT: Buy 3 Water Filter Get 2 FREE (5) — ₦60,000',
+    '',
+    '👤 Available for delivery Linda',
+    '📞',
+  ].join('\n');
+  assertEquals(extractTrailingRep(raw), 'Linda');
+});
+
+Deno.test('extractTrailingRep: "Available for delivery <Name>" survives trailing emoji line', () => {
+  const raw = 'PRODUCT: x\n👤 Available for delivery Linda\n📞';
+  assertEquals(extractTrailingRep(raw), 'Linda');
+});
+
+Deno.test('extractTrailingRep: lone parenthesised token is NOT captured (place/day/landmark ambiguity)', () => {
+  // A bare "(Name)" is structurally identical to a place/day/note — we skip it
+  // rather than risk storing a location as a rep. The LLM handles "(Cynthia)" on
+  // the live path; this fallback intentionally misses it.
+  assertEquals(extractTrailingRep('PRODUCT NAME: Gold Package\n\n(Cynthia)'), null);
+  assertEquals(extractTrailingRep('(Ikorodu)'), null);
+  assertEquals(extractTrailingRep('(Chevron)'), null);
+  assertEquals(extractTrailingRep('(Monday)'), null);
+});
+
+Deno.test('extractTrailingRep: no rep present → null (no false positives)', () => {
+  assertEquals(extractTrailingRep('PRODUCT: Fire Stop Spray\nCUSTOMER ADDRESS: 92 Sagamu Road Ikorodu. Lagos'), null);
+  assertEquals(extractTrailingRep('(opposite the blue church)'), null); // landmark
+  assertEquals(extractTrailingRep('Total: ₦60,000'), null);
+  assertEquals(extractTrailingRep('09079700010'), null); // bare phone
+  assertEquals(extractTrailingRep(''), null);
+  assertEquals(extractTrailingRep(null), null);
 });

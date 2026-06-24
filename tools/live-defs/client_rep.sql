@@ -5,11 +5,13 @@
 -- The value is LLM-extracted in _shared/product-extract.ts (client_rep field) and
 -- threaded through bot-parse-message → bot_create_delivery → create_delivery.
 --
--- Adding a parameter changes a function's signature, so CREATE OR REPLACE would
--- spawn a SECOND overload instead of replacing. We DROP then CREATE, appending
--- p_client_rep at the END with DEFAULT NULL so every existing named/positional
--- caller (the app's manual create path included) is unaffected. Re-grant EXECUTE
--- after the drop. Run the whole file in one transaction.
+-- p_client_rep was appended at the END of both function signatures with DEFAULT
+-- NULL, so every existing named/positional caller (the app's manual create path
+-- included) is unaffected. The param now exists, so this file uses CREATE OR
+-- REPLACE — it replaces the body in place, preserves grants, and is safe to
+-- re-run. (The original 16→17-arg migration that ADDED the param required a
+-- DROP+CREATE, since you cannot add a parameter via CREATE OR REPLACE.)
+-- GRANTs are kept and are idempotent. Run the whole file in one transaction.
 -- Apply in the Supabase SQL editor.
 
 begin;
@@ -22,10 +24,7 @@ comment on column public.deliveries.client_rep is
   'Client''s own sales rep / closer named at the end of the forwarded order (LLM-extracted at intake). Null when the message has no trailing rep name. Used at reconciliation.';
 
 -- 2. create_delivery -------------------------------------------------------
-drop function if exists public.create_delivery(
-  text, uuid, uuid, text, text, text, integer, numeric, uuid, date, uuid, text, text, text, jsonb, text);
-
-create function public.create_delivery(
+create or replace function public.create_delivery(
   p_client_uuid text, p_client_id uuid, p_product_catalog_id uuid, p_customer_name text,
   p_customer_phone text, p_raw_address text, p_quantity_ordered integer, p_customer_price numeric,
   p_location_id uuid DEFAULT NULL::uuid, p_scheduled_date date DEFAULT CURRENT_DATE,
@@ -184,10 +183,7 @@ grant execute on function public.create_delivery(
   to anon, authenticated, service_role;
 
 -- 3. bot_create_delivery ---------------------------------------------------
-drop function if exists public.bot_create_delivery(
-  text, uuid, uuid, text, text, text, integer, numeric, uuid, date, text, uuid, text, jsonb, text);
-
-create function public.bot_create_delivery(
+create or replace function public.bot_create_delivery(
   p_client_uuid text, p_client_id uuid, p_product_catalog_id uuid, p_customer_name text,
   p_customer_phone text, p_raw_address text, p_quantity_ordered integer, p_customer_price numeric,
   p_location_id uuid DEFAULT NULL::uuid, p_scheduled_date date DEFAULT CURRENT_DATE,
@@ -208,6 +204,7 @@ declare
   v_orphan_id          uuid;
   v_existing_id        uuid;
   v_eff_date           date := public._effective_scheduled_date(p_scheduled_date, 'bot');
+  v_client_rep         text := nullif(trim(p_client_rep), '');
   v_items_fp           text := public._delivery_items_sig(coalesce(p_items, jsonb_build_array(
                           jsonb_build_object('product_catalog_id', p_product_catalog_id,
                                              'quantity_ordered', p_quantity_ordered))));  -- [Feature A]
@@ -269,12 +266,19 @@ begin
      order by d.created_at asc limit 1 for update;
 
     if v_orphan_id is not null then
-      update public.deliveries set assigned_agent_id = v_effective_agent_id, updated_at = now()
+      -- Absorb the orphan: attach the agent, and backfill the rep from THIS
+      -- forward only if the orphan doesn't already carry one (never overwrite an
+      -- existing value). The rep may only appear on the second forward.
+      update public.deliveries
+         set assigned_agent_id = v_effective_agent_id,
+             client_rep        = coalesce(client_rep, v_client_rep),
+             updated_at        = now()
        where id = v_orphan_id;
       perform public.write_audit(
         p_actor_id := v_bot_user_id, p_entity_type := 'delivery', p_entity_id := v_orphan_id,
         p_old := jsonb_build_object('assigned_agent_id', null),
         p_new := jsonb_build_object('assigned_agent_id', v_effective_agent_id,
+          'client_rep', v_client_rep,
           'triggering_bot_message', p_bot_raw_message),
         p_reason := 'bot_smart_reassign: absorbed unassigned sibling');
       return v_orphan_id;

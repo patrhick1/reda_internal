@@ -51,6 +51,8 @@ export type ShareProduct = { name: string; qty: number };
 
 export type ShareDeliveryLine = {
   customerName: string | null;
+  /** Client's own sales rep / closer captured from the forwarded order. */
+  clientRep?: string | null;
   /** Every product on the delivery. Multi-product orders carry N entries — the
    *  reconcile RPC's per-item breakdown, not the collapsed legacy single line. */
   products: ShareProduct[];
@@ -130,6 +132,15 @@ function shareProductLines(products: ShareProduct[]): string[] {
   return ['Products:', ...products.map((p) => `- ${p.name} ×${p.qty}`)];
 }
 
+/** Prefix a delivery Note with the client's rep when one was captured.
+ *  Examples: "Linda —" and "Linda — Bought 1". Older rows retain the
+ *  existing note unchanged. */
+export function clientShareNote(clientRep: string | null | undefined, note: string): string {
+  const rep = clientRep?.trim();
+  if (!rep) return note;
+  return note === '—' ? `${rep} —` : `${rep} — ${note}`;
+}
+
 // Builds the WhatsApp "Share with client" message in Uzo's preferred shape:
 // per-delivery blocks (Name / Product(s) / Paid: Cash when applicable /
 // To Remit / Note), then a Total block (delivered units per product and the
@@ -143,7 +154,10 @@ export function buildClientShareMessage(input: {
   const blocks = input.rows.map((r) => {
     const lines = [`Name: ${r.customerName ?? 'Customer'}`, ...shareProductLines(r.products)];
     if (r.paymentMethod === 'cash') lines.push('Paid: Cash');
-    lines.push(`To Remit: ${formatNaira(Number(r.remit ?? 0))}`, `Note: ${r.note}`);
+    lines.push(
+      `To Remit: ${formatNaira(Number(r.remit ?? 0))}`,
+      `Note: ${clientShareNote(r.clientRep, r.note)}`,
+    );
     return lines.join('\n');
   });
 

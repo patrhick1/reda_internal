@@ -60,6 +60,7 @@ export default function RepClientReconcileDetail() {
         const q = remitRowQuantities(r);
         return {
           customerName: r.customer_name,
+          clientRep: r.client_rep,
           products: remitRowProducts(r),
           remit: Number(r.remit ?? 0),
           note: deriveDeliveryNote({

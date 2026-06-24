@@ -53,6 +53,7 @@ export type ClientRemitDetailRow = {
   delivery_id: string;
   scheduled_date: string;
   customer_name: string;
+  client_rep: string | null;
   product_name: string | null;
   location_name: string | null;
   /** [Feature A] True per-product breakdown (multi-product safe). The legacy
@@ -128,6 +129,7 @@ export type RepClientRemitDetailRow = {
   delivery_id: string;
   scheduled_date: string;
   customer_name: string;
+  client_rep: string | null;
   product_name: string | null;
   location_name: string | null;
   quantity_ordered: number;

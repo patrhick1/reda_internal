@@ -199,6 +199,56 @@ export function stripJsonFences(s: string): string {
   return t.trim();
 }
 
+// --- deterministic trailing-rep fallback ------------------------------------
+// client_rep is normally extracted by the LLM (it also reliably returns null on
+// the MANY messages that carry no trailing rep — something a regex can't judge,
+// which is why we don't run this as a backstop on the LLM path). This is the
+// fallback for the ONE path where the LLM isn't called at all: a contractor
+// payload that's complete enough to skip extraction.
+//
+// We match ONLY the explicit, high-context "Available for delivery <Name>" tail
+// — that phrase itself announces a PERSON. We deliberately do NOT accept a lone
+// parenthesised token like "(Cynthia)": structurally it is identical to a place,
+// a landmark or a note — "(Ikorodu)", "(Chevron)", "(Monday)" — and no regex can
+// tell a name from those. The LLM (the normal path) disambiguates that with
+// context; this best-effort fallback stays conservative and skips it, accepting
+// that it will miss a bare "(Name)" rather than mis-store a place as a rep.
+const REP_STOPWORDS = new Set([
+  'available', 'delivery', 'whatsapp', 'please', 'call', 'pay', 'paid', 'transfer',
+  'account', 'address', 'phone', 'number', 'customer', 'product', 'order', 'total',
+  'free', 'lagos', 'thanks', 'thank',
+]);
+
+function repNameOrNull(s: string): string | null {
+  const t = s.trim().replace(/[).,:;]+$/, '').replace(/^[(.\-•·\s]+/, '').trim();
+  if (!t) return null;
+  const words = t.split(/\s+/);
+  if (words.length < 1 || words.length > 2) return null;
+  for (const w of words) {
+    if (!/^[A-Z][a-zA-Z'’-]+$/.test(w)) return null; // Title-case alpha, no digits/symbols
+    if (REP_STOPWORDS.has(w.toLowerCase())) return null;
+  }
+  return words.join(' ');
+}
+
+/** Best-effort trailing rep/closer name from the raw message. Scans the last few
+ *  lines bottom-up for the single high-context "Available for delivery <Name>"
+ *  shape. Returns null when nothing clean is found (the common case). */
+export function extractTrailingRep(rawText: string | null | undefined): string | null {
+  if (!rawText) return null;
+  const lines = rawText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  for (let i = lines.length - 1; i >= Math.max(0, lines.length - 3); i--) {
+    // Only the "Available for delivery <Name>" tail (any leading emoji/bullet is
+    // fine — the phrase is matched anywhere in the line). Capture 1–2 alpha words
+    // right after the phrase; repNameOrNull then enforces a clean Title-case name.
+    const avail = lines[i].match(
+      /available\s+for\s+delivery\s*:?\s*([A-Za-z][A-Za-z'’-]+(?:\s+[A-Za-z][A-Za-z'’-]+)?)/i,
+    );
+    if (avail) { const n = repNameOrNull(avail[1]); if (n) return n; }
+  }
+  return null;
+}
+
 // --- known multi-SKU combos -------------------------------------------------
 // A few catalog products were SPLIT into separate SKUs (e.g. "Oratox Capsule" +
 // "Oratox Powder"), but clients still order the SET as one line ("Oratox
