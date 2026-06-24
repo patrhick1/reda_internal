@@ -1,6 +1,15 @@
 import { useEffect, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ActivityIndicator, Alert, Platform, StyleSheet, Switch, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Switch,
+  Text,
+  View,
+} from 'react-native';
 import { Screen } from '@/components/Screen';
 import { Field } from '@/components/Field';
 import { Button } from '@/components/Button';
@@ -259,6 +268,12 @@ export default function EditClient() {
           : ''}
       </Text>
 
+      {client.is_active && client.max_charge_per_delivery != null ? (
+        <Pressable onPress={handleRemoveCap} disabled={submitting} style={styles.clearLink}>
+          <Text style={styles.clearLinkText}>Remove cap (charge full rate-card amount)</Text>
+        </Pressable>
+      ) : null}
+
       <View style={styles.toggleRow}>
         <View style={styles.toggleText}>
           <Text style={styles.toggleLabel}>Cancel soft-failed orders at EOD</Text>
@@ -303,16 +318,6 @@ export default function EditClient() {
         />
       ) : null}
 
-      {client.is_active && client.max_charge_per_delivery != null ? (
-        <Button
-          title="Remove cap"
-          onPress={handleRemoveCap}
-          variant="secondary"
-          style={styles.removeCap}
-          disabled={submitting}
-        />
-      ) : null}
-
       {client.is_active ? (
         <Button
           title="Deactivate"
@@ -348,8 +353,14 @@ const styles = StyleSheet.create({
   inactiveBanner: { backgroundColor: '#fff4e0', padding: 12, borderRadius: 8, marginBottom: 16 },
   inactiveText: { color: '#a04000', fontWeight: '600' },
   bottom: { marginTop: 24 },
-  hint: { color: '#6b7280', fontSize: 12, marginTop: -8, marginBottom: 16, lineHeight: 16 },
-  removeCap: { marginTop: 12 },
+  hint: { color: '#6b7280', fontSize: 12, marginTop: -8, marginBottom: 8, lineHeight: 16 },
+  clearLink: { alignSelf: 'flex-start', paddingVertical: 2, marginBottom: 16 },
+  clearLinkText: {
+    color: '#a02d1b',
+    fontSize: 13,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
   viewStock: { marginTop: 12 },
   toggleRow: {
     flexDirection: 'row',
