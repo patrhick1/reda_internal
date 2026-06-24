@@ -1038,6 +1038,22 @@ export async function listDeliveryHistoryChain(
 export type SiblingContact =
   Database['public']['Functions']['get_sibling_contact']['Returns'][number];
 
+export type DeliveryHandoffState =
+  Database['public']['Functions']['get_delivery_handoff_state']['Returns'][number];
+
+/** Latest reassignment to the signed-in agent, until they perform a newer
+ *  status action. The delivery's first-ever assignment returns null. */
+export async function getDeliveryHandoffState(
+  deliveryId: string,
+): Promise<DeliveryHandoffState | null> {
+  const { data, error } = await supabase.rpc('get_delivery_handoff_state', {
+    p_delivery_id: deliveryId,
+  });
+  if (error) throw error;
+  const rows = (data ?? []) as DeliveryHandoffState[];
+  return rows[0] ?? null;
+}
+
 /** "Another agent is also on this order" — the most-recently-worked SIBLING
  *  delivery (same customer order, different agent — the allowed cross-agent
  *  race) that has already been contacted (active / soft-fail) or fulfilled.

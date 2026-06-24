@@ -18,10 +18,12 @@ import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
   getDelivery,
+  getDeliveryHandoffState,
   listDeliveryHistoryChain,
   listStatusDefs,
   getSiblingContact,
   type DeliveryChainHistoryRow,
+  type DeliveryHandoffState,
   type SiblingContact,
 } from '@/services/deliveries';
 import { listSubAgents } from '@/services/users';
@@ -31,7 +33,7 @@ import {
 } from '@/services/clientNotifications';
 import { canHandoffToSubAgent } from '@/lib/permissions';
 import { AppBar, Banner, Button, Card, Empty, Icon, StatusPill } from '@/components/ui';
-import { colors, fonts, historyReasonLine, STATUS_META, TERMINAL_STATUSES } from '@/lib/theme';
+import { colors, fonts, historyReasonLine, TERMINAL_STATUSES } from '@/lib/theme';
 import { formatDateTime, formatNaira } from '@/lib/format';
 import { MarkDeliveredSheet } from '@/components/sheets/MarkDeliveredSheet';
 import { UpdateStatusSheet } from '@/components/sheets/UpdateStatusSheet';
@@ -62,6 +64,7 @@ export default function AgentDeliveryDetail() {
   // sibling's latest contact so this agent doesn't call the customer a second
   // time (see get_sibling_contact). Null when there's no worked sibling.
   const siblingQ = useAsync<SiblingContact | null>(() => getSiblingContact(id), [id]);
+  const handoffQ = useAsync<DeliveryHandoffState | null>(() => getDeliveryHandoffState(id), [id]);
 
   const [markOpen, setMarkOpen] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
@@ -90,6 +93,7 @@ export default function AgentDeliveryDetail() {
       deliveryQ.reload();
       historyQ.reload();
       siblingQ.reload();
+      handoffQ.reload();
       notifQ.reload();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []),
@@ -152,25 +156,10 @@ export default function AgentDeliveryDetail() {
   const firstName = (d.customer_name ?? 'customer').split(/\s+/)[0]!;
   // customer_price is per-delivery, not per-unit. Do NOT multiply by quantity.
   const expectedTotal = Number(d.customer_price ?? 0);
-  // Handoff awareness (Gap 5): if the latest status was set by someone OTHER
-  // than this agent, the order was handed over — they've already reached the
-  // customer, so don't re-call. Clears once this agent takes any action (their
-  // own status change makes the latest history row theirs); hidden for terminal
-  // rows and system-set rows (no changed_by_user_id). chainRows is oldest-first
-  // and includes ancestry, so take the newest row of THIS delivery.
-  //
-  // EXCLUDE 'pending': the initial row of every order is stamped 'pending' by
-  // the admin/ops/bot who created or assigned it — never the agent — so without
-  // this guard the banner fired on EVERY freshly-assigned order and falsely
-  // claimed the customer "may already have been reached". A hand-off only
-  // matters once someone actually WORKED the order (any non-pending status).
-  const currentHistory = chainRows.filter((r) => r.is_current);
-  const latestHistory = currentHistory[currentHistory.length - 1];
-  const handedToYou =
-    !!latestHistory?.changed_by_user_id &&
-    latestHistory.changed_by_user_id !== user.userId &&
-    latestHistory.to_status !== 'pending' &&
-    !isTerminal;
+  // Assignment-aware handoff state. Initial assignment is excluded server-side;
+  // a reassignment remains visible until this agent takes a status action.
+  const handoff = handoffQ.data;
+  const handedToYou = !!handoff && !isTerminal;
   // Lead can hand off to a sub-agent. Only the current assignee can hand
   // off (server gate matches); terminal rows hide the option.
   const canHandoff = canHandoffToSubAgent(user, d.assigned_agent_id, hasSubAgents) && !isTerminal;
@@ -181,6 +170,7 @@ export default function AgentDeliveryDetail() {
     setUpdateOpen(false);
     deliveryQ.reload();
     historyQ.reload();
+    handoffQ.reload();
     notifQ.reload();
   };
 
@@ -192,6 +182,7 @@ export default function AgentDeliveryDetail() {
     setFlagOpen(false);
     deliveryQ.reload();
     historyQ.reload();
+    handoffQ.reload();
     notifQ.reload();
   };
 
@@ -249,11 +240,10 @@ export default function AgentDeliveryDetail() {
           </Banner>
         ) : null}
 
-        {/* Handoff banner (Gap 5): surfaced when this order was last worked by
-            someone else — i.e. reassigned to this agent. */}
-        {latestHistory && handedToYou ? (
+        {/* A real return assignment, sourced from assignment audit history. */}
+        {handoff && handedToYou ? (
           <Banner tone="info" icon="user" title="Handed to you">
-            {`Set to ${STATUS_META[latestHistory.to_status]?.label ?? latestHistory.to_status} by ${latestHistory.changed_by_name ?? 'the team'} · ${formatDateTime(latestHistory.effective_at)}. Check the messages before calling — the customer may already have been reached.`}
+            {`${handoff.from_agent_name ? `Handed over from ${handoff.from_agent_name}` : 'Handed over from the queue'} by ${handoff.handed_by_name ?? 'the team'} · ${formatDateTime(handoff.handed_at)}. Check the messages before calling — the customer may already have been reached.`}
           </Banner>
         ) : null}
 

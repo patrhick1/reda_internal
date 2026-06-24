@@ -2670,6 +2670,14 @@ export type Database = {
           worked_at: string
         }[]
       }
+      get_delivery_handoff_state: {
+        Args: { p_delivery_id: string }
+        Returns: {
+          from_agent_name: string | null
+          handed_at: string
+          handed_by_name: string | null
+        }[]
+      }
       list_location_changes: {
         Args: { p_states?: string[] }
         Returns: {
