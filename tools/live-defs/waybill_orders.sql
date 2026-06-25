@@ -9,10 +9,12 @@
 --
 -- Money mapping (so existing formulas Just Work, no view-math change):
 --   charged_snapshot       = total to bill the client (pickup fee + pass-throughs)
---   paid                   = total Reda paid out      (trip fare + pass-throughs)
---   agent_payment_snapshot = paid   -> margin (=charged-agent_payment) = charged-paid
--- The trip subsidy shows as a negative margin (intended); pass-throughs add to
--- BOTH paid and charged so they net to zero in margin AND remittance.
+--   agent_payment_snapshot = total Reda paid out      (trip fare + pass-throughs)
+--   paid                   = 0 (no customer paid Reda; this is a CLIENT charge)
+-- Margin = charged_snapshot - agent_payment_snapshot. The client-remit formula
+-- sees 0 - charged_snapshot, correctly deducting the pickup/waybill charge from
+-- what Reda owes the client. Pass-throughs add to both charged and paid-out so
+-- they net to zero in margin, but remain part of the client's total charge.
 -- agent_payment_snapshot is inert for agent settlement here (no assigned agent).
 --
 -- Discriminator: order_type ('delivery' default | 'waybill'). It (a) lets these
@@ -170,7 +172,7 @@ begin
     raise exception 'charged must be a non-negative number' using errcode = '23514';
   end if;
   if p_paid is null or p_paid < 0 then
-    raise exception 'paid must be a non-negative number' using errcode = '23514';
+    raise exception 'paid out must be a non-negative number' using errcode = '23514';
   end if;
 
   -- author_role for the breakdown note; is_manager() guarantees admin|dispatcher.
@@ -185,7 +187,7 @@ begin
   ) values (
     p_client_id, 'waybill',
     v_label, 1, 1, 0,
-    p_charged, p_paid, p_paid,         -- agent_payment = paid -> margin = charged - paid
+    p_charged, p_paid, 0,              -- no customer collection; p_paid is Reda's payout
     'delivered', 'manual', v_date, v_date, v_actor
   ) returning id into v_id;
 
@@ -206,7 +208,8 @@ begin
       'customer_name',          v_label,
       'charged_snapshot',       p_charged,
       'agent_payment_snapshot', p_paid,
-      'paid',                   p_paid,
+      'paid',                   0,
+      'waybill_paid_out',       p_paid,
       'note',                   nullif(btrim(p_note), ''),
       'current_status',         'delivered'
     ),

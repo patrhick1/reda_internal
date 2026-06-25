@@ -9,7 +9,7 @@
 DROP FUNCTION IF EXISTS public.client_remit_detail_rep(uuid, date, date);
 
 CREATE OR REPLACE FUNCTION public.client_remit_detail_rep(p_client_id uuid, p_from date, p_to date)
- RETURNS TABLE(delivery_id uuid, scheduled_date date, customer_name text, product_name text, location_name text, quantity_ordered numeric, quantity_delivered numeric, outstanding numeric, remit numeric, agent_name text, products jsonb, payment_method text, cash_pos_fee numeric, client_rep text)
+ RETURNS TABLE(delivery_id uuid, scheduled_date date, customer_name text, product_name text, location_name text, quantity_ordered numeric, quantity_delivered numeric, outstanding numeric, remit numeric, agent_name text, products jsonb, payment_method text, cash_pos_fee numeric, client_rep text, order_type text)
  LANGUAGE sql
  STABLE SECURITY DEFINER
  SET search_path TO 'public', 'auth'
@@ -22,7 +22,8 @@ AS $function$
     remit, agent_name, products,
     payment_method,
     coalesce(cash_pos_fee, 0) as cash_pos_fee,
-    client_rep
+    client_rep,
+    order_type
   from public.client_remit_detail(p_client_id, p_from, p_to);
 $function$;
 

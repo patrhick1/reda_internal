@@ -16,6 +16,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
+  getWaybillPaidOutTotal,
   listAgentEarningsSummary,
   listClientRemit,
   listSettlementsForDate,
@@ -84,6 +85,10 @@ export default function AdminReconcile() {
       rangeValid ? listAgentEarningsSummary(from, to) : Promise.resolve<AgentEarningsRow[]>([]),
     [from, to, rangeValid],
   );
+  const waybillCostsQ = useAsync(
+    () => (rangeValid ? getWaybillPaidOutTotal(from, to) : Promise.resolve(0)),
+    [from, to, rangeValid],
+  );
 
   // Settlement (§14-2) is a per-DAY action, so it only applies when the range
   // is a single day (the daily-reconcile default). In multi-day ranges the
@@ -106,6 +111,7 @@ export default function AdminReconcile() {
       if (!rangeValid) return;
       clientsQ.reload();
       agentsQ.reload();
+      waybillCostsQ.reload();
       settlementsQ.reload();
       // Bank details can be edited on another screen between visits — refresh so
       // the payout file reflects newly-added details instead of treating the
@@ -397,7 +403,12 @@ export default function AdminReconcile() {
         <SummaryTab
           clients={clientsQ.data ?? []}
           agents={agentsQ.data ?? []}
-          loading={(clientsQ.loading && !clientsQ.data) || (agentsQ.loading && !agentsQ.data)}
+          waybillPaidOut={waybillCostsQ.data ?? 0}
+          loading={
+            (clientsQ.loading && !clientsQ.data) ||
+            (agentsQ.loading && !agentsQ.data) ||
+            (waybillCostsQ.loading && waybillCostsQ.data == null)
+          }
           rangeLabel={rangeLabel}
           isWide={isWide}
           eodDate={to}
@@ -668,6 +679,7 @@ function AgentsList({
 function SummaryTab({
   clients,
   agents,
+  waybillPaidOut,
   loading,
   rangeLabel,
   isWide,
@@ -676,6 +688,7 @@ function SummaryTab({
 }: {
   clients: ClientRemitRow[];
   agents: AgentEarningsRow[];
+  waybillPaidOut: number;
   loading: boolean;
   rangeLabel: string;
   isWide: boolean;
@@ -695,8 +708,8 @@ function SummaryTab({
     // Reda's gross income for the period = delivery fees collected.
     // Cash POS fee is a pass-through to the client (already subtracted from
     // their remit), so it does NOT contribute to Reda margin.
-    // Reda's net = delivery fees − agent payouts.
-    const margin = redaFee - agentPayments;
+    // Reda's net = client charges − agent payouts − pickup/waybill costs.
+    const margin = redaFee - agentPayments - waybillPaidOut;
     return {
       deliveries,
       customerPaid,
@@ -704,9 +717,10 @@ function SummaryTab({
       cashPosFee,
       remitToClients,
       agentPayments,
+      waybillPaidOut,
       margin,
     };
-  }, [clients, agents]);
+  }, [clients, agents, waybillPaidOut]);
 
   const onShare = useCallback(async () => {
     const message = [
@@ -720,6 +734,7 @@ function SummaryTab({
       `Cash POS fee:      ${formatNaira(totals.cashPosFee)}`,
       `Remit to clients:  ${formatNaira(totals.remitToClients)}`,
       `Agent payments:    ${formatNaira(totals.agentPayments)}`,
+      `Pickup costs:      ${formatNaira(totals.waybillPaidOut)}`,
       `Reda margin:       ${formatNaira(totals.margin)}`,
     ].join('\n');
     try {
@@ -757,6 +772,7 @@ function SummaryTab({
           <SummaryRow label="Cash POS fee" value={formatNaira(totals.cashPosFee)} />
           <SummaryRow label="Remit to clients" value={formatNaira(totals.remitToClients)} />
           <SummaryRow label="Agent payments" value={formatNaira(totals.agentPayments)} />
+          <SummaryRow label="Pickup / waybill costs" value={formatNaira(totals.waybillPaidOut)} />
           <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 6 }} />
           <SummaryRow
             label="Reda margin"

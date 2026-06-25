@@ -864,21 +864,22 @@ export async function correctDeliveryCharge(
 
 /** Create a waybill / pickup order: a money-only record (no product, customer,
  *  phone, address, or agent) that lands in the delivery report + client
- *  remittance. `charged` = total billed to the client, `paid` = total Reda paid
- *  out (trip + pass-throughs); the server stores agent_payment = paid so margin
- *  reads charged − paid. `note` is the cost breakdown shown on the order.
+ *  remittance. `charged` = total billed to the client, `paidOut` = total Reda
+ *  paid out (trip + pass-throughs). The server stores customer `paid` = 0 and
+ *  agent_payment_snapshot = paidOut, so client reconciliation deducts the full
+ *  charge while margin reads charged − paidOut. `note` is the cost breakdown.
  *  Returns the new delivery id. Admin/dispatcher only (server-enforced). */
 export async function createWaybill(input: {
   clientId: string;
   charged: number;
-  paid: number;
+  paidOut: number;
   note?: string | null;
   label?: string | null;
 }): Promise<string> {
   const { data, error } = await supabase.rpc('create_waybill', {
     p_client_id: input.clientId,
     p_charged: input.charged,
-    p_paid: input.paid,
+    p_paid: input.paidOut,
     p_note: (input.note ?? undefined) as unknown as string,
     p_label: (input.label ?? undefined) as unknown as string,
   });

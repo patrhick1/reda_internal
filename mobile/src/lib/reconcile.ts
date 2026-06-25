@@ -50,6 +50,8 @@ export function deriveDeliveryNote(input: {
 export type ShareProduct = { name: string; qty: number };
 
 export type ShareDeliveryLine = {
+  /** 'waybill' rows are client charges, not customer/product deliveries. */
+  orderType?: string | null;
   customerName: string | null;
   /** Client's own sales rep / closer captured from the forwarded order. */
   clientRep?: string | null;
@@ -195,16 +197,23 @@ export function buildMoniepointPayoutCsv(rows: MoniepointPayoutRow[]): string {
 }
 
 // Builds the WhatsApp "Share with client" message in Uzo's preferred shape:
-// per-delivery blocks (Name / Product(s) / Paid: Cash when applicable /
-// To Remit / Note), then a Total block (delivered units per product and the
-// single remit total), closing with the thank-you line. Transfer methods and
-// POS fees are deliberately omitted because clients already know those details.
+// Delivery rows use Name / Product(s) / Paid: Cash / To Remit / Note. Pickup
+// and waybill rows instead use Type / Charge to client / deduction note, because
+// they are client charges rather than customer deliveries. The Total block keeps
+// delivered units, surfaces waybill charges, and states who owes whom.
 export function buildClientShareMessage(input: {
   clientName: string;
   rangeLabel: string;
   rows: ShareDeliveryLine[];
 }): string {
   const blocks = input.rows.map((r) => {
+    if (r.orderType === 'waybill') {
+      return [
+        `Type: ${r.customerName ?? 'Pickup / Waybill'}`,
+        `Charge to client: ${formatNaira(Math.abs(Number(r.remit ?? 0)))}`,
+        `Note: Deducted from reconciliation`,
+      ].join('\n');
+    }
     const lines = [`Name: ${r.customerName ?? 'Customer'}`, ...shareProductLines(r.products)];
     if (r.paymentMethod === 'cash') lines.push('Paid: Cash');
     lines.push(
@@ -216,14 +225,29 @@ export function buildClientShareMessage(input: {
 
   const byProduct = new Map<string, number>();
   for (const r of input.rows) {
+    if (r.orderType === 'waybill') continue;
     for (const p of r.products) byProduct.set(p.name, (byProduct.get(p.name) ?? 0) + p.qty);
   }
   const productLines = [...byProduct.entries()].map(([name, qty]) => `${name}: ${qty}`);
   const totalRemit = input.rows.reduce((s, r) => s + Number(r.remit ?? 0), 0);
+  const waybillCharges = input.rows
+    .filter((r) => r.orderType === 'waybill')
+    .reduce((s, r) => s + Math.abs(Number(r.remit ?? 0)), 0);
+  const hasWaybill = waybillCharges > 0;
+  const balanceLine = !hasWaybill
+    ? `To Remit: ${formatNaira(totalRemit)}`
+    : totalRemit >= 0
+      ? `Reda remits client: ${formatNaira(totalRemit)}`
+      : `Client owes Reda: ${formatNaira(Math.abs(totalRemit))}`;
 
   const header = `Reda Logistics — ${input.clientName}\n${input.rangeLabel}`;
   const body = input.rows.length === 0 ? '(no deliveries in this range)' : blocks.join('\n\n');
-  const totalBlock = ['Total', ...productLines, `To Remit: ${formatNaira(totalRemit)}`].join('\n');
+  const totalBlock = [
+    'Total',
+    ...productLines,
+    ...(waybillCharges > 0 ? [`Pickup / waybill charges: ${formatNaira(waybillCharges)}`] : []),
+    balanceLine,
+  ].join('\n');
 
   return `${header}\n\n${body}\n\n\n${totalBlock}\n\n\nThank you for choosing REDA 🥂`;
 }

@@ -51,6 +51,7 @@ export type RemitProduct = {
 
 export type ClientRemitDetailRow = {
   delivery_id: string;
+  order_type: string | null;
   scheduled_date: string;
   customer_name: string;
   client_rep: string | null;
@@ -93,6 +94,22 @@ export async function listAgentEarningsSummary(
   return (data ?? []) as AgentEarningsRow[];
 }
 
+/** Total operational cost of delivered pickup/waybill records for the period.
+ * These rows have no assigned agent, so agent_earnings_summary correctly omits
+ * them from rider payroll. Reconciliation's Reda-margin summary subtracts this
+ * amount separately so Uber/driver/storekeeper costs are not lost. */
+export async function getWaybillPaidOutTotal(from: string, to: string): Promise<number> {
+  const { data, error } = await supabase
+    .from('deliveries_admin')
+    .select('agent_payment_snapshot')
+    .eq('order_type', 'waybill')
+    .eq('current_status', 'delivered')
+    .gte('scheduled_date', from)
+    .lte('scheduled_date', to);
+  if (error) throw error;
+  return (data ?? []).reduce((sum, row) => sum + Number(row.agent_payment_snapshot ?? 0), 0);
+}
+
 export async function listClientRemitDetail(
   clientId: string,
   from: string,
@@ -127,6 +144,7 @@ export type RepClientRemitRow = {
 
 export type RepClientRemitDetailRow = {
   delivery_id: string;
+  order_type: string | null;
   scheduled_date: string;
   customer_name: string;
   client_rep: string | null;

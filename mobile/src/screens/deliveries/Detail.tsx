@@ -680,7 +680,7 @@ export function DeliveryDetail() {
               )}
             </View>
             <View style={{ alignItems: 'flex-end' }}>
-              <Text style={kicker}>To collect</Text>
+              <Text style={kicker}>{isWaybill ? 'Charge client' : 'To collect'}</Text>
               <Text
                 style={{
                   fontFamily: fonts.extrabold,
@@ -690,11 +690,11 @@ export function DeliveryDetail() {
                   marginTop: 2,
                 }}
               >
-                {formatNaira(expectedTotal)}
+                {formatNaira(isWaybill ? Number(charged ?? 0) : expectedTotal)}
               </Text>
             </View>
           </View>
-          {isDelivered ? (
+          {isDelivered && !isWaybill ? (
             <View
               style={{
                 marginTop: 12,
@@ -747,13 +747,13 @@ export function DeliveryDetail() {
           <View style={{ marginTop: 12, gap: 4 }}>
             {showCharged ? (
               <MoneyRow
-                label="Reda charge"
+                label={isWaybill ? 'Client charge' : 'Reda charge'}
                 value={formatNaira(charged != null ? Number(charged) : null)}
               />
             ) : null}
             {showAgentPayment ? (
               <MoneyRow
-                label="Agent earns"
+                label={isWaybill ? 'Reda paid out' : 'Agent earns'}
                 value={formatNaira(
                   d.agent_payment_snapshot != null ? Number(d.agent_payment_snapshot) : null,
                 )}
@@ -769,29 +769,39 @@ export function DeliveryDetail() {
                 marginTop: 12,
                 padding: 12,
                 borderRadius: 10,
-                backgroundColor: colors.redSoft,
+                backgroundColor: isWaybill ? colors.surfaceAlt : colors.redSoft,
                 flexDirection: 'row',
                 alignItems: 'center',
                 gap: 10,
               }}
             >
-              <Icon name="alert" size={18} color={colors.red} />
+              <Icon
+                name={isWaybill ? 'helpCircle' : 'alert'}
+                size={18}
+                color={isWaybill ? colors.textSecondary : colors.red}
+              />
               <Text
                 style={{
                   flex: 1,
                   fontFamily: fonts.medium,
                   fontSize: 12,
-                  color: colors.red,
+                  color: isWaybill ? colors.textSecondary : colors.red,
                   lineHeight: 16,
                 }}
               >
-                Negative margin — Reda pays the agent more than it collects.
+                {isWaybill
+                  ? `Reda subsidised ${formatNaira(Math.abs(Number(d.margin)))} on this ${String(
+                      d.customer_name ?? 'waybill',
+                    ).toLowerCase()}.`
+                  : 'Negative margin — Reda pays the agent more than it collects.'}
               </Text>
-              <TouchableOpacity onPress={() => setCorrectChargeOpen(true)} hitSlop={8}>
-                <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.red }}>
-                  Correct
-                </Text>
-              </TouchableOpacity>
+              {!isWaybill ? (
+                <TouchableOpacity onPress={() => setCorrectChargeOpen(true)} hitSlop={8}>
+                  <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.red }}>
+                    Correct
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
           ) : null}
         </Card>

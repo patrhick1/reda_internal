@@ -79,6 +79,7 @@ export default function ClientReconcileDetail() {
       rows: rows.map((r) => {
         const q = remitRowQuantities(r);
         return {
+          orderType: r.order_type,
           customerName: r.customer_name,
           clientRep: r.client_rep,
           products: remitRowProducts(r),

@@ -1,10 +1,5 @@
--- Include the client's own rep / closer in per-delivery reconciliation rows so
--- the client-facing share message can render:
---   Note: Linda —
---   Note: Linda — Bought 1
---
--- The return shapes change, so both functions must be dropped and recreated.
--- Apply after client_rep.sql has added deliveries.client_rep.
+-- Expose order_type to admin and rep reconciliation detail so client-facing
+-- reports can render pickup/waybill charges differently from deliveries.
 
 begin;
 
@@ -46,12 +41,14 @@ as $function$
        from public.delivery_items di
        join public.product_catalog pc on pc.id = di.product_catalog_id
        where di.delivery_id = d.id),
-      jsonb_build_array(
-        jsonb_build_object(
-          'product_name', p.product_name,
-          'quantity_ordered', d.quantity_ordered,
-          'quantity_delivered', d.quantity_delivered
-        ))
+      case when d.order_type = 'waybill' then '[]'::jsonb
+           else jsonb_build_array(
+             jsonb_build_object(
+               'product_name', p.product_name,
+               'quantity_ordered', d.quantity_ordered,
+               'quantity_delivered', d.quantity_delivered
+             ))
+      end
     )                                                              as products,
     d.client_rep,
     d.order_type

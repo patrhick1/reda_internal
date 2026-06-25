@@ -80,7 +80,7 @@ You don't need to remember to cancel anything yourself. If the agents have **dif
 ### Check the daily summary (Reda's own P&L)
 
 - Tap **Summary** (third tab).
-- Shows: deliveries count, customer paid, Reda-side totals (delivery fee collected / remit owed to clients / agent payments) and **Reda margin** = delivery fee − agent payments.
+- Shows: deliveries count, customer paid, Reda-side totals (client charges / remit owed to clients / agent payments / pickup and waybill costs) and **Reda margin** = client charges − agent payments − pickup/waybill costs.
 - Tap **Share summary** to send the day's numbers out of the app (to yourself on WhatsApp, for your own records).`,
   },
   {

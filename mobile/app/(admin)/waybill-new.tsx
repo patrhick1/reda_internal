@@ -5,9 +5,11 @@
 //
 // The user enters real-world amounts; the form does the bookkeeping:
 //   charged = fee + Σ pass-throughs   (what we bill the client)
-//   paid    = fare + Σ pass-throughs  (what Reda paid out)
+//   paidOut = fare + Σ pass-throughs  (what Reda paid out)
 //   margin  = fee − fare              (the trip subsidy; negative by design)
-// Pass-throughs ride BOTH columns so they net to zero in margin & remittance.
+// Pass-throughs ride both the client charge and Reda's payout so they net to
+// zero in margin. The delivery's `paid` field stays 0 because it means money
+// collected FROM a customer; a waybill is instead a charge against the client.
 // The cost breakdown note is generated from the lines, so it can never disagree
 // with the numbers. Server (create_waybill) is the source of truth + gate.
 import { useMemo, useState } from 'react';
@@ -50,8 +52,8 @@ export default function NewWaybill() {
   const feeNum = num(fee);
   const extrasTotal = extras.reduce((s, e) => s + num(e.amount), 0);
   const charged = feeNum + extrasTotal;
-  const paid = fareNum + extrasTotal;
-  const margin = charged - paid; // = fee − fare
+  const paidOut = fareNum + extrasTotal;
+  const margin = charged - paidOut; // = fee − fare
 
   const valid = !!clientId && fare.trim() !== '' && fee.trim() !== '';
 
@@ -66,14 +68,29 @@ export default function NewWaybill() {
     setExtras((xs) => xs.filter((e) => e.id !== id));
   }
 
-  /** Breakdown of the CHARGED column: the fee, then each pass-through. */
+  /** Full two-sided audit note: client charge, Reda payout, and resulting margin. */
   function buildNote(): string {
-    const lines = [`${orderType} ${formatNaira(feeNum)}`];
+    const chargeLines = [`${orderType} fee ${formatNaira(feeNum)}`];
+    const payoutLines = [`Trip fare ${formatNaira(fareNum)}`];
     for (const e of extras) {
       const label = e.label.trim() || 'Extra';
-      if (num(e.amount) > 0) lines.push(`${label} ${formatNaira(num(e.amount))}`);
+      if (num(e.amount) > 0) {
+        const line = `${label} ${formatNaira(num(e.amount))}`;
+        chargeLines.push(line);
+        payoutLines.push(line);
+      }
     }
-    return lines.join('\n');
+    return [
+      `${orderType} breakdown`,
+      `Client charge:`,
+      ...chargeLines,
+      `Total client charge ${formatNaira(charged)}`,
+      ``,
+      `Reda paid out:`,
+      ...payoutLines,
+      `Total Reda paid out ${formatNaira(paidOut)}`,
+      `Margin ${formatNaira(margin)}`,
+    ].join('\n');
   }
 
   async function submit() {
@@ -91,7 +108,7 @@ export default function NewWaybill() {
       await createWaybill({
         clientId,
         charged,
-        paid,
+        paidOut,
         note: buildNote(),
         label: orderType,
       });
@@ -112,7 +129,8 @@ export default function NewWaybill() {
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40, gap: 14 }}>
           <Banner tone="info" icon="helpCircle">
             A waybill has no product or customer — just a client and the money. Enter what you paid
-            and what you charge; the totals and the note are worked out for you.
+            and what the client should be charged. The client charge is deducted from their
+            reconciliation; Reda&apos;s payout is recorded separately as the cost.
           </Banner>
 
           <Select
@@ -191,13 +209,16 @@ export default function NewWaybill() {
               gap: 6,
             }}
           >
-            <PreviewRow label="You'll record — Paid" value={formatNaira(paid)} />
-            <PreviewRow label="Charged" value={formatNaira(charged)} />
+            <PreviewRow label="Client will be charged" value={formatNaira(charged)} />
+            <PreviewRow label="Total Reda paid out" value={formatNaira(paidOut)} />
             <PreviewRow
-              label="Margin"
+              label="Reda margin"
               value={formatNaira(margin)}
               accent={margin < 0 ? colors.red : colors.success}
             />
+            <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary }}>
+              The client owes Reda {formatNaira(charged)} for this {orderType.toLowerCase()}.
+            </Text>
             {margin < 0 ? (
               <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary }}>
                 Reda is subsidising {formatNaira(-margin)} of the trip.
