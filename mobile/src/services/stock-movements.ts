@@ -197,6 +197,13 @@ export type GlobalMovementFilters = {
   productCatalogId?: string | null;
   holderId?: string | null;
   kinds?: MovementEventKind[] | null;
+  /** Lagos-day bounds (YYYY-MM-DD). null = unbounded on that end. */
+  from?: string | null;
+  to?: string | null;
+  /** Holder-relative direction: 'out' = stock that left the holder, 'in' =
+   *  stock that reached the holder (incl. inbound paired legs). null = both.
+   *  Only meaningful together with `holderId`. */
+  direction?: 'in' | 'out' | null;
 };
 
 /** Fetch one page of the cross-holder movement feed. Same keyset contract as
@@ -215,6 +222,9 @@ export async function listGlobalStockMovements(
     p_before_at: cursor?.event_at ?? null,
     p_before_event_id: cursor?.event_id ?? null,
     p_limit: limit,
+    p_from: filters?.from ?? null,
+    p_to: filters?.to ?? null,
+    p_direction: filters?.direction ?? null,
   });
 
   if (error) throw error;

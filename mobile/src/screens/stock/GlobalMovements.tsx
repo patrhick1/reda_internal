@@ -30,8 +30,18 @@ import { listProducts, listActiveProductsByClient } from '@/services/products';
 import { listClients } from '@/services/clients';
 import { listUsers, isWarehousePlace } from '@/services/users';
 import { useAsync } from '@/hooks/useAsync';
-import { lagosDayKey, lagosDayLabel, relativeTime } from '@/lib/date';
-import { AppBar, Button, Card, Empty, FilterChips, Icon, SectionHeader } from '@/components/ui';
+import { lagosDayKey, lagosDayLabel, relativeTime, todayLagos, isYmd } from '@/lib/date';
+import { presetRange, detectPreset, type Preset } from '@/lib/reconcile';
+import {
+  AppBar,
+  Button,
+  Card,
+  Empty,
+  FilterChips,
+  Icon,
+  Input,
+  SectionHeader,
+} from '@/components/ui';
 import { Select, type SelectOption } from '@/components/Select';
 import { colors, fonts } from '@/lib/theme';
 
@@ -64,6 +74,36 @@ export function GlobalMovements({
   const [productId, setProductId] = useState<string | null>(null);
   const [holderId, setHolderId] = useState<string | null>(null);
   const [clientFilterId, setClientFilterId] = useState<string | null>(null);
+  // Date range: both null = all-time (default). Moved together, so either both
+  // null or both YYYY-MM-DD strings.
+  const [from, setFrom] = useState<string | null>(null);
+  const [to, setTo] = useState<string | null>(null);
+  // Holder-relative direction; only meaningful (and shown) when a holder is set.
+  const [direction, setDirection] = useState<'in' | 'out' | null>(null);
+
+  // 'all' when unbounded, else the matching reconcile preset. detectPreset needs
+  // non-null strings, hence the guard.
+  const datePreset: 'all' | Preset = from !== null && to !== null ? detectPreset(from, to) : 'all';
+  // All-time, or a complete custom range. A half-typed custom date pauses fetches.
+  const rangeValid = (from === null && to === null) || (isYmd(from) && isYmd(to));
+
+  function applyDatePreset(p: 'all' | Preset) {
+    if (p === 'all') {
+      setFrom(null);
+      setTo(null);
+    } else if (p === 'custom') {
+      if (from === null || to === null) {
+        setFrom(todayLagos());
+        setTo(todayLagos());
+      }
+    } else {
+      const r = presetRange(p);
+      if (r) {
+        setFrom(r.from);
+        setTo(r.to);
+      }
+    }
+  }
 
   // Effective vendor: fixed by the route in client mode, else the picker.
   const effectiveClientId = clientId ?? clientFilterId;
@@ -78,7 +118,12 @@ export function GlobalMovements({
   const holdersQ = useAsync(() => listUsers(), []);
 
   const filtersActive =
-    kindCat !== 'all' || productId !== null || holderId !== null || clientFilterId !== null;
+    kindCat !== 'all' ||
+    productId !== null ||
+    holderId !== null ||
+    clientFilterId !== null ||
+    datePreset !== 'all' ||
+    direction !== null;
 
   const reqRef = useRef(0);
 
@@ -90,13 +135,19 @@ export function GlobalMovements({
 
   const fetchPage = useCallback(
     (cur: MovementCursor) =>
-      listGlobalStockMovements(cur, PAGE_SIZE, {
-        clientId: effectiveClientId,
-        productCatalogId: productId,
-        holderId,
-        kinds: kindsFor(kindCat),
-      }),
-    [effectiveClientId, productId, holderId, kindCat, kindsFor],
+      rangeValid
+        ? listGlobalStockMovements(cur, PAGE_SIZE, {
+            clientId: effectiveClientId,
+            productCatalogId: productId,
+            holderId,
+            kinds: kindsFor(kindCat),
+            from,
+            to,
+            // direction is holder-relative — ignore it when no holder is set.
+            direction: holderId ? direction : null,
+          })
+        : Promise.resolve<GlobalMovement[]>([]),
+    [effectiveClientId, productId, holderId, kindCat, kindsFor, from, to, direction, rangeValid],
   );
 
   const loadFirstPage = useCallback(async () => {
@@ -175,8 +226,10 @@ export function GlobalMovements({
   const holderOptions = useMemo<SelectOption<string>[]>(
     () => [
       { value: ALL, label: 'All holders' },
+      // Include inactive holders too — a deactivated agent/warehouse still has
+      // history worth isolating.
       ...(holdersQ.data ?? [])
-        .filter((u) => u.is_active && (isWarehousePlace(u) || u.role === 'agent'))
+        .filter((u) => isWarehousePlace(u) || u.role === 'agent')
         .map((u) => ({ value: u.id, label: u.display_name })),
     ],
     [holdersQ.data],
@@ -196,7 +249,42 @@ export function GlobalMovements({
           value={kindCat}
           onChange={setKindCat}
         />
+        <FilterChips
+          options={[
+            { id: 'all', label: 'All time' },
+            { id: 'today', label: 'Today' },
+            { id: 'yesterday', label: 'Yesterday' },
+            { id: 'last7', label: 'Last 7 days' },
+            { id: 'custom', label: 'Custom' },
+          ]}
+          value={datePreset}
+          onChange={(v) => applyDatePreset(v as 'all' | Preset)}
+        />
         <View style={{ paddingHorizontal: 16, paddingTop: 2, paddingBottom: 8, gap: 8 }}>
+          {datePreset === 'custom' ? (
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <View style={{ flex: 1 }}>
+                <Input
+                  label="From"
+                  value={from ?? ''}
+                  onChange={setFrom}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  placeholder="YYYY-MM-DD"
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Input
+                  label="To"
+                  value={to ?? ''}
+                  onChange={setTo}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  placeholder="YYYY-MM-DD"
+                />
+              </View>
+            </View>
+          ) : null}
           <Select
             label="Product"
             value={productId ?? ALL}
@@ -225,10 +313,26 @@ export function GlobalMovements({
             label="Holder"
             value={holderId ?? ALL}
             options={holderOptions}
-            onChange={(v) => setHolderId(v === ALL ? null : v)}
+            onChange={(v) => {
+              const next = v === ALL ? null : v;
+              setHolderId(next);
+              // direction is holder-relative — drop it when the holder clears.
+              if (next === null) setDirection(null);
+            }}
             searchable
             searchPlaceholder="Search holders"
           />
+          {holderId ? (
+            <FilterChips
+              options={[
+                { id: 'all', label: 'In & out' },
+                { id: 'in', label: 'In' },
+                { id: 'out', label: 'Out' },
+              ]}
+              value={direction ?? 'all'}
+              onChange={(v) => setDirection(v === 'all' ? null : (v as 'in' | 'out'))}
+            />
+          ) : null}
         </View>
       </View>
 
@@ -308,6 +412,12 @@ function GlobalMovementRow({
     row.quantity_ordered != null &&
     Math.abs(row.quantity_delta) !== row.quantity_ordered;
 
+  // Client + performer on a single subtle line, so the source→recipient subtitle
+  // above is free to wrap and never truncates the recipient.
+  const actor =
+    row.actor_name && row.actor_name !== row.holder_name ? `by ${row.actor_name}` : null;
+  const metaLine = [showClient ? row.client_name : null, actor].filter(Boolean).join(' · ');
+
   return (
     <Card dense onPress={onPress}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
@@ -337,11 +447,11 @@ function GlobalMovementRow({
               color: colors.textSecondary,
               marginTop: 2,
             }}
-            numberOfLines={1}
+            numberOfLines={2}
           >
             {globalSubtitleFor(row)}
           </Text>
-          {showClient && row.client_name ? (
+          {metaLine ? (
             <Text
               style={{
                 fontFamily: fonts.medium,
@@ -351,7 +461,7 @@ function GlobalMovementRow({
               }}
               numberOfLines={1}
             >
-              {row.client_name}
+              {metaLine}
             </Text>
           ) : null}
         </View>
@@ -401,31 +511,32 @@ function GlobalMovementRow({
  *  "<holder> → <counterparty>"; deliveries read "<holder> → <customer>". */
 function globalSubtitleFor(row: GlobalMovement): string {
   const holder = row.holder_name ?? 'Unknown holder';
-  const actor = row.actor_name && row.actor_name !== holder ? ` · by ${row.actor_name}` : '';
   const to = row.counterparty_holder_name ?? 'Unknown party';
+  // No actor suffix here — the performer rides the meta line so this line can
+  // wrap to two lines and never truncate the recipient.
   switch (row.event_kind) {
     case 'bulk_intake':
-      return `Received into ${holder}${actor}`;
+      return `Received into ${holder}`;
     case 'warehouse_issue':
-      return `Issued · ${holder} → ${to}${actor}`;
+      return `Issued · ${holder} → ${to}`;
     case 'warehouse_return':
-      return `Returned · ${holder} → ${to}${actor}`;
+      return `Returned · ${holder} → ${to}`;
     case 'transfer':
-      return `Transfer · ${holder} → ${to}${actor}`;
+      return `Transfer · ${holder} → ${to}`;
     case 'delivered':
       return `Delivered · ${holder} → ${row.customer_name ?? 'customer'}`;
     case 'delivery_returned':
       return `Delivery reverted · back to ${holder}`;
     case 'correction':
-      return `Correction · ${holder}${actor}`;
+      return `Correction · ${holder}`;
     case 'loss':
-      return `Loss · ${holder}${actor}`;
+      return `Loss · ${holder}`;
     case 'theft':
-      return `Theft · ${holder}${actor}`;
+      return `Theft · ${holder}`;
     case 'damaged':
-      return `Damaged · ${holder}${actor}`;
+      return `Damaged · ${holder}`;
     case 'found':
-      return `Found · ${holder}${actor}`;
+      return `Found · ${holder}`;
     default:
       return holder;
   }
