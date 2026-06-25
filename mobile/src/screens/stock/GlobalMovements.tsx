@@ -16,7 +16,7 @@
 // all four filters are server-side (the list is infinite history, so a
 // client-side filter would only narrow the loaded page).
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { SectionList, Text, View } from 'react-native';
+import { Pressable, SectionList, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import {
   listGlobalStockMovements,
@@ -80,6 +80,7 @@ export function GlobalMovements({
   const [to, setTo] = useState<string | null>(null);
   // Holder-relative direction; only meaningful (and shown) when a holder is set.
   const [direction, setDirection] = useState<'in' | 'out' | null>(null);
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
 
   // 'all' when unbounded, else the matching reconcile preset. detectPreset needs
   // non-null strings, hence the guard.
@@ -234,6 +235,45 @@ export function GlobalMovements({
     ],
     [holdersQ.data],
   );
+  const advancedFilterCount =
+    Number(productId !== null) +
+    Number(!clientMode && clientFilterId !== null) +
+    Number(holderId !== null) +
+    Number(direction !== null);
+  const advancedFilterSummary = useMemo(() => {
+    const selected: string[] = [];
+    if (productId) {
+      selected.push(productOptions.find((o) => o.value === productId)?.label ?? 'Product');
+    }
+    if (!clientMode && clientFilterId) {
+      selected.push(clientOptions.find((o) => o.value === clientFilterId)?.label ?? 'Client');
+    }
+    if (holderId) {
+      selected.push(holderOptions.find((o) => o.value === holderId)?.label ?? 'Holder');
+    }
+    if (direction) selected.push(direction === 'in' ? 'Incoming' : 'Outgoing');
+    return selected.length > 0
+      ? selected.join(' · ')
+      : clientMode
+        ? 'Product and holder'
+        : 'Product, client and holder';
+  }, [
+    clientMode,
+    productId,
+    productOptions,
+    clientFilterId,
+    clientOptions,
+    holderId,
+    holderOptions,
+    direction,
+  ]);
+
+  function clearAdvancedFilters() {
+    setProductId(null);
+    setClientFilterId(null);
+    setHolderId(null);
+    setDirection(null);
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -285,53 +325,132 @@ export function GlobalMovements({
               </View>
             </View>
           ) : null}
-          <Select
-            label="Product"
-            value={productId ?? ALL}
-            options={productOptions}
-            onChange={(v) => setProductId(v === ALL ? null : v)}
-            searchable
-            searchPlaceholder="Search products"
-          />
-          {!clientMode ? (
-            <Select
-              label="Client"
-              value={clientFilterId ?? ALL}
-              options={clientOptions}
-              onChange={(v) => {
-                setClientFilterId(v === ALL ? null : v);
-                // A product belongs to one client, so a vendor change can't keep
-                // the old product filter — reset it here (not via an effect, which
-                // would double-fire the page fetch).
-                setProductId(null);
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ expanded: advancedFiltersOpen }}
+            onPress={() => setAdvancedFiltersOpen((open) => !open)}
+            style={({ pressed }) => [
+              {
+                minHeight: 48,
+                borderWidth: 1,
+                borderColor: advancedFilterCount > 0 ? colors.black : colors.border,
+                borderRadius: 12,
+                backgroundColor: colors.white,
+                paddingHorizontal: 12,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+              },
+              pressed && { opacity: 0.82 },
+            ]}
+          >
+            <Icon name="sliders" size={18} color={colors.black} />
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.black }}>
+                  More filters
+                </Text>
+                {advancedFilterCount > 0 ? (
+                  <View
+                    style={{
+                      minWidth: 20,
+                      height: 20,
+                      borderRadius: 10,
+                      paddingHorizontal: 6,
+                      backgroundColor: colors.black,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Text style={{ fontFamily: fonts.bold, fontSize: 11, color: colors.white }}>
+                      {advancedFilterCount}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+              <Text
+                numberOfLines={1}
+                style={{
+                  fontFamily: fonts.medium,
+                  fontSize: 11,
+                  color: colors.textSecondary,
+                  marginTop: 1,
+                }}
+              >
+                {advancedFilterSummary}
+              </Text>
+            </View>
+            <Icon
+              name={advancedFiltersOpen ? 'chevronUp' : 'chevronDown'}
+              size={18}
+              color={colors.textSecondary}
+            />
+          </Pressable>
+          {advancedFiltersOpen ? (
+            <View
+              style={{
+                borderWidth: 1,
+                borderColor: colors.border,
+                borderRadius: 12,
+                backgroundColor: colors.white,
+                padding: 12,
+                gap: 8,
               }}
-              searchable
-              searchPlaceholder="Search clients"
-            />
-          ) : null}
-          <Select
-            label="Holder"
-            value={holderId ?? ALL}
-            options={holderOptions}
-            onChange={(v) => {
-              const next = v === ALL ? null : v;
-              setHolderId(next);
-              // direction is holder-relative — drop it when the holder clears.
-              if (next === null) setDirection(null);
-            }}
-            searchable
-            searchPlaceholder="Search holders"
-          />
-          {holderId ? (
-            <FilterChips
-              options={[
-                { id: 'all', label: 'In & out' },
-                { id: 'in', label: 'In' },
-                { id: 'out', label: 'Out' },
-              ]}
-              value={direction ?? 'all'}
-              onChange={(v) => setDirection(v === 'all' ? null : (v as 'in' | 'out'))}
-            />
+            >
+              <Select
+                label="Product"
+                value={productId ?? ALL}
+                options={productOptions}
+                onChange={(v) => setProductId(v === ALL ? null : v)}
+                searchable
+                searchPlaceholder="Search products"
+              />
+              {!clientMode ? (
+                <Select
+                  label="Client"
+                  value={clientFilterId ?? ALL}
+                  options={clientOptions}
+                  onChange={(v) => {
+                    setClientFilterId(v === ALL ? null : v);
+                    // A product belongs to one client, so a vendor change can't keep
+                    // the old product filter — reset it here (not via an effect, which
+                    // would double-fire the page fetch).
+                    setProductId(null);
+                  }}
+                  searchable
+                  searchPlaceholder="Search clients"
+                />
+              ) : null}
+              <Select
+                label="Holder"
+                value={holderId ?? ALL}
+                options={holderOptions}
+                onChange={(v) => {
+                  const next = v === ALL ? null : v;
+                  setHolderId(next);
+                  // direction is holder-relative — drop it when the holder clears.
+                  if (next === null) setDirection(null);
+                }}
+                searchable
+                searchPlaceholder="Search holders"
+              />
+              {holderId ? (
+                <FilterChips
+                  options={[
+                    { id: 'all', label: 'In & out' },
+                    { id: 'in', label: 'In' },
+                    { id: 'out', label: 'Out' },
+                  ]}
+                  value={direction ?? 'all'}
+                  onChange={(v) => setDirection(v === 'all' ? null : (v as 'in' | 'out'))}
+                />
+              ) : null}
+              {advancedFilterCount > 0 ? (
+                <Button variant="secondary" full onPress={clearAdvancedFilters}>
+                  Clear more filters
+                </Button>
+              ) : null}
+            </View>
           ) : null}
         </View>
       </View>
