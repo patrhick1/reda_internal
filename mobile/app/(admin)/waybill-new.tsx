@@ -35,7 +35,7 @@ export default function NewWaybill() {
   const clientsQ = useAsync<Client[]>(() => listClients(), []);
 
   const [clientId, setClientId] = useState<string | null>(null);
-  const [orderType, setOrderType] = useState<'Pickup' | 'Waybill'>('Pickup');
+  const [orderType, setOrderType] = useState<'Pickup' | 'Waybill' | 'Failed delivery'>('Pickup');
   const [fare, setFare] = useState(''); // trip fare Reda paid (Uber / driver)
   const [fee, setFee] = useState(''); // fee Reda charges the client
   const [extras, setExtras] = useState<Extra[]>([]);
@@ -148,6 +148,7 @@ export default function NewWaybill() {
             options={[
               { value: 'Pickup', label: 'Pickup' },
               { value: 'Waybill', label: 'Waybill' },
+              { value: 'Failed delivery', label: 'Failed delivery' },
             ]}
             onChange={setOrderType}
           />
