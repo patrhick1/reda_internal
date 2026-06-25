@@ -126,6 +126,20 @@ export function StockOverview({ basePath }: { basePath: StockBasePath }) {
     [rows, clientsQ.data],
   );
 
+  // Same search box drives the "By client" tab: match on the vendor name OR any
+  // product they currently hold, so "tablet" surfaces every client with a tablet
+  // SKU in stock. (Zero-stock clients have no products, so they only match by
+  // name — intended; there's nothing to find a product in.)
+  const visibleClientGroups = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return clientGroups;
+    return clientGroups.filter(
+      (c) =>
+        c.client_name.toLowerCase().includes(q) ||
+        c.products.some((p) => p.product_name.toLowerCase().includes(q)),
+    );
+  }, [clientGroups, query]);
+
   const loading = stockQ.loading || usersQ.loading || clientsQ.loading;
   const error = stockQ.error || usersQ.error || clientsQ.error;
   const reload = () => {
@@ -289,15 +303,19 @@ export function StockOverview({ basePath }: { basePath: StockBasePath }) {
             }
           />
         )
-      ) : clientGroups.length === 0 ? (
-        <Empty
-          icon="package"
-          title="No clients yet"
-          sub="Add a client in Catalog before recording stock."
-        />
+      ) : visibleClientGroups.length === 0 ? (
+        query ? (
+          <Empty icon="search" title="No matches" sub="Try a different product or client name." />
+        ) : (
+          <Empty
+            icon="package"
+            title="No clients yet"
+            sub="Add a client in Catalog before recording stock."
+          />
+        )
       ) : (
         <FlatList
-          data={clientGroups}
+          data={visibleClientGroups}
           keyExtractor={(c) => c.client_id}
           renderItem={({ item }) => (
             <ClientStockCard
