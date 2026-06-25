@@ -715,7 +715,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         }
         contentContainerStyle={{
           padding: 16,
-          paddingBottom: selectMode ? 120 + insets.bottom : 96,
+          paddingBottom: selectMode ? 132 + insets.bottom : 96,
           flexGrow: 1,
         }}
         initialNumToRender={12}
@@ -785,47 +785,60 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
             backgroundColor: colors.white,
             borderTopWidth: 1,
             borderTopColor: colors.border,
-            flexDirection: 'row',
             gap: 8,
           }}
         >
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <View style={{ flex: 1 }}>
+              <Button
+                variant="secondary"
+                size="sm"
+                full
+                onPress={() => setSelectedIds(new Set())}
+                disabled={selectedIds.size === 0}
+              >
+                Clear
+              </Button>
+            </View>
+            {canBulkStatus ? (
+              <View style={{ flex: 1 }}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  full
+                  onPress={() => setBulkStatusSheetOpen(true)}
+                  disabled={selectedIds.size === 0}
+                  accessibilityLabel={`Change status for ${selectedIds.size} selected`}
+                >
+                  Status
+                </Button>
+              </View>
+            ) : null}
+            {canBulkDelete ? (
+              <View style={{ flex: 1 }}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  full
+                  icon="trash"
+                  onPress={() => setBulkDeleteSheetOpen(true)}
+                  disabled={selectedIds.size === 0}
+                  accessibilityLabel={`Delete ${selectedIds.size} selected`}
+                >
+                  Delete
+                </Button>
+              </View>
+            ) : null}
+          </View>
           <Button
-            variant="secondary"
-            onPress={() => setSelectedIds(new Set())}
+            variant="emphasis"
+            full
+            icon="check"
+            onPress={() => setBulkSheetOpen(true)}
             disabled={selectedIds.size === 0}
           >
-            Clear
+            {`Assign ${selectedIds.size}`}
           </Button>
-          {canBulkStatus ? (
-            <Button
-              variant="secondary"
-              onPress={() => setBulkStatusSheetOpen(true)}
-              disabled={selectedIds.size === 0}
-            >
-              {`Status ${selectedIds.size}`}
-            </Button>
-          ) : null}
-          {canBulkDelete ? (
-            <Button
-              variant="secondary"
-              icon="trash"
-              onPress={() => setBulkDeleteSheetOpen(true)}
-              disabled={selectedIds.size === 0}
-            >
-              {`Delete ${selectedIds.size}`}
-            </Button>
-          ) : null}
-          <View style={{ flex: 1 }}>
-            <Button
-              variant="emphasis"
-              full
-              icon="check"
-              onPress={() => setBulkSheetOpen(true)}
-              disabled={selectedIds.size === 0}
-            >
-              {`Assign ${selectedIds.size}`}
-            </Button>
-          </View>
         </View>
       ) : null}
 
