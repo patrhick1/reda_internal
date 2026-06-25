@@ -125,7 +125,8 @@ begin
           )
      )
   then
-    raise exception 'agent % already has an open delivery matching this customer + items + date', p_assigned_agent_id
+    raise exception 'agent % already has an open delivery matching this customer + items + date',
+      coalesce((select u.display_name from public.users u where u.id = p_assigned_agent_id), p_assigned_agent_id::text)
       using errcode = '23505', hint = 'reassign to a different agent';
   end if;
 
