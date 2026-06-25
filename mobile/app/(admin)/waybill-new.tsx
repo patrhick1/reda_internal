@@ -68,29 +68,21 @@ export default function NewWaybill() {
     setExtras((xs) => xs.filter((e) => e.id !== id));
   }
 
-  /** Full two-sided audit note: client charge, Reda payout, and resulting margin. */
+  /** Client-facing charge breakdown, in Uzo's reconciliation-report shape: the
+   *  type fee, then each pickup extra. No header/total/payout — the report prints
+   *  this note verbatim for waybill rows. Reda's payout & margin are NOT in the
+   *  note (they live in the snapshots, the Detail money section, and the audit
+   *  log), so the client only ever sees what they're charged. e.g.
+   *    Pickup ₦2,000
+   *    Storekeeper ₦500
+   *    Driver ₦1,000 */
   function buildNote(): string {
-    const chargeLines = [`${orderType} fee ${formatNaira(feeNum)}`];
-    const payoutLines = [`Trip fare ${formatNaira(fareNum)}`];
+    const lines = [`${orderType} ${formatNaira(feeNum)}`];
     for (const e of extras) {
       const label = e.label.trim() || 'Extra';
-      if (num(e.amount) > 0) {
-        const line = `${label} ${formatNaira(num(e.amount))}`;
-        chargeLines.push(line);
-        payoutLines.push(line);
-      }
+      if (num(e.amount) > 0) lines.push(`${label} ${formatNaira(num(e.amount))}`);
     }
-    return [
-      `${orderType} breakdown`,
-      `Client charge:`,
-      ...chargeLines,
-      `Total client charge ${formatNaira(charged)}`,
-      ``,
-      `Reda paid out:`,
-      ...payoutLines,
-      `Total Reda paid out ${formatNaira(paidOut)}`,
-      `Margin ${formatNaira(margin)}`,
-    ].join('\n');
+    return lines.join('\n');
   }
 
   async function submit() {

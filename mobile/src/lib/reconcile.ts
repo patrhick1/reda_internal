@@ -208,11 +208,14 @@ export function buildClientShareMessage(input: {
 }): string {
   const blocks = input.rows.map((r) => {
     if (r.orderType === 'waybill') {
-      return [
-        `Type: ${r.customerName ?? 'Pickup / Waybill'}`,
-        `Charge to client: ${formatNaira(Math.abs(Number(r.remit ?? 0)))}`,
-        `Note: Deducted from reconciliation`,
-      ].join('\n');
+      // Uzo's format: the charge-side breakdown only (type fee + each pickup
+      // extra), printed verbatim from the stored note — no header or total.
+      // Fall back to a single "<type> ₦total" line if the note is missing.
+      const breakdown = (r.note ?? '').trim();
+      return (
+        breakdown ||
+        `${r.customerName ?? 'Pickup / Waybill'} ${formatNaira(Math.abs(Number(r.remit ?? 0)))}`
+      );
     }
     const lines = [`Name: ${r.customerName ?? 'Customer'}`, ...shareProductLines(r.products)];
     if (r.paymentMethod === 'cash') lines.push('Paid: Cash');

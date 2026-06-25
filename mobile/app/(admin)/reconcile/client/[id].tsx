@@ -84,10 +84,13 @@ export default function ClientReconcileDetail() {
           clientRep: r.client_rep,
           products: remitRowProducts(r),
           remit: Number(r.remit ?? 0),
-          note: deriveDeliveryNote({
-            quantityOrdered: q.ordered,
-            quantityDelivered: q.delivered,
-          }),
+          note:
+            r.order_type === 'waybill'
+              ? (r.note ?? '')
+              : deriveDeliveryNote({
+                  quantityOrdered: q.ordered,
+                  quantityDelivered: q.delivered,
+                }),
           paymentMethod: r.payment_method,
           cashPosFee: r.cash_pos_fee,
         };

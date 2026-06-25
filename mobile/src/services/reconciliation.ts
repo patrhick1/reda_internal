@@ -77,6 +77,10 @@ export type ClientRemitDetailRow = {
   /** What Reda owes the client for this delivery = paid − reda_fee − cash_pos_fee. */
   remit: number;
   agent_name: string | null;
+  /** Pickup/waybill charge breakdown (the create_waybill note: type fee + each
+   *  pickup extra). Null for normal deliveries — the share report uses it only
+   *  for waybill rows. */
+  note: string | null;
 };
 
 export async function listClientRemit(from: string, to: string): Promise<ClientRemitRow[]> {
@@ -167,6 +171,9 @@ export type RepClientRemitDetailRow = {
   /** ₦500 cash-banking fee passed through to the client (0 for transfer).
    *  Client-facing — not Reda's own cut. */
   cash_pos_fee: number;
+  /** Pickup/waybill charge breakdown (the create_waybill note). Null for normal
+   *  deliveries — the share report uses it only for waybill rows. Client-facing. */
+  note: string | null;
 };
 
 export async function listRepClientRemit(from: string, to: string): Promise<RepClientRemitRow[]> {

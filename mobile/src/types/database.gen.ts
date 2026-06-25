@@ -2323,6 +2323,7 @@ export type Database = {
           customer_price: number
           delivery_id: string
           location_name: string
+          note: string | null
           order_type: string | null
           paid: number
           payment_method: string
@@ -2343,6 +2344,7 @@ export type Database = {
           customer_name: string
           delivery_id: string
           location_name: string
+          note: string | null
           order_type: string | null
           outstanding: number
           payment_method: string
