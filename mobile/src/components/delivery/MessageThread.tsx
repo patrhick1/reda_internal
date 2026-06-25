@@ -88,11 +88,23 @@ export function MessageThread({
   const isOpen = !TERMINAL_STATUSES.has(deliveryStatus ?? '');
   const messages = messagesQ.data ?? [];
 
+  // A rep cannot ACT on an open 'not my route' flag — reassigning is an admin/
+  // dispatcher job, and any rep engagement (reply / Mark handled) routes through
+  // mark_messages_read, which would consume the flag and hide it from the admin
+  // "open issues" feed before anyone reassigned. Reps can still read the thread;
+  // they just don't get the composer or the Mark-handled button on it. The server
+  // mirrors this (reply_to_delivery + mark_messages_read in not_my_route_admin_only.sql).
+  const repBlockedByRoute =
+    viewerRole === 'rep' &&
+    messages.some(
+      (m) => m.author_role === 'agent' && m.issue_type === 'not_my_route' && !m.read_at,
+    );
+
   // Ops "Mark handled": shown when an ops viewer has an unread agent message on
   // an open thread and there's nothing to reply (e.g. they fixed it offline).
   // Clears the agent's unread via the role-aware mark_messages_read RPC.
   const hasUnreadAgentMsg = messages.some((m) => m.author_role === 'agent' && !m.read_at);
-  const showMarkHandled = !isAgentViewer && isOpen && hasUnreadAgentMsg;
+  const showMarkHandled = !isAgentViewer && isOpen && hasUnreadAgentMsg && !repBlockedByRoute;
   async function markHandled() {
     setMarking(true);
     try {
@@ -177,8 +189,22 @@ export function MessageThread({
           </Pressable>
         </View>
       ) : null}
-      {isOpen && canPost ? (
+      {isOpen && canPost && !repBlockedByRoute ? (
         <ReplyComposer deliveryId={deliveryId} onSent={() => messagesQ.reload()} />
+      ) : repBlockedByRoute ? (
+        <View
+          style={{
+            marginTop: 14,
+            padding: 10,
+            backgroundColor: colors.surface,
+            borderRadius: 10,
+          }}
+        >
+          <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary }}>
+            Not my route — an admin or dispatcher reassigns this delivery. Reps don&apos;t action
+            route flags.
+          </Text>
+        </View>
       ) : !isOpen ? (
         <View
           style={{

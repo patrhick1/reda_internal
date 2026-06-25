@@ -207,8 +207,13 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   // with the deliveries reload (focus + pull-to-refresh) plus a realtime sub
   // below so the chip clears the moment someone opens the thread.
   const unreadQ = useAsync<Map<string, number>>(
-    () => (canSeeClaims ? opsUnreadAgentCounts() : Promise.resolve(new Map())),
-    [canSeeClaims],
+    () =>
+      canSeeClaims
+        ? // Reps don't handle 'not my route' (admin/dispatcher reassign job), so
+          // it's excluded from their per-row chip too (not_my_route_admin_only.sql).
+          opsUnreadAgentCounts({ excludeNotMyRoute: user.role === 'rep' })
+        : Promise.resolve(new Map()),
+    [canSeeClaims, user.role],
   );
 
   // Every postponed order, across ALL dates, ordered by postpone-to date. Drives

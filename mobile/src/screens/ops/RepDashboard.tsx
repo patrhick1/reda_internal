@@ -49,14 +49,15 @@ export function RepDashboard() {
   // Pulled separately so they still surface in "To notify" (Uzo, 2026-06-20).
   const postponedQ = useAsync(() => listPostponed(user.role), [user.role]);
   const usersQ = useAsync(() => listUsers(), []);
-  // Actionable agent-flagged issues — same card dispatchers get on OpsDashboard.
-  // RLS (is_admin_or_dispatcher) already covers reps, so this is the parity the
-  // role was missing: a durable home cue that an agent needs a follow-up.
-  const issuesQ = useAsync(() => listOpenIssuesForOps(), []);
+  // Actionable agent-flagged issues — same card dispatchers get on OpsDashboard,
+  // minus 'not my route': that's a reassign-only flag handled by admins/
+  // dispatchers, hidden from reps so they can't consume it (not_my_route_admin_only.sql).
+  const issuesQ = useAsync(() => listOpenIssuesForOps({ excludeNotMyRoute: true }), []);
   // Unread agent messages keyed by delivery_id (deliberate contact only — see
   // opsUnreadAgentCounts). Read state is team-shared, so this is "unread by the
-  // ops team", matching the per-row chip on the deliveries list.
-  const unreadQ = useAsync(() => opsUnreadAgentCounts(), []);
+  // ops team", matching the per-row chip on the deliveries list. 'not my route'
+  // excluded for reps to match the issues card above.
+  const unreadQ = useAsync(() => opsUnreadAgentCounts({ excludeNotMyRoute: true }), []);
 
   useFocusEffect(
     useCallback(() => {

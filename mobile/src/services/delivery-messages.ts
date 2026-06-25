@@ -178,7 +178,12 @@ export async function agentUnreadCounts(): Promise<Map<string, number>> {
  *  the list owns its own date filter and this map is only ever matched against
  *  the rows already on screen, so an unread on an off-screen date simply never
  *  renders. */
-export async function opsUnreadAgentCounts(): Promise<Map<string, number>> {
+export async function opsUnreadAgentCounts(opts?: {
+  /** Reps don't handle 'not my route' (it's an admin/dispatcher reassign job),
+   *  so their list chip / unread surfaces shouldn't badge it. See
+   *  not_my_route_admin_only.sql. Admins/dispatchers pass nothing → still see it. */
+  excludeNotMyRoute?: boolean;
+}): Promise<Map<string, number>> {
   const { data, error } = await supabase
     .from('delivery_messages')
     .select('delivery_id, issue_type, deliveries!inner(current_status)')
@@ -194,6 +199,7 @@ export async function opsUnreadAgentCounts(): Promise<Map<string, number>> {
     if (TERMINAL_STATUSES.has(r.deliveries?.current_status ?? '')) continue;
     // Skip auto-seeded soft-fail notes — badge deliberate contact only.
     if (r.issue_type && AUTO_SEEDED_ISSUE_TYPES.has(r.issue_type)) continue;
+    if (opts?.excludeNotMyRoute && r.issue_type === 'not_my_route') continue;
     map.set(r.delivery_id, (map.get(r.delivery_id) ?? 0) + 1);
   }
   return map;
@@ -210,8 +216,13 @@ export type OpenIssueRow = {
 };
 
 /** Lists unread agent-authored messages whose parent delivery is still open.
- *  Powers the admin home "Open issues from agents" attention block. */
-export async function listOpenIssuesForOps(): Promise<OpenIssueRow[]> {
+ *  Powers the admin home "Open issues from agents" attention block.
+ *  `excludeNotMyRoute` drops 'not my route' flags from the feed — reps pass it
+ *  so a reassign-only flag (admin/dispatcher's job) never lands on their home;
+ *  admins/dispatchers omit it and keep seeing it. See not_my_route_admin_only.sql. */
+export async function listOpenIssuesForOps(opts?: {
+  excludeNotMyRoute?: boolean;
+}): Promise<OpenIssueRow[]> {
   const { data, error } = await supabase
     .from('delivery_messages')
     .select(
@@ -240,6 +251,7 @@ export async function listOpenIssuesForOps(): Promise<OpenIssueRow[]> {
   };
   return ((data ?? []) as Raw[])
     .filter((r: Raw) => r.delivery && !TERMINAL_STATUSES.has(r.delivery.current_status ?? ''))
+    .filter((r: Raw) => !(opts?.excludeNotMyRoute && r.issue_type === 'not_my_route'))
     .map((r: Raw) => ({
       delivery_id: r.delivery_id,
       issue_type: r.issue_type,
