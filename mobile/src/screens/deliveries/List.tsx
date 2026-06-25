@@ -19,6 +19,7 @@ import {
   listPostponed,
   deliveryProductsLabel,
   rolledFromLabel,
+  SEARCH_LIMIT,
   type DeliveryRow,
 } from '@/services/deliveries';
 import { listActiveFollowups, type ActiveFollowup } from '@/services/followups';
@@ -172,23 +173,36 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   const [nameQuery, setNameQuery] = useState('');
   const nameNeedle = nameQuery.trim().toLowerCase();
 
+  // Debounce the needle for the SERVER query. A search runs server-side across
+  // ALL dates (you search because you don't know the date) and is index-backed
+  // (pg_trgm) + bounded, so it scales as the table grows instead of loading
+  // everything to filter on-device. The instant nameNeedle still refines the
+  // already-loaded list below for snappiness while the debounce settles.
+  const [debouncedNeedle, setDebouncedNeedle] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedNeedle(nameNeedle), 300);
+    return () => clearTimeout(t);
+  }, [nameNeedle]);
+
   // Derive the filter passed to the service. Mirrors the reconcile pattern.
+  // `search` overrides the date scope server-side when present.
   const listFilters = useMemo(() => {
+    const search = debouncedNeedle || null;
     switch (datePreset) {
       case 'today':
-        return { date: todayLagos() };
+        return { date: todayLagos(), search };
       case 'yesterday':
-        return { date: yesterdayLagos() };
+        return { date: yesterdayLagos(), search };
       case 'custom':
-        return { date: customDate };
+        return { date: customDate, search };
       case 'all':
-        return { allDates: true };
+        return { allDates: true, search };
     }
-  }, [datePreset, customDate]);
+  }, [datePreset, customDate, debouncedNeedle]);
 
   const { data, loading, error, reload } = useAsync(
     () => listDeliveries(user.role, listFilters),
-    [user.role, datePreset, customDate],
+    [user.role, datePreset, customDate, debouncedNeedle],
   );
 
   // Active follow-up claims, fetched only for the ops set (admin / dispatcher /
@@ -391,7 +405,11 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     if (agentId) rows = rows.filter((d) => d.assigned_agent_id === agentId);
     if (clientId) rows = rows.filter((d) => d.client_id === clientId);
     if (nameNeedle)
-      rows = rows.filter((d) => (d.customer_name ?? '').toLowerCase().includes(nameNeedle));
+      rows = rows.filter(
+        (d) =>
+          (d.customer_name ?? '').toLowerCase().includes(nameNeedle) ||
+          (d.customer_phone ?? '').toLowerCase().includes(nameNeedle),
+      );
     return rows;
   }, [data, agentId, clientId, nameNeedle]);
   const buckets = useMemo(
@@ -474,7 +492,11 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     if (agentId) rows = rows.filter((d) => d.assigned_agent_id === agentId);
     if (clientId) rows = rows.filter((d) => d.client_id === clientId);
     if (nameNeedle)
-      rows = rows.filter((d) => (d.customer_name ?? '').toLowerCase().includes(nameNeedle));
+      rows = rows.filter(
+        (d) =>
+          (d.customer_name ?? '').toLowerCase().includes(nameNeedle) ||
+          (d.customer_phone ?? '').toLowerCase().includes(nameNeedle),
+      );
     return rows;
   }, [postponedQ.data, agentId, clientId, nameNeedle]);
 
@@ -587,7 +609,10 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
           }
         />
       ) : (
-        <AppBar title="Deliveries" subtitle={subtitleFor(datePreset, customDate)} />
+        <AppBar
+          title="Deliveries"
+          subtitle={nameNeedle ? 'Searching all dates' : subtitleFor(datePreset, customDate)}
+        />
       )}
       <View
         style={{
@@ -621,7 +646,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
               icon="search"
               value={nameQuery}
               onChange={setNameQuery}
-              placeholder="Search customer name"
+              placeholder="Search name or phone (all dates)"
               autoCapitalize="none"
               autoCorrect={false}
               rightAdornment={
@@ -637,6 +662,18 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
                 ) : null
               }
             />
+            {nameNeedle && (data?.length ?? 0) >= SEARCH_LIMIT ? (
+              <Text
+                style={{
+                  fontFamily: fonts.medium,
+                  fontSize: 11,
+                  color: colors.textSecondary,
+                  marginTop: 6,
+                }}
+              >
+                Showing the first {SEARCH_LIMIT} matches — narrow your search to see more.
+              </Text>
+            ) : null}
           </View>
         ) : null}
         {showListFilters ? (

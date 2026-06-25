@@ -342,7 +342,25 @@ export type ListFilters = {
   date?: string;
   /** If true, fetch all dates (no date filter). */
   allDates?: boolean;
+  /** Free-text search on customer name/phone. When set (>= 2 chars), the query
+   *  runs server-side across ALL dates (you search because you don't know the
+   *  date) and the date filter is ignored. Bounded by SEARCH_LIMIT. */
+  search?: string | null;
 };
+
+/** Cap on server-side search results. Searching by name/phone yields few rows;
+ *  the cap protects against a too-broad term loading thousands. */
+export const SEARCH_LIMIT = 100;
+
+/** Strip characters that would break PostgREST's .or() filter grammar (comma,
+ *  parens, backslash) or act as ILIKE wildcards (%/_), so the term matches
+ *  literally. Names/phones never contain these. */
+function sanitizeSearch(term: string): string {
+  return term
+    .replace(/[%_,()\\*]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 function todayLagos(): string {
   // Africa/Lagos is +01:00 year-round. Convert UTC now to that offset and slice.
@@ -362,7 +380,15 @@ export async function listDeliveries(
     .from(view)
     .select(`*, ${JOIN_FRAGMENT}`)
     .order('created_at', { ascending: false });
-  if (!filters.allDates) {
+  const searchTerm = filters.search ? sanitizeSearch(filters.search) : '';
+  if (searchTerm.length >= 2) {
+    // Search overrides the date scope (you don't know the date) — match name OR
+    // phone substring, server-side + index-backed (pg_trgm), bounded.
+    const digits = searchTerm.replace(/\D/g, '');
+    const ors = [`customer_name.ilike.%${searchTerm}%`];
+    if (digits.length >= 3) ors.push(`customer_phone.ilike.%${digits}%`);
+    query = query.or(ors.join(',')).limit(SEARCH_LIMIT);
+  } else if (!filters.allDates) {
     const d = filters.date ?? todayLagos();
     query = query.eq('scheduled_date', d);
   }
