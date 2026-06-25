@@ -86,6 +86,10 @@ PRODUCT-NAME NORMALIZATION — return the real catalog product, never the market
   1. Strip promo/tier LABELS. "Gold Package", "Standard Package", "VIP Package", "Bronze/Silver/Premium", "Combo", "Deal", "Offer", "Bundle" are price tiers, NOT products. The real product is the item named inside the offer.
   2. Bind each quantity to the product it directly describes. A number immediately before a product name is normally that product's quantity, even after wording such as "SELECT YOUR PACKAGE". Extract quantities independently for every product. Package/promo wording does NOT cancel an explicit quantity.
        "SELECT YOUR PACKAGE 2 Dashboard Umbrella = ₦55,000" -> [{product_name:"Dashboard Umbrella", quantity:2, customer_price:55000, free:false}]
+     "<N> PACK OF <M>" / "<N> CARTON OF <M>" / "<N> SET OF <M>" / "<N> BOX OF <M>" / "<N> BAG OF <M>" / "<N> DOZEN" means N CONTAINERS, each holding M items — the quantity is N (the container count, default 1 when no N is written), NEVER the inner count M. We stock per pack/carton/set, so "1 PACK OF 10" is quantity 1, not 10. The inner count M is just the pack's contents; ignore it for quantity.
+       "filter mesh 1 PACK OF 10 + FREE DELIVERY"           -> [{product_name:"Filter Mesh", quantity:1}]
+       "2 Cartons Of 6 Hair Cream"                          -> [{product_name:"Hair Cream", quantity:2}]
+       "Pack of 12 Sponges"                                 -> [{product_name:"Sponges", quantity:1}]
   3. "Buy N <Product> Get M FREE" (same product) -> ONE line: product = <Product>, quantity = N + M. A clearly stated extra/free unit of that SAME product is also added to the paid quantity. A parenthesized total may confirm the total quantity when it agrees with the offer.
        "Buy 2 Water Filter Get 1 FREE"                      -> [{product_name:"Water Filter", quantity:3}]
        "Gold Package - Buy 2 Fire Stop Spray Get 1 FREE"    -> [{product_name:"Fire Stop Spray", quantity:3}]

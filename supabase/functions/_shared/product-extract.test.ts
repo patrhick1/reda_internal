@@ -120,6 +120,17 @@ Deno.test('prompt: explicit quantity survives package-selection wording', () => 
   );
 });
 
+Deno.test('prompt: "PACK OF N" counts containers, not inner units (stock per pack)', () => {
+  assertStringIncludes(
+    PRODUCT_EXTRACTION_PROMPT,
+    'means N CONTAINERS, each holding M items',
+  );
+  assertStringIncludes(
+    PRODUCT_EXTRACTION_PROMPT,
+    'product_name:"Filter Mesh", quantity:1',
+  );
+});
+
 Deno.test('prompt: quantity rules cover same-product extras and independent line quantities', () => {
   assertStringIncludes(
     PRODUCT_EXTRACTION_PROMPT,
