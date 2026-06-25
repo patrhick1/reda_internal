@@ -113,23 +113,36 @@ export async function fetchDeliveryItemsFor(
   const untyped = supabase as unknown as {
     from: (table: string) => ReturnType<typeof supabase.from>;
   };
-  const { data, error } = await untyped
-    .from('delivery_items')
-    .select(
-      'id, delivery_id, product_catalog_id, quantity_ordered, quantity_delivered, customer_price, product:product_catalog(product_name)',
-    )
-    .in('delivery_id', ids);
-  if (error) throw error;
+  // Batch the IN() list. A single query with ~1000+ ids (an "All dates" load)
+  // produced a URL far past the API gateway's request-line limit → 400 Bad
+  // Request. 100 ids/chunk keeps each URL well under that ceiling; chunks run in
+  // parallel so it's still one round-trip's worth of latency.
+  const CHUNK = 100;
+  const slices: string[][] = [];
+  for (let i = 0; i < ids.length; i += CHUNK) slices.push(ids.slice(i, i + CHUNK));
+  const results = await Promise.all(
+    slices.map((slice) =>
+      untyped
+        .from('delivery_items')
+        .select(
+          'id, delivery_id, product_catalog_id, quantity_ordered, quantity_delivered, customer_price, product:product_catalog(product_name)',
+        )
+        .in('delivery_id', slice),
+    ),
+  );
   const map: Record<string, DeliveryItem[]> = {};
-  for (const r of (data ?? []) as unknown as RawItemRow[]) {
-    (map[r.delivery_id] ??= []).push({
-      id: r.id,
-      product_catalog_id: r.product_catalog_id,
-      product_name: r.product?.product_name ?? null,
-      quantity_ordered: r.quantity_ordered,
-      quantity_delivered: r.quantity_delivered,
-      customer_price: r.customer_price,
-    });
+  for (const { data, error } of results) {
+    if (error) throw error;
+    for (const r of (data ?? []) as unknown as RawItemRow[]) {
+      (map[r.delivery_id] ??= []).push({
+        id: r.id,
+        product_catalog_id: r.product_catalog_id,
+        product_name: r.product?.product_name ?? null,
+        quantity_ordered: r.quantity_ordered,
+        quantity_delivered: r.quantity_delivered,
+        customer_price: r.customer_price,
+      });
+    }
   }
   return map;
 }
