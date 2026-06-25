@@ -262,6 +262,21 @@ export function extractTrailingRep(rawText: string | null | undefined): string |
   return lines.length > 0 ? repNameOrNull(lines[lines.length - 1]) : null;
 }
 
+// --- vendor order reference -------------------------------------------------
+// Some vendors stamp their own order number at the top of the forward, e.g.
+//   "Order #: ORD-20260625-PTS-00506"
+// We surface it on client_rep so it rides into the reconciliation report next
+// to the rep name, letting the vendor cross-reference against their own system.
+// The shape (ORD-<8-digit date>-<SKU>-<seq>) is rigid enough that this anchor
+// can't false-positive on free text, so it needs no per-vendor gating.
+const ORDER_REF_RX = /\bORD-\d{8}-[A-Z0-9]{2,}-\d{2,}\b/i;
+
+/** Vendor-supplied order number from the raw forward, uppercased, or null. */
+export function extractVendorOrderRef(rawText: string | null | undefined): string | null {
+  const m = rawText?.match(ORDER_REF_RX);
+  return m ? m[0].toUpperCase() : null;
+}
+
 // --- known multi-SKU combos -------------------------------------------------
 // A few catalog products were SPLIT into separate SKUs (e.g. "Oratox Capsule" +
 // "Oratox Powder"), but clients still order the SET as one line ("Oratox

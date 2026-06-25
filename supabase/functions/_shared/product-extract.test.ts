@@ -10,6 +10,7 @@ import {
   coerceExtractedProducts,
   expandKnownCombos,
   extractTrailingRep,
+  extractVendorOrderRef,
   type LineItem,
 } from './product-extract.ts';
 
@@ -105,6 +106,32 @@ Deno.test('client_rep: trimmed, and blank/absent → null', () => {
   assertEquals(coerceExtractedProducts({ client_rep: '  Cynthia ', products: [] })?.client_rep, 'Cynthia');
   assertEquals(coerceExtractedProducts({ client_rep: '   ', products: [] })?.client_rep, null);
   assertEquals(coerceExtractedProducts({ products: [] })?.client_rep, null); // field omitted
+});
+
+// --- vendor order reference -------------------------------------------------
+
+Deno.test('vendor order ref: extracted from a stamped forward', () => {
+  const raw = [
+    '📦 ORDER DETAILS',
+    'Order #: ORD-20260625-PTS-00506',
+    'Date: Jun 25, 2026 08:44 AM',
+    'Name: JUBRIL RAZAQ',
+    'Catherine',
+  ].join('\n');
+  assertEquals(extractVendorOrderRef(raw), 'ORD-20260625-PTS-00506');
+});
+
+Deno.test('vendor order ref: lowercased input is normalized to uppercase', () => {
+  assertEquals(extractVendorOrderRef('order #: ord-20260625-cfm-02599'), 'ORD-20260625-CFM-02599');
+});
+
+Deno.test('vendor order ref: null/blank/absent → null', () => {
+  assertEquals(extractVendorOrderRef(null), null);
+  assertEquals(extractVendorOrderRef(undefined), null);
+  assertEquals(extractVendorOrderRef('Name: Ada\nMarina, Lagos\nLinda'), null);
+  // near-miss shapes must not match
+  assertEquals(extractVendorOrderRef('ORD-2026-PTS-1'), null);   // short date / seq
+  assertEquals(extractVendorOrderRef('ORDER-20260625-PTS-00506'), null); // wrong prefix
 });
 
 // --- prompt contract ---------------------------------------------------------

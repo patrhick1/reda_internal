@@ -34,6 +34,7 @@ import {
   coerceExtractedProducts,
   expandKnownCombos,
   extractTrailingRep,
+  extractVendorOrderRef,
   stripJsonFences as stripFencesShared,
   pickMatch,
   type ExtractedProducts,
@@ -504,7 +505,12 @@ Deno.serve(async (req) => {
   if (customerPhoneAlt && customerPhoneAlt === customerPhone) customerPhoneAlt = null;
   const rawAddress    = rawAddressRaw?.trim() || null;
   const deliveryInstructions = deliveryInstructionsRaw?.trim() || null;
-  const clientRep     = clientRepRaw?.trim() || null;
+  // Client rep + (optional) vendor order number. Some vendors stamp their own
+  // order # in the forward; append it to the rep so it shows in the recon report
+  // for cross-referencing. Order # alone when the forward carries no rep name.
+  const repName       = clientRepRaw?.trim() || null;
+  const orderRef      = extractVendorOrderRef(row.raw_text);
+  const clientRep     = repName && orderRef ? `${repName} - ${orderRef}` : (repName ?? orderRef);
   const customerPrice = orderTotal !== null && orderTotal >= 0 ? orderTotal : null;
 
   // Optional client hint from contractor — disambiguates "same product name,
