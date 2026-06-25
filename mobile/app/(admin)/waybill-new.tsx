@@ -112,7 +112,12 @@ export default function NewWaybill() {
         note: buildNote(),
         label: orderType,
       });
-      router.back();
+      // waybill-new is a hidden root tab, so router.back() can have nothing to
+      // pop — the screen stays mounted with submitting=true and the button is
+      // stuck on "Creating…" despite success. Reset state and navigate to an
+      // explicit destination instead (same fix as the warehouse Transfer flow).
+      setSubmitting(false);
+      router.replace('/(admin)/deliveries');
     } catch (e) {
       setError(errorMessage(e));
       setSubmitting(false);
@@ -121,7 +126,10 @@ export default function NewWaybill() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
-      <AppBar title="New pickup / waybill" onBack={() => router.back()} />
+      <AppBar
+        title="New pickup / waybill"
+        onBack={() => (router.canGoBack() ? router.back() : router.replace('/(admin)'))}
+      />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
