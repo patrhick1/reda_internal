@@ -51,6 +51,7 @@ begin
         ) as resolved on true
        where d.scheduled_date = p_for_date
          and d.deleted_at is null
+         and d.order_type = 'delivery'   -- waybills/pickups are money-only & terminal; they never roll
          and sd.category <> 'terminal'
          and not exists (
            select 1 from public.deliveries c

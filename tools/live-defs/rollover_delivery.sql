@@ -62,6 +62,16 @@ begin
       using errcode = '22023';
   end if;
 
+  -- Waybills/pickups are money-only records (no product, phone, or address) and
+  -- are terminal by construction. They must never roll: the forward INSERT below
+  -- defaults order_type to 'delivery' and would trip deliveries_delivery_requires_fields.
+  -- run_eod_rollover already filters these out; this is the lowest-level backstop
+  -- for any direct/manual call.
+  if v_old.order_type is distinct from 'delivery' then
+    raise exception 'only deliveries can be rolled (order_type=%) — waybills never roll', v_old.order_type
+      using errcode = '22023';
+  end if;
+
   v_is_strike := v_old.current_status in (
     'not_answering','not_around','not_available',
     'not_connecting','number_busy','switched_off'
