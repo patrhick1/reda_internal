@@ -551,24 +551,11 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     return out;
   }, [buckets.to_notify, postponedRows]);
 
-  // "All" must likewise surface postponed orders (Uzo, 2026-06-21): postpone
-  // moves scheduled_date forward in place, so a postponed-to-a-future-date order
-  // falls outside the date-scoped `all` and was hiding ONLY under the Postponed
-  // chip — ops spent 10 minutes hunting one that read "All 0 / Postponed 1".
-  // Same merge as toNotifyRows: fold the cross-date postponed slice into All,
-  // deduped by id (today's postponed already sit in `all`), date-scoped rows
-  // first so the natural activity order is preserved.
-  const allRows = useMemo(() => {
-    const seen = new Set<string>();
-    const out: DeliveryRow[] = [];
-    for (const d of [...buckets.all, ...postponedRows]) {
-      const rid = d.id;
-      if (!rid || seen.has(rid)) continue;
-      seen.add(rid);
-      out.push(d);
-    }
-    return out;
-  }, [buckets.all, postponedRows]);
+  // "All" = the date-scoped rows only (Uzo, 2026-06-22). Postponed orders are no
+  // longer folded in here — they live under the dedicated Postponed chip (its own
+  // cross-date query). Consequence by design: an order postponed to a FUTURE date
+  // shows under Postponed, not under All for an earlier day.
+  const allRows = buckets.all;
 
   // Deliveries with an unread agent message — the per-row "agent replied" chip,
   // promoted to a list filter. Built from the on-screen rows (allRows) ∩ the
