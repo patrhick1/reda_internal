@@ -110,11 +110,7 @@ export default function AdminHome() {
         </Card>
 
         {/* Needs attention */}
-        {reviewCount > 0 ||
-        stats.stale > 0 ||
-        openIssues.length > 0 ||
-        pendingZoneCount > 0 ||
-        negMarginCount > 0 ? (
+        {reviewCount > 0 || openIssues.length > 0 || pendingZoneCount > 0 || negMarginCount > 0 ? (
           <>
             <SectionHeader>Needs attention</SectionHeader>
             <View style={{ gap: 8 }}>
@@ -157,16 +153,6 @@ export default function AdminHome() {
                   title={`${negMarginCount} negative-margin ${negMarginCount === 1 ? 'order' : 'orders'}`}
                   sub="Reda pays the agent more than it collects — correct the charges"
                   onPress={() => router.push('/(admin)/negative-margin')}
-                />
-              ) : null}
-              {stats.stale > 0 ? (
-                <AttentionRow
-                  icon="history"
-                  iconBg={colors.warningSoft}
-                  iconColor={colors.warningDark}
-                  title={`${stats.stale} soft-failed today`}
-                  sub="Customer unreachable or rescheduled"
-                  onPress={() => router.push('/(admin)/deliveries')}
                 />
               ) : null}
             </View>
@@ -362,9 +348,7 @@ function QuickAction({
  *  active bucket AND has an assigned agent (mirrors `isAssignedActive` so
  *  the home matches the Deliveries list's Active filter exactly).
  *  `unassigned` catches the morning queue — groups whose active-bucket rows
- *  are all sitting unassigned, waiting to be routed.
- *  `stale` is the subset of `active` chains with at least one soft-fail row,
- *  kept for the Needs Attention block. */
+ *  are all sitting unassigned, waiting to be routed. */
 function summarize(rows: DeliveryRow[]) {
   const groups = new Map<string, DeliveryRow[]>();
   for (const r of rows) {
@@ -381,8 +365,7 @@ function summarize(rows: DeliveryRow[]) {
     active = 0,
     unassigned = 0,
     rolled = 0,
-    closed = 0,
-    stale = 0;
+    closed = 0;
   for (const group of groups.values()) {
     if (group.some((d) => d.current_status === 'delivered')) {
       delivered++;
@@ -392,7 +375,6 @@ function summarize(rows: DeliveryRow[]) {
     const hasSoft = group.some((d) => statusBucket(d.current_status) === 'soft');
     if (hasAssignedActive || hasSoft) {
       active++;
-      if (hasSoft) stale++;
       continue;
     }
     // No assigned-active row and no soft row. If the group still has any
@@ -416,7 +398,7 @@ function summarize(rows: DeliveryRow[]) {
   // answers "of what the agents are working, how much is done?".
   const inPlay = delivered + active;
   const rateLabel = inPlay === 0 ? '—' : `${Math.round((delivered / inPlay) * 100)}%`;
-  return { delivered, active, unassigned, rolled, closed, stale, total, rateLabel };
+  return { delivered, active, unassigned, rolled, closed, total, rateLabel };
 }
 
 function kicker(theme: 'light' | 'dark' = 'light', size: 'sm' | 'md' = 'md') {
