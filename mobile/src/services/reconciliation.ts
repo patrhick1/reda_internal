@@ -199,13 +199,6 @@ export async function listRepClientRemitDetail(
   return (data ?? []) as RepClientRemitDetailRow[];
 }
 
-/** Roll every non-terminal delivery for the given date forward one day. */
-export async function runEodRollover(forDate: string): Promise<number> {
-  const { data, error } = await supabase.rpc('run_eod_rollover', { p_for_date: forDate });
-  if (error) throw error;
-  return (data ?? 0) as number;
-}
-
 /** The full end-of-day operation (same as the nightly cron): releases postponed
  *  orders coming due into the unassigned pool, then rolls every stuck date's
  *  non-terminal deliveries forward one day. Resilient — a single bad date is

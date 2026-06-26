@@ -20,7 +20,7 @@ import {
   listAgentEarningsSummary,
   listClientRemit,
   listSettlementsForDate,
-  runEodRollover,
+  runEodRolloverAllStuck,
   settlePeriod,
   voidSettlement,
   type AgentEarningsRow,
@@ -182,10 +182,10 @@ export default function AdminReconcile() {
   }, []);
 
   const onRunEod = useCallback(() => {
-    const prompt = `Run end-of-day rollover?\n\nThis rolls every non-terminal delivery scheduled for ${to} forward one day.`;
+    const prompt = `Run end of day?\n\nThis releases postponed orders coming due into Unassigned, then rolls every stuck non-terminal delivery forward one day.`;
     const runIt = async () => {
       try {
-        const n = await runEodRollover(to);
+        const n = await runEodRolloverAllStuck();
         if (Platform.OS === 'web') {
           if (typeof window !== 'undefined') window.alert(`Rolled ${n} deliveries forward.`);
         } else {
@@ -207,14 +207,14 @@ export default function AdminReconcile() {
       return;
     }
     Alert.alert(
-      'Run end-of-day rollover?',
-      `This rolls every non-terminal delivery scheduled for ${to} forward one day.`,
+      'Run end of day?',
+      `This releases postponed orders coming due into Unassigned, then rolls every stuck non-terminal delivery forward one day.`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Roll forward', style: 'destructive', onPress: runIt },
+        { text: 'Run', style: 'destructive', onPress: runIt },
       ],
     );
-  }, [to, clientsQ, agentsQ]);
+  }, [clientsQ, agentsQ]);
 
   // Build + download the Moniepoint bulk-transfer CSV for the selected day.
   // Includes every vendor with a POSITIVE remit AND complete bank details, and
