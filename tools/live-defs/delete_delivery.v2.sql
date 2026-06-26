@@ -42,8 +42,14 @@ begin
   end if;
 
   -- FINAL_STATUSES gate. delivered/rolled_over need surgical handling we
-  -- haven't built (stock release, parent/child chain). Refuse here.
-  if v_row.current_status in ('delivered', 'rolled_over') then
+  -- haven't built (stock release, parent/child chain). Refuse here — EXCEPT for
+  -- waybills/pickups/failed-deliveries, which are money-only records (no stock,
+  -- no rollover chain) created directly as 'delivered'. Soft-deleting one is the
+  -- clean way to undo a mistaken charge — it simply drops out of reconciliation
+  -- (which filters deleted_at). Reverting them to 'pending' is blocked elsewhere
+  -- because it poisons the EOD rollover, so delete is their only undo path.
+  if v_row.current_status in ('delivered', 'rolled_over')
+     and v_row.order_type <> 'waybill' then
     raise exception 'cannot delete a delivery in status % — correct via the state machine first', v_row.current_status
       using errcode = '22023';
   end if;

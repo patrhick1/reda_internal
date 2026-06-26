@@ -35,6 +35,7 @@ import {
   canDeleteDelivery,
   canDeleteDeliveryByStatus,
   canEditDelivery,
+  canEditWaybill,
   canHandoffToSubAgent,
   canMarkClientNotified,
   canPostOnThread,
@@ -59,6 +60,7 @@ import { MarkDeliveredSheet } from '@/components/sheets/MarkDeliveredSheet';
 import { CorrectLocationSheet } from '@/components/sheets/CorrectLocationSheet';
 import { CorrectChargesSheet } from '@/components/sheets/CorrectChargesSheet';
 import { RevertDeliveredSheet } from '@/components/sheets/RevertDeliveredSheet';
+import { EditWaybillSheet } from '@/components/sheets/EditWaybillSheet';
 import { UpdateStatusSheet } from '@/components/sheets/UpdateStatusSheet';
 import { HandoffToSubAgentSheet } from '@/components/sheets/HandoffToSubAgentSheet';
 import { DeleteDeliverySheet } from '@/components/sheets/DeleteDeliverySheet';
@@ -85,6 +87,7 @@ export function DeliveryDetail() {
   const [correctLocOpen, setCorrectLocOpen] = useState(false);
   const [correctChargeOpen, setCorrectChargeOpen] = useState(false);
   const [revertOpen, setRevertOpen] = useState(false);
+  const [editWaybillOpen, setEditWaybillOpen] = useState(false);
   const [callBusy, setCallBusy] = useState(false);
   // Optimistic status + (when queued) the job ID to watch. The veil clears
   // when EITHER the server-confirmed status matches (direct-RPC paths) OR
@@ -353,7 +356,18 @@ export function DeliveryDetail() {
                 <Icon name="edit" size={22} color={colors.black} />
               </TouchableOpacity>
             ) : null}
-            {canDeleteDelivery(user.role) && canDeleteDeliveryByStatus(status) ? (
+            {isWaybill && canEditWaybill(user.role) ? (
+              <TouchableOpacity
+                onPress={() => setEditWaybillOpen(true)}
+                hitSlop={8}
+                style={{ padding: 4 }}
+                accessibilityLabel="Edit waybill"
+                accessibilityRole="button"
+              >
+                <Icon name="edit" size={22} color={colors.black} />
+              </TouchableOpacity>
+            ) : null}
+            {canDeleteDelivery(user.role) && (canDeleteDeliveryByStatus(status) || isWaybill) ? (
               <TouchableOpacity
                 onPress={() => setDeleteOpen(true)}
                 hitSlop={8}
@@ -556,7 +570,7 @@ export function DeliveryDetail() {
               fee) and flips status back to pending; stock auto-recovers.
               Same admin+delivered gate as Correct location, but distinct
               concern, so they sit as sibling buttons rather than merging. */}
-          {canRevertDelivered(user.role, status) ? (
+          {canRevertDelivered(user.role, status) && !isWaybill ? (
             <TouchableOpacity
               onPress={() => setRevertOpen(true)}
               accessibilityRole="button"
@@ -1035,6 +1049,26 @@ export function DeliveryDetail() {
         onClose={() => setRevertOpen(false)}
         onReverted={() => {
           setRevertOpen(false);
+          deliveryQ.reload();
+          historyQ.reload();
+        }}
+      />
+      <EditWaybillSheet
+        open={editWaybillOpen}
+        deliveryId={d.id ?? null}
+        initial={
+          isWaybill
+            ? {
+                clientId: 'client_id' in d ? ((d.client_id as string | null) ?? null) : null,
+                charged: charged != null ? Number(charged) : 0,
+                paidOut: d.agent_payment_snapshot != null ? Number(d.agent_payment_snapshot) : 0,
+                label: d.customer_name ?? 'Waybill',
+              }
+            : null
+        }
+        onClose={() => setEditWaybillOpen(false)}
+        onSaved={() => {
+          setEditWaybillOpen(false);
           deliveryQ.reload();
           historyQ.reload();
         }}

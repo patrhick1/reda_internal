@@ -950,6 +950,40 @@ export async function createWaybill(input: {
   return data as string;
 }
 
+/** Admin/dispatcher: edit a waybill / pickup / failed-delivery after creation
+ *  (client, charge-to-client, Reda payout, Type label, breakdown note). Waybills
+ *  are terminal-on-create so the generic editors won't touch them; this is the
+ *  dedicated path. Server gates on is_manager(), refuses non-waybill or deleted
+ *  rows, and blocks a money/client change that would desync an already-settled
+ *  client day (23505). The breakdown note is updated in place on the row the
+ *  reconciliation report reads. Hand-written RPC not in the generated types —
+ *  cast like revertDeliveryToPending. */
+export async function updateWaybill(input: {
+  deliveryId: string;
+  clientId: string;
+  charged: number;
+  paidOut: number;
+  label?: string | null;
+  note?: string | null;
+}): Promise<void> {
+  const { error } = await (
+    supabase as unknown as {
+      rpc: (
+        fn: string,
+        args: Record<string, unknown>,
+      ) => Promise<{ data: unknown; error: { message: string } | null }>;
+    }
+  ).rpc('update_waybill', {
+    p_delivery_id: input.deliveryId,
+    p_client_id: input.clientId,
+    p_charged: input.charged,
+    p_paid: input.paidOut,
+    p_label: (input.label ?? undefined) as unknown as string,
+    p_note: (input.note ?? undefined) as unknown as string,
+  });
+  if (error) throw error;
+}
+
 /** Admin: revert a wrongly-`delivered` row back to `pending`. The server
  *  nulls quantity_delivered / paid / payment_method / cash_pos_fee_snapshot
  *  on the row and inserts a status_history entry. Stock auto-recovers via

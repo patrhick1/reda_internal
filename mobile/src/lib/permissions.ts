@@ -285,6 +285,15 @@ export function canDeleteDelivery(role: Role): boolean {
   return isManager(role);
 }
 
+/** Edit a waybill / pickup / failed-delivery after creation (client, amount,
+ *  type, breakdown note). Managers only (admin + dispatcher) — the same set that
+ *  creates them. Waybills are terminal-on-create, so the generic delivery
+ *  editors refuse them; this gates the dedicated EditWaybillSheet.
+ *  Server anchor: `update_waybill` RPC gates on is_manager(). */
+export function canEditWaybill(role: Role): boolean {
+  return isManager(role);
+}
+
 /** Bulk soft-delete N deliveries in one shot. Admin-only — kept tighter than
  *  single delete (which is now manager-wide, see canDeleteDelivery): deleting
  *  many rows at once is a clean-up/maintenance action, not the everyday
