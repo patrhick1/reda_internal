@@ -337,7 +337,7 @@ export function DeliveryDetail() {
         }}
         right={
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            {canEditDelivery(user.role, status) ? (
+            {canEditDelivery(user.role, status) && !isWaybill ? (
               <TouchableOpacity
                 onPress={() => {
                   const base =
