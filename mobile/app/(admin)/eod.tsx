@@ -4,7 +4,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { listDeliveries, type DeliveryRow } from '@/services/deliveries';
-import { runEodRollover } from '@/services/reconciliation';
+import { runEodRolloverAllStuck } from '@/services/reconciliation';
 import { AppBar, Banner, Button, Card, Empty, StatusPill } from '@/components/ui';
 import { colors, fonts, TERMINAL_STATUSES } from '@/lib/theme';
 import { formatNaira } from '@/lib/format';
@@ -32,11 +32,11 @@ export default function EndOfDay() {
   const today = todayLagos();
 
   const onRunAll = useCallback(() => {
-    const prompt = `Run end-of-day rollover?\n\nThis rolls every non-terminal delivery scheduled for ${today} forward one day. ${unfinished.length} ${unfinished.length === 1 ? 'delivery' : 'deliveries'} will be affected.`;
+    const prompt = `Run end of day?\n\nThis releases postponed orders coming due into Unassigned, then rolls every stuck non-terminal delivery forward one day. ${unfinished.length} ${unfinished.length === 1 ? 'delivery is' : 'deliveries are'} scheduled for ${today}.`;
     const runIt = async () => {
       setRolling(true);
       try {
-        const n = await runEodRollover(today);
+        const n = await runEodRolloverAllStuck();
         if (Platform.OS === 'web') {
           if (typeof window !== 'undefined')
             window.alert(`Rolled ${n} ${n === 1 ? 'delivery' : 'deliveries'} forward.`);

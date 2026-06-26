@@ -206,6 +206,18 @@ export async function runEodRollover(forDate: string): Promise<number> {
   return (data ?? 0) as number;
 }
 
+/** The full end-of-day operation (same as the nightly cron): releases postponed
+ *  orders coming due into the unassigned pool, then rolls every stuck date's
+ *  non-terminal deliveries forward one day. Resilient — a single bad date is
+ *  skipped, not fatal — and catch-up safe, so running it by hand recovers a
+ *  failed/missed nightly run (including the postponed release). Returns the
+ *  number of deliveries rolled forward. */
+export async function runEodRolloverAllStuck(): Promise<number> {
+  const { data, error } = await supabase.rpc('run_eod_rollover_all_stuck', {});
+  if (error) throw error;
+  return (data ?? 0) as number;
+}
+
 // ---------------------------------------------------------------------------
 // Settlement / period-lock (§14-2). Freezes one subject-day's figures so a
 // later edit can't silently rewrite a period that was already paid out.
