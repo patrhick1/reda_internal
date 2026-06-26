@@ -17,6 +17,7 @@ import { useCurrentUser } from '@/hooks/useAuth';
 import {
   listDeliveries,
   listPostponed,
+  listUnassigned,
   deliveryProductsLabel,
   rolledFromLabel,
   SEARCH_LIMIT,
@@ -239,6 +240,16 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     [canSeeClaims, user.role],
   );
 
+  // Every unassigned, still-open delivery across ALL dates. Like Postponed, this
+  // is its OWN query — the Unassigned chip is deliberately date-INDEPENDENT (a
+  // row waiting for an agent is queue work no matter its scheduled_date) and
+  // never shows terminal rows (both enforced server-side in listUnassigned).
+  // Ops-wide (RLS-scoped); empty for agents.
+  const unassignedQ = useAsync<DeliveryRow[]>(
+    () => (canSeeClaims ? listUnassigned(user.role) : Promise.resolve([])),
+    [canSeeClaims, user.role],
+  );
+
   // Roster for the agent picker. Skip the fetch entirely when the picker
   // won't render (agents). Cached for the screen's lifetime — agents don't
   // get added/deactivated mid-session in practice.
@@ -286,6 +297,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
       exitSelect();
       reload();
       postponedQ.reload();
+      unassignedQ.reload();
       const msg = `Assigned ${updated} ${updated === 1 ? 'delivery' : 'deliveries'}.`;
       if (Platform.OS === 'web') {
         if (typeof window !== 'undefined') window.alert(msg);
@@ -293,7 +305,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         Alert.alert('Done', msg);
       }
     },
-    [exitSelect, reload, postponedQ],
+    [exitSelect, reload, postponedQ, unassignedQ],
   );
   const onBulkStatusChanged = useCallback(
     (counts: { changedCount: number; skippedCount: number }) => {
@@ -301,6 +313,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
       exitSelect();
       reload();
       postponedQ.reload();
+      unassignedQ.reload();
       const msg =
         counts.skippedCount > 0
           ? `Changed ${counts.changedCount}, skipped ${counts.skippedCount}.`
@@ -311,7 +324,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         Alert.alert('Done', msg);
       }
     },
-    [exitSelect, reload, postponedQ],
+    [exitSelect, reload, postponedQ, unassignedQ],
   );
   const onBulkDeleted = useCallback(
     (counts: { deletedCount: number; skippedCount: number }) => {
@@ -319,6 +332,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
       exitSelect();
       reload();
       postponedQ.reload();
+      unassignedQ.reload();
       const msg =
         counts.skippedCount > 0
           ? `Deleted ${counts.deletedCount}, skipped ${counts.skippedCount}.`
@@ -329,7 +343,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         Alert.alert('Done', msg);
       }
     },
-    [exitSelect, reload, postponedQ],
+    [exitSelect, reload, postponedQ, unassignedQ],
   );
 
   useFocusEffect(
@@ -339,6 +353,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         followupsQ.reload();
         unreadQ.reload();
         postponedQ.reload();
+        unassignedQ.reload();
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [reload, canSeeClaims]),
@@ -432,10 +447,27 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
       ),
       soft: all.filter((d) => statusBucket(d.current_status) === 'soft'),
       done: all.filter((d) => statusBucket(d.current_status) === 'done'),
-      unassigned: all.filter((d) => !d.assigned_agent_id),
+      // NB: Unassigned is NOT bucketed here — it's a separate cross-date query
+      // (unassignedRows below), date-independent and terminal-free, per Uzo.
     }),
     [all],
   );
+
+  // Unassigned is a separate cross-date slice (its own query), narrowed by the
+  // same client + name filters as the date-scoped list. The agent filter makes
+  // it empty by definition (an unassigned row has no agent), which is correct.
+  const unassignedRows = useMemo(() => {
+    let rows = unassignedQ.data ?? [];
+    if (agentId) rows = rows.filter((d) => d.assigned_agent_id === agentId);
+    if (clientId) rows = rows.filter((d) => d.client_id === clientId);
+    if (nameNeedle)
+      rows = rows.filter(
+        (d) =>
+          (d.customer_name ?? '').toLowerCase().includes(nameNeedle) ||
+          (d.customer_phone ?? '').toLowerCase().includes(nameNeedle),
+      );
+    return rows;
+  }, [unassignedQ.data, agentId, clientId, nameNeedle]);
 
   // Unassigned tab: sort into prior-status groups and compute the header that
   // sits above the first row of each group. Other tabs keep the server order.
@@ -448,7 +480,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     // counts/headers passes reuse the same key. Also tallies group counts in
     // the same pass.
     const counts = new Map<string, number>();
-    const decorated = buckets.unassigned.map((row) => {
+    const decorated = unassignedRows.map((row) => {
       const key = unassignedGroupKey(row);
       counts.set(key, (counts.get(key) ?? 0) + 1);
       return { row, key, order: unassignedGroupOrder(key) };
@@ -482,7 +514,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
       }
     }
     return { unassignedSorted: decorated.map((d) => d.row), headerByRowId: headers };
-  }, [filter, buckets.unassigned]);
+  }, [filter, unassignedRows]);
 
   // Postponed is a separate cross-date slice (its own query), narrowed by the
   // same agent + name filters as the date-scoped list so the counts and the
@@ -556,7 +588,9 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
           ? unreadRows
           : filter === 'all'
             ? allRows
-            : (unassignedSorted ?? buckets[filter]);
+            : filter === 'unassigned'
+              ? (unassignedSorted ?? unassignedRows)
+              : buckets[filter];
 
   // Resolve IDs from the list currently visible on screen. This includes the
   // separate cross-date Postponed query and postponed rows merged into All, so
@@ -574,7 +608,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     { id: 'soft' as const, label: 'Soft fail', count: buckets.soft.length },
     { id: 'postponed' as const, label: 'Postponed', count: postponedRows.length },
     { id: 'done' as const, label: 'Done', count: buckets.done.length },
-    { id: 'unassigned' as const, label: 'Unassigned', count: buckets.unassigned.length },
+    { id: 'unassigned' as const, label: 'Unassigned', count: unassignedRows.length },
   ];
 
   return (
@@ -746,11 +780,16 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         refreshControl={
           <RefreshControl
             refreshing={
-              filter === 'postponed' ? postponedQ.loading && !!postponedQ.data : loading && !!data
+              filter === 'postponed'
+                ? postponedQ.loading && !!postponedQ.data
+                : filter === 'unassigned'
+                  ? unassignedQ.loading && !!unassignedQ.data
+                  : loading && !!data
             }
             onRefresh={() => {
               reload();
               postponedQ.reload();
+              unassignedQ.reload();
             }}
             tintColor={colors.black}
           />
@@ -777,6 +816,20 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
                 icon="calendar"
                 title="No postponed orders"
                 sub="Orders postponed to a later date show here with their due date, soonest first."
+              />
+            )
+          ) : filter === 'unassigned' ? (
+            unassignedQ.error ? (
+              <Empty icon="alert" title="Could not load" sub={unassignedQ.error} />
+            ) : unassignedQ.loading ? (
+              <View style={{ padding: 60, alignItems: 'center' }}>
+                <ActivityIndicator color={colors.black} />
+              </View>
+            ) : (
+              <Empty
+                icon="package"
+                title="Nothing unassigned"
+                sub="Open orders with no agent show here, across all dates."
               />
             )
           ) : error ? (

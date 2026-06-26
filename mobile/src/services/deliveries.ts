@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import type { Database } from '@/types/database.gen';
 import type { Role } from '@/lib/permissions';
-import { STATUS_GROUPS, STATUS_META } from '@/lib/theme';
+import { STATUS_GROUPS, STATUS_META, TERMINAL_STATUSES } from '@/lib/theme';
 import { formatDayMonthLagos } from '@/lib/date';
 
 // The two role-scoped views over deliveries. Same columns except:
@@ -465,6 +465,30 @@ export async function listPostponed(role: Role): Promise<DeliveryRow[]> {
     .select(`*, ${JOIN_FRAGMENT}`)
     .eq('current_status', 'postponed')
     .order('scheduled_date', { ascending: true });
+  if (error) throw error;
+  const joined = (data ?? []).map((row) =>
+    attachJoins(row as unknown as JoinShape & object),
+  ) as Omit<DeliveryRow, 'items'>[];
+  return (await attachItemsToRows(joined)) as DeliveryRow[];
+}
+
+/** Every UNASSIGNED, still-open delivery across ALL dates — drives the dedicated
+ *  "Unassigned" chip. A separate query (not the date-scoped main list) for two
+ *  reasons Uzo asked for: the chip is date-INDEPENDENT (a row waiting for an
+ *  agent is queue work regardless of when it was scheduled), and it must NEVER
+ *  surface a terminal row (delivered / cancelled / rolled_over / picked_up /
+ *  waybilled / …). Filters: assigned_agent_id IS NULL AND current_status NOT IN
+ *  the terminal set. Ops-wide (RLS-scoped via the role view — an agent would see
+ *  only their own, so this is empty for them). Same join + line-item pipeline as
+ *  listDeliveries; newest-first (the list regroups by prior status on screen). */
+export async function listUnassigned(role: Role): Promise<DeliveryRow[]> {
+  const view = VIEW_FOR[role];
+  const { data, error } = await supabase
+    .from(view)
+    .select(`*, ${JOIN_FRAGMENT}`)
+    .is('assigned_agent_id', null)
+    .not('current_status', 'in', `(${[...TERMINAL_STATUSES].join(',')})`)
+    .order('created_at', { ascending: false });
   if (error) throw error;
   const joined = (data ?? []).map((row) =>
     attachJoins(row as unknown as JoinShape & object),
