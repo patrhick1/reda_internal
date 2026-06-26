@@ -33,7 +33,8 @@ begin
              d.customer_phone_normalized,
              coalesce(d.items_fingerprint, d.product_catalog_id::text) as item_key,  -- [Feature A]
              d.scheduled_date,
-             md5(coalesce(public._norm_address(d.raw_address), '')) as sib_key,       -- [Feature A] qty dropped
+             d.text_fingerprint,
+             public._norm_address(d.raw_address) as norm_addr,
              d.created_at, d.updated_at, d.rollover_count,
              sd.sort_order as status_sort,
              resolved.sibling_status as resolved_sibling_status,
@@ -57,27 +58,51 @@ begin
            select 1 from public.deliveries c
             where c.parent_delivery_id = d.id and c.created_via = 'rollover')
     ),
-    same_agent_ranked as (
+    clustered as (
+      -- Sibling clustering for dedup. Two same-customer / same-items / same-day
+      -- rows are the SAME order (siblings) if their raw-message text_fingerprint
+      -- matches OR their normalized address matches — the exact definition used
+      -- by _find_sibling_deliveries. The OLD key used the normalized address
+      -- ONLY, which missed true siblings whenever the LLM extracted the address
+      -- differently from an identical forward (e.g. "ikorodu" vs "odogunya
+      -- ikorodu"), so both rolled forward as duplicates. sib_cluster = the min id
+      -- over a row's siblings in the eligible set (self always included via
+      -- e2.id = e.id), giving a stable per-cluster grouping key.
       select e.*,
-             row_number() over (
-               partition by e.customer_phone_normalized, e.item_key,
-                            e.scheduled_date, e.sib_key,
-                            coalesce(e.assigned_agent_id::text, '!unassigned:' || e.id::text)
-               order by e.status_sort desc, e.updated_at desc, e.created_at asc, e.id asc
-             ) as same_agent_rn
+             (select min(e2.id::text)
+                from eligible e2
+               where e2.customer_phone_normalized = e.customer_phone_normalized
+                 and e2.item_key       = e.item_key
+                 and e2.scheduled_date = e.scheduled_date
+                 and (
+                   e2.id = e.id
+                   or (e2.text_fingerprint is not null and e2.text_fingerprint = e.text_fingerprint)
+                   or (e2.norm_addr       is not null and e2.norm_addr       = e.norm_addr)
+                 )
+             ) as sib_cluster
         from eligible e
+    ),
+    same_agent_ranked as (
+      select c.*,
+             row_number() over (
+               partition by c.customer_phone_normalized, c.item_key,
+                            c.scheduled_date, c.sib_cluster,
+                            coalesce(c.assigned_agent_id::text, '!unassigned:' || c.id::text)
+               order by c.status_sort desc, c.updated_at desc, c.created_at asc, c.id asc
+             ) as same_agent_rn
+        from clustered c
     ),
     cross_agent_ranked as (
       select s.*,
              count(*) filter (where s.same_agent_rn = 1)
                over (partition by s.customer_phone_normalized, s.item_key,
-                                  s.scheduled_date, s.sib_key) as group_canonical_count,
+                                  s.scheduled_date, s.sib_cluster) as group_canonical_count,
              max(s.status_sort) filter (where s.same_agent_rn = 1)
                over (partition by s.customer_phone_normalized, s.item_key,
-                                  s.scheduled_date, s.sib_key) as group_max_sort,
+                                  s.scheduled_date, s.sib_cluster) as group_max_sort,
              row_number() over (
                partition by s.customer_phone_normalized, s.item_key,
-                            s.scheduled_date, s.sib_key
+                            s.scheduled_date, s.sib_cluster
                order by s.status_sort desc, s.updated_at desc, s.created_at asc, s.id asc
              ) as cross_agent_rn
         from same_agent_ranked s
@@ -86,7 +111,7 @@ begin
            same_agent_rn, cross_agent_rn, group_canonical_count, group_max_sort,
            has_resolved_sibling, resolved_sibling_status, resolved_sibling_label
       from cross_agent_ranked
-     order by customer_phone_normalized, item_key, sib_key, same_agent_rn, cross_agent_rn
+     order by customer_phone_normalized, item_key, sib_cluster, same_agent_rn, cross_agent_rn
   loop
     if v_row.has_resolved_sibling then
       insert into public.delivery_status_history
