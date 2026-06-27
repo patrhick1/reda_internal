@@ -137,7 +137,7 @@ begin
     quantity_ordered, scheduled_date, created_via, parent_delivery_id,
     charged_snapshot, agent_payment_snapshot, current_status,
     created_by_user_id, bot_raw_message, text_fingerprint, rollover_count,
-    rolled_from_status, rolled_from_date, delivery_instructions
+    rolled_from_status, rolled_from_date, delivery_instructions, client_rep
   )
   values (
     v_new_id, v_old.client_id, v_old.product_catalog_id, v_old.customer_name, v_old.customer_phone, v_old.customer_phone_alt,
@@ -146,7 +146,7 @@ begin
     v_old.quantity_ordered, v_new_date, 'rollover', v_old.id,
     v_charged, v_agent_payment, 'pending',
     v_actor, v_old.bot_raw_message, v_old.text_fingerprint, v_new_rollover_count,
-    v_rolled_from_status, v_rolled_from_date, v_old.delivery_instructions
+    v_rolled_from_status, v_rolled_from_date, v_old.delivery_instructions, v_old.client_rep
   );
 
   insert into public.delivery_status_history
