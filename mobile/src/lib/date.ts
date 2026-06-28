@@ -18,6 +18,17 @@ export function yesterdayLagos(): string {
   return daysAgoLagos(1);
 }
 
+/** Lagos calendar date `YYYY-MM-DD` for an absolute timestamp (an ISO string or
+ *  anything `new Date()` accepts). Uses the same +1h offset as todayLagos, so the
+ *  result is directly comparable to todayLagos()/yesterdayLagos()/custom dates.
+ *  Returns null for an unparseable/empty input. */
+export function ymdLagos(ts: string | null | undefined): string | null {
+  if (!ts) return null;
+  const ms = new Date(ts).getTime();
+  if (Number.isNaN(ms)) return null;
+  return new Date(ms + LAGOS_OFFSET_MS).toISOString().slice(0, 10);
+}
+
 /** ISO date `YYYY-MM-DD` for N days before today in Lagos. */
 export function daysAgoLagos(days: number): string {
   const d = lagosNow();

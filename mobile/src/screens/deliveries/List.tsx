@@ -61,7 +61,7 @@ import {
   STATUS_GROUPS,
   STATUS_META,
 } from '@/lib/theme';
-import { todayLagos, yesterdayLagos } from '@/lib/date';
+import { todayLagos, yesterdayLagos, ymdLagos, isYmd } from '@/lib/date';
 
 const SOFT_STATUSES = new Set<string>(STATUS_GROUPS.soft);
 // Stable empty map so rows don't see a fresh object (→ re-render) before the
@@ -551,11 +551,40 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     return out;
   }, [buckets.to_notify, postponedRows]);
 
-  // "All" = the date-scoped rows only (Uzo, 2026-06-22). Postponed orders are no
-  // longer folded in here — they live under the dedicated Postponed chip (its own
-  // cross-date query). Consequence by design: an order postponed to a FUTURE date
-  // shows under Postponed, not under All for an earlier day.
-  const allRows = buckets.all;
+  // The single calendar day currently in view, or null when there's no single-day
+  // scope (All dates) or a search is active (search spans all dates). Mirrors the
+  // server `listFilters.date`. Drives the postpone-day merge into All below.
+  const viewDate = useMemo(() => {
+    if (debouncedNeedle) return null;
+    switch (datePreset) {
+      case 'today':
+        return todayLagos();
+      case 'yesterday':
+        return yesterdayLagos();
+      case 'custom':
+        return isYmd(customDate) ? customDate : null;
+      default:
+        return null; // 'all'
+    }
+  }, [datePreset, customDate, debouncedNeedle]);
+
+  // "All" = the date-scoped rows, PLUS any postponed order whose POSTPONE DAY is
+  // the day being viewed (Uzo, 2026-06-28). Postpone bumps scheduled_date forward
+  // in place, so a just-postponed order would otherwise vanish from All the moment
+  // you push it — this keeps it visible in All on the day you postponed it. It
+  // reappears in All on its due date naturally (via the date-scoped fetch), and on
+  // the days in between it lives only under the Postponed chip. The postpone day =
+  // latest_changed_at: a postponed row's current status was entered at its last
+  // status change (verified invariant). No merge in All-dates/search (no single
+  // day). Deduped by id (a due-date row is already in buckets.all).
+  const allRows = useMemo(() => {
+    if (!viewDate) return buckets.all;
+    const seen = new Set(buckets.all.map((d) => d.id));
+    const extra = postponedRows.filter(
+      (p) => p.id && !seen.has(p.id) && ymdLagos(p.latest_changed_at) === viewDate,
+    );
+    return extra.length > 0 ? [...buckets.all, ...extra] : buckets.all;
+  }, [buckets.all, postponedRows, viewDate]);
 
   // Deliveries with an unread agent message — the per-row "agent replied" chip,
   // promoted to a list filter. Built from the on-screen rows (allRows) ∩ the
