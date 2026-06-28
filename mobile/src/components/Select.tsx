@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, fonts } from '@/lib/theme';
 import { Icon } from '@/components/ui/Icon';
 
@@ -36,6 +37,7 @@ export function Select<T extends string>({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const searchRef = useRef<TextInput>(null);
+  const insets = useSafeAreaInsets();
   const selected = options.find((o) => o.value === value);
 
   // Focus the search box once the sheet is open. Done via ref + a tick rather
@@ -85,7 +87,10 @@ export function Select<T extends string>({
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={close}>
         <Pressable style={styles.backdrop} onPress={close}>
-          <Pressable style={styles.sheet} onPress={() => undefined}>
+          <Pressable
+            style={[styles.sheet, { paddingBottom: insets.bottom + 24 }]}
+            onPress={() => undefined}
+          >
             <View style={{ alignItems: 'center', paddingTop: 8 }}>
               <View
                 style={{ width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2 }}
@@ -184,7 +189,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    paddingBottom: 24,
     maxHeight: '70%',
   },
   sheetTitle: {
