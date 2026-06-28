@@ -172,9 +172,10 @@ function csvCell(value: string): string {
   return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
-/** Plain numeric amount for the CSV — no currency symbol or thousands separators
- *  (Moniepoint parses the raw number). Whole naira stays integer; kobo keeps 2dp. */
-function moniepointAmount(n: number): string {
+/** Plain numeric amount for a payout CSV — no currency symbol or thousands
+ *  separators (the bank importer parses the raw number). Whole naira stays
+ *  integer; kobo keeps 2dp. Shared by the Moniepoint and Kuda builders. */
+function payoutAmount(n: number): string {
   const r = Math.round(n * 100) / 100;
   return Number.isInteger(r) ? String(r) : r.toFixed(2);
 }
@@ -188,8 +189,46 @@ export function buildMoniepointPayoutCsv(rows: MoniepointPayoutRow[]): string {
       [
         csvCell(r.accountName),
         csvCell(r.accountNumber),
-        moniepointAmount(r.amount),
+        payoutAmount(r.amount),
         csvCell(r.bank),
+      ].join(','),
+    );
+  }
+  return lines.join('\r\n') + '\r\n';
+}
+
+// ---------------------------------------------------------------------------
+// Kuda bulk-payout CSV. Same EOD flow as Moniepoint, different file shape —
+// Kuda's "Bulk_list_template.xlsx" columns, in order:
+//   Account_Number, Amount, Bank_Codes, Narration
+// Kuda identifies the bank by its 6-digit CODE (not a name) — the caller maps
+// the stored bank name to a code via kudaCodeForBankName() before building rows.
+// No Account Name column (Kuda resolves the name from account + code). Leading
+// zeros in the code are significant, so it's a string cell.
+// ---------------------------------------------------------------------------
+
+/** One beneficiary line for the Kuda bulk-transfer file. Callers pass only
+ *  vendors with complete bank details, a resolvable Kuda code, and a positive
+ *  payout. */
+export type KudaPayoutRow = {
+  accountNumber: string;
+  amount: number;
+  bankCode: string;
+  narration: string;
+};
+
+const KUDA_CSV_HEADERS = ['Account_Number', 'Amount', 'Bank_Codes', 'Narration'] as const;
+
+/** Build the Kuda bulk-transfer CSV. Header row + CRLF line endings. */
+export function buildKudaPayoutCsv(rows: KudaPayoutRow[]): string {
+  const lines = [KUDA_CSV_HEADERS.join(',')];
+  for (const r of rows) {
+    lines.push(
+      [
+        csvCell(r.accountNumber),
+        payoutAmount(r.amount),
+        csvCell(r.bankCode),
+        csvCell(r.narration),
       ].join(','),
     );
   }
@@ -243,7 +282,7 @@ export function buildClientShareMessage(input: {
       ? `Reda remits client: ${formatNaira(totalRemit)}`
       : `Client owes Reda: ${formatNaira(Math.abs(totalRemit))}`;
 
-  const header = `Reda Logistics — ${input.clientName}\n${input.rangeLabel}`;
+  const header = `Reda Logistics — ${input.clientName}\nDelivered Update\n${input.rangeLabel}`;
   const body = input.rows.length === 0 ? '(no deliveries in this range)' : blocks.join('\n\n');
   const totalBlock = [
     'Total',

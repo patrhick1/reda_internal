@@ -47,11 +47,14 @@ import { errorMessage } from '@/lib/errors';
 import { formatRangeLagos, isYmd, todayLagos } from '@/lib/date';
 import {
   buildMoniepointPayoutCsv,
+  buildKudaPayoutCsv,
   detectPreset,
   presetRange,
   type MoniepointPayoutRow,
+  type KudaPayoutRow,
   type Preset,
 } from '@/lib/reconcile';
+import { kudaCodeForBankName } from '@/lib/kuda-banks';
 import { listClients } from '@/services/clients';
 import { downloadTextFile } from '@/lib/download';
 
@@ -289,6 +292,83 @@ export default function AdminReconcile() {
     }
   }, [clientsQ.data, clientBanksQ.data, settlementsQ.data, to, notify]);
 
+  // Kuda bulk-payout CSV. Same payable filter as Moniepoint (positive remit, not
+  // already settled, complete bank details), plus the stored bank name must
+  // resolve to a Kuda 6-digit code — vendors whose bank we can't map are
+  // reported separately rather than silently dropped. Narration = "Reda payout
+  // <day>". Web-only download.
+  const onDownloadKudaCsv = useCallback(() => {
+    const remit = clientsQ.data ?? [];
+    const settled = settlementsQ.data ?? EMPTY_SETTLEMENTS;
+    const bankById = new Map((clientBanksQ.data ?? []).map((c) => [c.id, c] as const));
+    const narration = `Reda payout ${to}`;
+    const payable: KudaPayoutRow[] = [];
+    const missing: string[] = [];
+    const unmapped: string[] = [];
+    let alreadySettled = 0;
+    for (const r of remit) {
+      const amount = Number(r.total_remit);
+      if (!(amount > 0)) continue; // only positive remits get paid out
+      if (settled.has(`client:${r.client_id}`)) {
+        alreadySettled += 1; // already transferred — exclude to avoid double-pay
+        continue;
+      }
+      const c = bankById.get(r.client_id);
+      if (!(c && c.bank_account_name && c.bank_account_number && c.bank_name)) {
+        missing.push(r.client_name);
+        continue;
+      }
+      const bankCode = kudaCodeForBankName(c.bank_name);
+      if (!bankCode) {
+        unmapped.push(`${r.client_name} (${c.bank_name})`);
+        continue;
+      }
+      payable.push({ accountNumber: c.bank_account_number, amount, bankCode, narration });
+    }
+    if (payable.length === 0) {
+      notify(
+        'No payout file',
+        missing.length || unmapped.length
+          ? `These vendors are owed money but can't be paid:\n${[
+              ...missing,
+              ...unmapped.map((u) => `${u} — bank not in Kuda's list`),
+            ].join('\n')}\n\nFix bank details under Catalog → Clients, then try again.`
+          : alreadySettled > 0
+            ? 'Every vendor owed for this day is already marked transferred — nothing left to pay.'
+            : 'No vendor has a positive remit for this day.',
+      );
+      return;
+    }
+    const csv = buildKudaPayoutCsv(payable);
+    const ok = downloadTextFile(`reda-kuda-payout-${to}.csv`, csv);
+    if (!ok) {
+      notify(
+        'Use the web app',
+        'The Kuda payout file download is available on the web app (desktop browser).',
+      );
+      return;
+    }
+    const notes: string[] = [];
+    if (missing.length) notes.push(`Skipped — incomplete bank details: ${missing.join(', ')}.`);
+    if (unmapped.length) {
+      notes.push(`Skipped — bank not in Kuda's list: ${unmapped.join(', ')}.`);
+    }
+    if (alreadySettled > 0) {
+      notes.push(
+        `${alreadySettled} already marked transferred (excluded to avoid double payment).`,
+      );
+    }
+    if (notes.length) {
+      const total = payable.reduce((s, p) => s + p.amount, 0);
+      notify(
+        'Payout file downloaded',
+        `${payable.length} vendor${payable.length === 1 ? '' : 's'} · ${formatNaira(
+          total,
+        )}.\n\n${notes.join('\n\n')}`,
+      );
+    }
+  }, [clientsQ.data, clientBanksQ.data, settlementsQ.data, to, notify]);
+
   const rangeLabel = formatRangeLagos(from, to);
   const activePreset = detectPreset(from, to);
 
@@ -376,6 +456,7 @@ export default function AdminReconcile() {
           isWide={isWide}
           eodDate={to}
           onDownloadCsv={onDownloadPayoutCsv}
+          onDownloadKudaCsv={onDownloadKudaCsv}
           onRunEod={onRunEod}
           onSettle={(id, note) => handleSettle('client', id, note)}
           onVoid={handleVoid}
@@ -430,6 +511,7 @@ function ClientsList({
   isWide,
   eodDate,
   onDownloadCsv,
+  onDownloadKudaCsv,
   onRunEod,
   onSettle,
   onVoid,
@@ -440,11 +522,12 @@ function ClientsList({
   onOpenClient: (c: ClientRemitRow) => void;
   settlements: Map<string, SettlementRow>;
   canSettle: boolean;
-  /** Show the "Download Moniepoint payout file" button (admin + single day). */
+  /** Show the payout-file buttons (Moniepoint + Kuda; admin + single day). */
   showDownload?: boolean;
   isWide: boolean;
   eodDate: string;
   onDownloadCsv?: () => void;
+  onDownloadKudaCsv?: () => void;
   onRunEod: () => void;
   onSettle: (subjectId: string, note: string | null) => void;
   onVoid: (settlementId: string) => void;
@@ -500,8 +583,15 @@ function ClientsList({
           </Card>
           {showDownload && onDownloadCsv ? (
             <Button variant="secondary" full icon="share" onPress={onDownloadCsv}>
-              {isWide ? 'Download Moniepoint payout file' : 'Download payout CSV'}
+              {isWide ? 'Download Moniepoint payout file' : 'Download Moniepoint CSV'}
             </Button>
+          ) : null}
+          {showDownload && onDownloadKudaCsv ? (
+            <View style={{ marginTop: 8 }}>
+              <Button variant="secondary" full icon="share" onPress={onDownloadKudaCsv}>
+                {isWide ? 'Download Kuda payout file' : 'Download Kuda CSV'}
+              </Button>
+            </View>
           ) : null}
           <View style={{ marginTop: 8 }}>
             <Button variant="secondary" full icon="calendar" onPress={onRunEod}>
