@@ -34,6 +34,8 @@ import {
   coerceExtractedProducts,
   expandKnownCombos,
   extractTrailingRep,
+  extractWrappedRep,
+  extractLabeledRep,
   extractVendorOrderRef,
   stripJsonFences as stripFencesShared,
   pickMatch,
@@ -412,9 +414,8 @@ Deno.serve(async (req) => {
   if (!needLlm) {
     source = 'contractor';
     // LLM didn't run, so the LLM-only client_rep would be lost. Recover it with a
-    // tight deterministic trailing-name parse (the only signal is raw_text). We
-    // do NOT run this on the LLM path — the model judges "no rep" correctly,
-    // whereas a regex would invent one on the many no-rep messages.
+    // tight deterministic trailing-name parse (the only signal is raw_text). A
+    // wrapped sign-off ("(Praise)") is recovered below, shared with the LLM path.
     clientRepRaw = extractTrailingRep(row.raw_text);
   } else {
     const apiKey = Deno.env.get('OPENROUTER_API_KEY');
@@ -452,8 +453,8 @@ Deno.serve(async (req) => {
     // Instructions: LLM-only (no contractor source). Best-effort, conservative
     // prompt — null on the vast majority of orders that carry no handling note.
     deliveryInstructionsRaw = out.parsed.instructions ?? null;
-    // Client rep: LLM-only, the trailing closer name. null when the forward
-    // doesn't end with one (most orders).
+    // Client rep: LLM-only, the trailing closer name. A wrapped sign-off the LLM
+    // dropped is recovered below (shared with the contractor path).
     clientRepRaw = out.parsed.client_rep ?? null;
     // Products: prefer a contractor-supplied array, else the LLM's array.
     if (lineItems.length === 0) lineItems = out.parsed.products ?? [];
@@ -508,7 +509,19 @@ Deno.serve(async (req) => {
   // Client rep + (optional) vendor order number. Some vendors stamp their own
   // order # in the forward; append it to the rep so it shows in the recon report
   // for cross-referencing. Order # alone when the forward carries no rep name.
-  const repName       = clientRepRaw?.trim() || null;
+  let repName         = clientRepRaw?.trim() || null;
+  // Recovery: the LLM inconsistently drops the trailing rep — names WRAPPED at
+  // the tail ("(Praise)", "(Gift)" — it nails "*Name*" but coin-flips on
+  // "(Name)") and explicit LABELS ("CALL REP patience" — kept on one order,
+  // dropped on the next). When we have no rep, recover it deterministically.
+  // Guard against a parenthesised LANDMARK ("...Sagamu Road (Ikorodu)"): if the
+  // recovered token is part of the address the LLM extracted, it's a place, drop it.
+  if (!repName) {
+    const recovered = extractWrappedRep(row.raw_text) ?? extractLabeledRep(row.raw_text);
+    if (recovered && !(rawAddress && rawAddress.toLowerCase().includes(recovered.toLowerCase()))) {
+      repName = recovered;
+    }
+  }
   const orderRef      = extractVendorOrderRef(row.raw_text);
   const clientRep     = repName && orderRef ? `${repName} - ${orderRef}` : (repName ?? orderRef);
   const customerPrice = orderTotal !== null && orderTotal >= 0 ? orderTotal : null;

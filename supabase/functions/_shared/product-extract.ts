@@ -72,7 +72,11 @@ Return strict JSON with these fields (use null when missing):
   customer_phone_alt : string — a SECOND, distinct customer phone if the message lists one (e.g. "or call 0…", a second contact line). Phone numbers only — NEVER a bank/transfer/account number. null if there is only one number.
   raw_address      : string  — the delivery address, free-form, as-is from the message
   instructions     : string  — a SPECIAL DELIVERY/HANDLING note for the agent ONLY: how to reach the customer or hand over the order. Examples: "use the side gate", "call on arrival", "ask for the gateman", "don't ring the bell", "deliver after 5pm", "landmark: opposite the blue church". Return null when there is no such note. Do NOT put the address, product, price, customer name/phone, client rep, "Payment on Delivery", "Free Delivery", or a generic availability statement here. An availability statement is an instruction only when it gives the agent actionable timing or contact guidance.
-  client_rep       : string  — the CLIENT'S OWN SALES REP for this order. The agreed format is a clean human name on its OWN FINAL non-empty line, below the complete order. Return only that name. Do NOT infer a rep from "Assigned to:", "Closer:", an availability sentence, the WhatsApp sender, the customer name, a Reda delivery agent, a product, or a place. If the final line is not clearly a standalone human name, return null.
+  client_rep       : string  — the CLIENT'S OWN SALES REP / CLOSER for this order: the person on the client's side who sold or owns it. It is almost always at the END of the forward and appears in one of several shapes — recognise ALL of them and return ONLY the name, Title-cased (so "patience" -> "Patience", "MERCY" -> "Mercy"):
+      • a standalone name on the final line — "Linda"
+      • a name WRAPPED at the end — "(Praise)", "*Pamela*", "[Chisom]"
+      • after an explicit LABEL: "Rep:", "Sales rep:", "Call rep", "Call the rep", "Closer:", "Ask for" — e.g. "CALL REP patience" -> "Patience", "Closer: Mary" -> "Mary"
+    The name may be lowercase or ALL-CAPS; still return it Title-cased. Do NOT treat as the rep: the customer's own name, the WhatsApp sender, a Reda DELIVERY agent (an "Assigned to:" line names the dispatch agent, not the client rep), a product, a place/landmark, or a generic availability / "payment on delivery" sentence. Return null only when the message carries no rep name at all.
   total_amount     : number  — the explicit order total when present ("Total", "Total Amount", "Grand Total", "Price", or "Amount Payable"), otherwise null. Never use an account balance or transfer amount.
   products         : array   — one entry per DISTINCT product the customer receives, in the order they appear:
     {
@@ -132,6 +136,14 @@ Example 5 — field boundaries and the agreed final-line rep format.
 Input: Name: Femi. Phone 1: 08000000005. Phone 2: 08000000006. Address: Surulere, Lagos. Product: 1 Fire Stop Spray = ₦18,000. Assigned to: Miracle. Payment on Delivery. Please call on arrival.
 Linda
 Output: {"customer_name":"Femi","customer_phone":"08000000005","customer_phone_alt":"08000000006","raw_address":"Surulere, Lagos","instructions":"Please call on arrival","client_rep":"Linda","total_amount":18000,"products":[{"product_name":"Fire Stop Spray","quantity":1,"customer_price":18000,"free":false}]}
+
+Example 6 — the rep is WRAPPED at the tail; return just the name.
+Input: Name: Gbenga. Phone: 08000000007. Address: Lekki, Lagos. Product: Gold Package - Buy 2 Fire Stop Spray Get 1 FREE. Price: ₦36,000. (Praise)
+Output: {"customer_name":"Gbenga","customer_phone":"08000000007","customer_phone_alt":null,"raw_address":"Lekki, Lagos","instructions":null,"client_rep":"Praise","total_amount":36000,"products":[{"product_name":"Fire Stop Spray","quantity":3,"customer_price":36000,"free":false}]}
+
+Example 7 — the rep is given by a label, lowercase; Title-case it.
+Input: Name: Halima. Phone 1: 08000000008. Phone 2: 08000000008. Address: Mushin, Lagos. Product: Stand Again Oil. 2 Unit + Free Delivery & Payment On Delivery. Price: NGN30,000. CALL REP patience
+Output: {"customer_name":"Halima","customer_phone":"08000000008","customer_phone_alt":null,"raw_address":"Mushin, Lagos","instructions":null,"client_rep":"Patience","total_amount":30000,"products":[{"product_name":"Stand Again Oil","quantity":2,"customer_price":30000,"free":false}]}
 
 Message:
 """
@@ -252,6 +264,9 @@ function repNameOrNull(s: string): string | null {
     if (!/^[A-Z][a-zA-Z'’-]+$/.test(w)) return null; // Title-case alpha, no digits/symbols
     if (REP_STOPWORDS.has(w.toLowerCase())) return null;
   }
+  // A multi-word ALL-CAPS phrase is a shouted instruction ("CONFIRM SPECIFIC
+  // TIME"), not a person's name. A single all-caps name (CHINECHEREM) is fine.
+  if (words.length >= 2 && words.every((w) => w === w.toUpperCase())) return null;
   return words.join(' ');
 }
 
@@ -260,6 +275,60 @@ export function extractTrailingRep(rawText: string | null | undefined): string |
   if (!rawText) return null;
   const lines = rawText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   return lines.length > 0 ? repNameOrNull(lines[lines.length - 1]) : null;
+}
+
+// --- deterministic WRAPPED-rep recovery -------------------------------------
+// This vendor's reps sign off with their name WRAPPED at the very end of the
+// forward — "(Praise)", "*Pamela*", "[Chisom]". The LLM handles "*Name*" 100%
+// of the time but is a coin-flip on "(Name)", and drops word-like names such as
+// "(Praise)"/"(Gift)" outright (it reads them as parenthetical asides, not a
+// person). The wrapper is an UNAMBIGUOUS rep signal — unlike a bare trailing
+// word — so this is safe to run as a recovery on the LLM path when the model
+// returned no rep. Anchored to the END of the whole message (forwards arrive as
+// a single line — no newlines — so we cannot rely on a "final line"). The
+// wrapper chars are themselves the boundary, so the token may be glued to the
+// preceding word ("FREE(Praise)") or sit on its own line in a multi-line forward.
+const WRAPPED_REP_TAIL_RX = /(?:\(([^()]+)\)|\*+([^*]+?)\*+|\[([^\]]+)\])\s*$/;
+
+/** Rep name from a wrapped sign-off at the tail of the forward, or null. The
+ *  inner token still has to read as a clean human name (repNameOrNull), so
+ *  "(please call)" / "(urgent)" / "(Thanks)" never match. */
+export function extractWrappedRep(rawText: string | null | undefined): string | null {
+  if (!rawText) return null;
+  const m = rawText.match(WRAPPED_REP_TAIL_RX);
+  if (!m) return null;
+  const inner = m[1] ?? m[2] ?? m[3];
+  return inner ? repNameOrNull(inner) : null;
+}
+
+// --- deterministic LABELED-rep recovery -------------------------------------
+// A different vendor names the rep with an explicit label at the tail of the
+// forward — "Call rep patience", "CALL REP patience", "Call the rep Patience".
+// The LLM is (again) a coin-flip on it — same name, same casing, kept on one
+// order and dropped on the next. The "call rep" label is an unambiguous rep
+// marker, so recover the trailing name deterministically. Because the LABEL
+// already disambiguates, we accept a lowercase name here (the vendor writes
+// "patience") and Title-case it — unlike the bare/wrapped paths, which need a
+// title-case signal to tell a name from prose.
+const LABELED_REP_TAIL_RX =
+  /\bcall(?:\s+the)?\s+rep\b[\s:.\-]*([A-Za-z][A-Za-z'’-]*(?:\s+[A-Za-z][A-Za-z'’-]*){0,2})\s*$/i;
+
+function titleCase(s: string): string {
+  return s.replace(/\S+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+}
+
+/** Rep name from an explicit "call rep <name>" label at the tail, Title-cased,
+ *  or null. Rejects a stopword tail ("call rep now"). */
+export function extractLabeledRep(rawText: string | null | undefined): string | null {
+  if (!rawText) return null;
+  const m = rawText.match(LABELED_REP_TAIL_RX);
+  if (!m) return null;
+  const words = m[1].trim().split(/\s+/);
+  if (words.length < 1 || words.length > 3) return null;
+  for (const w of words) {
+    if (REP_STOPWORDS.has(w.toLowerCase())) return null;
+  }
+  return titleCase(words.join(' '));
 }
 
 // --- vendor order reference -------------------------------------------------

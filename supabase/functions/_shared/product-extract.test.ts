@@ -10,6 +10,8 @@ import {
   coerceExtractedProducts,
   expandKnownCombos,
   extractTrailingRep,
+  extractWrappedRep,
+  extractLabeledRep,
   extractVendorOrderRef,
   type LineItem,
 } from './product-extract.ts';
@@ -179,7 +181,7 @@ Deno.test('prompt: quantity rules cover same-product extras and independent line
 
 Deno.test('prompt: complete examples preserve strict-schema fields and field boundaries', () => {
   const exampleOutputs = PRODUCT_EXTRACTION_PROMPT.match(/Output: \{[^\n]+\}/g) ?? [];
-  assertEquals(exampleOutputs.length, 5);
+  assertEquals(exampleOutputs.length, 7);
   for (const output of exampleOutputs) {
     const parsed = JSON.parse(output.slice('Output: '.length));
     assertEquals(Object.keys(parsed).sort(), [
@@ -241,4 +243,72 @@ Deno.test('extractTrailingRep: no rep present → null (no false positives)', ()
   assertEquals(extractTrailingRep(''), null);
   assertEquals(extractTrailingRep(null), null);
   assert(!PRODUCT_EXTRACTION_PROMPT.includes('Available for delivery Linda" → "Linda'));
+});
+
+// --- extractWrappedRep (recovers the wrapped tail sign-off the LLM drops) -----
+// Forwards arrive as a SINGLE line (no newlines), so the rep is the wrapped
+// token at the very END of the message — not a "final line".
+
+Deno.test('extractWrappedRep: wrapped sign-off at the tail of a single-line forward', () => {
+  const base =
+    'CUSTOMER NAME: Engr Destiny CUSTOMER ADDRESS: No 5 Orodu street Ajegunle Apapa. Lagos ' +
+    'CUSTOMER PHN NUMBER: 08025710900 PRODUCT NAME: Gold Package - ₦36,000 Buy 2 Fire Stop Spray Get 1 FREE';
+  assertEquals(extractWrappedRep(`${base} (Praise)`), 'Praise');   // parens (LLM drops these)
+  assertEquals(extractWrappedRep(`${base} *Pamela*`), 'Pamela');   // asterisks
+  assertEquals(extractWrappedRep(`${base} [Chisom]`), 'Chisom');   // brackets
+  assertEquals(extractWrappedRep(`${base}(Gift)`), 'Gift');        // no leading space
+  assertEquals(extractWrappedRep('PRODUCT NAME: Gold Package\n\n(Cynthia)'), 'Cynthia'); // multi-line too
+  assertEquals(extractWrappedRep('Order for Ada *Mary Ribue Ofre*'), 'Mary Ribue Ofre'); // up to 3 words
+});
+
+Deno.test('extractWrappedRep: only the TAIL token, never a mid-message wrap', () => {
+  // A bolded field label in the middle must not be mistaken for the rep.
+  assertEquals(extractWrappedRep('*CUSTOMER NAME:* Engr Destiny PRODUCT: Gold Package (Praise)'), 'Praise');
+  // No wrapped token at the tail → null even if one appears earlier.
+  assertEquals(extractWrappedRep('(Praise) CUSTOMER NAME: Engr Destiny PRODUCT: Gold Package'), null);
+});
+
+Deno.test('extractWrappedRep: non-name wrapped tails are rejected', () => {
+  assertEquals(extractWrappedRep('PRODUCT: Gold Package (please call on arrival)'), null); // >3 words
+  assertEquals(extractWrappedRep('PRODUCT: Gold Package (opposite the blue church)'), null); // landmark phrase
+  assertEquals(extractWrappedRep('PRODUCT: Gold Package (urgent)'), null);   // lowercase, not title-case
+  assertEquals(extractWrappedRep('PRODUCT: Gold Package (Thanks)'), null);   // stopword
+  assertEquals(extractWrappedRep('PRODUCT: Gold Package (08025710900)'), null); // digits
+  // Bolded ALL-CAPS instruction at the tail is not a rep; a single all-caps name is.
+  assertEquals(extractWrappedRep('1 OPULENT OUD -- #98,000 *CONFIRM SPECIFIC TIME*'), null);
+  assertEquals(extractWrappedRep('PRODUCT: Gold Package *CHINECHEREM*'), 'CHINECHEREM');
+});
+
+// --- extractLabeledRep ("Call rep <name>" tail, recovers the LLM's coin-flip) -
+
+Deno.test('extractLabeledRep: explicit "call rep" label, lowercase name Title-cased', () => {
+  const base =
+    'Name: Ogochukwu Phone 1: +2348069639718 Address: Mushin, Lagos, Nigeria ' +
+    'Product: Stand Again Oil 2 Unit Price: NGN30,000';
+  assertEquals(extractLabeledRep(`${base} Call rep patience`), 'Patience');
+  assertEquals(extractLabeledRep(`${base} CALL REP patience`), 'Patience'); // shouted variant
+  assertEquals(extractLabeledRep(`${base} Call the rep Patience`), 'Patience');
+  assertEquals(extractLabeledRep(`${base} call rep: Mary Ann`), 'Mary Ann'); // colon + 2 words
+});
+
+Deno.test('extractLabeledRep: only the TAIL, and non-name tails rejected', () => {
+  // "call rep" earlier in the message but a normal tail → no match.
+  assertEquals(extractLabeledRep('Call rep patience Name: Ogochukwu Product: Oil'), null);
+  assertEquals(extractLabeledRep('Product: Oil Call rep please'), null); // stopword
+  assertEquals(extractLabeledRep('Product: Oil please call the customer'), null); // no "rep"
+  assertEquals(extractLabeledRep('Product: Oil Call rep'), null); // label with no name
+});
+
+Deno.test('extractLabeledRep: blank/absent → null', () => {
+  assertEquals(extractLabeledRep(''), null);
+  assertEquals(extractLabeledRep(null), null);
+  assertEquals(extractLabeledRep(undefined), null);
+});
+
+Deno.test('extractWrappedRep: no wrapped tail / blank → null', () => {
+  assertEquals(extractWrappedRep('CUSTOMER NAME: Engr Destiny PRODUCT: Gold Package Buy 2 Get 1 FREE'), null);
+  assertEquals(extractWrappedRep('Catherine'), null); // bare trailing name is NOT a wrapped sign-off
+  assertEquals(extractWrappedRep(''), null);
+  assertEquals(extractWrappedRep(null), null);
+  assertEquals(extractWrappedRep(undefined), null);
 });
