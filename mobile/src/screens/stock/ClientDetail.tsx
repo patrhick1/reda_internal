@@ -91,29 +91,19 @@ export function ClientStockDetail({ basePath }: { basePath?: '/(admin)' | '/(dis
 
     // Client-facing: just the total on-hand per product (no warehouse/agents
     // split — the vendor only needs how many of theirs we hold, not where).
+    // Out-of-stock products are omitted — the vendor only wants what we hold now.
     const lines = products
-      .map((p) =>
-        p.total_qty === 0
-          ? `• ${p.product_name}: OUT OF STOCK`
-          : `• ${p.product_name}: ${p.total_qty}`,
-      )
+      .filter((p) => p.total_qty > 0)
+      .map((p) => `• ${p.product_name}: ${p.total_qty}`)
       .join('\n');
 
-    const totalQty = group?.total_qty ?? 0;
-    const footer = [
-      ``,
-      `Total: ${totalQty} units across ${products.length} ${products.length === 1 ? 'product' : 'products'}.`,
-      ``,
-      `Sent from Reda Logistics`,
-    ].join('\n');
-
-    const message = `${header}\n\n${lines}\n${footer}`;
+    const message = `${header}\n\n${lines}\n\nSent from Reda Logistics`;
     try {
       await Share.share({ message });
     } catch {
       /* user cancelled */
     }
-  }, [clientName, group, products]);
+  }, [clientName, products]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
