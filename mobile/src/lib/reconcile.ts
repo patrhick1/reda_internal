@@ -197,43 +197,10 @@ export function buildMoniepointPayoutCsv(rows: MoniepointPayoutRow[]): string {
   return lines.join('\r\n') + '\r\n';
 }
 
-// ---------------------------------------------------------------------------
-// Kuda bulk-payout CSV. Same EOD flow as Moniepoint, different file shape —
-// Kuda's "Bulk_list_template.xlsx" columns, in order:
-//   Account_Number, Amount, Bank_Codes, Narration
-// Kuda identifies the bank by its 6-digit CODE (not a name) — the caller maps
-// the stored bank name to a code via kudaCodeForBankName() before building rows.
-// No Account Name column (Kuda resolves the name from account + code). Leading
-// zeros in the code are significant, so it's a string cell.
-// ---------------------------------------------------------------------------
-
-/** One beneficiary line for the Kuda bulk-transfer file. Callers pass only
- *  vendors with complete bank details, a resolvable Kuda code, and a positive
- *  payout. */
-export type KudaPayoutRow = {
-  accountNumber: string;
-  amount: number;
-  bankCode: string;
-  narration: string;
-};
-
-const KUDA_CSV_HEADERS = ['Account_Number', 'Amount', 'Bank_Codes', 'Narration'] as const;
-
-/** Build the Kuda bulk-transfer CSV. Header row + CRLF line endings. */
-export function buildKudaPayoutCsv(rows: KudaPayoutRow[]): string {
-  const lines = [KUDA_CSV_HEADERS.join(',')];
-  for (const r of rows) {
-    lines.push(
-      [
-        csvCell(r.accountNumber),
-        payoutAmount(r.amount),
-        csvCell(r.bankCode),
-        csvCell(r.narration),
-      ].join(','),
-    );
-  }
-  return lines.join('\r\n') + '\r\n';
-}
+// The Kuda bulk-payout export is an .xlsx (Kuda's official template format) —
+// see lib/kuda-export.ts (buildKudaPayoutXlsx). It lives in its own module
+// because it pulls in the SheetJS workbook writer, which this pure helper file
+// (also used by the rep screens) should not carry.
 
 // Builds the WhatsApp "Share with client" message in Uzo's preferred shape:
 // Delivery rows use Name / Product(s) / Paid: Cash / To Remit / Note. Pickup

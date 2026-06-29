@@ -14,7 +14,22 @@ export function downloadTextFile(
   mime = 'text/csv;charset=utf-8',
 ): boolean {
   if (Platform.OS !== 'web' || typeof document === 'undefined') return false;
-  const blob = new Blob([content], { type: mime });
+  return triggerDownload(filename, new Blob([content], { type: mime }));
+}
+
+/** Trigger a browser download of binary data (web only) — e.g. the Kuda
+ *  bulk-payout .xlsx workbook. Returns false on native so the caller can fall
+ *  back to "use the web app". */
+export function downloadBinaryFile(
+  filename: string,
+  data: ArrayBuffer | Uint8Array,
+  mime: string,
+): boolean {
+  if (Platform.OS !== 'web' || typeof document === 'undefined') return false;
+  return triggerDownload(filename, new Blob([data as BlobPart], { type: mime }));
+}
+
+function triggerDownload(filename: string, blob: Blob): boolean {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;

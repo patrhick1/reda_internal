@@ -47,16 +47,17 @@ import { errorMessage } from '@/lib/errors';
 import { formatRangeLagos, isYmd, todayLagos } from '@/lib/date';
 import {
   buildMoniepointPayoutCsv,
-  buildKudaPayoutCsv,
   detectPreset,
   presetRange,
   type MoniepointPayoutRow,
-  type KudaPayoutRow,
   type Preset,
 } from '@/lib/reconcile';
+import { buildKudaPayoutXlsx, type KudaPayoutRow } from '@/lib/kuda-export';
 import { kudaCodeForBankName } from '@/lib/kuda-banks';
 import { listClients } from '@/services/clients';
-import { downloadTextFile } from '@/lib/download';
+import { downloadTextFile, downloadBinaryFile } from '@/lib/download';
+
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 type Tab = 'clients' | 'agents' | 'summary';
 
@@ -292,16 +293,16 @@ export default function AdminReconcile() {
     }
   }, [clientsQ.data, clientBanksQ.data, settlementsQ.data, to, notify]);
 
-  // Kuda bulk-payout CSV. Same payable filter as Moniepoint (positive remit, not
-  // already settled, complete bank details), plus the stored bank name must
+  // Kuda bulk-payout .xlsx. Same payable filter as Moniepoint (positive remit,
+  // not already settled, complete bank details), plus the stored bank name must
   // resolve to a Kuda 6-digit code — vendors whose bank we can't map are
-  // reported separately rather than silently dropped. Narration = "Reda payout
-  // <day>". Web-only download.
+  // reported separately rather than silently dropped. Narration = "Sales
+  // remittance". Web-only download.
   const onDownloadKudaCsv = useCallback(() => {
     const remit = clientsQ.data ?? [];
     const settled = settlementsQ.data ?? EMPTY_SETTLEMENTS;
     const bankById = new Map((clientBanksQ.data ?? []).map((c) => [c.id, c] as const));
-    const narration = `Reda payout ${to}`;
+    const narration = 'Sales remittance';
     const payable: KudaPayoutRow[] = [];
     const missing: string[] = [];
     const unmapped: string[] = [];
@@ -339,8 +340,8 @@ export default function AdminReconcile() {
       );
       return;
     }
-    const csv = buildKudaPayoutCsv(payable);
-    const ok = downloadTextFile(`reda-kuda-payout-${to}.csv`, csv);
+    const xlsx = buildKudaPayoutXlsx(payable);
+    const ok = downloadBinaryFile(`reda-kuda-payout-${to}.xlsx`, xlsx, XLSX_MIME);
     if (!ok) {
       notify(
         'Use the web app',
