@@ -21,6 +21,7 @@ import {
   deliveryProductsLabel,
   rolledFromLabel,
   SEARCH_LIMIT,
+  ALL_DATES_LIMIT,
   type DeliveryRow,
 } from '@/services/deliveries';
 import { listActiveFollowups, type ActiveFollowup } from '@/services/followups';
@@ -819,6 +820,29 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         windowSize={7}
         maxToRenderPerBatch={8}
         removeClippedSubviews
+        ListFooterComponent={
+          // "All dates" is capped to the most recent ALL_DATES_LIMIT rows to keep
+          // egress down; tell the user how to reach older orders. Only relevant to
+          // the date-scoped filters (Postponed/Unassigned run their own uncapped,
+          // small cross-date queries).
+          datePreset === 'all' &&
+          filter !== 'postponed' &&
+          filter !== 'unassigned' &&
+          (data?.length ?? 0) >= ALL_DATES_LIMIT ? (
+            <Text
+              style={{
+                textAlign: 'center',
+                color: colors.textSecondary,
+                fontFamily: fonts.medium,
+                fontSize: 12,
+                paddingVertical: 16,
+              }}
+            >
+              Showing the {ALL_DATES_LIMIT} most recent. Search a name or phone to find older
+              orders.
+            </Text>
+          ) : null
+        }
         ListEmptyComponent={
           filter === 'postponed' ? (
             postponedQ.error ? (

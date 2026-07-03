@@ -290,6 +290,32 @@ const JOIN_FRAGMENT = `
   assigned_agent:users!deliveries_assigned_agent_id_fkey(display_name)
 `;
 
+// Explicit column list for the LIST queries — every column shared by both
+// deliveries_admin and deliveries_safe EXCEPT `bot_raw_message` (the full raw
+// order text, ~13% of each list payload, and only rendered on the detail screen,
+// which refetches via getDelivery). Egress cut: lists stop shipping it on every
+// row, every reload. Admin-only columns (charged_snapshot / margin / deleted_at)
+// are omitted too — the list never renders them; the one screen that needs
+// margin (listNegativeMarginDeliveries) keeps `*`. Keep this in sync with the
+// views if a column the list needs is ever added.
+const LIST_COLUMNS = `
+  id, client_id, product_catalog_id, location_id, assigned_agent_id, parent_delivery_id,
+  customer_name, customer_phone, customer_phone_alt, raw_address,
+  quantity_ordered, quantity_delivered, customer_price, paid, payment_method,
+  agent_payment_snapshot, current_status, created_via, created_by_user_id,
+  created_date, scheduled_date, created_at, updated_at,
+  latest_history_id, latest_changed_at, latest_notified, latest_message_at,
+  rolled_from_status, rolled_from_date, rollover_count, delivery_instructions,
+  assigned_at, order_type
+`;
+
+// "All dates" browse pulls the whole table (2,600+ rows ≈ 4 MB + line items).
+// Cap it to the most recent N so a casual "All dates" click doesn't ship the
+// entire history every time — older orders are found via search (which spans all
+// dates server-side). Exported so the list can show a "showing N most recent"
+// hint when the cap is hit.
+export const ALL_DATES_LIMIT = 500;
+
 type JoinShape = {
   client: { name: string } | null;
   product: { product_name: string } | null;
@@ -378,7 +404,7 @@ export async function listDeliveries(
   // last-change timestamp (or none at all).
   let query = supabase
     .from(view)
-    .select(`*, ${JOIN_FRAGMENT}`)
+    .select(`${LIST_COLUMNS}, ${JOIN_FRAGMENT}`)
     .order('created_at', { ascending: false });
   const searchTerm = filters.search ? sanitizeSearch(filters.search) : '';
   if (searchTerm.length >= 2) {
@@ -391,6 +417,10 @@ export async function listDeliveries(
   } else if (!filters.allDates) {
     const d = filters.date ?? todayLagos();
     query = query.eq('scheduled_date', d);
+  } else {
+    // All dates: cap to the most recent ALL_DATES_LIMIT (created_at DESC already)
+    // so a browse doesn't ship the whole history each load. Older orders → search.
+    query = query.limit(ALL_DATES_LIMIT);
   }
   const { data, error } = await query;
   if (error) throw error;
@@ -436,7 +466,7 @@ export async function listDeliveries(
 export async function listAgentPostponed(userId: string): Promise<DeliveryRow[]> {
   const { data, error } = await supabase
     .from('deliveries_safe')
-    .select(`*, ${JOIN_FRAGMENT}`)
+    .select(`${LIST_COLUMNS}, ${JOIN_FRAGMENT}`)
     .eq('assigned_agent_id', userId)
     .eq('current_status', 'postponed')
     .gt('scheduled_date', todayLagos())
@@ -462,7 +492,7 @@ export async function listPostponed(role: Role): Promise<DeliveryRow[]> {
   const view = VIEW_FOR[role];
   const { data, error } = await supabase
     .from(view)
-    .select(`*, ${JOIN_FRAGMENT}`)
+    .select(`${LIST_COLUMNS}, ${JOIN_FRAGMENT}`)
     .eq('current_status', 'postponed')
     .order('scheduled_date', { ascending: true });
   if (error) throw error;
@@ -485,7 +515,7 @@ export async function listUnassigned(role: Role): Promise<DeliveryRow[]> {
   const view = VIEW_FOR[role];
   const { data, error } = await supabase
     .from(view)
-    .select(`*, ${JOIN_FRAGMENT}`)
+    .select(`${LIST_COLUMNS}, ${JOIN_FRAGMENT}`)
     .is('assigned_agent_id', null)
     .not('current_status', 'in', `(${[...TERMINAL_STATUSES].join(',')})`)
     .order('created_at', { ascending: false });
