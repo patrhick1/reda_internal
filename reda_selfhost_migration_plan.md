@@ -19,6 +19,24 @@ Postgres** (~60 RPCs, triggers, RLS, views) — a `pg_dump`/restore moves it ver
 > "Current state" section that follows records what's actually there, and §1/§4 are amended for
 > the co-host path. Everything else (DB migration, edge functions, auth cutover) is unchanged.
 
+> **Update (2026-07-03): the Evolution API relay is being RETIRED — it was never the live intake.**
+> A production-readiness audit + Cloud data settled a long-standing ambiguity. The box's Evolution
+> "mybot" relay has fed **0 rows ever** into `mybot_inbound_messages`, its container has not logged
+> since **2026-06-07**, yet **100% of live intake flows through the contractor's own bot**
+> (WASender → `wasender-webhook` → `bot_inbound_messages`: 2,237 rows, 219 in the last 24 h,
+> last msg today). **Reda does not run its own WhatsApp number.** So the §4/§8 claim that the
+> `WEBHOOK_GLOBAL_URL` env line "*is* the cutover for intake" is **wrong for the current
+> architecture** — at cutover the intake repoint is wherever the **contractor's WASender bot** posts
+> (Cloud `wasender-webhook`/`inbound-message`), not Evolution.
+> **Action — decommission the `evolution` + `postgres` services in `/root/evolution/docker-compose.yml`,
+> KEEP `caddy`.** The Caddy container is the shared TLS edge for `redalogisticss.com` → Supabase Kong
+> + the `auth-email` hook and has **no `depends_on`** the relay (verified), so it survives untouched.
+> Frees ~2.2 GB (evolution image 1.37 GB + its Postgres 392 MB + a 435 MB unrotated log). Also delete
+> the stale upstream clone `/root/supabase-src` (~1.4 GB — not bind-mounted by any compose; the
+> running stack is `/root/supabase`). **Before removing:** repoint the UptimeRobot monitor off
+> `evo.waitwithselah.com` (§10.4) to a `redalogisticss.com` health path, and drop the dead
+> `evo.waitwithselah.com` block from the Caddyfile. See the production-readiness audit in §12.
+
 ---
 
 ## Current state: the target box (co-host on the WhatsApp-bot VPS)
@@ -629,11 +647,15 @@ The rehearsal config favors getting-it-working; tighten these before flipping pr
       logs to `backup.log`, disk-guard >85%, optional healthcheck-ping hook. Cron `0 2 * * *`
       (02:00 UTC = 03:00 Lagos, clear of the 22:59 UTC rollover). Verified: 11 MB dump, valid TOC.
       Restore: `cat reda-db-<ts>.dump | docker exec -i supabase-db pg_restore -U postgres -d postgres --clean --if-exists`.
-- [ ] **Off-box backup shipping — PAUSED (cost, 2026-06-06; revisit before cutover).** Local
-      dumps don't survive a box loss. Plan: a **Hetzner Storage Box** (~€3.50/mo, SSH/rsync/borg)
-      + a cron `rsync`/`borg` of `/root/backups`. Wire + test once provisioned. (S3/Backblaze B2
-      is the cheaper alternative.) **Must be done before cutover** — local-only DR is not enough
-      for production.
+- [x] **Off-box backup shipping — DONE (2026-07-03).** Hetzner **Storage Box BX11** (1 TB, ~€3.20/mo,
+      `u626739@u626739.your-storagebox.de:23`, SSH+External-Reachability on; SMB/WebDAV off). A dedicated
+      VPS keypair (`/root/.ssh/id_storagebox`) is authorised on the box. Nightly cron `30 2 * * *`
+      (`/root/backups/reda-offsite-borg.sh`, 30 min after the 02:00 DB dump) pushes `/root/backups` to an
+      **encrypted** borg repo (`repokey-blake2`, `.../reda-borg`), prunes 7d/4w/6m, compacts. Verified:
+      byte-for-byte test restore matched source md5; borg dedup → repo ~99 MB. **DR keys** live root-only
+      in `/root/.borg/` (`passphrase`, exported `reda-borg.key`) — these MUST also be copied OFF the box
+      (password manager), else a box loss makes the encrypted offsite copy unrecoverable. Optional TODO:
+      set `BORG_HEALTHCHECK_URL` (healthchecks.io dead-man switch) for the offsite job.
 - [x] **Monitoring/alerting — done** (2026-06-06). **healthchecks.io** wired into the backup
       script's `HEALTHCHECK_URL` and verified green (ping HTTP 200); dead-man-switch armed if a
       nightly backup is missed. **UptimeRobot** monitor set up by the user. (Details: §10.4.)
@@ -718,15 +740,16 @@ Pings the box from outside every 5 min; alerts if the edge stops responding.
 - **Pricing:** free tier = 50 monitors, 5-min interval. Sufficient.
 - **Setup:**
   1. Register at https://uptimerobot.com, verify email.
-  2. **+ New monitor** → Type `HTTP(s)`, Name `Reda box (Caddy/Evolution)`,
-     URL `https://evo.waitwithselah.com/`, interval `5 minutes`, tick your email contact → Create.
-  3. *(Optional)* Edit → enable **Keyword** = `Evolution API`, alert when keyword **does NOT** exist
-     (catches "Caddy up but Evolution broken").
-- **Why `evo` and not `reda-api`:** `evo.waitwithselah.com/` returns a clean `200` with no auth.
-  It shares the **same Caddy container, box, and Docker daemon** as `reda-api`, so it's a reliable
-  "is the edge alive" signal. All `reda-api` endpoints require auth (or `404` for Studio now), which
-  free UptimeRobot can't authenticate against; DB-level health is covered by the healthchecks.io
-  dead-man's switch instead.
+  2. **+ New monitor** → Type `HTTP(s)`, Name `Reda box (Caddy edge)`,
+     URL **`https://redalogisticss.com/healthz`**, interval `5 minutes`, tick your email contact → Create.
+  3. *(Optional)* Edit → enable **Keyword** = `ok`, alert when keyword **does NOT** exist.
+- **URL note (updated 2026-07-03):** the old `evo.waitwithselah.com/` target died with the retired
+  Evolution relay. Its replacement is **`/healthz`** — a tiny `respond "ok" 200` handle added to the
+  `redalogisticss.com` Caddy block that returns a clean **200 with no auth** and no Kong hop. Same
+  "is the edge alive" signal (same Caddy container / box / Docker daemon), and free UptimeRobot can
+  read a 200 without an apikey. All real `reda-api` endpoints require auth (or `404` default-deny),
+  which UptimeRobot can't authenticate against; DB-level health stays covered by the healthchecks.io
+  dead-man's switch.
 
 ---
 
@@ -814,3 +837,113 @@ box as root over SSH (`root@178.104.73.186`).
 > Frontend is **not** part of a box re-sync — the web app (Vercel) and mobile (EAS) only repoint
 > their `EXPO_PUBLIC_SUPABASE_URL`/`_ANON_KEY` at **actual cutover** (§6). After a re-sync the
 > schema they target simply matches the box again.
+
+---
+
+## 12. Production-readiness audit (2026-07-03)
+
+Read-only audit of the live box (`root@178.104.73.186`) against "ready for production, 25–40
+concurrent Reda users." **Box:** 2 vCPU / 3.7 GiB RAM / 38 GB disk (53% used), Ubuntu 24.04,
+co-hosting the full Supabase stack + Studio + the (now-dead) Evolution relay. Load ~0.55 idle.
+
+**What's already solid** — don't re-litigate: UFW active default-deny; only 22/80/443 public;
+Postgres, pooler, Kong, Studio **all bound to `127.0.0.1`**; TLS valid + auto-renewing; **no demo/
+default secrets** (all strong); restart policy `unless-stopped` (survives reboot); pooler in
+transaction mode (pool 20); nightly local + encrypted offsite (borg) backups; unattended security
+upgrades on. `/root/migrate/*.dump` PII copies already gone.
+
+### 🔴 Critical — before trusting it in production
+- **C1. Offsite backup unrecoverable + incomplete.** borg passphrase + exported key still live only
+  in `/root/.borg/` — must be copied OFF-box (password manager), else a box loss makes the encrypted
+  repo undecryptable. **And the backup scope only dumps Supabase — the contractor/bot data is now the
+  live intake, but `evolution-postgres` is dead so no gap there; confirm nothing else lives outside
+  `supabase-db`.** (Since intake is contractor-side WASender → Cloud, the box holds only the Supabase
+  DB, which *is* dumped nightly.)
+- **C2. Sizing — 4 GB is ADEQUATE; trim, don't upsize (revised 2026-07-03 against live Cloud
+  metrics).** Downgraded from the initial "resize to 8 GB." The live system runs on Cloud's
+  **NANO = 0.5 GB / shared CPU**, and that 0.5 GB is the **database compute ONLY** — Cloud runs
+  auth/rest/realtime/kong/pooler/storage/edge-functions on *its own* platform. The self-host box runs
+  all of those itself; that's where its RAM goes, **not** load. On the box `supabase-db` uses just
+  **168 MB** (≈ NANO). Real load is light (Cloud: 0.221 GB data, 30 MAU, 17/200 peak realtime, 6%
+  edge-invocation quota, DB memory steady ~65% of 0.5 GB). The box has **2.1 GB available now**;
+  swappiness=10 parks idle pages (benign, not thrashing). **Verdict: the current 4 GB box handles
+  25–40 users.** Remove the idle swap by **trimming unused services, not buying RAM**: stop
+  `storage`+`imgproxy` (no buckets — §0) ≈145 MB, run Studio on-demand via SSH tunnel ≈210 MB
+  (Evolution already removed ≈200 MB). 8 GB is optional insurance only; if upgrading, **more vCPU
+  (2→4) helps burst CPU more than RAM** (Cloud CPU peaks to 100% on shared cores during heavy
+  RPCs/EOD). **The real reason to leave Cloud free tier is egress (135% of the 5 GB cap)** —
+  Hetzner's 20 TB kills that.
+- **C3. No Docker log rotation.** No `/etc/docker/daemon.json` limits; the Evolution log alone hit
+  435 MB. Unbounded → eventual disk-fill outage. Add `json-file` `max-size=10m`/`max-file=3` (daemon
+  restart = brief live-bot-less bounce of all containers; schedule it). *(Retiring Evolution removes
+  the current worst offender but the cap is still needed for the Supabase containers.)*
+
+### 🟠 High — security hardening
+- **H1. SSH accepts passwords + no fail2ban.** `PasswordAuthentication yes` and port 22 world-open
+  with **fail2ban inactive**. Root is already key-only (`without-password`). Set
+  `PasswordAuthentication no` (we're on keys) + install fail2ban.
+- **H2. `/root/supabase/.env` is world-readable (644)** and holds `POSTGRES_PASSWORD`, `JWT_SECRET`,
+  `SERVICE_ROLE_KEY`, `VAULT_ENC_KEY`, `DASHBOARD_PASSWORD`. `chmod 600`. (Box `reda-secrets.box.env`
+  + `.borg/*` are correctly 600.)
+- **H3. Storage Box password was exposed in chat** — reset it in the Hetzner console.
+
+### 🟡 Medium — tuning / robustness
+- **M1. Postgres near-default tuning** for the box RAM: `effective_cache_size = 128 MB` (should be
+  ~2 GB — bad plans under load), `shared_buffers = 128 MB`, `work_mem = 4 MB`. Tune to final RAM.
+- **M2. No app-level monitoring** beyond the backup dead-man switch — add an uptime check on
+  `redalogisticss.com` + disk/mem alerts. (Repoint the existing UptimeRobot off the dying
+  `evo.waitwithselah.com`.)
+- **M3. Single point of failure / restore not drilled on a schedule.** One box, no failover — do one
+  live restore-from-offsite drill.
+
+### Decommission Evolution (safe — see the 2026-07-03 update block up top)
+Evolution relay fed **0 rows ever**; live intake is the contractor's WASender bot. Remove the
+`evolution` + `postgres` services (KEEP `caddy`), delete `/root/supabase-src` (~1.4 GB clone).
+Net: ~4.2 GB disk + one-less-moving-part; does not change the C2 resize need.
+
+### Path to "production-ready for 25–40 users"
+1. ✅ **Copy borg passphrase + key off-box — DONE 2026-07-03** (passphrase + exported key stored in
+   the operator's Google password manager) *(C1)*
+2. ☐ Docker log rotation + truncate *(C3 — needs a brief maintenance window; daemon restart bounces
+   all containers)*
+3. ✅ **`chmod 600 /root/supabase/.env` — DONE 2026-07-03** *(H2)*
+4. ✅ **SSH key-only (`PasswordAuthentication no`) + fail2ban — DONE 2026-07-03** *(H1)*
+5. ☐ Reset Storage Box password *(H3 — operator action, Hetzner console)*
+6. ☐ Tune Postgres to final RAM *(M1 — low priority given the light load)*
+7. ✅ **Uptime + backup monitoring — DONE** — healthchecks.io dead-man switch (green) + UptimeRobot
+   repointed to `https://redalogisticss.com/healthz` *(M2)*
+8. ✅ **Trim unused services — DONE 2026-07-03** (stopped `storage`+`imgproxy` [0 buckets] + Studio
+   on-demand; ~400 MB RAM freed) *(C2)*
+9. ☐ One live restore drill *(M3)*
+10. ✅ **Retire Evolution + delete `supabase-src` — DONE 2026-07-03** (relay fed 0 rows ever; ~4 GB
+    disk + ~200 MB RAM reclaimed; Caddy untouched, data plane verified 200).
+
+**Remaining open:** #2 (log rotation, needs a window), #5 (Storage Box pw reset — yours), #6 (Postgres
+tuning, low priority), #9 (restore drill).
+
+### 12.1 Hardening applied — 2026-07-03 (Track A, as-built)
+
+All executed live, zero-downtime; `redalogisticss.com` data plane verified **200** before/after each.
+
+- **H2 — `/root/supabase/.env` → `600`.** Was `644` (world-readable) with all master secrets
+  (`POSTGRES_PASSWORD`, `JWT_SECRET`, `SERVICE_ROLE_KEY`, `VAULT_ENC_KEY`, `DASHBOARD_PASSWORD`).
+- **H1 — SSH is now key-only + fail2ban.**
+  - Drop-in `/etc/ssh/sshd_config.d/99-reda-hardening.conf` (the main `sshd_config` `Include`s that
+    dir — it was empty; `yes` had been only the OpenSSH compiled default):
+    `PasswordAuthentication no`, `KbdInteractiveAuthentication no`, `PermitRootLogin prohibit-password`.
+    Gated on `sshd -t` before `systemctl reload ssh`; a fresh `ssh -o BatchMode=yes` (no password
+    fallback) key-only connection confirmed working → **no lockout**. Revert: delete the drop-in + reload.
+  - **fail2ban** installed (`backend = systemd`; `/etc/fail2ban/jail.local` → `[sshd] enabled`,
+    `maxretry 5`, `bantime 1h`). It **banned 6 active brute-force IPs on first start** — the port-22
+    surface was real, not theoretical.
+- **C2 trim — stopped 3 unused containers (~400 MB RAM freed: used 1.7→1.3 GiB, avail 2.1→2.4 GiB).**
+  - `supabase-storage` + `supabase-imgproxy` — verified **0 buckets / 0 objects** on the box, so
+    nothing uses them (`/storage/v1/*` now 502s — unused). **Revive:** `docker start supabase-storage
+    supabase-imgproxy`.
+  - `supabase-studio` — now **on-demand**. **Revive for admin:** `docker start supabase-studio`, then
+    `ssh -L 3001:127.0.0.1:3001 root@178.104.73.186` → `http://localhost:3001`.
+  - **Caveat:** a bare `docker compose up -d` in `/root/supabase` would restart all three. They stay
+    down across reboot (explicit `docker stop` + `restart: unless-stopped`), and the re-sync runbook's
+    targeted `sh run.sh recreate functions` does not revive them. Making the trim permanent (a
+    `profiles:` guard or removing the services from compose) is deferred — `docker stop` is reversible
+    and low-friction.
