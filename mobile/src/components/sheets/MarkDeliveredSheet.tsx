@@ -22,6 +22,7 @@ export function MarkDeliveredSheet({
   delivery,
   onClose,
   onConfirmed,
+  hidePosFeeNote = false,
 }: {
   open: boolean;
   delivery: DeliveryRow | null;
@@ -30,6 +31,10 @@ export function MarkDeliveredSheet({
    *  the parent should watch so the optimistic veil clears once the job
    *  succeeds (removed from queue) or dead-letters (failed permanently). */
   onConfirmed: (newStatus: string, jobId: string) => void;
+  /** Suppress the "POS fee on cash" note regardless of role. Set on the agent
+   *  screens so the client-remit deduction (back-office reconciliation) never
+   *  surfaces in the field flow, even when a manager uses the agent UI. */
+  hidePosFeeNote?: boolean;
 }) {
   // delivered quantity per product (string for the text inputs)
   const [delivered, setDelivered] = useState<Record<string, string>>({});
@@ -395,7 +400,7 @@ export function MarkDeliveredSheet({
           </Banner>
         ) : null}
 
-        {cashPosFee > 0 && canSeePosFeeNote(role) ? (
+        {cashPosFee > 0 && canSeePosFeeNote(role) && !hidePosFeeNote ? (
           <Banner tone="info" icon="cash" title="POS fee on cash">
             {`${formatNaira(cashPosFee)} will be deducted from the client's remit (POS charge for banking the cash). Doesn't change what you hand over.`}
           </Banner>

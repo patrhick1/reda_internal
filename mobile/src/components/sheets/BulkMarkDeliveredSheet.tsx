@@ -23,6 +23,7 @@ export function BulkMarkDeliveredSheet({
   selected,
   onClose,
   onConfirmed,
+  hidePosFeeNote = false,
 }: {
   open: boolean;
   /** Full DeliveryRow objects for the current selection — lets the sheet
@@ -33,6 +34,10 @@ export function BulkMarkDeliveredSheet({
   /** Fired once all eligible jobs are enqueued. `count` is how many delivered
    *  jobs were queued; parent exits select mode, toasts, and reloads. */
   onConfirmed: (count: number) => void;
+  /** Suppress the "POS fee on cash" note regardless of role. Set on the agent
+   *  screen so the client-remit deduction (back-office reconciliation) never
+   *  surfaces in the field flow, even when a manager uses the agent UI. */
+  hidePosFeeNote?: boolean;
 }) {
   const [method, setMethod] = useState<PaymentMethod>('transfer');
   const [submitting, setSubmitting] = useState(false);
@@ -185,7 +190,7 @@ export function BulkMarkDeliveredSheet({
           </View>
         </View>
 
-        {cashPosFeeTotal > 0 && canSeePosFeeNote(role) ? (
+        {cashPosFeeTotal > 0 && canSeePosFeeNote(role) && !hidePosFeeNote ? (
           <Banner tone="info" icon="cash" title="POS fee on cash">
             {`${formatNaira(500)} per order (${formatNaira(cashPosFeeTotal)} total) is deducted from each client's remit for banking the cash. Doesn't change what you hand over.`}
           </Banner>

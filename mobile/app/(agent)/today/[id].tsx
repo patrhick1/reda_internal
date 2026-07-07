@@ -699,6 +699,7 @@ export default function AgentDeliveryDetail() {
         delivery={d}
         onClose={() => setMarkOpen(false)}
         onConfirmed={onCommitted}
+        hidePosFeeNote
       />
       <ChangeDeliveryZoneSheet
         open={zoneOpen}

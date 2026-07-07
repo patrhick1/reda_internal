@@ -559,6 +559,7 @@ export default function AgentToday() {
         selected={selectedRows}
         onClose={() => setBulkSheetOpen(false)}
         onConfirmed={onBulkConfirmed}
+        hidePosFeeNote
       />
     </View>
   );
