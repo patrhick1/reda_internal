@@ -538,7 +538,14 @@ function ClientsList({
     () => (state.data ?? []).reduce((s, r) => s + Number(r.total_remit), 0),
     [state.data],
   );
-  const count = (state.data ?? []).length;
+  // Count the clients we actually remit to this period — not the full roster.
+  // `client_remit_summary` returns every client (zero-delivery ones included,
+  // shown as ₦0 rows), so `.length` would report the whole catalog. A client is
+  // "to remit to" when Reda owes them money (positive net remit).
+  const count = useMemo(
+    () => (state.data ?? []).filter((r) => Number(r.total_remit) > 0).length,
+    [state.data],
+  );
   const deliveriesTotal = useMemo(
     () => (state.data ?? []).reduce((s, r) => s + Number(r.deliveries_count), 0),
     [state.data],
