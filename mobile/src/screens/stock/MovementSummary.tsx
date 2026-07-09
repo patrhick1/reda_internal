@@ -10,6 +10,7 @@ import {
   stockMovementSummary,
   groupMovementSummary,
   listGlobalStockMovements,
+  nextCursor,
   type MovementBucket,
   type MovementPeriod,
   type GlobalMovement,
@@ -92,14 +93,27 @@ export function StockMovementSummaryScreen() {
     if (!productId) return;
     setDelivered('loading');
     try {
-      const rows = await listGlobalStockMovements(null, 300, {
-        productCatalogId: productId,
-        holderId: holderId ?? undefined,
-        kinds: ['delivered'],
-        from,
-        to,
-      });
-      setDelivered(rows);
+      // The RPC caps limit at 200; a busy product over a month exceeds that, so
+      // page through until exhausted (up to ~1200) — otherwise the drill would
+      // under-count vs the summary's Delivered total.
+      const PAGE = 200;
+      const MAX_PAGES = 6;
+      const all: GlobalMovement[] = [];
+      let cursor = null as ReturnType<typeof nextCursor>;
+      for (let i = 0; i < MAX_PAGES; i++) {
+        const page = await listGlobalStockMovements(cursor, PAGE, {
+          productCatalogId: productId,
+          holderId: holderId ?? undefined,
+          kinds: ['delivered'],
+          from,
+          to,
+        });
+        all.push(...page);
+        if (page.length < PAGE) break;
+        cursor = nextCursor(page);
+        if (!cursor) break;
+      }
+      setDelivered(all);
     } catch {
       setDelivered([]);
     }
