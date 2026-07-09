@@ -205,6 +205,56 @@ export default function EditClient() {
     );
   }
 
+  async function performClearBank(why: string) {
+    setSubmitting(true);
+    setActionError(null);
+    try {
+      // Nulls all three fields (the RPC treats blanks as null). The vendor drops
+      // off the Moniepoint / Kuda payout files — used when a client collects
+      // remittance through their own system.
+      await setClientBankDetails(
+        client!.id,
+        { bankAccountName: null, bankAccountNumber: null, bankName: null },
+        why,
+      );
+      setBankAccountName('');
+      setBankAccountNumber('');
+      setBankName('');
+      reload();
+    } catch (e) {
+      setActionError(errorMessage(e));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function handleClearBank() {
+    const blurb =
+      'Removes this vendor’s account name, number and bank. They’ll be left off the Moniepoint / Kuda payout files — for clients who collect remittance through their own system.';
+    if (Platform.OS === 'web') {
+      const why =
+        (typeof window !== 'undefined' ? window.prompt(`${blurb}\n\nReason:`) : null) ?? '';
+      if (why.trim()) performClearBank(why.trim());
+      return;
+    }
+    Alert.prompt(
+      'Clear bank details',
+      `${blurb}\n\nReason (required).`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Clear',
+          style: 'destructive',
+          onPress: (why?: string) => {
+            if (why && why.trim()) performClearBank(why.trim());
+            else setActionError('Reason required');
+          },
+        },
+      ],
+      'plain-text',
+    );
+  }
+
   async function performDeactivate(why: string) {
     setSubmitting(true);
     setActionError(null);
@@ -316,10 +366,11 @@ export default function EditClient() {
         />
       </View>
 
-      <Text style={styles.sectionLabel}>Bank details (for Moniepoint payout)</Text>
+      <Text style={styles.sectionLabel}>Bank details (for Moniepoint / Kuda payout)</Text>
       <Text style={styles.hint}>
-        Used to build the end-of-day Moniepoint bulk-transfer file. All three are needed for this
-        vendor to appear in the payout file.
+        Used to build the end-of-day bulk-transfer files. All three are needed for this vendor to
+        appear in the payout file. Leave blank for clients who collect remittance through their own
+        system — they’re left off the files.
       </Text>
       <Field
         label="Account name"
@@ -345,6 +396,12 @@ export default function EditClient() {
         searchable
         searchPlaceholder="Search bank name"
       />
+
+      {client.bank_account_name || client.bank_account_number || client.bank_name ? (
+        <Pressable onPress={handleClearBank} disabled={submitting} style={styles.clearLink}>
+          <Text style={styles.clearLinkText}>Clear bank details (collects on their own)</Text>
+        </Pressable>
+      ) : null}
 
       {dirty ? (
         <Field

@@ -47,6 +47,7 @@ import { formatNaira } from '@/lib/format';
 import { errorMessage } from '@/lib/errors';
 import { formatRangeLagos, isYmd, todayLagos } from '@/lib/date';
 import {
+  bankDetailStatus,
   buildMoniepointPayoutCsv,
   presetRange,
   type MoniepointPayoutRow,
@@ -251,6 +252,7 @@ export default function AdminReconcile() {
     const bankById = new Map((clientBanksQ.data ?? []).map((c) => [c.id, c] as const));
     const payable: MoniepointPayoutRow[] = [];
     const missing: string[] = [];
+    let selfCollect = 0; // vendors owed but with no bank details — collect on their own
     let alreadySettled = 0;
     for (const r of remit) {
       const amount = Number(r.total_remit);
@@ -267,8 +269,13 @@ export default function AdminReconcile() {
           amount,
           bank: c.bank_name,
         });
-      } else {
+      } else if (bankDetailStatus(c) === 'partial') {
+        // Some but not all bank fields set — a data-entry slip worth surfacing.
         missing.push(r.client_name);
+      } else {
+        // No bank details at all: this vendor collects remittance through their
+        // own system, so leave them off the file silently (not "missing").
+        selfCollect += 1;
       }
     }
     if (payable.length === 0) {
@@ -280,7 +287,9 @@ export default function AdminReconcile() {
             )}.\n\nAdd their Account Name, Account Number and Bank under Catalog → Clients, then try again.`
           : alreadySettled > 0
             ? 'Every vendor owed for this day is already marked transferred — nothing left to pay.'
-            : 'No vendor has a positive remit for this day.',
+            : selfCollect > 0
+              ? 'Every vendor owed for this day collects remittance through their own system — no bulk payout file needed.'
+              : 'No vendor has a positive remit for this day.',
       );
       return;
     }
@@ -325,6 +334,7 @@ export default function AdminReconcile() {
     const payable: KudaPayoutRow[] = [];
     const missing: string[] = [];
     const unmapped: string[] = [];
+    let selfCollect = 0; // vendors owed but with no bank details — collect on their own
     let alreadySettled = 0;
     for (const r of remit) {
       const amount = Number(r.total_remit);
@@ -335,7 +345,10 @@ export default function AdminReconcile() {
       }
       const c = bankById.get(r.client_id);
       if (!(c && c.bank_account_name && c.bank_account_number && c.bank_name)) {
-        missing.push(r.client_name);
+        // Partial details are a fixable slip; none at all means the vendor
+        // self-collects and is intentionally excluded (silent, not "missing").
+        if (bankDetailStatus(c) === 'partial') missing.push(r.client_name);
+        else selfCollect += 1;
         continue;
       }
       const bankCode = kudaCodeForBankName(c.bank_name);
@@ -355,7 +368,9 @@ export default function AdminReconcile() {
             ].join('\n')}\n\nFix bank details under Catalog → Clients, then try again.`
           : alreadySettled > 0
             ? 'Every vendor owed for this day is already marked transferred — nothing left to pay.'
-            : 'No vendor has a positive remit for this day.',
+            : selfCollect > 0
+              ? 'Every vendor owed for this day collects remittance through their own system — no bulk payout file needed.'
+              : 'No vendor has a positive remit for this day.',
       );
       return;
     }

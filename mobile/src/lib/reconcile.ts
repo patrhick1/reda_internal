@@ -152,6 +152,36 @@ export function clientShareNote(clientRep: string | null | undefined, note: stri
 // it from MONIEPOINT_BANKS, so by the time a row reaches here it's already valid.
 // ---------------------------------------------------------------------------
 
+/** Whether a vendor can be paid via the bulk Moniepoint / Kuda files, from their
+ *  stored bank details:
+ *    - `complete` — all three fields set; ready to pay, appears in the file.
+ *    - `none`     — no bank details at all. Most clients collect remittance
+ *                   through their own system, so this is deliberate, NOT an error:
+ *                   the vendor is left off the payout files silently, never listed
+ *                   as "missing".
+ *    - `partial`  — some but not all fields set; a genuine data-entry slip that IS
+ *                   surfaced so an admin can complete or clear it.
+ *  Shared by the Moniepoint and Kuda builders so both classify vendors identically. */
+export type BankDetailStatus = 'complete' | 'partial' | 'none';
+
+export function bankDetailStatus(
+  c:
+    | {
+        bank_account_name?: string | null;
+        bank_account_number?: string | null;
+        bank_name?: string | null;
+      }
+    | null
+    | undefined,
+): BankDetailStatus {
+  const filled = [c?.bank_account_name, c?.bank_account_number, c?.bank_name].filter(
+    (v) => v != null && String(v).trim() !== '',
+  ).length;
+  if (filled === 0) return 'none';
+  if (filled === 3) return 'complete';
+  return 'partial';
+}
+
 /** One beneficiary line for the Moniepoint bulk-transfer file. Callers pass only
  *  vendors with complete bank details and a positive payout. */
 export type MoniepointPayoutRow = {
