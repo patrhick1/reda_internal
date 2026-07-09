@@ -15,6 +15,7 @@ export default function AdminStockLayout() {
       <Stack.Screen name="transfer" options={{ title: 'New transfer', presentation: 'modal' }} />
       <Stack.Screen name="receive" options={{ title: 'Receive stock', presentation: 'modal' }} />
       <Stack.Screen name="count" options={{ title: 'Count stock', presentation: 'modal' }} />
+      <Stack.Screen name="movement-summary" options={{ title: 'Movement summary' }} />
       <Stack.Screen name="client/[id]" options={{ headerShown: false }} />
       <Stack.Screen name="holder/[holderId]" options={{ headerShown: false }} />
       <Stack.Screen name="movements/[holderId]" options={{ headerShown: false }} />

@@ -370,6 +370,19 @@ export function StockOverview({ basePath }: { basePath: StockBasePath }) {
               }}
             />
           ) : null}
+          {showGlobalHistory ? (
+            <ActionRow
+              icon="history"
+              label="Movement summary"
+              sub="Daily / weekly totals per product — received, delivered, net"
+              onPress={() => {
+                setOverflowOpen(false);
+                router.push(
+                  `${basePath}/stock/movement-summary` as `${StockBasePath}/stock/movement-summary`,
+                );
+              }}
+            />
+          ) : null}
           {showReceive ? (
             <ActionRow
               icon="arrowDown"

@@ -172,6 +172,105 @@ export function nextCursor(rows: StockMovement[]): MovementCursor {
 }
 
 // ---------------------------------------------------------------------------
+// Periodized movement summary (`stock_movement_summary`). One product over a
+// date range, bucketed by Lagos day or week, aggregated in the DB by reason —
+// so the app gets a handful of totals instead of hundreds of raw rows. Powers
+// the daily/weekly movements view and the reconciliation trace.
+// ---------------------------------------------------------------------------
+
+export type MovementBucket = 'day' | 'week';
+
+/** One (period, reason) total from the summary RPC. `qty` follows the ledger
+ *  sign (received positive, delivered negative). */
+export type MovementSummaryRow = {
+  period_start: string; // YYYY-MM-DD (Lagos day, or the Monday of the week)
+  reason: MovementEventKind;
+  qty: number;
+};
+
+export async function stockMovementSummary(
+  productCatalogId: string,
+  from: string,
+  to: string,
+  holderId: string | null,
+  bucket: MovementBucket,
+): Promise<MovementSummaryRow[]> {
+  const { data, error } = await rpcUntyped('stock_movement_summary', {
+    p_product_catalog_id: productCatalogId,
+    p_from: from,
+    p_to: to,
+    p_holder_id: holderId,
+    p_bucket: bucket,
+  });
+  if (error) throw error;
+  return (data ?? []) as MovementSummaryRow[];
+}
+
+/** Per-period totals grouped into display buckets, plus a signed net. */
+export type MovementPeriod = {
+  period_start: string;
+  received: number; // bulk_intake + found (+)
+  delivered: number; // delivered (−)
+  returned: number; // delivery_returned + warehouse_return (+)
+  issued: number; // warehouse_issue (holder-scoped: − out of the shelf)
+  transfers: number; // transfer
+  adjustments: number; // correction + loss + theft + damaged (±)
+  net: number;
+};
+
+const REASON_BUCKET: Record<MovementEventKind, keyof Omit<MovementPeriod, 'period_start' | 'net'>> =
+  {
+    bulk_intake: 'received',
+    found: 'received',
+    delivered: 'delivered',
+    delivery_returned: 'returned',
+    warehouse_return: 'returned',
+    warehouse_issue: 'issued',
+    transfer: 'transfers',
+    correction: 'adjustments',
+    loss: 'adjustments',
+    theft: 'adjustments',
+    damaged: 'adjustments',
+  };
+
+const emptyPeriod = (period_start: string): MovementPeriod => ({
+  period_start,
+  received: 0,
+  delivered: 0,
+  returned: 0,
+  issued: 0,
+  transfers: 0,
+  adjustments: 0,
+  net: 0,
+});
+
+/** Fold the raw (period, reason) rows into per-period display buckets (newest
+ *  first) plus a range-wide roll-up total. Pure — no I/O. */
+export function groupMovementSummary(rows: MovementSummaryRow[]): {
+  periods: MovementPeriod[];
+  total: MovementPeriod;
+} {
+  const byPeriod = new Map<string, MovementPeriod>();
+  const total = emptyPeriod('');
+  for (const r of rows) {
+    let p = byPeriod.get(r.period_start);
+    if (!p) {
+      p = emptyPeriod(r.period_start);
+      byPeriod.set(r.period_start, p);
+    }
+    const bucket = REASON_BUCKET[r.reason];
+    p[bucket] += r.qty;
+    p.net += r.qty;
+    total[bucket] += r.qty;
+    total.net += r.qty;
+  }
+  const periods = [...byPeriod.values()].sort((a, b) =>
+    b.period_start.localeCompare(a.period_start),
+  );
+  return { periods, total };
+}
+
+// ---------------------------------------------------------------------------
 // Cross-holder feed (Phase 1). Powers TWO oversight views off ONE RPC
 // (`list_stock_movements_global`): a per-client view (clientId set) and a
 // company-wide view (any subset of filters). Unlike the per-holder feed it is
