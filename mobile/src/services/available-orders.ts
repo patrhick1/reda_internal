@@ -20,9 +20,11 @@ export type AvailableOrderRow = {
   customer_name: string;
   location_name: string | null;
   scheduled_date: string;
-  /** Original WhatsApp text that produced the order (null for manual orders).
-   *  Surfaced to the warehouse via a tap-to-view sheet on the order row. */
-  bot_raw_message: string | null;
+  /** Whether this order has an original WhatsApp message to view (bot orders do,
+   *  manual ones don't). Drives the row's tap-to-view hint. The full text is NOT
+   *  shipped in the list — it's lazily fetched via getAvailableOrderRawMessage
+   *  only when the warehouse manager opens the sheet, to keep list egress small. */
+  has_raw_message: boolean;
 };
 
 function todayLagos(): string {
@@ -55,7 +57,13 @@ export async function listAvailableOrders(): Promise<AvailableOrderRow[]> {
     }
   )
     .from('available_orders_safe')
-    .select('*')
+    // Explicit column list — deliberately NOT `*`, so the (large) bot_raw_message
+    // text isn't shipped for every order on every reload. The list only needs the
+    // `has_raw_message` flag; the text is lazily fetched on tap (see
+    // getAvailableOrderRawMessage).
+    .select(
+      'delivery_id, agent_id, agent_name, client_id, client_name, product_catalog_id, product_name, quantity_ordered, customer_name, location_name, scheduled_date, has_raw_message',
+    )
     .eq('scheduled_date', todayLagos());
 
   if (error) throw error;
@@ -73,7 +81,7 @@ export async function listAvailableOrders(): Promise<AvailableOrderRow[]> {
       customer_name: string | null;
       location_name: string | null;
       scheduled_date: string | null;
-      bot_raw_message: string | null;
+      has_raw_message: boolean | null;
     }>
   )
     .map((row): AvailableOrderRow | null => {
@@ -100,12 +108,48 @@ export async function listAvailableOrders(): Promise<AvailableOrderRow[]> {
         customer_name: row.customer_name,
         location_name: row.location_name ?? null,
         scheduled_date: row.scheduled_date,
-        bot_raw_message: row.bot_raw_message ?? null,
+        has_raw_message: row.has_raw_message ?? false,
       };
     })
     .filter((r): r is AvailableOrderRow => r !== null);
 
   return rows;
+}
+
+/** Lazily fetch the original WhatsApp text for a single available order — used by
+ *  the warehouse tap-to-view sheet. Kept out of listAvailableOrders so the list
+ *  query doesn't ship the (large) raw text for every order on every reload; the
+ *  bytes are paid only when a manager actually opens an order's message. Reads
+ *  the same `available_orders_safe` view the list uses, so visibility is
+ *  identical (warehouse / dispatcher / assigned-agent gate). The view is itemized
+ *  (one row per line item), so a multi-product order yields duplicate rows with
+ *  the same text — limit(1) is enough. Returns null for manual orders (no bot
+ *  text) or an unresolved id. */
+export async function getAvailableOrderRawMessage(deliveryId: string): Promise<string | null> {
+  // Same hand-written planning view as listAvailableOrders — not in the generated
+  // DB types, so cast the select chain (now needing .limit) once.
+  const { data, error } = await (
+    supabase as unknown as {
+      from: (t: string) => {
+        select: (s: string) => {
+          eq: (
+            col: string,
+            val: string,
+          ) => {
+            limit: (n: number) => Promise<{ data: unknown; error: { message: string } | null }>;
+          };
+        };
+      };
+    }
+  )
+    .from('available_orders_safe')
+    .select('bot_raw_message')
+    .eq('delivery_id', deliveryId)
+    .limit(1);
+
+  if (error) throw error;
+  const rows = (data ?? []) as Array<{ bot_raw_message: string | null }>;
+  return rows[0]?.bot_raw_message ?? null;
 }
 
 // --- Aggregators (pure) ------------------------------------------------------

@@ -5,12 +5,16 @@
 -- and visibility is governed solely by the is_warehouse()/is_admin_or_dispatcher()
 -- guard below.
 --
--- bot_raw_message is appended LAST so CREATE OR REPLACE VIEW stays valid (you may
--- only add new columns at the end). It re-exposes the original WhatsApp text
--- (which contains customer name/phone/address) to the warehouse manager — an
--- intentional decision (Uzo, 2026-06-21) so the warehouse can sanity-check the
--- order against the source text. The rest of the view still omits the parsed
--- phone/address/price columns.
+-- bot_raw_message re-exposes the original WhatsApp text (customer name/phone/
+-- address) to the warehouse manager — an intentional decision (Uzo, 2026-06-21)
+-- so the warehouse can sanity-check the order against the source text. The rest
+-- of the view still omits the parsed phone/address/price columns.
+--
+-- has_raw_message (appended LAST so CREATE OR REPLACE VIEW stays valid — you may
+-- only add columns at the end) is a lightweight boolean the list query selects
+-- INSTEAD of the full bot_raw_message text, to cut egress: the app's list fetch
+-- ships this ~1-byte flag (drives the row's "view message" hint) and lazily
+-- fetches bot_raw_message for a single order only when the sheet is opened.
 CREATE OR REPLACE VIEW public.available_orders_safe AS
  SELECT d.id AS delivery_id,
     d.assigned_agent_id AS agent_id,
@@ -25,7 +29,8 @@ CREATE OR REPLACE VIEW public.available_orders_safe AS
     l.name AS location_name,
     d.scheduled_date,
     d.current_status,
-    d.bot_raw_message
+    d.bot_raw_message,
+    (d.bot_raw_message IS NOT NULL) AS has_raw_message
    FROM deliveries d
      JOIN users u ON u.id = d.assigned_agent_id
      JOIN clients c ON c.id = d.client_id

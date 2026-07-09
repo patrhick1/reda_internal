@@ -10,7 +10,7 @@ import {
   siblingGroupKey,
   type DeliveryRow,
 } from '@/services/deliveries';
-import { listBotInbound } from '@/services/bot';
+import { countNeedsReview } from '@/services/bot';
 import { listUsers } from '@/services/users';
 import { listOpenIssuesForOps } from '@/services/delivery-messages';
 import { AppBar, Card, Icon, SectionHeader } from '@/components/ui';
@@ -34,7 +34,7 @@ export default function AdminHome() {
   const user = useCurrentUser();
   const router = useRouter();
   const todayQ = useAsync(() => listDeliveries(user.role), [user.role]);
-  const reviewQ = useAsync(() => listBotInbound('needs_review', 100), []);
+  const reviewQ = useAsync(() => countNeedsReview(), []);
   const issuesQ = useAsync(() => listOpenIssuesForOps(), []);
   const usersQ = useAsync(() => listUsers(), []);
   const negMarginQ = useAsync(() => countNegativeMarginDeliveries(), []);
@@ -50,7 +50,7 @@ export default function AdminHome() {
   );
 
   const stats = useMemo(() => summarize(todayQ.data ?? []), [todayQ.data]);
-  const reviewCount = (reviewQ.data ?? []).length;
+  const reviewCount = reviewQ.data ?? 0;
   const negMarginCount = negMarginQ.data ?? 0;
   const pendingZoneCount = usePendingLocationChangesCount();
   const openIssues = issuesQ.data ?? [];

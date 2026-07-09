@@ -3,12 +3,13 @@
 //      Pulled from the available-orders rows for this agent + current_stock.
 //   2. "Orders" — the actual delivery rows the agent is going to do today.
 //      Each row taps through to the existing Delivery detail screen.
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, Text, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import {
   listAvailableOrders,
+  getAvailableOrderRawMessage,
   buildAllocation,
   type AvailableOrderRow,
   type AllocationLine,
@@ -28,8 +29,38 @@ export function AvailableAgentDetail({ basePath }: { basePath: AvailableBasePath
   // sheet with the order's original WhatsApp message instead. `sheetOpen` drives
   // visibility separately from `rawMsgRow` so the selected row stays mounted
   // through the close animation (no empty-state flash as the sheet slides out).
+  // The raw text isn't shipped with the list (egress) — it's fetched on tap into
+  // `rawMsgText`, with `rawMsgLoading` gating the sheet's spinner; `latestRawReq`
+  // guards against a slow fetch for row A landing after the user opens row B.
   const [rawMsgRow, setRawMsgRow] = useState<AvailableOrderRow | null>(null);
+  const [rawMsgText, setRawMsgText] = useState<string | null>(null);
+  const [rawMsgLoading, setRawMsgLoading] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const latestRawReq = useRef<string | null>(null);
+
+  const openRawMessage = useCallback((row: AvailableOrderRow) => {
+    latestRawReq.current = row.delivery_id;
+    setRawMsgRow(row);
+    setRawMsgText(null);
+    setSheetOpen(true);
+    // Manual orders have no bot text — skip the round-trip and show the sheet's
+    // "added manually" empty state immediately.
+    if (!row.has_raw_message) {
+      setRawMsgLoading(false);
+      return;
+    }
+    setRawMsgLoading(true);
+    getAvailableOrderRawMessage(row.delivery_id)
+      .then((text) => {
+        if (latestRawReq.current === row.delivery_id) setRawMsgText(text);
+      })
+      .catch(() => {
+        if (latestRawReq.current === row.delivery_id) setRawMsgText(null);
+      })
+      .finally(() => {
+        if (latestRawReq.current === row.delivery_id) setRawMsgLoading(false);
+      });
+  }, []);
 
   const ordersQ = useAsync(() => listAvailableOrders(), []);
   const stockQ = useAsync(() => listCurrentStock(), []);
@@ -120,16 +151,13 @@ export function AvailableAgentDetail({ basePath }: { basePath: AvailableBasePath
               // such route) opens the raw-WhatsApp-message sheet for the order.
               onPress={
                 isWarehouse
-                  ? () => {
-                      setRawMsgRow(item);
-                      setSheetOpen(true);
-                    }
+                  ? () => openRawMessage(item)
                   : () =>
                       router.push(
                         `${basePath}/deliveries/${item.delivery_id}` as `/(dispatcher)/deliveries/${string}`,
                       )
               }
-              showMessageHint={isWarehouse && !!item.bot_raw_message}
+              showMessageHint={isWarehouse && item.has_raw_message}
             />
           )}
         />
@@ -139,7 +167,8 @@ export function AvailableAgentDetail({ basePath }: { basePath: AvailableBasePath
         open={sheetOpen}
         onClose={() => setSheetOpen(false)}
         customerName={rawMsgRow?.customer_name ?? ''}
-        message={rawMsgRow?.bot_raw_message}
+        message={rawMsgText}
+        loading={rawMsgLoading}
       />
     </View>
   );

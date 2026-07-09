@@ -5,7 +5,7 @@
 //
 // Shares RawMessageBody with BotRawMessageCard, but shown expanded immediately
 // since the sheet is opened expressly to read the message.
-import { Text, View } from 'react-native';
+import { ActivityIndicator, Text, View } from 'react-native';
 import { Sheet } from '@/components/ui';
 import { RawMessageBody } from '@/components/delivery/RawMessageBody';
 import { colors, fonts } from '@/lib/theme';
@@ -15,11 +15,16 @@ export function RawMessageSheet({
   onClose,
   customerName,
   message,
+  loading = false,
 }: {
   open: boolean;
   onClose: () => void;
   customerName: string;
   message: string | null | undefined;
+  /** True while the raw text is being lazily fetched (it isn't shipped with the
+   *  list). Shows a spinner instead of the empty state so a real message doesn't
+   *  briefly read as "added manually" mid-load. */
+  loading?: boolean;
 }) {
   const trimmed = message?.trim() ?? '';
 
@@ -31,7 +36,11 @@ export function RawMessageSheet({
       subtitle={customerName || undefined}
     >
       <View style={{ paddingHorizontal: 20, paddingTop: 4 }}>
-        {trimmed ? (
+        {loading ? (
+          <View style={{ paddingVertical: 24, alignItems: 'center' }}>
+            <ActivityIndicator color={colors.black} />
+          </View>
+        ) : trimmed ? (
           <RawMessageBody message={trimmed} />
         ) : (
           <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary }}>
