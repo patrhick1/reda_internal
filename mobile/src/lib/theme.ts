@@ -255,6 +255,40 @@ export const STATUS_HIDDEN_FROM_PICKER = new Set<string>([
   'no_product',
 ]);
 
+/** Per-CURRENT-status allow-list for the AGENT status picker only. When an
+ *  order's current status is a key here AND the picker is opened from an agent
+ *  surface (UpdateStatusSheet `restrictToAgentSet`), the dropdown shows ONLY
+ *  these to_status options (still minus `delivered` + STATUS_HIDDEN_FROM_PICKER).
+ *  Ops/admin/dispatcher/rep on the ops Detail screen are unaffected. Rationale
+ *  (Uzo, 2026-07-09): once an order is `available` (customer reachable) the only
+ *  moves that make sense to an agent are reschedule / postpone / follow-up /
+ *  fail / customer-cancel — Mark Delivered is its own button. Like
+ *  STATUS_HIDDEN_FROM_PICKER this is a UI trim only; the DB transitions table is
+ *  unchanged so server-side machinery keeps working. */
+export const PICKER_ALLOWED_FROM: Record<string, string[]> = {
+  available: ['tomorrow', 'postponed', 'follow_up', 'failed_delivery', 'cancelled'],
+};
+
+/** The status options an Update Status picker should offer, given the DB
+ *  transitions available from `currentStatus`. Always drops `delivered` (it has
+ *  its own MarkDelivered button/sheet) and everything in STATUS_HIDDEN_FROM_PICKER;
+ *  on agent surfaces (`restrictToAgentSet`) it also applies the
+ *  PICKER_ALLOWED_FROM allow-list for the current status. Pure + generic over the
+ *  transition row shape so both UpdateStatusSheet and its tests use one code path. */
+export function pickerTransitions<T extends { to_status: string }>(
+  transitions: T[],
+  currentStatus: string,
+  restrictToAgentSet: boolean,
+): T[] {
+  const allow = restrictToAgentSet ? PICKER_ALLOWED_FROM[currentStatus] : undefined;
+  return transitions.filter(
+    (t) =>
+      t.to_status !== 'delivered' &&
+      !STATUS_HIDDEN_FROM_PICKER.has(t.to_status) &&
+      (!allow || allow.includes(t.to_status)),
+  );
+}
+
 export function statusBucket(s: string | null | undefined): keyof typeof STATUS_GROUPS {
   if (!s) return 'active';
   for (const k of Object.keys(STATUS_GROUPS) as (keyof typeof STATUS_GROUPS)[]) {

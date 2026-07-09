@@ -5,7 +5,7 @@ import {
   colors,
   fonts,
   FINAL_STATUSES,
-  STATUS_HIDDEN_FROM_PICKER,
+  pickerTransitions,
   STATUS_META,
   TERMINAL_STATUSES,
 } from '@/lib/theme';
@@ -27,6 +27,7 @@ export function UpdateStatusSheet({
   delivery,
   isAdmin,
   autoSeedThreadOnIntervention = false,
+  restrictToAgentSet = false,
   onClose,
   onCommitted,
 }: {
@@ -38,6 +39,10 @@ export function UpdateStatusSheet({
    *  thread gets seeded automatically. Only the agent's delivery detail
    *  screen opts in — ops users keep the plain status-change semantics. */
   autoSeedThreadOnIntervention?: boolean;
+  /** When true, apply the agent-only `PICKER_ALLOWED_FROM` trim so certain
+   *  current statuses (e.g. `available`) show a deliberately short option list.
+   *  Only the agent delivery-detail screen passes this — ops keep the full set. */
+  restrictToAgentSet?: boolean;
   onClose: () => void;
   /** Called once the mutation has been enqueued. `jobId` is the queue job
    *  the parent should watch so the optimistic veil clears once the job
@@ -59,13 +64,14 @@ export function UpdateStatusSheet({
   const enqueueStatus = useEnqueueChangeStatus();
   const enqueueFlag = useEnqueueFlagDelivery();
 
-  // Filter out 'delivered' (has its own sheet) and any status in
-  // STATUS_HIDDEN_FROM_PICKER (system-managed or non-pickable workflows).
-  const options = useMemo(() => {
-    return (transitionsQ.data ?? []).filter(
-      (t) => t.to_status !== 'delivered' && !STATUS_HIDDEN_FROM_PICKER.has(t.to_status),
-    );
-  }, [transitionsQ.data]);
+  // Drops 'delivered' (own sheet) + STATUS_HIDDEN_FROM_PICKER, and on agent
+  // surfaces applies the per-current-status PICKER_ALLOWED_FROM allow-list so
+  // e.g. an 'available' order shows only the short agent set (ops keep the full
+  // list). Shared pure helper so behaviour is unit-tested.
+  const options = useMemo(
+    () => pickerTransitions(transitionsQ.data ?? [], currentStatus, restrictToAgentSet),
+    [transitionsQ.data, currentStatus, restrictToAgentSet],
+  );
 
   function reset() {
     setPicked(null);

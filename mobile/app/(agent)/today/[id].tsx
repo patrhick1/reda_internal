@@ -715,6 +715,7 @@ export default function AgentDeliveryDetail() {
         delivery={d}
         isAdmin={false}
         autoSeedThreadOnIntervention
+        restrictToAgentSet
         onClose={() => setUpdateOpen(false)}
         onCommitted={onCommitted}
       />
