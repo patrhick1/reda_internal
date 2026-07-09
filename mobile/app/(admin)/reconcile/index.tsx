@@ -33,6 +33,7 @@ import {
   Avatar,
   Button,
   Card,
+  DateField,
   Empty,
   FilterChips,
   Hint,
@@ -47,7 +48,6 @@ import { errorMessage } from '@/lib/errors';
 import { formatRangeLagos, isYmd, todayLagos } from '@/lib/date';
 import {
   buildMoniepointPayoutCsv,
-  detectPreset,
   presetRange,
   type MoniepointPayoutRow,
   type Preset,
@@ -73,6 +73,12 @@ export default function AdminReconcile() {
   const [tab, setTab] = useState<Tab>('clients');
   const [from, setFrom] = useState<string>(todayLagos());
   const [to, setTo] = useState<string>(todayLagos());
+  // Which range chip is highlighted. Explicit UI state, NOT derived from the
+  // dates — presetRange('custom') has no range to jump to, so a derived
+  // highlight could never light up "Custom" and tapping it looked dead. Editing
+  // From/To by hand flips this to 'custom'. Purely cosmetic: the RPCs read
+  // from/to, never this.
+  const [preset, setPreset] = useState<Preset>('today');
   const [openId, setOpenId] = useState<string | null>(null);
 
   // Gate the RPC fires behind YMD validation: the From/To Inputs call
@@ -178,11 +184,24 @@ export default function AdminReconcile() {
   );
 
   const applyPreset = useCallback((p: Preset) => {
+    setPreset(p);
     const r = presetRange(p);
     if (r) {
       setFrom(r.from);
       setTo(r.to);
     }
+    // 'custom' keeps the current dates and just lets the user edit them.
+  }, []);
+
+  // Typing a date by hand means the user is defining a custom range — reflect
+  // that in the chip selection so a stale preset chip doesn't stay highlighted.
+  const onChangeFrom = useCallback((v: string) => {
+    setFrom(v);
+    setPreset('custom');
+  }, []);
+  const onChangeTo = useCallback((v: string) => {
+    setTo(v);
+    setPreset('custom');
   }, []);
 
   const onRunEod = useCallback(() => {
@@ -371,7 +390,6 @@ export default function AdminReconcile() {
   }, [clientsQ.data, clientBanksQ.data, settlementsQ.data, to, notify]);
 
   const rangeLabel = formatRangeLagos(from, to);
-  const activePreset = detectPreset(from, to);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -403,7 +421,7 @@ export default function AdminReconcile() {
       {/* Preset chips */}
       <View style={{ ...pageWidthStyle, paddingTop: 6, backgroundColor: colors.surface }}>
         <FilterChips
-          value={activePreset}
+          value={preset}
           onChange={(v) => applyPreset(v as Preset)}
           options={[
             { id: 'today', label: 'Today' },
@@ -425,24 +443,10 @@ export default function AdminReconcile() {
         }}
       >
         <View style={{ flex: 1 }}>
-          <Input
-            label="From"
-            value={from}
-            onChange={setFrom}
-            autoCapitalize="none"
-            autoCorrect={false}
-            placeholder="YYYY-MM-DD"
-          />
+          <DateField label="From" value={from} onChange={onChangeFrom} />
         </View>
         <View style={{ flex: 1 }}>
-          <Input
-            label="To"
-            value={to}
-            onChange={setTo}
-            autoCapitalize="none"
-            autoCorrect={false}
-            placeholder="YYYY-MM-DD"
-          />
+          <DateField label="To" value={to} onChange={onChangeTo} />
         </View>
       </View>
 

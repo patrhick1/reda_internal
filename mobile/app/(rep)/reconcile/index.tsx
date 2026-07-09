@@ -3,11 +3,11 @@ import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } fr
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { listRepClientRemit, type RepClientRemitRow } from '@/services/reconciliation';
-import { AppBar, Card, Empty, FilterChips, Icon, Input } from '@/components/ui';
+import { AppBar, Card, DateField, Empty, FilterChips, Icon } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 import { formatNaira } from '@/lib/format';
 import { formatRangeLagos, isYmd, todayLagos } from '@/lib/date';
-import { detectPreset, presetRange, type Preset } from '@/lib/reconcile';
+import { presetRange, type Preset } from '@/lib/reconcile';
 
 // Rep-facing reconcile: a client-only, fee-free view so reps can send clients
 // their delivered-updates. Deliberately omits the admin reconcile's By-agent /
@@ -17,6 +17,10 @@ export default function RepReconcile() {
   const router = useRouter();
   const [from, setFrom] = useState<string>(todayLagos());
   const [to, setTo] = useState<string>(todayLagos());
+  // Highlighted range chip — explicit UI state so "Custom" can be selected
+  // directly (presetRange('custom') has no range to jump to). Manual date edits
+  // flip it to 'custom'. Cosmetic only; the RPC reads from/to.
+  const [preset, setPreset] = useState<Preset>('today');
 
   // YMD gate before firing the date-typed RPC — same reason as admin reconcile:
   // typing a partial date otherwise hits PostgREST with 22007 invalid-date.
@@ -34,6 +38,7 @@ export default function RepReconcile() {
   );
 
   const applyPreset = useCallback((p: Preset) => {
+    setPreset(p);
     const r = presetRange(p);
     if (r) {
       setFrom(r.from);
@@ -41,8 +46,16 @@ export default function RepReconcile() {
     }
   }, []);
 
+  const onChangeFrom = useCallback((v: string) => {
+    setFrom(v);
+    setPreset('custom');
+  }, []);
+  const onChangeTo = useCallback((v: string) => {
+    setTo(v);
+    setPreset('custom');
+  }, []);
+
   const rangeLabel = formatRangeLagos(from, to);
-  const activePreset = detectPreset(from, to);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -50,7 +63,7 @@ export default function RepReconcile() {
 
       <View style={{ paddingTop: 12, backgroundColor: colors.surface }}>
         <FilterChips
-          value={activePreset}
+          value={preset}
           onChange={(v) => applyPreset(v as Preset)}
           options={[
             { id: 'today', label: 'Today' },
@@ -63,24 +76,10 @@ export default function RepReconcile() {
 
       <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 16 }}>
         <View style={{ flex: 1 }}>
-          <Input
-            label="From"
-            value={from}
-            onChange={setFrom}
-            autoCapitalize="none"
-            autoCorrect={false}
-            placeholder="YYYY-MM-DD"
-          />
+          <DateField label="From" value={from} onChange={onChangeFrom} />
         </View>
         <View style={{ flex: 1 }}>
-          <Input
-            label="To"
-            value={to}
-            onChange={setTo}
-            autoCapitalize="none"
-            autoCorrect={false}
-            placeholder="YYYY-MM-DD"
-          />
+          <DateField label="To" value={to} onChange={onChangeTo} />
         </View>
       </View>
 

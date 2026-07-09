@@ -31,15 +31,15 @@ import { listClients } from '@/services/clients';
 import { listUsers, isWarehousePlace } from '@/services/users';
 import { useAsync } from '@/hooks/useAsync';
 import { lagosDayKey, lagosDayLabel, relativeTime, todayLagos, isYmd } from '@/lib/date';
-import { presetRange, detectPreset, type Preset } from '@/lib/reconcile';
+import { presetRange, type Preset } from '@/lib/reconcile';
 import {
   AppBar,
   Button,
   Card,
+  DateField,
   Empty,
   FilterChips,
   Icon,
-  Input,
   SectionHeader,
 } from '@/components/ui';
 import { Select, type SelectOption } from '@/components/Select';
@@ -82,17 +82,21 @@ export function GlobalMovements({
   const [direction, setDirection] = useState<'in' | 'out' | null>(null);
   const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
 
-  // 'all' when unbounded, else the matching reconcile preset. detectPreset needs
-  // non-null strings, hence the guard.
-  const datePreset: 'all' | Preset = from !== null && to !== null ? detectPreset(from, to) : 'all';
+  // Highlighted date chip. Explicit UI state ('all' = unbounded, the default) so
+  // "Custom" can be selected directly — deriving it from the dates could never
+  // light Custom up (a seeded today→today range reads back as 'today'). Editing
+  // From/To by hand flips it to 'custom'. The fetch reads from/to, not this.
+  const [datePreset, setDatePreset] = useState<'all' | Preset>('all');
   // All-time, or a complete custom range. A half-typed custom date pauses fetches.
   const rangeValid = (from === null && to === null) || (isYmd(from) && isYmd(to));
 
   function applyDatePreset(p: 'all' | Preset) {
+    setDatePreset(p);
     if (p === 'all') {
       setFrom(null);
       setTo(null);
     } else if (p === 'custom') {
+      // Seed a concrete day to edit if we were previously all-time.
       if (from === null || to === null) {
         setFrom(todayLagos());
         setTo(todayLagos());
@@ -105,6 +109,16 @@ export function GlobalMovements({
       }
     }
   }
+
+  // Typing / calendar-picking a custom date implies the custom range.
+  const onChangeFrom = (v: string) => {
+    setFrom(v);
+    setDatePreset('custom');
+  };
+  const onChangeTo = (v: string) => {
+    setTo(v);
+    setDatePreset('custom');
+  };
 
   // Effective vendor: fixed by the route in client mode, else the picker.
   const effectiveClientId = clientId ?? clientFilterId;
@@ -304,24 +318,10 @@ export function GlobalMovements({
           {datePreset === 'custom' ? (
             <View style={{ flexDirection: 'row', gap: 12 }}>
               <View style={{ flex: 1 }}>
-                <Input
-                  label="From"
-                  value={from ?? ''}
-                  onChange={setFrom}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  placeholder="YYYY-MM-DD"
-                />
+                <DateField label="From" value={from ?? ''} onChange={onChangeFrom} />
               </View>
               <View style={{ flex: 1 }}>
-                <Input
-                  label="To"
-                  value={to ?? ''}
-                  onChange={setTo}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  placeholder="YYYY-MM-DD"
-                />
+                <DateField label="To" value={to ?? ''} onChange={onChangeTo} />
               </View>
             </View>
           ) : null}

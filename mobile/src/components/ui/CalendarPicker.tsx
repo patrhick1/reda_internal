@@ -1,15 +1,18 @@
 import { useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { colors, fonts, radii } from '@/lib/theme';
+import { isYmd, todayLagos } from '@/lib/date';
 import { Icon } from './Icon';
 
 /** A self-contained month-grid calendar — zero native deps, identical on web
  *  and Android. Selecting a day calls `onSelect` with a `YYYY-MM-DD` string.
  *
- *  Dates on or before `minExclusiveYmd` are disabled (the caller passes
- *  "today", so only future dates are pickable). Sundays are disabled by
+ *  `minExclusiveYmd` is optional: postpone passes `today` so only future dates
+ *  are pickable, while the general date fields (reconcile, analytics, scheduled
+ *  date) omit it and can reach any past OR future day. Sundays are disabled by
  *  default because they're non-workdays the backend auto-bumps to Monday —
- *  blocking them up front avoids a surprise shift after submit. */
+ *  blocking them up front avoids a surprise shift after submit; callers that just
+ *  browse dates pass `disableSundays={false}`. */
 export function CalendarPicker({
   value,
   onSelect,
@@ -18,18 +21,19 @@ export function CalendarPicker({
 }: {
   value: string | null;
   onSelect: (ymd: string) => void;
-  /** Dates <= this YYYY-MM-DD are not selectable. */
-  minExclusiveYmd: string;
+  /** Dates <= this YYYY-MM-DD are not selectable. Omit to allow any past date. */
+  minExclusiveYmd?: string;
   disableSundays?: boolean;
 }) {
-  // The month currently on screen, as {y, m} (m is 1-12). Start on the
-  // selected date's month, else the min date's month.
-  const initial = parseYmd(value ?? minExclusiveYmd);
+  // The month currently on screen, as {y, m} (m is 1-12). Open on the selected
+  // date's month, else the min bound, else the current month.
+  const anchor = (value && isYmd(value) ? value : null) ?? minExclusiveYmd ?? todayLagos();
+  const initial = parseYmd(anchor);
   const [view, setView] = useState<{ y: number; m: number }>({ y: initial.y, m: initial.m });
 
-  const min = parseYmd(minExclusiveYmd);
-  // Don't let the user page back into months that are entirely in the past.
-  const atOrBeforeMinMonth = view.y < min.y || (view.y === min.y && view.m <= min.m);
+  const min = minExclusiveYmd ? parseYmd(minExclusiveYmd) : null;
+  // Don't let the user page back into months that are entirely before the min.
+  const atOrBeforeMinMonth = min ? view.y < min.y || (view.y === min.y && view.m <= min.m) : false;
 
   const cells = useMemo(() => buildMonthCells(view.y, view.m), [view.y, view.m]);
 
@@ -89,7 +93,9 @@ export function CalendarPicker({
             return <View key={`blank-${idx}`} style={{ flexBasis: COL_BASIS, height: 40 }} />;
           }
           const isSunday = cell.weekday === 0;
-          const disabled = cell.ymd <= minExclusiveYmd || (disableSundays && isSunday);
+          const disabled =
+            (minExclusiveYmd != null && cell.ymd <= minExclusiveYmd) ||
+            (disableSundays && isSunday);
           const selected = value === cell.ymd;
           return (
             <View key={cell.ymd} style={{ flexBasis: COL_BASIS, height: 40, padding: 2 }}>

@@ -18,10 +18,18 @@ import {
   type RepActivityRow,
   type RepCoverage,
 } from '@/services/rep-performance';
-import { AppBar, Avatar, Card, Empty, FilterChips, Input, SectionHeader } from '@/components/ui';
+import {
+  AppBar,
+  Avatar,
+  Card,
+  DateField,
+  Empty,
+  FilterChips,
+  SectionHeader,
+} from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 import { formatRangeLagos, isYmd, todayLagos } from '@/lib/date';
-import { detectPreset, presetRange, type Preset } from '@/lib/reconcile';
+import { presetRange, type Preset } from '@/lib/reconcile';
 
 // Locked SLA target. Drives the live indicator + median colouring.
 const TARGET_MIN = 5;
@@ -30,6 +38,10 @@ export default function AdminRepPerformance() {
   const router = useRouter();
   const [from, setFrom] = useState<string>(todayLagos());
   const [to, setTo] = useState<string>(todayLagos());
+  // Highlighted range chip — explicit UI state so "Custom" can be selected
+  // directly (presetRange('custom') has no range to jump to). Editing From/To by
+  // hand flips it to 'custom'. Cosmetic only; the RPCs read from/to.
+  const [preset, setPreset] = useState<Preset>('today');
 
   // Gate the RPC fires behind YMD validation — the From/To inputs setState on
   // every keystroke and the RPCs reject malformed dates (mirrors reconcile).
@@ -57,6 +69,7 @@ export default function AdminRepPerformance() {
   const now = useNowEveryHalfMinute();
 
   const applyPreset = useCallback((p: Preset) => {
+    setPreset(p);
     const r = presetRange(p);
     if (r) {
       setFrom(r.from);
@@ -64,8 +77,16 @@ export default function AdminRepPerformance() {
     }
   }, []);
 
+  const onChangeFrom = useCallback((v: string) => {
+    setFrom(v);
+    setPreset('custom');
+  }, []);
+  const onChangeTo = useCallback((v: string) => {
+    setTo(v);
+    setPreset('custom');
+  }, []);
+
   const rangeLabel = formatRangeLagos(from, to);
-  const activePreset = detectPreset(from, to);
   const loading = (coverageQ.loading && !coverageQ.data) || (repsQ.loading && !repsQ.data);
   const error = coverageQ.error ?? repsQ.error;
 
@@ -75,7 +96,7 @@ export default function AdminRepPerformance() {
 
       <View style={{ paddingTop: 12, backgroundColor: colors.surface }}>
         <FilterChips
-          value={activePreset}
+          value={preset}
           onChange={(v) => applyPreset(v as Preset)}
           options={[
             { id: 'today', label: 'Today' },
@@ -87,24 +108,10 @@ export default function AdminRepPerformance() {
       </View>
       <View style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 16 }}>
         <View style={{ flex: 1 }}>
-          <Input
-            label="From"
-            value={from}
-            onChange={setFrom}
-            autoCapitalize="none"
-            autoCorrect={false}
-            placeholder="YYYY-MM-DD"
-          />
+          <DateField label="From" value={from} onChange={onChangeFrom} />
         </View>
         <View style={{ flex: 1 }}>
-          <Input
-            label="To"
-            value={to}
-            onChange={setTo}
-            autoCapitalize="none"
-            autoCorrect={false}
-            placeholder="YYYY-MM-DD"
-          />
+          <DateField label="To" value={to} onChange={onChangeTo} />
         </View>
       </View>
 

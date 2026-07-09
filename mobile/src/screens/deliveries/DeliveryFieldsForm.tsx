@@ -7,7 +7,7 @@ import { listActiveProductsByClient, type Product } from '@/services/products';
 import { listLocations, type Location } from '@/services/locations';
 import { listUsers, type AppUser } from '@/services/users';
 import { getAgentProductsStock } from '@/services/deliveries';
-import { Avatar, Banner, Card, Empty, Input } from '@/components/ui';
+import { Avatar, Banner, Card, DateField, Empty, Input } from '@/components/ui';
 import { Select } from '@/components/Select';
 import { colors, fonts } from '@/lib/theme';
 import { errorMessage } from '@/lib/errors';
@@ -660,14 +660,10 @@ export function DeliveryFieldsForm({
         {!hide.has('scheduledDate') ? (
           <>
             <View style={{ height: 16 }} />
-            <Input
+            <DateField
               label="Scheduled date"
               value={state.scheduledDate}
               onChange={(v) => patch({ scheduledDate: v })}
-              autoCapitalize="none"
-              autoCorrect={false}
-              placeholder="YYYY-MM-DD"
-              icon="calendar"
             />
           </>
         ) : null}

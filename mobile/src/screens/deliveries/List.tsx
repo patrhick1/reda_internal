@@ -43,6 +43,7 @@ import {
   Avatar,
   Button,
   Card,
+  DateField,
   Empty,
   FAB,
   FilterChips,
@@ -680,14 +681,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         />
         {datePreset === 'custom' ? (
           <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
-            <Input
-              label="Date"
-              value={customDate}
-              onChange={setCustomDate}
-              autoCapitalize="none"
-              autoCorrect={false}
-              placeholder="YYYY-MM-DD"
-            />
+            <DateField label="Date" value={customDate} onChange={setCustomDate} />
           </View>
         ) : null}
         <FilterChips options={filterOptions} value={filter} onChange={setFilter} />
@@ -1078,6 +1072,9 @@ const DeliveryListRow = memo(function DeliveryListRow({
   const status = delivery.current_status ?? 'pending';
   const showFollowup = followup && SOFT_STATUSES.has(status);
   const carriedLabel = rolledFromLabel(delivery);
+  // Format the working date once per row — reused by the corner date and the
+  // postponed badge (avoids re-running Intl formatting up to 3× per render).
+  const dateLabel = delivery.scheduled_date ? formatYmdShort(delivery.scheduled_date) : null;
   return (
     <Card dense onPress={onPress} onLongPress={onLongPress}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
@@ -1223,9 +1220,9 @@ const DeliveryListRow = memo(function DeliveryListRow({
               </Text>
             </View>
           ) : null}
-          {status === 'postponed' && delivery.scheduled_date ? (
+          {status === 'postponed' && dateLabel ? (
             <View
-              accessibilityLabel={`Postponed to ${formatYmdShort(delivery.scheduled_date)}`}
+              accessibilityLabel={`Postponed to ${dateLabel}`}
               style={{
                 marginTop: 5,
                 flexDirection: 'row',
@@ -1243,7 +1240,7 @@ const DeliveryListRow = memo(function DeliveryListRow({
                 numberOfLines={1}
                 style={{ fontFamily: fonts.semibold, fontSize: 10, color: colors.warningDark }}
               >
-                Postponed to {formatYmdShort(delivery.scheduled_date)}
+                Postponed to {dateLabel}
               </Text>
             </View>
           ) : null}
@@ -1287,9 +1284,23 @@ const DeliveryListRow = memo(function DeliveryListRow({
                 </Text>
               )}
             </View>
-            <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.black }}>
-              {formatNaira(delivery.customer_price)}
-            </Text>
+            <View style={{ alignItems: 'flex-end' }}>
+              {dateLabel ? (
+                <Text
+                  style={{
+                    fontFamily: fonts.medium,
+                    fontSize: 11,
+                    color: colors.textTertiary,
+                    marginBottom: 1,
+                  }}
+                >
+                  {dateLabel}
+                </Text>
+              ) : null}
+              <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.black }}>
+                {formatNaira(delivery.customer_price)}
+              </Text>
+            </View>
           </View>
         </View>
       </View>

@@ -10,6 +10,7 @@ export { Avatar } from './Avatar';
 export type { AvatarUser } from './Avatar';
 export { Input } from './Input';
 export { CalendarPicker } from './CalendarPicker';
+export { DateField } from './DateField';
 export { Sheet } from './Sheet';
 export { FAB } from './FAB';
 export { Banner } from './Banner';
