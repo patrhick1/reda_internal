@@ -20,6 +20,7 @@ import {
   type DeliveryRow,
 } from '@/services/deliveries';
 import { listUsers } from '@/services/users';
+import { listDeparturesToday } from '@/services/agent-departures';
 import { listOpenIssuesForOps, opsUnreadAgentCounts } from '@/services/delivery-messages';
 import { AppBar, Card, Icon } from '@/components/ui';
 import { AgentWorkloadCard } from '@/components/delivery/AgentWorkloadCard';
@@ -58,6 +59,9 @@ export function RepDashboard() {
   // ops team", matching the per-row chip on the deliveries list. 'not my route'
   // excluded for reps to match the issues card above.
   const unreadQ = useAsync(() => opsUnreadAgentCounts({ excludeNotMyRoute: true }), []);
+  // Riders who've left the warehouse today — shown as a chip on each agent's
+  // workload row so reps know who's in transit before relaying a message.
+  const departuresQ = useAsync(() => listDeparturesToday(), []);
 
   useFocusEffect(
     useCallback(() => {
@@ -65,6 +69,7 @@ export function RepDashboard() {
       postponedQ.reload();
       issuesQ.reload();
       unreadQ.reload();
+      departuresQ.reload();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []),
   );
@@ -73,6 +78,10 @@ export function RepDashboard() {
   const agents = useMemo(
     () => (usersQ.data ?? []).filter((u) => u.role === 'agent' && u.is_active),
     [usersQ.data],
+  );
+  const departures = useMemo(
+    () => departuresQ.data ?? new Map<string, string>(),
+    [departuresQ.data],
   );
 
   const stats = useMemo(() => bucketCounts(deliveries), [deliveries]);
@@ -275,6 +284,7 @@ export function RepDashboard() {
         <AgentWorkloadCard
           deliveries={deliveries}
           agents={agents}
+          departedAtByAgent={departures}
           loading={deliveriesQ.loading && !deliveriesQ.data}
           onAgentPress={(agentId) =>
             router.navigate({

@@ -15,6 +15,8 @@ import {
   type AgentGroup,
   type ClientAggregate,
 } from '@/services/available-orders';
+import { listDeparturesToday } from '@/services/agent-departures';
+import { DepartureChip } from '@/components/agent/DepartureChip';
 import { AppBar, Avatar, Card, Empty, Icon } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 
@@ -23,10 +25,14 @@ export type AvailableBasePath = '/(dispatcher)' | '/(warehouse)';
 export function AvailableOrdersIndex({ basePath }: { basePath: AvailableBasePath }) {
   const router = useRouter();
   const ordersQ = useAsync(() => listAvailableOrders(), []);
+  // Which agents have left the warehouse today — surfaced as a chip per row so
+  // the dispatcher/warehouse don't assign fresh orders to a rider already gone.
+  const departuresQ = useAsync(() => listDeparturesToday(), []);
 
   useFocusEffect(
     useCallback(() => {
       ordersQ.reload();
+      departuresQ.reload();
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []),
   );
@@ -34,6 +40,10 @@ export function AvailableOrdersIndex({ basePath }: { basePath: AvailableBasePath
   const rows = useMemo(() => ordersQ.data ?? [], [ordersQ.data]);
   const agents = useMemo(() => groupByAgent(rows), [rows]);
   const clientRollup = useMemo(() => aggregateByClientProduct(rows), [rows]);
+  const departures = useMemo(
+    () => departuresQ.data ?? new Map<string, string>(),
+    [departuresQ.data],
+  );
 
   const totalOrders = rows.length;
   const subtitle =
@@ -85,6 +95,7 @@ export function AvailableOrdersIndex({ basePath }: { basePath: AvailableBasePath
           renderItem={({ item }) => (
             <AgentRow
               group={item}
+              departedAt={departures.get(item.agent_id) ?? null}
               onPress={() =>
                 router.push(
                   `${basePath}/available/${item.agent_id}` as `${AvailableBasePath}/available/${string}`,
@@ -160,7 +171,15 @@ function ClientBlock({ group, divider }: { group: ClientAggregate; divider: bool
   );
 }
 
-function AgentRow({ group, onPress }: { group: AgentGroup; onPress: () => void }) {
+function AgentRow({
+  group,
+  departedAt,
+  onPress,
+}: {
+  group: AgentGroup;
+  departedAt: string | null;
+  onPress: () => void;
+}) {
   const productLine = group.products
     .map((p) => `${p.qty_needed}× ${shortName(p.product_name)}`)
     .join(' · ');
@@ -194,6 +213,11 @@ function AgentRow({ group, onPress }: { group: AgentGroup; onPress: () => void }
               {group.total_orders} {group.total_orders === 1 ? 'order' : 'orders'}
             </Text>
           </View>
+          {departedAt ? (
+            <View style={{ marginTop: 6 }}>
+              <DepartureChip departedAt={departedAt} size="sm" />
+            </View>
+          ) : null}
           <Text
             style={{
               fontFamily: fonts.medium,

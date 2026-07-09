@@ -53,6 +53,19 @@ export function isYmd(value: string | null | undefined): value is string {
   return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d;
 }
 
+/** Short Lagos wall-clock time from an ISO timestamp, e.g. "9:14 AM". Uses the
+ *  same fixed +1h offset + UTC-format trick as the date helpers, so it renders
+ *  correctly regardless of the device timezone (and without a tz library). */
+export function formatTimeLagos(iso: string): string {
+  const d = new Date(new Date(iso).getTime() + LAGOS_OFFSET_MS);
+  return d.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'UTC',
+  });
+}
+
 /** Human-friendly Lagos-locale date (e.g. "14 May 2026") from an ISO `YYYY-MM-DD`. */
 export function formatDateLagos(iso: string): string {
   // Parse as UTC to avoid local-time drift; format using en-GB which gives

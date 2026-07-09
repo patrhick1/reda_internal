@@ -19,6 +19,9 @@ import {
   type DeliveryRow,
 } from '@/services/deliveries';
 import { formatNaira, formatYmdShort } from '@/lib/format';
+import { formatTimeLagos } from '@/lib/date';
+import { errorMessage } from '@/lib/errors';
+import { getMyDepartureToday, setLeftWarehouse } from '@/services/agent-departures';
 import {
   Button,
   Card,
@@ -86,11 +89,38 @@ export default function AgentToday() {
     error: postponedError,
     reload: reloadPostponed,
   } = useAsync(() => listAgentPostponed(user.userId), [user.userId]);
+  // "Left the warehouse" state for today — drives the hero control and, once set,
+  // lets ops (warehouse/dispatcher/rep) see this rider is on the road.
+  const departureQ = useAsync(() => getMyDepartureToday(user.userId), [user.userId]);
   useFocusEffect(
     useCallback(() => {
       reload();
       reloadPostponed();
+      departureQ.reload();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [reload, reloadPostponed]),
+  );
+
+  // Optimistic override so the toggle feels instant: undefined = trust the
+  // server value, string = optimistically departed, null = optimistically not.
+  const [departPending, setDepartPending] = useState(false);
+  const [departOptimistic, setDepartOptimistic] = useState<string | null | undefined>(undefined);
+  const departedAt = departOptimistic !== undefined ? departOptimistic : (departureQ.data ?? null);
+  const toggleDeparture = useCallback(
+    async (next: boolean) => {
+      setDepartPending(true);
+      setDepartOptimistic(next ? new Date().toISOString() : null);
+      try {
+        await setLeftWarehouse(next);
+        await departureQ.reload();
+      } catch (e) {
+        Alert.alert('Could not update', errorMessage(e));
+      } finally {
+        setDepartOptimistic(undefined); // fall back to the now-refreshed server value
+        setDepartPending(false);
+      }
+    },
+    [departureQ],
   );
 
   // Status segment + customer-name search. Both are client-side narrows over the
@@ -326,6 +356,82 @@ export default function AgentToday() {
             value={`${stats.delivered}/${stats.total}`}
             accent={colors.black}
           />
+        </View>
+
+        {/* "Left the warehouse" — the rider taps this on their way out so ops
+            (warehouse / dispatcher / rep) can see they're on the road without
+            having to ask. Optimistic + undoable; the state is per-day and
+            clears itself tomorrow. */}
+        <View style={{ marginTop: 14 }}>
+          {departedAt ? (
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                backgroundColor: colors.successSoft,
+                borderRadius: 14,
+                paddingVertical: 10,
+                paddingHorizontal: 12,
+              }}
+            >
+              <View
+                style={{
+                  width: 38,
+                  height: 38,
+                  borderRadius: 19,
+                  backgroundColor: colors.success,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Icon name="check" size={20} color={colors.white} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.successDark }}>
+                  You&apos;re on the road
+                </Text>
+                <Text
+                  style={{
+                    fontFamily: fonts.medium,
+                    fontSize: 12,
+                    color: colors.successDark,
+                    opacity: 0.9,
+                    marginTop: 2,
+                  }}
+                >
+                  Left the warehouse · {formatTimeLagos(departedAt)}
+                </Text>
+              </View>
+              <Pressable
+                onPress={departPending ? undefined : () => toggleDeparture(false)}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel="Undo — I have not left the warehouse"
+              >
+                <Text
+                  style={{
+                    fontFamily: fonts.bold,
+                    fontSize: 13,
+                    color: colors.successDark,
+                    opacity: departPending ? 0.5 : 1,
+                  }}
+                >
+                  Undo
+                </Text>
+              </Pressable>
+            </View>
+          ) : (
+            <Button
+              variant="secondary"
+              full
+              icon="truck"
+              disabled={departPending}
+              onPress={() => toggleDeparture(true)}
+            >
+              I&apos;ve left the warehouse
+            </Button>
+          )}
         </View>
       </View>
 

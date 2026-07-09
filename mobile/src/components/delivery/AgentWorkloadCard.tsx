@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { Avatar, Card, SectionHeader } from '@/components/ui';
+import { DepartureChip } from '@/components/agent/DepartureChip';
 import type { DeliveryRow } from '@/services/deliveries';
 import type { AppUser } from '@/services/users';
 import { colors, fonts } from '@/lib/theme';
@@ -30,6 +31,7 @@ export function AgentWorkloadCard({
   agents,
   loading,
   onAgentPress,
+  departedAtByAgent,
 }: {
   deliveries: DeliveryRow[];
   agents: AppUser[];
@@ -39,6 +41,10 @@ export function AgentWorkloadCard({
    *  agent (?agent=). Omitted (e.g. a future read-only context) → rows are
    *  static, no Pressable wrapper. */
   onAgentPress?: (agentId: string) => void;
+  /** Optional agent_id → departed_at (ISO) map for agents who've left the
+   *  warehouse today. When passed, a rider's row shows an "On the road" chip so
+   *  reps don't relay messages to someone already in transit. Omitted → no chip. */
+  departedAtByAgent?: ReadonlyMap<string, string>;
 }) {
   // Busiest agents float to the top so the zero-workload rows don't push
   // the actionable ones below the fold. Alphabetical tiebreaker keeps the
@@ -127,6 +133,11 @@ export function AgentWorkloadCard({
                   >
                     {workloadSummary(done, total, available, pending)}
                   </Text>
+                  {departedAtByAgent?.get(agent.id) ? (
+                    <View style={{ marginTop: 6 }}>
+                      <DepartureChip departedAt={departedAtByAgent.get(agent.id)} size="sm" />
+                    </View>
+                  ) : null}
                   <View
                     style={{
                       marginTop: 6,
