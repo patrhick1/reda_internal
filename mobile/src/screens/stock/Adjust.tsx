@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { router } from 'expo-router';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Field } from '@/components/Field';
@@ -55,14 +55,26 @@ export function StockAdjustScreen({ scope }: StockAdjustScreenProps) {
   const { submitting, setSubmitting, error, setError, finish, retrying } =
     useQueuedSubmit(adjustFailureMessage);
 
-  // Load products when client changes
-  useMemo(() => {
+  // Load products when the client changes. Fetching + setState is a side effect,
+  // so it belongs in useEffect, not useMemo. The cancel flag drops an in-flight
+  // response once the client changes again, so a slow earlier request can't land
+  // after a newer one and leave stale product options for the wrong client.
+  useEffect(() => {
     setProductId(null);
     setProducts([]);
     if (!clientId) return;
+    let cancelled = false;
     listActiveProductsByClient(clientId)
-      .then((p) => setProducts(p.map((x) => ({ id: x.id, product_name: x.product_name }))))
-      .catch((e) => setError(errorMessage(e)));
+      .then((p) => {
+        if (cancelled) return;
+        setProducts(p.map((x) => ({ id: x.id, product_name: x.product_name })));
+      })
+      .catch((e) => {
+        if (!cancelled) setError(errorMessage(e));
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [clientId, setError]);
 
   // Holders only: agents + warehouse PLACES (staff are never holders).

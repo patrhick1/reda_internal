@@ -118,17 +118,13 @@ export async function listCurrentStock(): Promise<StockMatrixRow[]> {
     });
 }
 
-/** Stock visible to a specific user (their own only). Used by Agent My Stock view. */
-export async function listMyStock(userId: string): Promise<StockMatrixRow[]> {
-  const all = await listCurrentStock();
-  return all.filter((r) => r.user_id === userId);
-}
-
-/** Stock held by ONE holder (agent or warehouse place), non-zero only. Unlike
- *  listMyStock this filters on the server (`agent_id = holderId`) and only
- *  resolves the names for that holder's products — so it doesn't pull the whole
- *  stock matrix. Used by the transfer product picker, which only needs the
- *  source's on-hand. Same shape + sort (by product name) as listCurrentStock. */
+/** Stock held by ONE holder (agent or warehouse place), non-zero only. Filters
+ *  on the server (`agent_id = holderId`) and only resolves the names for that
+ *  holder's products, so it never pulls the whole matrix. This is how an agent's
+ *  own "My stock" and each warehouse home are scoped — current_stock isn't
+ *  row-restricted, so listCurrentStock would ship every holder's stock + the
+ *  staff roster to the device. Also feeds the transfer/receive product pickers.
+ *  Same shape + sort (by product name) as listCurrentStock. */
 export async function listHolderStock(holderId: string): Promise<StockMatrixRow[]> {
   const stockRes = await supabase.from('current_stock').select('*').eq('agent_id', holderId);
   if (stockRes.error) throw stockRes.error;

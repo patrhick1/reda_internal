@@ -8,10 +8,11 @@
 // (canReceiveStock / canDoWarehouseTransfer / canAdjustAnyStock /
 // canAdjustOwnStock). Dispatcher remains Transfer-only by design — the
 // (dispatcher)/stock/_layout.tsx comment is authoritative on why.
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
   listCurrentStock,
@@ -69,14 +70,11 @@ export function StockOverview({ basePath }: { basePath: StockBasePath }) {
   const usersQ = useAsync(() => listUsers(), []);
   const clientsQ = useAsync<Client[]>(() => listClients(), []);
 
-  useFocusEffect(
-    useCallback(() => {
-      stockQ.reload();
-      usersQ.reload();
-      clientsQ.reload();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []),
-  );
+  useReloadOnFocus(() => {
+    stockQ.reload();
+    usersQ.reload();
+    clientsQ.reload();
+  });
 
   const [tab, setTab] = useState<Tab>('holder');
   const [query, setQuery] = useState('');

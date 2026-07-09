@@ -5,12 +5,13 @@
 // list, with the three write CTAs (Receive / Transfer / Adjust) demoted
 // to a compact row + overflow sheet. The Available orders card is kept
 // because warehouse staff plan their day around it.
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
-import { listCurrentStock, type StockMatrixRow } from '@/services/stock';
+import { listHolderStock, type StockMatrixRow } from '@/services/stock';
 import { listAvailableOrders } from '@/services/available-orders';
 import { AppBar, Button, Card, Empty, FilterChips, Icon, Input, Sheet } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
@@ -22,28 +23,26 @@ type ProductFilter = 'all' | 'low' | 'negative';
 export default function WarehouseHome() {
   const router = useRouter();
   const user = useCurrentUser();
-  const stockQ = useAsync(() => listCurrentStock(), []);
+  // The holder = the warehouse PLACE this staff member acts on. For a staff
+  // user that IS the place, warehouseId is null and we fall back to userId.
+  const holderId = user.warehouseId ?? user.userId;
+
+  // Scope the fetch to this place's own stock server-side. current_stock is NOT
+  // row-restricted (the view isn't security_invoker), so listCurrentStock would
+  // ship the entire matrix + staff roster to the device just to render one
+  // shelf. listHolderStock adds `agent_id = holderId`, so we pull only what we
+  // show. Cross-holder views live on the Agent-stock / By-client screens.
+  const stockQ = useAsync(() => listHolderStock(holderId), [holderId]);
   const availableQ = useAsync(() => listAvailableOrders(), []);
 
-  useFocusEffect(
-    useCallback(() => {
-      stockQ.reload();
-      availableQ.reload();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []),
-  );
+  useReloadOnFocus(() => {
+    stockQ.reload();
+    availableQ.reload();
+  });
 
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<ProductFilter>('all');
   const [overflowOpen, setOverflowOpen] = useState(false);
-
-  // The holder = the warehouse PLACE this staff member acts on. For a staff
-  // user that IS the place, warehouseId is null and we fall back to userId.
-  // NOTE: current_stock is NOT row-restricted to this place — the view isn't
-  // security_invoker, so it returns the full matrix to any authenticated user.
-  // The scoping below (holderRows) is purely client-side: this home shows only
-  // the place's own stock. The cross-holder view lives on the By-client screen.
-  const holderId = user.warehouseId ?? user.userId;
 
   const allRows = useMemo(() => stockQ.data ?? [], [stockQ.data]);
   const holderRows = useMemo(

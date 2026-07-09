@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useMemo } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -7,10 +7,11 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
-import { listMyStock, type StockMatrixRow } from '@/services/stock';
+import { listHolderStock, type StockMatrixRow } from '@/services/stock';
 import { AppBar, Card, Empty, Icon } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 import { isLow, isNegative } from '@/lib/stock-helpers';
@@ -18,12 +19,15 @@ import { isLow, isNegative } from '@/lib/stock-helpers';
 export default function AgentStock() {
   const user = useCurrentUser();
   const router = useRouter();
-  const { data, loading, error, reload } = useAsync(() => listMyStock(user.userId), [user.userId]);
-  useFocusEffect(
-    useCallback(() => {
-      reload();
-    }, [reload]),
+  // Own holdings only — scoped server-side to this rider (listHolderStock adds
+  // `agent_id = userId`). Pulling the whole current_stock matrix and filtering
+  // client-side would ship every holder's stock + the staff roster to the
+  // device (current_stock isn't row-restricted), so we never do that here.
+  const { data, loading, error, reload } = useAsync(
+    () => listHolderStock(user.userId),
+    [user.userId],
   );
+  useReloadOnFocus(reload);
 
   const totals = useMemo(() => {
     const rows = data ?? [];

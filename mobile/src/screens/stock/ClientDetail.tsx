@@ -11,8 +11,9 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
   listCurrentStock,
@@ -39,13 +40,10 @@ export function ClientStockDetail({ basePath }: { basePath?: '/(admin)' | '/(dis
     () => (id ? listActiveProductsByClient(id) : Promise.resolve([])),
     [id],
   );
-  useFocusEffect(
-    useCallback(() => {
-      stockQ.reload();
-      productsQ.reload();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []),
-  );
+  useReloadOnFocus(() => {
+    stockQ.reload();
+    productsQ.reload();
+  });
 
   const group = useMemo<ClientStockGroup | null>(() => {
     const all = groupByClient(stockQ.data ?? []);
@@ -83,19 +81,19 @@ export function ClientStockDetail({ basePath }: { basePath?: '/(admin)' | '/(dis
     () => products.filter((p) => p.total_qty === 0).length,
     [products],
   );
+  // Only products we actually hold are shareable — a client with catalog
+  // products but zero on hand would otherwise produce a header-only message.
+  const inStockProducts = useMemo(() => products.filter((p) => p.total_qty > 0), [products]);
 
   const onShare = useCallback(async () => {
-    if (products.length === 0) return;
+    if (inStockProducts.length === 0) return;
     const dateLabel = formatDateLagos(todayLagos());
     const header = [`📦${clientName} Stock Update`, dateLabel].join('\n');
 
     // Client-facing: just the total on-hand per product (no warehouse/agents
     // split — the vendor only needs how many of theirs we hold, not where).
     // Out-of-stock products are omitted — the vendor only wants what we hold now.
-    const lines = products
-      .filter((p) => p.total_qty > 0)
-      .map((p) => `• ${p.product_name}: ${p.total_qty}`)
-      .join('\n');
+    const lines = inStockProducts.map((p) => `• ${p.product_name}: ${p.total_qty}`).join('\n');
 
     const message = `${header}\n\n${lines}\n\nSent from Reda Logistics`;
     try {
@@ -103,7 +101,7 @@ export function ClientStockDetail({ basePath }: { basePath?: '/(admin)' | '/(dis
     } catch {
       /* user cancelled */
     }
-  }, [clientName, products]);
+  }, [clientName, inStockProducts]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -211,7 +209,7 @@ export function ClientStockDetail({ basePath }: { basePath?: '/(admin)' | '/(dis
           full
           icon="share"
           onPress={onShare}
-          disabled={products.length === 0}
+          disabled={inStockProducts.length === 0}
         >
           Share with client
         </Button>

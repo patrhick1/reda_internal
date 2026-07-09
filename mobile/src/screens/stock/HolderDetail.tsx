@@ -8,10 +8,11 @@
 // enhancement could add horizontal swipe-pager UX on mobile only — left
 // as tech debt; the codebase doesn't have a carousel primitive yet, and
 // the arrow-button flow is keyboard-accessible on web (Tab + Enter).
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { listCurrentStock, type StockMatrixRow } from '@/services/stock';
 import { listUsers, isWarehousePlace, type AppUser } from '@/services/users';
 import { AppBar, Card, Empty, FilterChips, Icon, Input } from '@/components/ui';
@@ -37,13 +38,10 @@ export function HolderDetail({
   const stockQ = useAsync(() => listCurrentStock(), []);
   const usersQ = useAsync(() => listUsers(), []);
 
-  useFocusEffect(
-    useCallback(() => {
-      stockQ.reload();
-      usersQ.reload();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []),
-  );
+  useReloadOnFocus(() => {
+    stockQ.reload();
+    usersQ.reload();
+  });
 
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<ProductFilter>('all');
