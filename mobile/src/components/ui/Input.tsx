@@ -89,6 +89,13 @@ export function Input({
           onBlur={() => setIsFocused(false)}
           style={{
             flex: 1,
+            // On react-native-web the underlying <input> defaults to
+            // min-width:auto (~20ch), so a flex:1 input can't shrink below its
+            // intrinsic width. In a narrow row (e.g. the two-column reconcile
+            // From/To) it then overflows its column and pushes any rightAdornment
+            // sideways over the neighbouring field. minWidth:0 lets flex shrink it
+            // to the allocated width; harmless on native and full-width inputs.
+            minWidth: 0,
             fontFamily: fonts.medium,
             fontSize: 15,
             color: colors.black,
