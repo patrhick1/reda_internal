@@ -15,7 +15,7 @@ import {
   type MovementPeriod,
   type GlobalMovement,
 } from '@/services/stock-movements';
-import { todayLagos, daysAgoLagos, formatDayMonthLagos } from '@/lib/date';
+import { todayLagos, daysAgoLagos, formatDayMonthLagos, formatDateTimeLagos } from '@/lib/date';
 import { colors, fonts } from '@/lib/theme';
 
 /**
@@ -147,7 +147,7 @@ export function StockMovementSummaryScreen() {
                     {r.customer_name ?? 'Customer'}
                   </Text>
                   <Text style={styles.pSub}>
-                    {formatDayMonthLagos(r.event_at)}
+                    {formatDateTimeLagos(r.event_at)}
                     {r.holder_name ? ` · ${r.holder_name}` : ''}
                   </Text>
                 </View>

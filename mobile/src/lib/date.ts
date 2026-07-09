@@ -66,6 +66,24 @@ export function formatTimeLagos(iso: string): string {
   });
 }
 
+/** Compact Lagos date + wall-clock time from a full ISO timestamp, e.g.
+ *  "9 Jul, 8:18 PM". For event rows (deliveries, movements) that carry a real
+ *  timestamptz, not a `YYYY-MM-DD` — the day-only helpers below can't parse those
+ *  and would echo the raw ISO back. Same fixed +1h offset as the rest of the file. */
+export function formatDateTimeLagos(iso: string): string {
+  const ms = new Date(iso).getTime();
+  if (Number.isNaN(ms)) return iso;
+  const d = new Date(ms + LAGOS_OFFSET_MS);
+  const date = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  const time = d.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: 'UTC',
+  });
+  return `${date}, ${time}`;
+}
+
 /** Human-friendly Lagos-locale date (e.g. "14 May 2026") from an ISO `YYYY-MM-DD`. */
 export function formatDateLagos(iso: string): string {
   // Parse as UTC to avoid local-time drift; format using en-GB which gives
