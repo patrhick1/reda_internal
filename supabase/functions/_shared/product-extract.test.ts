@@ -13,7 +13,11 @@ import {
   extractWrappedRep,
   extractLabeledRep,
   extractVendorOrderRef,
+  sanitizeMessageText,
+  pickMatch,
+  SAME_CLIENT_MARGIN,
   type LineItem,
+  type ProductMatch,
 } from './product-extract.ts';
 
 const li = (p: string, q = 1, price: number | null = null, free = false): LineItem => ({
@@ -181,7 +185,7 @@ Deno.test('prompt: quantity rules cover same-product extras and independent line
 
 Deno.test('prompt: complete examples preserve strict-schema fields and field boundaries', () => {
   const exampleOutputs = PRODUCT_EXTRACTION_PROMPT.match(/Output: \{[^\n]+\}/g) ?? [];
-  assertEquals(exampleOutputs.length, 7);
+  assertEquals(exampleOutputs.length, 8);
   for (const output of exampleOutputs) {
     const parsed = JSON.parse(output.slice('Output: '.length));
     assertEquals(Object.keys(parsed).sort(), [
@@ -311,4 +315,72 @@ Deno.test('extractWrappedRep: no wrapped tail / blank → null', () => {
   assertEquals(extractWrappedRep(''), null);
   assertEquals(extractWrappedRep(null), null);
   assertEquals(extractWrappedRep(undefined), null);
+});
+
+// --- fix A: input sanitization (invisible-char corruption) ------------------
+
+Deno.test('sanitize: zero-width space inside a product name is stripped (the Cidea bug)', () => {
+  // Real inbound was "One Cidea \u200Btablet ..." — the ZWSP after "Cidea " made
+  // gpt-4.1-mini emit just "Tablet". Stripping it leaves a clean phrase.
+  assertEquals(sanitizeMessageText('One Cidea \u200Btablet at #135,000'), 'One Cidea tablet at #135,000');
+});
+
+Deno.test('sanitize: ZW joiners, word-joiner, BOM and soft hyphen are removed', () => {
+  assertEquals(sanitizeMessageText('a\u200Cb\u200Dc\u2060d\uFEFFe\u00ADf'), 'abcdef');
+});
+
+Deno.test('sanitize: NBSP and exotic spaces fold to a normal space', () => {
+  assertEquals(sanitizeMessageText('Cidea\u00A0Tablet'), 'Cidea Tablet');
+  assertEquals(sanitizeMessageText('a\u2009b\u3000c'), 'a b c');
+});
+
+Deno.test('sanitize: null/undefined -> "" and clean text is untouched', () => {
+  assertEquals(sanitizeMessageText(null), '');
+  assertEquals(sanitizeMessageText(undefined), '');
+  assertEquals(sanitizeMessageText('One Cidea tablet at #135,000'), 'One Cidea tablet at #135,000');
+});
+
+// --- fix B: pickMatch tie disambiguation ------------------------------------
+
+const pm = (id: string, client_id: string, score: number, product_name = id): ProductMatch => ({
+  id, client_id, product_name, score,
+});
+
+Deno.test('pickMatch: single candidate wins; empty -> null', () => {
+  const only = pm('cidea', 'A', 1);
+  assertEquals(pickMatch([only]), only);
+  assertEquals(pickMatch([]), null);
+});
+
+Deno.test('pickMatch: same-client TIE -> null (the Cidea/Airtab bug)', () => {
+  const airtab = pm('airtab', 'decency', 0.538462, 'Airtab Tablet');
+  const cidea = pm('cidea', 'decency', 0.538462, 'Cidea Tablet');
+  assertEquals(pickMatch([airtab, cidea]), null);
+});
+
+Deno.test('pickMatch: same-client CLEAR winner still auto-resolves', () => {
+  const cidea = pm('cidea', 'decency', 1.0, 'Cidea Tablet');
+  const airtab = pm('airtab', 'decency', 0.37, 'Airtab Tablet');
+  assertEquals(pickMatch([cidea, airtab])?.id, 'cidea');
+});
+
+Deno.test('pickMatch: same-client near-tie within margin -> null; beyond margin -> top', () => {
+  assertEquals(pickMatch([pm('a', 'X', 0.60), pm('b', 'X', 0.58)]), null);
+  assertEquals(pickMatch([pm('a', 'X', 0.60), pm('b', 'X', 0.50)])?.id, 'a');
+});
+
+Deno.test('pickMatch: cross-client still needs a >= 0.15 lead (unchanged)', () => {
+  assertEquals(pickMatch([pm('a', 'X', 0.60), pm('b', 'Y', 0.50)]), null);
+  assertEquals(pickMatch([pm('a', 'X', 0.60), pm('c', 'Z', 0.40)])?.id, 'a');
+});
+
+Deno.test('pickMatch: same-client margin is small and below the cross-client gate', () => {
+  assert(SAME_CLIENT_MARGIN > 0 && SAME_CLIENT_MARGIN < 0.15);
+});
+
+// --- prompt contract: keep the full/brand product name (rule 8) -------------
+
+Deno.test('prompt: instructs keeping the brand/model word, not the bare category', () => {
+  assertStringIncludes(PRODUCT_EXTRACTION_PROMPT, 'KEEP THE FULL, DISTINGUISHING PRODUCT NAME');
+  assertStringIncludes(PRODUCT_EXTRACTION_PROMPT, '"Cidea Tablet"');
 });

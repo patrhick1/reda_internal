@@ -31,6 +31,7 @@ import { denyIfNotInternal } from '../_shared/internal-auth.ts';
 import {
   PRODUCT_EXTRACTION_SCHEMA,
   PRODUCT_EXTRACTION_PROMPT,
+  sanitizeMessageText,
   coerceExtractedProducts,
   expandKnownCombos,
   extractTrailingRep,
@@ -43,9 +44,23 @@ import {
   type LineItem,
   type ProductMatch,
 } from '../_shared/product-extract.ts';
+import {
+  isCrossVendorTie,
+  vendorContenders,
+  classifyVendor,
+  VENDOR_CLASSIFIER_VERSION,
+  type VendorCandidate,
+} from '../_shared/vendor-classify.ts';
 
-const EXTRACTION_PROMPT_VERSION = 'bot-parse-v7-pack-of-qty-gpt-4.1-mini';
+const EXTRACTION_PROMPT_VERSION = 'bot-parse-v8-full-product-name-gpt-4.1-mini';
 const EXTRACTION_MODEL          = 'openai/gpt-4.1-mini';
+
+// Auto-resolve a "same product name, different vendor" tie only when the vendor
+// classifier is at least this confident; below it, the line stays unmatched and
+// the order goes to needs_review exactly as before. Chosen from the labeled-
+// history backtest (100% precision / ~95% coverage at 0.80). See
+// tools/vendor-classify-backtest.ts.
+const VENDOR_CLASSIFY_THRESHOLD = 0.80;
 
 // Hard cap on the OpenRouter request so a hung inference can't park a row in
 // status='queued' forever. gpt-4.1-mini typically returns in <5s; 30s leaves
@@ -231,7 +246,7 @@ async function openrouterExtract(text: string, model: string, apiKey: string): P
 // FILL gaps the contractor left — the contractor envelope still wins where set.
 async function openrouterExtractProducts(text: string, model: string, apiKey: string): Promise<{ parsed: ExtractedProducts | null; raw: any }> {
   const url = 'https://openrouter.ai/api/v1/chat/completions';
-  const prompt = PRODUCT_EXTRACTION_PROMPT.replace('{{TEXT}}', text);
+  const prompt = PRODUCT_EXTRACTION_PROMPT.replace('{{TEXT}}', sanitizeMessageText(text));
   const body = {
     model,
     messages:        [{ role: 'user', content: prompt }],
@@ -273,6 +288,60 @@ async function openrouterExtractProducts(text: string, model: string, apiKey: st
     } catch { /* fall through — parsed stays null */ }
   }
   return { parsed, raw: { ...json, _prompt_version: EXTRACTION_PROMPT_VERSION, _model: model } };
+}
+
+// Vendor disambiguation for the "same product name, different vendor" tie. Fires
+// only when pickMatch abstained on a genuine cross-vendor tie (isCrossVendorTie).
+// Pulls each contender vendor's recent messages as few-shot style examples and
+// asks the classifier which vendor wrote this order. Returns the chosen client_id
+// only when confidence >= threshold; otherwise null so the line stays unmatched
+// (→ needs_review, unchanged). Never throws — any failure (no API key, RPC not
+// applied, LLM/parse error) degrades to null. Memoized per message by the
+// contender client-id set, and every decision is appended to `audit` for the
+// parse_result trace.
+async function resolveCrossVendorTie(
+  pool: ProductMatch[],
+  rawText: string,
+  supabase: any,
+  cache: Map<string, string | null>,
+  audit: any[],
+): Promise<string | null> {
+  const contenders = vendorContenders(pool);
+  if (contenders.length < 2) return null;
+  const key = contenders.map((c) => c.client_id).sort().join('|');
+  if (cache.has(key)) return cache.get(key) ?? null;
+
+  const apiKey = Deno.env.get('OPENROUTER_API_KEY');
+  if (!apiKey) { cache.set(key, null); return null; }
+
+  const candidates: VendorCandidate[] = [];
+  for (const c of contenders) {
+    let examples: string[] = [];
+    try {
+      const { data } = await supabase.rpc('get_vendor_example_messages', {
+        p_client_id: c.client_id, p_limit: 5, p_exclude_delivery: null,
+      });
+      examples = Array.isArray(data)
+        ? data.map((r: any) => r?.raw_text).filter((x: any): x is string => typeof x === 'string')
+        : [];
+    } catch { /* RPC missing or query failed → no examples → classifier abstains */ }
+    candidates.push({ client_id: c.client_id, client_name: c.client_name, examples });
+  }
+
+  const res = await classifyVendor(rawText, candidates, apiKey);
+  const accepted = res.client_id !== null && res.confidence >= VENDOR_CLASSIFY_THRESHOLD;
+  audit.push({
+    contenders: contenders.map((c) => ({ client_id: c.client_id, client_name: c.client_name })),
+    chosen_client_id: res.client_id,
+    confidence: res.confidence,
+    reason: res.reason,
+    accepted,
+    threshold: VENDOR_CLASSIFY_THRESHOLD,
+    version: VENDOR_CLASSIFIER_VERSION,
+  });
+  const resolved = accepted ? res.client_id : null;
+  cache.set(key, resolved);
+  return resolved;
 }
 
 // [Feature A] Read a contractor-supplied products[] array if one is ever present
@@ -558,6 +627,12 @@ Deno.serve(async (req) => {
   // message so it works even when the LLM collapsed the set to one variant.
   lineItems = expandKnownCombos(lineItems, row.raw_text ?? '');
 
+  // Vendor-classifier state, shared across this message's lines: memoize by the
+  // contender client-id set so a repeated tie isn't re-classified, and collect
+  // every decision for the parse_result audit trail.
+  const vendorClassifyCache = new Map<string, string | null>();
+  const vendorClassifications: any[] = [];
+
   const lineMatches: Array<{ line: LineItem; match: ProductMatch | null; candidates: any[] }> = [];
   for (const li of lineItems) {
     const name = li.product_name?.trim();
@@ -575,7 +650,22 @@ Deno.serve(async (req) => {
       );
       if (hinted.length > 0) pool = hinted;
     }
-    lineMatches.push({ line: li, match: pickMatch(pool as ProductMatch[]), candidates: pool });
+    let match = pickMatch(pool as ProductMatch[]);
+    // Same product name across >1 vendor with no contractor hint: pickMatch
+    // abstains (cross-client tie). Recover the vendor from the message's writing
+    // style; on confident success, take that vendor's best-scoring SKU as the
+    // match. Unconfident / any failure → match stays null → needs_review.
+    if (!match && isCrossVendorTie(pool as ProductMatch[])) {
+      const chosen = await resolveCrossVendorTie(
+        pool as ProductMatch[], row.raw_text ?? '', supabase, vendorClassifyCache, vendorClassifications,
+      );
+      if (chosen) {
+        match = (pool as ProductMatch[])
+          .filter((m) => m.client_id === chosen)
+          .sort((a, b) => b.score - a.score)[0] ?? null;
+      }
+    }
+    lineMatches.push({ line: li, match, candidates: pool });
   }
 
   const matchedLines     = lineMatches.filter((r) => r.match);
@@ -696,6 +786,7 @@ Deno.serve(async (req) => {
       candidates: r.candidates,
     })),
     items:             resolvedItems,                 // what we'll store as delivery_items
+    vendor_classifications: vendorClassifications,    // cross-vendor tie decisions ([] when none fired)
     client_id_conflict: multiVendor,                  // true → bundle spans clients
     unmatched_count:    blockingUnmatched.length,     // [free-gift] free unmatched lines don't count
     dropped_free_gifts: droppedFreeGifts,             // [free-gift] unmatched freebies we dropped

@@ -109,6 +109,8 @@ PRODUCT-NAME NORMALIZATION — return the real catalog product, never the market
   7. KNOWN 2-PRODUCT BUNDLE: "Opulent X Khamrah" (also written "Opulent Z Khamrah", "Opulent X Khakrah", "Opulent Oud X Khamrah Dukhan") is a bundle of TWO products, not one. Expand it to two lines — {product_name:"Opulent Oud", quantity:N} and {product_name:"Khamrah Dukhan", quantity:N}, where N is the bundle's quantity (default 1).
        "1 Opulent X Khamrah" -> [{product_name:"Opulent Oud", quantity:1},{product_name:"Khamrah Dukhan", quantity:1}]
        EXCEPTION — do NOT double-count: if the SAME message also spells out "Opulent Oud" and "Khamrah Dukhan" as their own line items (e.g. a header "OPULENT X KHAMRAH ORDER ..." followed by a body "1 OPULENT OUD + 1 KHAMRAH DUKHAN + ..."), then the "Opulent X Khamrah" text is just the order title — ignore it and use ONLY the itemized lines.
+  8. KEEP THE FULL, DISTINGUISHING PRODUCT NAME — never collapse a product to a bare category word. Return every BRAND / MODEL / VARIANT word the customer wrote: the catalog tells near-identical products apart by exactly those words, so dropping one matches the WRONG product. "Cidea tablet" is "Cidea Tablet" (NOT "Tablet"); "Airtab tablet" is "Airtab Tablet"; "Bugatti perfume" is "Bugatti Perfume" (NOT "Perfume"); "P20 power bank" is "P20 Power Bank". Strip ONLY packaging / quantity / price filler (rules 2–5) — always keep the brand/model word.
+       "One Cidea tablet at #135,000" -> [{product_name:"Cidea Tablet", quantity:1, customer_price:135000}]
 
 Do NOT include the Total line as a product. Do NOT invent products that aren't in the message.
 Ignore order-reference / SKU-header lines — a product code or order label such as "OUD AL LAYL BROWN SINGLE WITH OIL 2246-U" or "OPULENT ORDER 252-O" is metadata, not a product line.
@@ -145,10 +147,31 @@ Example 7 — the rep is given by a label, lowercase; Title-case it.
 Input: Name: Halima. Phone 1: 08000000008. Phone 2: 08000000008. Address: Mushin, Lagos. Product: Stand Again Oil. 2 Unit + Free Delivery & Payment On Delivery. Price: NGN30,000. CALL REP patience
 Output: {"customer_name":"Halima","customer_phone":"08000000008","customer_phone_alt":null,"raw_address":"Mushin, Lagos","instructions":null,"client_rep":"Patience","total_amount":30000,"products":[{"product_name":"Stand Again Oil","quantity":2,"customer_price":30000,"free":false}]}
 
+Example 8 — keep the brand/model word; the bare category is NOT the product.
+Input: Name: Ibrahim. Phone: 08000000009. Address: Victoria Island, Lagos. One Cidea tablet at #135,000. Payment on Delivery.
+Output: {"customer_name":"Ibrahim","customer_phone":"08000000009","customer_phone_alt":null,"raw_address":"Victoria Island, Lagos","instructions":null,"client_rep":null,"total_amount":135000,"products":[{"product_name":"Cidea Tablet","quantity":1,"customer_price":135000,"free":false}]}
+
 Message:
 """
 {{TEXT}}
 """`;
+
+// --- input sanitization -----------------------------------------------------
+// WhatsApp forwards routinely carry invisible / exotic Unicode that corrupts
+// extraction. A zero-width space (U+200B) wedged between "Cidea" and "tablet"
+// ("Cidea​tablet") made gpt-4.1-mini drop the brand and emit just "Tablet"
+// — which then tied "Airtab Tablet" and "Cidea Tablet" in the matcher and
+// resolved to the wrong SKU (2026-07-09). Strip zero-width / formatting chars
+// and fold exotic spaces to a normal space BEFORE the text reaches the LLM, so
+// the model sees the words the customer actually typed. Deliberately minimal —
+// it only removes / normalizes characters that are never meaningful order data.
+export function sanitizeMessageText(raw: string | null | undefined): string {
+  if (!raw) return '';
+  return raw
+    .replace(/[\u200B\u200C\u200D\u2060\uFEFF]/g, '') // zero-width space/joiners, word-joiner, BOM
+    .replace(/\u00AD/g, '') // soft hyphen
+    .replace(/[\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000]/g, ' '); // NBSP + exotic spaces -> normal space
+}
 
 export type LineItem = {
   product_name:   string | null;
@@ -429,8 +452,14 @@ export function expandKnownCombos(products: LineItem[], rawText: string): LineIt
 // Identical rules to today's single-product matcher, applied PER line item so
 // multi-product rows behave exactly like single-product rows:
 //   - exactly one candidate wins;
-//   - if every candidate is the same client, the top-scored wins;
-//   - else the top wins only if it leads the runner-up by >= 0.15 score;
+//   - same-client candidates: the top wins ONLY if it leads the runner-up by
+//     >= SAME_CLIENT_MARGIN. An exact/near tie between two SKUs of the SAME
+//     client is genuinely ambiguous — e.g. a bare "Tablet" scores "Airtab
+//     Tablet" and "Cidea Tablet" both 0.54 — so return null and let the caller
+//     route it to needs_review instead of silently taking the RPC's first row
+//     (which is what recorded "Cidea Tablet" as "Airtab Tablet", 2026-07-09);
+//   - cross-client candidates: the top wins only if it leads the runner-up by
+//     >= 0.15 score;
 //   - otherwise null -> the caller routes that line to needs_review.
 // `candidates` is the result of match_products_by_text for ONE line, assumed
 // sorted by descending score (as the RPC returns them). The RPC's row shape is
@@ -444,13 +473,18 @@ export type ProductMatch = {
   score:        number;
 };
 
+// Minimum score lead the top same-client SKU must have over the runner-up to
+// auto-resolve; a smaller gap is treated as an ambiguous tie -> needs_review.
+export const SAME_CLIENT_MARGIN = 0.05;
+
 export function pickMatch(candidates: ProductMatch[]): ProductMatch | null {
   if (candidates.length === 1) return candidates[0];
   if (candidates.length === 0) return null;
   const top = candidates[0];
+  const runnerUp = candidates[1]?.score ?? 0;
   const sameClient = candidates.every((m) => m.client_id === top.client_id);
-  if (sameClient) return top;
-  if ((candidates[1]?.score ?? 0) + 0.15 <= top.score) return top;
+  if (sameClient) return runnerUp + SAME_CLIENT_MARGIN <= top.score ? top : null;
+  if (runnerUp + 0.15 <= top.score) return top;
   return null;
 }
 
