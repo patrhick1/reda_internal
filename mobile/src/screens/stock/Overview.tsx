@@ -42,6 +42,7 @@ import {
   canAdjustAnyStock,
   canAdjustOwnStock,
   canViewGlobalStockHistory,
+  canRecordStockCount,
 } from '@/lib/permissions';
 import { getHolderStats, getOverviewStats, type HolderStats } from '@/lib/stock-helpers';
 import { ClientStockCard } from '@/components/stock/ClientStockCard';
@@ -154,9 +155,11 @@ export function StockOverview({ basePath }: { basePath: StockBasePath }) {
   // Company-wide movement history (ops oversight). Lives in the overflow sheet so
   // it surfaces for dispatchers too, who have no Receive/Adjust of their own.
   const showGlobalHistory = canViewGlobalStockHistory(user.role);
+  // Count & reconcile (report-only physical count) — admin + dispatcher.
+  const showCount = canRecordStockCount(user.role);
   // Overflow sheet only meaningful if there's ≥2 actions OR a non-transfer
   // action that wouldn't fit beside the primary Transfer button.
-  const showOverflow = showReceive || showAdjust || showGlobalHistory;
+  const showOverflow = showReceive || showAdjust || showGlobalHistory || showCount;
 
   // Responsive: 1-col on phones, 2 on tablets/narrow web, 3 on full web.
   // Key swap is required when numColumns changes on a FlatList (RN rule).
@@ -343,6 +346,17 @@ export function StockOverview({ basePath }: { basePath: StockBasePath }) {
           its permission helper returns true so the sheet is empty-safe. */}
       <Sheet open={overflowOpen} onClose={() => setOverflowOpen(false)} title="More actions">
         <View style={{ gap: 8 }}>
+          {showCount ? (
+            <ActionRow
+              icon="check"
+              label="Count stock"
+              sub="Reconcile a shelf or rider against the app — report only, no changes"
+              onPress={() => {
+                setOverflowOpen(false);
+                router.push(`${basePath}/stock/count` as `${StockBasePath}/stock/count`);
+              }}
+            />
+          ) : null}
           {showGlobalHistory ? (
             <ActionRow
               icon="history"
@@ -612,7 +626,7 @@ function ActionRow({
   sub,
   onPress,
 }: {
-  icon: 'arrowDown' | 'edit' | 'history';
+  icon: 'arrowDown' | 'edit' | 'history' | 'check';
   label: string;
   sub: string;
   onPress: () => void;

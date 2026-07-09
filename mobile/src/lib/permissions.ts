@@ -195,6 +195,14 @@ export function canCorrectStock(role: Role): boolean {
   return role === 'admin';
 }
 
+/** Record a physical stock count for reconciliation. Report-only — it never
+ *  changes the ledger, so it's gated more broadly than adjustments: admin +
+ *  dispatcher (any holder) + warehouse (own place, enforced server-side).
+ *  Server anchor: record_stock_count permission gate. */
+export function canRecordStockCount(role: Role): boolean {
+  return role === 'admin' || role === 'dispatcher' || role === 'warehouse';
+}
+
 /** Start a brand-new delivery from scratch. Admin + dispatcher only — reps are
  *  the coordination/comms layer with vendors and don't author new orders; new
  *  deliveries enter the system via the bot pipeline or admin/dispatcher.
