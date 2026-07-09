@@ -756,7 +756,7 @@ function HistoryRow({
   /** When ops has tagged this status "client notified", who + when. Read-only. */
   notification?: ClientNotificationRow;
 }) {
-  const reasonLine = historyReasonLine(row.to_status, row.reason);
+  const reasonLine = historyReasonLine(row.to_status, row.reason, row.scheduled_date);
   return (
     <View style={{ flexDirection: 'row', gap: 12 }}>
       <View style={{ alignItems: 'center', paddingTop: 4 }}>

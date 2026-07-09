@@ -1233,7 +1233,7 @@ function HistoryRow({
   canMark: boolean;
   onMark: (historyId: string) => void;
 }) {
-  const reasonLine = historyReasonLine(row.to_status, row.reason);
+  const reasonLine = historyReasonLine(row.to_status, row.reason, row.scheduled_date);
   return (
     <View style={{ flexDirection: 'row', gap: 12 }}>
       <View style={{ alignItems: 'center', paddingTop: 4 }}>

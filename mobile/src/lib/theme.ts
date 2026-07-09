@@ -1,6 +1,8 @@
 // Reda design tokens — translated from the brand kit. Keep this file as the
 // single source of truth; never inline hex colors or font names in screens.
 
+import { formatYmdShort } from './format';
+
 export const colors = {
   red: '#E63027',
   redDim: '#C42821',
@@ -165,10 +167,25 @@ const ISSUE_BUCKET_REASONS = new Set<string>([
  *  Precedence therefore: a genuine free-text reason is shown verbatim; only when
  *  the reason is empty or one of the coarse buckets do we fall back to the
  *  status's canned phrase (or nothing). */
-export function historyReasonLine(toStatus: string, reason: string | null): string | null {
+export function historyReasonLine(
+  toStatus: string,
+  reason: string | null,
+  scheduledDate?: string | null,
+): string | null {
   const trimmed = reason?.trim();
   if (trimmed && !ISSUE_BUCKET_REASONS.has(trimmed)) return trimmed;
-  return STATUS_CLIENT_PHRASE[toStatus] ?? null;
+  const phrase = STATUS_CLIENT_PHRASE[toStatus] ?? null;
+  // A postpone's most useful fact is WHEN it's coming back. Append the postpone-to
+  // date to the canned "Customer postponed" phrase so the timeline line — and the
+  // rep's one-tap "Copy note" — reads e.g. "Customer postponed to Thu, 10 Jul".
+  // scheduledDate is the delivery's target date: correct for every single-postpone
+  // row and the latest postpone of any delivery (only a re-postpone's earlier row
+  // could show the newer target, which is rare). Free-text reasons (returned above)
+  // are the agent's own words and already imply timing, so we leave those untouched.
+  if (phrase === STATUS_CLIENT_PHRASE.postponed && scheduledDate) {
+    return `${phrase} to ${formatYmdShort(scheduledDate)}`;
+  }
+  return phrase;
 }
 
 export const STATUS_GROUPS: Record<'active' | 'soft' | 'done' | 'closed', string[]> = {
