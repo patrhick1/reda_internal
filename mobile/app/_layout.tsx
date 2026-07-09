@@ -21,6 +21,7 @@ import { setupCallKeep, addAnswerListener, addEndListener } from '@/lib/calls/ca
 import * as callCoord from '@/lib/calls/coordinator';
 import { useIncomingCallSubscription } from '@/hooks/useIncomingCallSubscription';
 import { IncomingCallOverlay } from '@/components/IncomingCallOverlay';
+import { AutoUpdateBanner } from '@/components/AutoUpdateBanner';
 
 initSentry();
 configureNotifications();
@@ -159,6 +160,9 @@ function AuthGate() {
   return (
     <>
       <Slot />
+      {/* Foreground OTA auto-updater. Self-guards to real native builds
+          (Updates.isEnabled) and renders nothing until an update is staged. */}
+      <AutoUpdateBanner />
       {/* Calls aren't supported on web (Agora bridge + CallKeep ring UI are
           native-only). Skip mounting the overlay entirely; users see the
           "Calls work on the mobile app" hint at the call entry points. */}
