@@ -67,6 +67,19 @@ const VENDOR_CLASSIFY_THRESHOLD = 0.80;
 // generous headroom while guaranteeing we always reach the error path.
 const REQUEST_TIMEOUT_MS = 30_000;
 
+// Extraction resilience. A transient upstream blip (timeout / 429 / 5xx /
+// unparseable JSON) used to drop the order straight to `error` with no delivery
+// created. We now retry the primary model with exponential backoff, then fall
+// back to a second model before giving up. Each entry is {model, attempts};
+// worst-case added latency ≈ Σ(attempts) × REQUEST_TIMEOUT_MS, only ever hit in a
+// full upstream outage (normal 429/5xx failures return fast).
+const FALLBACK_EXTRACTION_MODEL = 'moonshotai/kimi-k2.5';
+const EXTRACTION_ATTEMPTS: { model: string; attempts: number }[] = [
+  { model: EXTRACTION_MODEL,          attempts: 3 }, // gpt-4.1-mini ×3
+  { model: FALLBACK_EXTRACTION_MODEL, attempts: 2 }, // then Kimi K2.5 ×2
+];
+const RETRY_BASE_DELAY_MS = 500;
+
 // OpenAI-strict-style JSON schema for the extraction output. OpenRouter passes
 // this through to providers that support strict structured outputs (no markdown
 // wrapping, no extra keys, type-checked). Mirrors the Extracted type below.
@@ -290,6 +303,45 @@ async function openrouterExtractProducts(text: string, model: string, apiKey: st
   return { parsed, raw: { ...json, _prompt_version: EXTRACTION_PROMPT_VERSION, _model: model } };
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Retry + fallback wrapper around openrouterExtractProducts. Tries each configured
+// model up to its attempt budget, backing off between tries, and returns the first
+// successful parse (tagged with the model that produced it) or the last failure.
+// openrouterExtractProducts never throws — a failed call returns parsed:null with
+// an error body in `raw` — so null is treated as "retryable". Records the per-attempt
+// trail in raw._attempts for post-mortem. (The vendor classifier is untouched: it
+// already abstains safely on its own failures.)
+async function extractProductsWithRetry(
+  text: string,
+  apiKey: string,
+): Promise<{ parsed: ExtractedProducts | null; raw: any; model: string }> {
+  let lastRaw: any = null;
+  let lastModel = EXTRACTION_ATTEMPTS[0].model;
+  const attemptLog: { model: string; attempt: number; ok: boolean }[] = [];
+  for (let m = 0; m < EXTRACTION_ATTEMPTS.length; m++) {
+    const { model, attempts } = EXTRACTION_ATTEMPTS[m];
+    for (let i = 0; i < attempts; i++) {
+      lastModel = model;
+      const out = await openrouterExtractProducts(text, model, apiKey);
+      attemptLog.push({ model, attempt: i + 1, ok: !!out.parsed });
+      if (out.parsed) {
+        return { parsed: out.parsed, raw: { ...out.raw, _attempts: attemptLog }, model };
+      }
+      lastRaw = out.raw;
+      const isFinalAttempt = m === EXTRACTION_ATTEMPTS.length - 1 && i === attempts - 1;
+      if (!isFinalAttempt) {
+        // Exponential backoff (per-model) with jitter to ride out a 429/5xx spike.
+        const delay = RETRY_BASE_DELAY_MS * 2 ** i + Math.floor(Math.random() * 250);
+        console.warn('extraction attempt failed; retrying', { model, attempt: i + 1, next_delay_ms: delay });
+        await sleep(delay);
+      }
+    }
+  }
+  console.error('extraction failed after all attempts', { attempts: attemptLog });
+  return { parsed: null, raw: { ...(lastRaw ?? {}), _attempts: attemptLog }, model: lastModel };
+}
+
 // Vendor disambiguation for the "same product name, different vendor" tie. Fires
 // only when pickMatch abstained on a genuine cross-vendor tie (isCrossVendorTie).
 // Pulls each contender vendor's recent messages as few-shot style examples and
@@ -460,6 +512,9 @@ Deno.serve(async (req) => {
   const contractorProducts = extractContractorProducts(row.raw_payload);
 
   let extractionRaw: any = null;
+  // Which model actually produced the extraction (primary or fallback) — recorded
+  // in the audit parse_result. Null on the contractor-only path (no LLM ran).
+  let extractionModelUsed: string | null = null;
   let source: 'contractor' | 'contractor+openrouter' | 'openrouter';
 
   // Envelope (start from contractor; LLM fills gaps below).
@@ -495,13 +550,14 @@ Deno.serve(async (req) => {
       });
       return new Response('OPENROUTER_API_KEY missing', { status: 500 });
     }
-    const out = await openrouterExtractProducts(row.raw_text, EXTRACTION_MODEL, apiKey);
+    const out = await extractProductsWithRetry(row.raw_text, apiKey);
     extractionRaw = out.raw;
+    extractionModelUsed = out.model;
     if (!out.parsed) {
       await supabase.rpc('mark_inbound_processed', {
         p_inbound_id: inboundId, p_status: 'error',
-        p_parse: { extraction_raw: extractionRaw, extraction_model: EXTRACTION_MODEL, contractor_fields: contractorFields },
-        p_delivery_id: null, p_error: 'openrouter extraction failed',
+        p_parse: { extraction_raw: extractionRaw, extraction_model: out.model, contractor_fields: contractorFields },
+        p_delivery_id: null, p_error: 'openrouter extraction failed (all models + retries)',
       });
       return new Response('extraction failed', { status: 200 });
     }
@@ -798,7 +854,7 @@ Deno.serve(async (req) => {
     agent_hint:    agentHintRaw,  // raw string from contractor, null if none
     agent_resolution: agentResolution, // { agent_id, reason } — for visibility in admin
     extraction_raw:   extractionRaw,                                  // null when source='contractor', LLM response body otherwise
-    extraction_model: source === 'contractor' ? null : EXTRACTION_MODEL,
+    extraction_model: source === 'contractor' ? null : (extractionModelUsed ?? EXTRACTION_MODEL),
   };
 
   // Every line must match, all to ONE client, plus the usual envelope fields.

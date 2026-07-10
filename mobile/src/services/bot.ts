@@ -95,6 +95,21 @@ export async function discardInbound(inboundId: string, reason: string): Promise
   if (error) throw error;
 }
 
+/** Admin/dispatcher: re-queue failed (status='error') inbound messages so the bot
+ *  re-parses them — e.g. after a transient extraction outage. Server resets each
+ *  row to 'queued' and re-fires bot-parse-message (async), returning how many were
+ *  re-queued. Reprocessing happens server-side a moment later, so callers should
+ *  refresh the list shortly after. Not in the generated RPC types yet → cast. */
+export async function requeueFailedInbound(ids: string[]): Promise<number> {
+  const rpc = supabase.rpc as unknown as (
+    fn: string,
+    args: Record<string, unknown>,
+  ) => Promise<{ data: unknown; error: { message: string } | null }>;
+  const { data, error } = await rpc('requeue_failed_inbound', { p_ids: ids });
+  if (error) throw new Error(error.message);
+  return typeof data === 'number' ? data : 0;
+}
+
 export type FeatureFlag = {
   key: string;
   enabled: boolean;

@@ -3,11 +3,17 @@ import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } fr
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
-import { listBotInbound, type BotInboundRow, type InboundStatus } from '@/services/bot';
+import {
+  listBotInbound,
+  requeueFailedInbound,
+  type BotInboundRow,
+  type InboundStatus,
+} from '@/services/bot';
 import { canResolveReview } from '@/lib/permissions';
 import { AppBar, Banner, Card, Empty, Hint, Icon } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 import { formatNaira } from '@/lib/format';
+import { errorMessage } from '@/lib/errors';
 import { reviewReason } from './reviewReason';
 import { HINTS } from '@/hints/registry';
 
@@ -58,6 +64,15 @@ export function NeedsReviewScreen() {
     return () => router.push(`${detailRouteBase}/${row.id}` as `/${string}`);
   };
 
+  // Re-queue a failed intake for another parse attempt. The server re-fires the
+  // parser asynchronously, so refresh the list a couple of seconds later to pick
+  // up its new status (created_delivery / needs_review / still error).
+  const handleRetry = useCallback(async (id: string) => {
+    await requeueFailedInbound([id]);
+    setTimeout(() => rowsQ.reload(), 2500);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <AppBar
@@ -107,7 +122,11 @@ export function NeedsReviewScreen() {
         data={rowsQ.data ?? []}
         keyExtractor={(r) => r.id}
         renderItem={({ item }) => (
-          <InboundCard row={item} onNavigate={onRowPress(item) ?? undefined} />
+          <InboundCard
+            row={item}
+            onNavigate={onRowPress(item) ?? undefined}
+            onRetry={item.status === 'error' && canFix ? () => handleRetry(item.id) : undefined}
+          />
         )}
         ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
         refreshControl={
@@ -167,8 +186,20 @@ type ParseResult = {
   address?: { matched_location_id?: string; confidence?: string } | null;
 };
 
-function InboundCard({ row, onNavigate }: { row: BotInboundRow; onNavigate?: () => void }) {
+function InboundCard({
+  row,
+  onNavigate,
+  onRetry,
+}: {
+  row: BotInboundRow;
+  onNavigate?: () => void;
+  /** Present on error rows for admins/dispatchers — re-queues this message. */
+  onRetry?: () => Promise<void>;
+}) {
   const [expanded, setExpanded] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [requeued, setRequeued] = useState(false);
+  const [retryErr, setRetryErr] = useState<string | null>(null);
   const parse = (row.parse_result as ParseResult | null) ?? {};
   const extracted = parse.extracted ?? {};
   const product = parse.product;
@@ -312,6 +343,63 @@ function InboundCard({ row, onNavigate }: { row: BotInboundRow; onNavigate?: () 
         <View style={{ marginTop: 8 }}>
           <Banner tone="error" icon="alert">
             {row.error_text}
+          </Banner>
+        </View>
+      ) : null}
+      {onRetry ? (
+        <Pressable
+          onPress={async () => {
+            if (retrying || requeued) return;
+            setRetrying(true);
+            setRetryErr(null);
+            try {
+              await onRetry();
+              setRequeued(true);
+            } catch (e) {
+              setRetryErr(errorMessage(e));
+            } finally {
+              setRetrying(false);
+            }
+          }}
+          disabled={retrying || requeued}
+          style={{
+            marginTop: 10,
+            alignSelf: 'flex-start',
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 8,
+            paddingVertical: 8,
+            paddingHorizontal: 14,
+            borderRadius: 999,
+            borderWidth: 1.5,
+            borderColor: requeued ? colors.success : colors.borderStrong,
+            backgroundColor: colors.white,
+          }}
+        >
+          {retrying ? (
+            <ActivityIndicator size="small" color={colors.black} />
+          ) : (
+            <Icon
+              name={requeued ? 'check' : 'refresh'}
+              size={14}
+              color={requeued ? colors.success : colors.black}
+            />
+          )}
+          <Text
+            style={{
+              fontFamily: fonts.semibold,
+              fontSize: 13,
+              color: requeued ? colors.success : colors.black,
+            }}
+          >
+            {requeued ? 'Re-queued — reprocessing…' : retrying ? 'Re-queuing…' : 'Retry extraction'}
+          </Text>
+        </Pressable>
+      ) : null}
+      {retryErr ? (
+        <View style={{ marginTop: 8 }}>
+          <Banner tone="error" icon="alert">
+            {retryErr}
           </Banner>
         </View>
       ) : null}
