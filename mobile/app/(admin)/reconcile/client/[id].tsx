@@ -9,6 +9,7 @@ import { formatNaira } from '@/lib/format';
 import { formatDateLagos, formatRangeLagos, isYmd } from '@/lib/date';
 import {
   buildClientShareMessage,
+  clientShareFormat,
   deriveDeliveryNote,
   remitProductsDisplay,
   remitRowProducts,
@@ -76,6 +77,9 @@ export default function ClientReconcileDetail() {
     const message = buildClientShareMessage({
       clientName,
       rangeLabel,
+      // Per-client layout (Karami gets the paid + delivery-fee breakdown). Admin
+      // path only — this exposes the Reda fee, which reps must never see.
+      format: clientShareFormat(id),
       rows: rows.map((r) => {
         const q = remitRowQuantities(r);
         return {
@@ -84,6 +88,9 @@ export default function ClientReconcileDetail() {
           clientRep: r.client_rep,
           products: remitRowProducts(r),
           remit: Number(r.remit ?? 0),
+          // For the paidAndFee format: what the customer paid + Reda's fee.
+          paid: r.paid,
+          redaFee: r.reda_fee,
           note:
             r.order_type === 'waybill'
               ? (r.note ?? '')
@@ -102,7 +109,7 @@ export default function ClientReconcileDetail() {
     } catch {
       /* user cancelled */
     }
-  }, [clientName, rangeLabel, rows]);
+  }, [clientName, rangeLabel, rows, id]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>

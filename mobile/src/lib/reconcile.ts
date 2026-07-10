@@ -64,9 +64,17 @@ export type ShareDeliveryLine = {
   /** How the customer paid: 'cash' | 'transfer' | 'vendor_direct'. Cash is the
    *  only method called out in the client-facing message. */
   paymentMethod?: string | null;
-  /** Cash POS fee retained in the row shape for callers that use the same
-   *  reconciliation data elsewhere. It is not shown in the share message. */
+  /** Cash POS fee. Not shown in the default format; the paidAndFee format lists
+   *  it (when non-zero) so paid − delivery fee − POS fee reconciles to the row's
+   *  remit and the footer total. */
   cashPosFee?: number | null;
+  /** [paidAndFee format] What the customer actually paid (= paid). Admin-only —
+   *  populated on the admin share path; the rep path omits it (its RPC strips
+   *  paid/fee), so the rep never produces this format. */
+  paid?: number | null;
+  /** [paidAndFee format] Reda's per-delivery delivery fee (= reda_fee / charged
+   *  snapshot). Admin-only, same as `paid`. */
+  redaFee?: number | null;
 };
 
 /** Normalize a reconcile row into share-ready product lines: prefer the RPC's
@@ -232,16 +240,40 @@ export function buildMoniepointPayoutCsv(rows: MoniepointPayoutRow[]): string {
 // because it pulls in the SheetJS workbook writer, which this pure helper file
 // (also used by the rep screens) should not carry.
 
+export type ClientShareFormat = 'default' | 'paidAndFee';
+
+// Per-client override for the "Share with client" report format. Only Karami
+// wants the per-delivery "Customer paid" + "Delivery fee" breakdown today; every
+// other client uses the default net-remit layout. Keyed by client id (stable
+// across renames). 'paidAndFee' reveals Reda's delivery fee, so it is ONLY ever
+// selected on the admin share path — reps must never see the fee (their RPC
+// strips paid/fee). To add a client: drop their id here (flip to a clients
+// column if this list ever grows).
+const CLIENT_SHARE_FORMAT: Record<string, ClientShareFormat> = {
+  '2acf7d84-3a5c-4532-b47c-568b7f4928f3': 'paidAndFee', // Karami
+};
+
+/** The share-message format for a client (default when unmapped). */
+export function clientShareFormat(clientId: string | null | undefined): ClientShareFormat {
+  return (clientId && CLIENT_SHARE_FORMAT[clientId]) || 'default';
+}
+
 // Builds the WhatsApp "Share with client" message in Uzo's preferred shape:
-// Delivery rows use Name / Product(s) / Paid: Cash / To Remit / Note. Pickup
-// and waybill rows instead use Type / Charge to client / deduction note, because
-// they are client charges rather than customer deliveries. The Total block keeps
-// delivered units, surfaces waybill charges, and states who owes whom.
+// Delivery rows use Name / Product(s) / Paid: Cash / To Remit / Note (default)
+// or Name / Product(s) / Customer paid / Delivery fee / Note (paidAndFee).
+// Pickup and waybill rows instead use Type / Charge to client / deduction note,
+// because they are client charges rather than customer deliveries. The Total
+// block keeps delivered units, surfaces waybill charges, and states who owes whom.
 export function buildClientShareMessage(input: {
   clientName: string;
   rangeLabel: string;
   rows: ShareDeliveryLine[];
+  /** Per-delivery layout. 'default' shows the net "To Remit"; 'paidAndFee' shows
+   *  "Customer paid" + "Delivery fee" (Karami). Admin-only — see
+   *  ShareDeliveryLine.paid. Defaults to 'default'. */
+  format?: ClientShareFormat;
 }): string {
+  const format = input.format ?? 'default';
   const blocks = input.rows.map((r) => {
     if (r.orderType === 'waybill') {
       // Uzo's format: the charge-side breakdown only (type fee + each pickup
@@ -254,11 +286,22 @@ export function buildClientShareMessage(input: {
       );
     }
     const lines = [`Name: ${r.customerName ?? 'Customer'}`, ...shareProductLines(r.products)];
-    if (r.paymentMethod === 'cash') lines.push('Paid: Cash');
-    lines.push(
-      `To Remit: ${formatNaira(Number(r.remit ?? 0))}`,
-      `Note: ${clientShareNote(r.clientRep, r.note)}`,
-    );
+    if (format === 'paidAndFee') {
+      // Karami's format: show what the customer paid and Reda's delivery fee
+      // instead of the net remit. The cash POS fee (when any) is listed too so
+      // paid − fee − POS reconciles to the same total the footer shows.
+      lines.push(
+        `Customer paid: ${formatNaira(Number(r.paid ?? 0))}`,
+        `Delivery fee: ${formatNaira(Number(r.redaFee ?? 0))}`,
+      );
+      if (Number(r.cashPosFee ?? 0) > 0) {
+        lines.push(`Cash POS fee: ${formatNaira(Number(r.cashPosFee))}`);
+      }
+    } else {
+      if (r.paymentMethod === 'cash') lines.push('Paid: Cash');
+      lines.push(`To Remit: ${formatNaira(Number(r.remit ?? 0))}`);
+    }
+    lines.push(`Note: ${clientShareNote(r.clientRep, r.note)}`);
     return lines.join('\n');
   });
 
