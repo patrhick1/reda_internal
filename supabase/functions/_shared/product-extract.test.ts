@@ -140,6 +140,28 @@ Deno.test('vendor order ref: null/blank/absent → null', () => {
   assertEquals(extractVendorOrderRef('ORDER-20260625-PTS-00506'), null); // wrong prefix
 });
 
+Deno.test('vendor order ref: Karami "Order ID:" label is extracted', () => {
+  const raw = [
+    'Order ID: KNN9659',
+    'Customer Name: Oyelade jamiu',
+    'Phone Number: 09027094841',
+    'Address: 15b Babatunde Ladega Omole phase 1',
+    'Quantity/Package: 1 20,000',
+    'Product: Karami Tea',
+  ].join('\n');
+  assertEquals(extractVendorOrderRef(raw), 'KNN9659');
+  // inline form + a different KN-prefix; lowercased input normalizes to uppercase
+  assertEquals(extractVendorOrderRef('Order ID: KNK3111 Customer Name: X'), 'KNK3111');
+  assertEquals(extractVendorOrderRef('order id: knn9445\nProduct: Karami Tea'), 'KNN9445');
+});
+
+Deno.test('vendor order ref: "Order ID" label without a digit-bearing code → null', () => {
+  // the code must contain a digit, so a bare word after the label is not grabbed
+  assertEquals(extractVendorOrderRef('Order ID: Pending\nName: Ada'), null);
+  // Bowan's "Order Number:" template must NOT be mistaken for an "Order ID"
+  assertEquals(extractVendorOrderRef('Order Number: 12\nCloser: Ada'), null);
+});
+
 // --- prompt contract ---------------------------------------------------------
 
 Deno.test('prompt: explicit quantity survives package-selection wording', () => {

@@ -355,18 +355,29 @@ export function extractLabeledRep(rawText: string | null | undefined): string | 
 }
 
 // --- vendor order reference -------------------------------------------------
-// Some vendors stamp their own order number at the top of the forward, e.g.
-//   "Order #: ORD-20260625-PTS-00506"
-// We surface it on client_rep so it rides into the reconciliation report next
-// to the rep name, letting the vendor cross-reference against their own system.
-// The shape (ORD-<8-digit date>-<SKU>-<seq>) is rigid enough that this anchor
-// can't false-positive on free text, so it needs no per-vendor gating.
+// Some vendors stamp their own order number in the forward. We surface it on
+// client_rep so it rides into the reconciliation report next to the rep name,
+// letting the vendor cross-reference against their own system. Two known shapes,
+// both anchored tightly enough that they can't false-positive on free text, so
+// neither needs per-vendor gating:
+//   1. A bare ORD- ref anywhere (ORD-<8-digit date>-<SKU>-<seq>), e.g.
+//      "Order #: ORD-20260625-PTS-00506".
+//   2. A labeled "Order ID: <code>" (Karami), e.g. "Order ID: KNN9659". The code
+//      must contain a digit, so the label alone can't grab a plain word ("Order
+//      ID: Pending" → no match). The literal "Order ID" label keeps this distinct
+//      from Bowan's "Order Number:" template (handled separately).
 const ORDER_REF_RX = /\bORD-\d{8}-[A-Z0-9]{2,}-\d{2,}\b/i;
+const ORDER_ID_LABEL_RX = /\bOrder\s*ID\s*:?\s*([A-Za-z]*\d[A-Za-z0-9-]*)/i;
 
-/** Vendor-supplied order number from the raw forward, uppercased, or null. */
+/** Vendor-supplied order number from the raw forward, uppercased, or null.
+ *  Tries the bare ORD- pattern first, then a labeled "Order ID: <code>". */
 export function extractVendorOrderRef(rawText: string | null | undefined): string | null {
-  const m = rawText?.match(ORDER_REF_RX);
-  return m ? m[0].toUpperCase() : null;
+  if (!rawText) return null;
+  const bare = rawText.match(ORDER_REF_RX);
+  if (bare) return bare[0].toUpperCase();
+  const labeled = rawText.match(ORDER_ID_LABEL_RX);
+  if (labeled) return labeled[1].toUpperCase();
+  return null;
 }
 
 // --- known multi-SKU combos -------------------------------------------------
