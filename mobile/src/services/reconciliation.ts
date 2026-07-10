@@ -166,7 +166,7 @@ export type RepClientRemitDetailRow = {
   agent_name: string | null;
   /** How the customer paid ('cash' | 'transfer' | 'vendor_direct'). Client-facing
    *  (the client is told this in the share message); exposed by the rep RPC
-   *  passthrough alongside cash_pos_fee. `paid`/`reda_fee` stay stripped. */
+   *  passthrough alongside cash_pos_fee. */
   payment_method: string | null;
   /** ₦500 cash-banking fee passed through to the client (0 for transfer).
    *  Client-facing — not Reda's own cut. */
@@ -174,6 +174,13 @@ export type RepClientRemitDetailRow = {
   /** Pickup/waybill charge breakdown (the create_waybill note). Null for normal
    *  deliveries — the share report uses it only for waybill rows. Client-facing. */
   note: string | null;
+  /** [paidAndFee clients only — Karami] What the customer paid. The rep RPC
+   *  releases this ONLY for clients on the paidAndFee format; NULL (stripped) for
+   *  every other client, so the rep-fee-privacy boundary holds elsewhere. */
+  paid?: number | null;
+  /** [paidAndFee clients only — Karami] Reda's delivery fee (reda_fee). Same
+   *  server-side gate as `paid` — NULL for all non-paidAndFee clients. */
+  reda_fee?: number | null;
 };
 
 export async function listRepClientRemit(from: string, to: string): Promise<RepClientRemitRow[]> {
