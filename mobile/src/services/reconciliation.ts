@@ -218,6 +218,43 @@ export async function runEodRolloverAllStuck(): Promise<number> {
   return (data ?? 0) as number;
 }
 
+/** One still-open delivery plus the verdict end-of-day will apply to it. Comes
+ *  from `preview_eod_rollover`, which reads the SAME `_eod_classify` the nightly
+ *  rollover executes — so the screen shows exactly what will happen (a `roll`
+ *  carries forward; every other action closes the row out), and can never drift
+ *  from the job the way the old "everything non-terminal = roll" list did. */
+export type EodPreviewRow = {
+  delivery_id: string;
+  customer_name: string | null;
+  product_name: string | null;
+  quantity_ordered: number | null;
+  customer_price: number | null;
+  current_status: string | null;
+  assigned_agent_name: string | null;
+  /** What the rollover will do: 'roll' | 'close_followup' | 'close_disinterest'
+   *  | 'close_policy' | 'cap_unserious' | 'dedup_same_agent' | 'dedup_cross_agent'
+   *  | 'sibling_resolved'. Only 'roll' carries forward; the rest close out. */
+  action: string;
+  /** The status the row ends in ('rolled_over' | 'deferred_to_client' |
+   *  'unserious' | 'failed_delivery' | 'cancelled'). */
+  to_status: string;
+};
+
+/** Preview what end-of-day will do to each still-open delivery for a date
+ *  (defaults to today, Lagos). Admin/dispatcher only — returns [] for others. */
+export async function previewEodRollover(forDate?: string): Promise<EodPreviewRow[]> {
+  // preview_eod_rollover isn't in database.gen.ts until `npm run gen:types` runs
+  // at cutover (same as the reconcile RPCs above), so reach it through an untyped
+  // rpc handle and assert the row shape ourselves.
+  const rpc = supabase.rpc as unknown as (
+    fn: string,
+    args?: Record<string, unknown>,
+  ) => Promise<{ data: unknown; error: unknown }>;
+  const { data, error } = await rpc('preview_eod_rollover', forDate ? { p_for_date: forDate } : {});
+  if (error) throw error;
+  return (data ?? []) as EodPreviewRow[];
+}
+
 // ---------------------------------------------------------------------------
 // Settlement / period-lock (§14-2). Freezes one subject-day's figures so a
 // later edit can't silently rewrite a period that was already paid out.

@@ -2,37 +2,61 @@ import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Platform, ScrollView, Text, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
-import { useCurrentUser } from '@/hooks/useAuth';
-import { listDeliveries, type DeliveryRow } from '@/services/deliveries';
-import { runEodRolloverAllStuck } from '@/services/reconciliation';
+import {
+  previewEodRollover,
+  runEodRolloverAllStuck,
+  type EodPreviewRow,
+} from '@/services/reconciliation';
 import { AppBar, Banner, Button, Card, Empty, StatusPill } from '@/components/ui';
-import { colors, fonts, TERMINAL_STATUSES } from '@/lib/theme';
+import { colors, fonts } from '@/lib/theme';
 import { formatNaira } from '@/lib/format';
 import { errorMessage } from '@/lib/errors';
 
 import { todayLagos } from '@/lib/date';
 
+// Presentation-only translation of the server's `action` code into a phrase for
+// the close-out rows. NOT a rule — the DECISION (which rows roll vs close, and
+// what they become) is made once, server-side, by _eod_classify and delivered
+// via preview_eod_rollover. This map only labels it.
+const ACTION_LABEL: Record<string, string> = {
+  close_followup: 'Back to client',
+  close_disinterest: 'Closed · unserious',
+  close_policy: 'Closed · failed',
+  cap_unserious: 'Closed · carry cap',
+  dedup_same_agent: 'Closed · duplicate',
+  dedup_cross_agent: 'Closed · duplicate',
+  sibling_resolved: 'Closed · already handled',
+};
+
 export default function EndOfDay() {
-  const user = useCurrentUser();
   const router = useRouter();
   const [rolling, setRolling] = useState(false);
-  const todayQ = useAsync(() => listDeliveries(user.role), [user.role]);
+  const today = todayLagos();
+  const previewQ = useAsync<EodPreviewRow[]>(() => previewEodRollover(today), [today]);
   useFocusEffect(
     useCallback(() => {
-      todayQ.reload();
+      previewQ.reload();
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []),
+    }, [today]),
   );
 
-  const unfinished = useMemo(
-    () => (todayQ.data ?? []).filter((d) => !TERMINAL_STATUSES.has(d.current_status ?? 'pending')),
-    [todayQ.data],
-  );
+  // Split by the server's verdict: only 'roll' carries forward; everything else
+  // is closed out. No status logic on the device — `action` comes straight from
+  // the same classifier the nightly job runs.
+  const { willRoll, willClose } = useMemo(() => {
+    const roll: EodPreviewRow[] = [];
+    const close: EodPreviewRow[] = [];
+    for (const r of previewQ.data ?? []) {
+      if (r.action === 'roll') roll.push(r);
+      else close.push(r);
+    }
+    return { willRoll: roll, willClose: close };
+  }, [previewQ.data]);
 
-  const today = todayLagos();
+  const openCount = willRoll.length + willClose.length;
 
   const onRunAll = useCallback(() => {
-    const prompt = `Run end of day?\n\nThis releases postponed orders coming due into Unassigned, then rolls every stuck non-terminal delivery forward one day. ${unfinished.length} ${unfinished.length === 1 ? 'delivery is' : 'deliveries are'} scheduled for ${today}.`;
+    const prompt = `Run end of day?\n\nReleases postponed orders due tomorrow, carries the active orders forward, and closes out the rest — follow-ups go back to the client. ${willRoll.length} will roll forward and ${willClose.length} will be closed.`;
     const runIt = async () => {
       setRolling(true);
       try {
@@ -43,7 +67,7 @@ export default function EndOfDay() {
         } else {
           Alert.alert('Done', `Rolled ${n} ${n === 1 ? 'delivery' : 'deliveries'} forward.`);
         }
-        todayQ.reload();
+        previewQ.reload();
       } catch (e) {
         if (Platform.OS === 'web') {
           if (typeof window !== 'undefined') window.alert(`Rollover failed: ${errorMessage(e)}`);
@@ -61,13 +85,13 @@ export default function EndOfDay() {
     }
     Alert.alert(
       'Run end-of-day rollover?',
-      `This rolls every non-terminal delivery scheduled for ${today} forward one day. ${unfinished.length} ${unfinished.length === 1 ? 'delivery' : 'deliveries'} will be affected.`,
+      `Carries the active orders forward and closes out the rest (follow-ups go back to the client). ${willRoll.length} will roll forward and ${willClose.length} will be closed.`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Roll all forward', style: 'destructive', onPress: runIt },
+        { text: 'Run end of day', style: 'destructive', onPress: runIt },
       ],
     );
-  }, [today, unfinished.length, todayQ]);
+  }, [willRoll.length, willClose.length, previewQ]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -77,11 +101,13 @@ export default function EndOfDay() {
         onBack={() => router.back()}
         helpTopic="eod"
       />
-      {todayQ.loading && !todayQ.data ? (
+      {previewQ.loading && !previewQ.data ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator color={colors.black} />
         </View>
-      ) : unfinished.length === 0 ? (
+      ) : previewQ.error ? (
+        <Empty icon="alert" title="Could not load" sub={previewQ.error} />
+      ) : openCount === 0 ? (
         <Empty
           icon="check"
           title="No deliveries to roll"
@@ -91,15 +117,40 @@ export default function EndOfDay() {
         <>
           <View style={{ padding: 16 }}>
             <Banner tone="info" icon="calendar">
-              {`${unfinished.length} ${unfinished.length === 1 ? 'delivery' : 'deliveries'} still open. Rolling forward will mark each as rolled_over and create a new pending row for tomorrow.`}
+              {`${openCount} still open for ${today}. End of day carries ${willRoll.length} forward and closes ${willClose.length} out — follow-ups go back to the client. Duplicates and repeat-rollovers are closed automatically.`}
             </Banner>
           </View>
           <ScrollView
             contentContainerStyle={{ padding: 16, paddingTop: 0, paddingBottom: 100, gap: 12 }}
           >
-            {unfinished.map((d) => (
-              <DeliveryRowEOD key={d.id} delivery={d} />
-            ))}
+            {willRoll.length > 0 ? (
+              <>
+                <SectionHeader
+                  label="Roll forward"
+                  count={willRoll.length}
+                  sub="Carried to tomorrow as new pending orders"
+                />
+                {willRoll.map((r) => (
+                  <DeliveryRowEOD key={r.delivery_id} row={r} />
+                ))}
+              </>
+            ) : null}
+            {willClose.length > 0 ? (
+              <>
+                <SectionHeader
+                  label="Close out"
+                  count={willClose.length}
+                  sub="Not rolled — closed out at end of day"
+                />
+                {willClose.map((r) => (
+                  <DeliveryRowEOD
+                    key={r.delivery_id}
+                    row={r}
+                    closeLabel={ACTION_LABEL[r.action] ?? 'Closed'}
+                  />
+                ))}
+              </>
+            ) : null}
           </ScrollView>
           <View
             style={{
@@ -111,7 +162,7 @@ export default function EndOfDay() {
             }}
           >
             <Button variant="emphasis" full icon="check" disabled={rolling} onPress={onRunAll}>
-              {rolling ? 'Rolling…' : `Roll ${unfinished.length} forward`}
+              {rolling ? 'Working…' : 'Run end of day'}
             </Button>
           </View>
         </>
@@ -120,9 +171,34 @@ export default function EndOfDay() {
   );
 }
 
-function DeliveryRowEOD({ delivery }: { delivery: DeliveryRow }) {
+function SectionHeader({ label, count, sub }: { label: string; count: number; sub: string }) {
+  return (
+    <View style={{ marginTop: 4 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
+        <Text style={{ fontFamily: fonts.extrabold, fontSize: 16, color: colors.black }}>
+          {label}
+        </Text>
+        <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.textSecondary }}>
+          {count}
+        </Text>
+      </View>
+      <Text
+        style={{
+          fontFamily: fonts.medium,
+          fontSize: 12,
+          color: colors.textSecondary,
+          marginTop: 2,
+        }}
+      >
+        {sub}
+      </Text>
+    </View>
+  );
+}
+
+function DeliveryRowEOD({ row, closeLabel }: { row: EodPreviewRow; closeLabel?: string }) {
   // customer_price is per-delivery, not per-unit. Do NOT multiply by quantity.
-  const expected = Number(delivery.customer_price ?? 0);
+  const expected = Number(row.customer_price ?? 0);
   return (
     <Card>
       <View
@@ -135,7 +211,7 @@ function DeliveryRowEOD({ delivery }: { delivery: DeliveryRow }) {
       >
         <View style={{ flex: 1 }}>
           <Text style={{ fontFamily: fonts.bold, fontSize: 15, color: colors.black }}>
-            {delivery.customer_name}
+            {row.customer_name}
           </Text>
           <Text
             style={{
@@ -145,14 +221,14 @@ function DeliveryRowEOD({ delivery }: { delivery: DeliveryRow }) {
               marginTop: 2,
             }}
           >
-            {delivery.product_name ?? '—'}
-            {delivery.quantity_ordered ? ` × ${delivery.quantity_ordered}` : ''}
+            {row.product_name ?? '—'}
+            {row.quantity_ordered ? ` × ${row.quantity_ordered}` : ''}
             {' · '}
             {formatNaira(expected)}
           </Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
-            <StatusPill status={delivery.current_status ?? 'pending'} variant="subtle" size="sm" />
-            {delivery.assigned_agent_name ? (
+            <StatusPill status={row.current_status ?? 'pending'} variant="subtle" size="sm" />
+            {row.assigned_agent_name ? (
               <Text
                 numberOfLines={1}
                 style={{
@@ -163,7 +239,7 @@ function DeliveryRowEOD({ delivery }: { delivery: DeliveryRow }) {
                 }}
               >
                 {/* Full display name so namesakes (e.g. "Mummy Jerry") stay distinguishable. */}·{' '}
-                {delivery.assigned_agent_name}
+                {row.assigned_agent_name}
               </Text>
             ) : (
               <Text
@@ -179,6 +255,20 @@ function DeliveryRowEOD({ delivery }: { delivery: DeliveryRow }) {
               </Text>
             )}
           </View>
+          {closeLabel ? (
+            <Text
+              style={{
+                fontFamily: fonts.bold,
+                fontSize: 11,
+                color: colors.textSecondary,
+                letterSpacing: 0.4,
+                textTransform: 'uppercase',
+                marginTop: 6,
+              }}
+            >
+              {`Ends as · ${closeLabel}`}
+            </Text>
+          ) : null}
         </View>
       </View>
     </Card>
