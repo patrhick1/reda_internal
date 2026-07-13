@@ -6,7 +6,8 @@ import { Button } from '@/components/Button';
 import { Select } from '@/components/Select';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
-import { listUsers, isWarehousePlace } from '@/services/users';
+import { isWarehousePlace } from '@/services/users';
+import { useUsers } from '@/hooks/queries';
 import { listClients } from '@/services/clients';
 import { listActiveProductsByClient } from '@/services/products';
 import { ADJUSTMENT_REASONS, type SingleReason } from '@/services/stock';
@@ -38,7 +39,7 @@ export type StockAdjustScreenProps = {
 
 export function StockAdjustScreen({ scope }: StockAdjustScreenProps) {
   const currentUser = useCurrentUser();
-  const usersQ = useAsync(() => listUsers(), []);
+  const usersQ = useUsers();
   const clientsQ = useAsync(() => listClients(), []);
 
   // Admin scope: a pickable user. Warehouse scope derives the place

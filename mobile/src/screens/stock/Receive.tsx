@@ -8,7 +8,8 @@ import { Icon } from '@/components/ui';
 import { useAsync } from '@/hooks/useAsync';
 import { useBulkRows } from '@/hooks/useBulkRows';
 import { useCurrentUser } from '@/hooks/useAuth';
-import { listUsers, isWarehousePlace } from '@/services/users';
+import { isWarehousePlace } from '@/services/users';
+import { useUsers } from '@/hooks/queries';
 import { listProducts } from '@/services/products';
 import { listHolderStock } from '@/services/stock';
 import { useEnqueueStockAdjustment } from '@/queue/mutations';
@@ -60,7 +61,7 @@ export type StockReceiveScreenProps = {
 
 export function StockReceiveScreen({ scope }: StockReceiveScreenProps) {
   const currentUser = useCurrentUser();
-  const usersQ = useAsync(() => listUsers(), []);
+  const usersQ = useUsers();
   const productsQ = useAsync(() => listProducts(), []);
 
   // Holders only: agents + warehouse PLACES. Warehouse STAFF (linked to a

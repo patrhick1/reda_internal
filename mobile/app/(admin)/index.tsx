@@ -12,7 +12,7 @@ import {
   type DeliveryRow,
 } from '@/services/deliveries';
 import { countNeedsReview } from '@/services/bot';
-import { listUsers } from '@/services/users';
+import { useUsers } from '@/hooks/queries';
 import { listOpenIssuesForOps } from '@/services/delivery-messages';
 import { AppBar, Card, Icon, SectionHeader } from '@/components/ui';
 import { AgentWorkloadCard } from '@/components/delivery/AgentWorkloadCard';
@@ -37,7 +37,7 @@ export default function AdminHome() {
   const todayQ = useAsync(() => listDeliveries(user.role), [user.role]);
   const reviewQ = useAsync(() => countNeedsReview(), []);
   const issuesQ = useAsync(() => listOpenIssuesForOps(), []);
-  const usersQ = useAsync(() => listUsers(), []);
+  const usersQ = useUsers();
   const negMarginQ = useAsync(() => countNegativeMarginDeliveries(), []);
 
   useReloadOnFocus(() => {

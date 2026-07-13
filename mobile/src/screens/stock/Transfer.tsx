@@ -16,7 +16,8 @@ import { Icon } from '@/components/ui';
 import { useAsync } from '@/hooks/useAsync';
 import { useBulkRows } from '@/hooks/useBulkRows';
 import { useCurrentUser } from '@/hooks/useAuth';
-import { listUsers, isWarehousePlace, type AppUser } from '@/services/users';
+import { isWarehousePlace, type AppUser } from '@/services/users';
+import { useUsers } from '@/hooks/queries';
 import {
   PAIRED_REASONS,
   listHolderStock,
@@ -79,7 +80,7 @@ export type StockTransferScreenProps = {
 
 export function StockTransferScreen({ scope }: StockTransferScreenProps) {
   const currentUser = useCurrentUser();
-  const usersQ = useAsync(() => listUsers(), []);
+  const usersQ = useUsers();
 
   // Common state
   const [reason, setReason] = useState<PairedReason | null>(null);

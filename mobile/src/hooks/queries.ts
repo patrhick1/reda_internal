@@ -10,7 +10,9 @@
 
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { errorMessage } from '@/lib/errors';
+import { useAuth } from '@/hooks/useAuth';
 import { listStatusDefs, type DeliveryStatusDef } from '@/services/deliveries';
+import { listUsers, type AppUser } from '@/services/users';
 
 /** The subset of useAsync's return shape that consumers rely on. */
 export type AsyncLike<T> = {
@@ -20,20 +22,33 @@ export type AsyncLike<T> = {
   reload: () => Promise<void>;
 };
 
-/** Adapt a React Query result to useAsync's shape. `loading` maps to isPending
- *  (no data yet) — a background revalidate over cached data does NOT flip it, so
- *  screens show stale data instead of a spinner, which is the SWR win. `reload`
- *  forces a refetch (used by pull-to-refresh / post-mutation reloads). */
+/** Adapt a React Query result to useAsync's shape. `loading` maps to isLoading
+ *  (first fetch in flight only) — a background revalidate over cached data does
+ *  NOT flip it (the SWR win: show stale data, not a spinner), and a disabled
+ *  query reads as not-loading rather than pending-forever. `reload` forces a
+ *  refetch (pull-to-refresh / post-mutation reloads). */
 function asAsync<T>(q: UseQueryResult<T>): AsyncLike<T> {
   return {
     data: q.data ?? null,
-    loading: q.isPending,
+    loading: q.isLoading,
     error: q.error ? errorMessage(q.error) : null,
     reload: async () => {
       await q.refetch();
     },
   };
 }
+
+/** Query-key partition for RLS-scoped reference data: the signed-in user id (or
+ *  'anon' pre-auth). Cache is also cleared wholesale on sign-out, so this is
+ *  defense-in-depth against one account seeing another's role-filtered view. */
+function useUid(): string {
+  const { account } = useAuth();
+  return account.kind === 'active' ? account.userId : 'anon';
+}
+
+// Reference catalogs change rarely; a few minutes of staleness is fine because
+// catalog mutations invalidate these keys for same-device immediacy.
+const REFERENCE_STALE = 5 * 60_000;
 
 /** Delivery status definitions. Static config that never changes at runtime and
  *  is global (not RLS-scoped), so cache it forever under one shared key — every
@@ -45,6 +60,26 @@ export function useStatusDefs(): AsyncLike<DeliveryStatusDef[]> {
       queryFn: () => listStatusDefs(),
       staleTime: Infinity,
       gcTime: Infinity,
+    }),
+  );
+}
+
+/** Users directory. RLS-scoped, so keyed by uid + includeInactive. Catalog
+ *  create/update/(de/re)activate + self-profile edits invalidate ['users'] (see
+ *  services/users.ts) so a change shows on cached screens without a manual
+ *  reload. `enabled: false` skips the fetch for callers that only need it in
+ *  some states (e.g. the ops-only delivery-list filter). */
+export function useUsers(
+  opts: { includeInactive?: boolean; enabled?: boolean } = {},
+): AsyncLike<AppUser[]> {
+  const uid = useUid();
+  const includeInactive = !!opts.includeInactive;
+  return asAsync(
+    useQuery({
+      queryKey: ['users', uid, includeInactive],
+      queryFn: () => listUsers({ includeInactive }),
+      staleTime: REFERENCE_STALE,
+      enabled: opts.enabled ?? true,
     }),
   );
 }

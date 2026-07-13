@@ -14,7 +14,8 @@ import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { listCurrentStock, type StockMatrixRow } from '@/services/stock';
-import { listUsers, isWarehousePlace, type AppUser } from '@/services/users';
+import { isWarehousePlace, type AppUser } from '@/services/users';
+import { useUsers } from '@/hooks/queries';
 import { AppBar, Card, Empty, FilterChips, Icon, Input } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 import { getHolderStats, isLow, isNegative, type HolderStats } from '@/lib/stock-helpers';
@@ -36,7 +37,7 @@ export function HolderDetail({
 }) {
   const router = useRouter();
   const stockQ = useAsync(() => listCurrentStock(), []);
-  const usersQ = useAsync(() => listUsers(), []);
+  const usersQ = useUsers();
 
   useReloadOnFocus(() => {
     stockQ.reload();

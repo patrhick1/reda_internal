@@ -22,7 +22,8 @@ import {
   type ClientStockGroup,
 } from '@/services/stock';
 import { listClients, type Client } from '@/services/clients';
-import { listUsers, isWarehousePlace, type AppUser } from '@/services/users';
+import { isWarehousePlace, type AppUser } from '@/services/users';
+import { useUsers } from '@/hooks/queries';
 import {
   AppBar,
   Avatar,
@@ -67,7 +68,7 @@ export function StockOverview({ basePath }: { basePath: StockBasePath }) {
   const router = useRouter();
   const user = useCurrentUser();
   const stockQ = useAsync(() => listCurrentStock(), []);
-  const usersQ = useAsync(() => listUsers(), []);
+  const usersQ = useUsers();
   const clientsQ = useAsync<Client[]>(() => listClients(), []);
 
   useReloadOnFocus(() => {

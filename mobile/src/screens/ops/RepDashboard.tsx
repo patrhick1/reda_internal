@@ -20,7 +20,7 @@ import {
   siblingGroupKey,
   type DeliveryRow,
 } from '@/services/deliveries';
-import { listUsers } from '@/services/users';
+import { useUsers } from '@/hooks/queries';
 import { listDeparturesToday } from '@/services/agent-departures';
 import { listOpenIssuesForOps, opsUnreadAgentCounts } from '@/services/delivery-messages';
 import { AppBar, Card, Icon } from '@/components/ui';
@@ -50,7 +50,7 @@ export function RepDashboard() {
   // future-dated postponed orders fall outside the today-scoped deliveries fetch.
   // Pulled separately so they still surface in "To notify" (Uzo, 2026-06-20).
   const postponedQ = useAsync(() => listPostponed(user.role), [user.role]);
-  const usersQ = useAsync(() => listUsers(), []);
+  const usersQ = useUsers();
   // Actionable agent-flagged issues — same card dispatchers get on OpsDashboard,
   // minus 'not my route': that's a reassign-only flag handled by admins/
   // dispatchers, hidden from reps so they can't consume it (not_my_route_admin_only.sql).

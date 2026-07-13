@@ -7,7 +7,8 @@ import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { listCurrentStock, type StockMatrixRow } from '@/services/stock';
-import { listUsers, type AppUser } from '@/services/users';
+import { type AppUser } from '@/services/users';
+import { useUsers } from '@/hooks/queries';
 import { AppBar, Avatar, Card, Empty, FilterChips, Icon, Input } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 import { getHolderStats, type HolderStats } from '@/lib/stock-helpers';
@@ -24,7 +25,7 @@ type AgentHolder = {
 export function AgentStockList() {
   const router = useRouter();
   const stockQ = useAsync(() => listCurrentStock(), []);
-  const usersQ = useAsync(() => listUsers(), []);
+  const usersQ = useUsers();
 
   useReloadOnFocus(() => {
     stockQ.reload();

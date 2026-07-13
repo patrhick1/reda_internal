@@ -4,7 +4,8 @@ import { Button } from '@/components/Button';
 import { Select } from '@/components/Select';
 import { FilterChips } from '@/components/ui';
 import { useAsync } from '@/hooks/useAsync';
-import { listUsers, isWarehousePlace } from '@/services/users';
+import { isWarehousePlace } from '@/services/users';
+import { useUsers } from '@/hooks/queries';
 import { listProducts } from '@/services/products';
 import {
   stockMovementSummary,
@@ -47,7 +48,7 @@ const LINES: { key: keyof Omit<MovementPeriod, 'period_start' | 'net'>; label: s
 
 export function StockMovementSummaryScreen() {
   const productsQ = useAsync(() => listProducts(), []);
-  const usersQ = useAsync(() => listUsers(), []);
+  const usersQ = useUsers();
 
   const [productId, setProductId] = useState<string | null>(null);
   const [holderId, setHolderId] = useState<string | null>(null); // null = all holders

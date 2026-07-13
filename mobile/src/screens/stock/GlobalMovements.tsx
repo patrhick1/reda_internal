@@ -28,7 +28,8 @@ import {
 import { KIND_CATEGORIES, iconFor } from '@/screens/stock/Movements';
 import { listProducts, listActiveProductsByClient } from '@/services/products';
 import { listClients } from '@/services/clients';
-import { listUsers, isWarehousePlace } from '@/services/users';
+import { isWarehousePlace } from '@/services/users';
+import { useUsers } from '@/hooks/queries';
 import { useAsync } from '@/hooks/useAsync';
 import { lagosDayKey, lagosDayLabel, relativeTime, todayLagos, isYmd } from '@/lib/date';
 import { presetRange, type Preset } from '@/lib/reconcile';
@@ -130,7 +131,7 @@ export function GlobalMovements({
     [effectiveClientId],
   );
   const clientsQ = useAsync(() => (clientMode ? Promise.resolve([]) : listClients()), [clientMode]);
-  const holdersQ = useAsync(() => listUsers(), []);
+  const holdersQ = useUsers();
 
   const filtersActive =
     kindCat !== 'all' ||

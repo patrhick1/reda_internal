@@ -1,6 +1,13 @@
 import { supabase } from '@/lib/supabase';
+import { queryClient } from '@/lib/query';
 import type { Database } from '@/types/database.gen';
 import type { Role } from '@/lib/permissions';
+
+/** Users directory changed → refresh cached useUsers() consumers (Phase 2).
+ *  Prefix key matches every ['users', uid, includeInactive] entry. */
+function invalidateUsers(): void {
+  void queryClient.invalidateQueries({ queryKey: ['users'] });
+}
 
 export type AppUser = Database['public']['Tables']['users']['Row'] & {
   role: Role;
@@ -113,6 +120,7 @@ export async function createAppUser(input: CreateUserInput): Promise<string> {
     p_warehouse_id: (input.warehouseId ?? null) as unknown as string,
   });
   if (error) throw error;
+  invalidateUsers();
   return data as string;
 }
 
@@ -139,6 +147,7 @@ export async function updateUser(
     p_warehouse_id: (input.warehouseId ?? null) as unknown as string,
   });
   if (error) throw error;
+  invalidateUsers();
 }
 
 export async function deactivateUser(
@@ -152,11 +161,13 @@ export async function deactivateUser(
     p_stock_disposition: stockDisposition as unknown as string,
   });
   if (error) throw error;
+  invalidateUsers();
 }
 
 export async function reactivateUser(id: string): Promise<void> {
   const { error } = await supabase.rpc('reactivate_user', { p_id: id });
   if (error) throw error;
+  invalidateUsers();
 }
 
 /** Admin-only: set another user's sign-in email and/or password. Pass either
@@ -174,6 +185,7 @@ export async function setUserCredentials(
     p_reason: reason as unknown as string,
   });
   if (error) throw error;
+  invalidateUsers();
 }
 
 /** Agent → zone preferences. Two independent lists per agent:
@@ -224,6 +236,7 @@ export async function updateSelfProfile(input: SelfProfileInput): Promise<void> 
     p_phone: input.phone ?? '',
   });
   if (error) throw error;
+  invalidateUsers();
 }
 
 /** Re-authenticates with the current password (since Supabase doesn't expose

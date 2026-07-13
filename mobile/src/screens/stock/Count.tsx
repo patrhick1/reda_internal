@@ -5,7 +5,8 @@ import { Button } from '@/components/Button';
 import { Field } from '@/components/Field';
 import { Select } from '@/components/Select';
 import { useAsync } from '@/hooks/useAsync';
-import { listUsers, isWarehousePlace } from '@/services/users';
+import { isWarehousePlace } from '@/services/users';
+import { useUsers } from '@/hooks/queries';
 import { listHolderStock, type StockMatrixRow } from '@/services/stock';
 import {
   recordStockCount,
@@ -37,7 +38,7 @@ const BASE_FOR: Record<StockCountScreenProps['scope'], '/(admin)' | '/(dispatche
 
 export function StockCountScreen({ scope }: StockCountScreenProps) {
   const basePath = BASE_FOR[scope];
-  const usersQ = useAsync(() => listUsers(), []);
+  const usersQ = useUsers();
 
   const [holderId, setHolderId] = useState<string | null>(null);
   const [counted, setCounted] = useState<Record<string, string>>({});
