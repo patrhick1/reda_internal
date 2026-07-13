@@ -76,15 +76,16 @@ function tableFrom(map: Map<string, Stat>): TableRow[] {
 
 function printTable(header: string, map: Map<string, Stat>): TableRow[] {
   const rows = tableFrom(map);
+  // Aligned plain-text rows print cleanly in BOTH the Metro terminal (Hermes has
+  // no reliable console.table) and the browser console. One block per table.
+  const w = rows.reduce((m, r) => Math.max(m, r.label.length), 0);
+  const lines = rows.map(
+    (r) =>
+      `  ${r.label.padEnd(w)}  ×${String(r.count).padStart(3)}  ${r.KB.padStart(8)} KB` +
+      `  (max ${r.maxKB} KB)`,
+  );
   // eslint-disable-next-line no-console
-  console.log(header);
-  if (typeof console.table === 'function') {
-    // eslint-disable-next-line no-console
-    console.table(rows);
-  } else {
-    // eslint-disable-next-line no-console
-    rows.forEach((r) => console.log(`[egress] ${r.label}  ×${r.count}  ${r.KB}KB`));
-  }
+  console.log([header, ...lines].join('\n'));
   return rows;
 }
 
