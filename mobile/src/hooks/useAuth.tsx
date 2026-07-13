@@ -10,6 +10,7 @@ import {
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '@/lib/supabase';
+import { queryClient } from '@/lib/query';
 import { PUSH_TOKEN_STORAGE_KEY } from '@/hooks/usePushTokenRegistration';
 import { isRole, type Role } from '@/lib/permissions';
 
@@ -183,6 +184,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.warn('release push token on sign-out failed', e);
         }
         await supabase.auth.signOut();
+        // Wipe every cached query so the next account never sees this one's
+        // deliveries/stock/reference data.
+        queryClient.clear();
       },
       retry,
     }),

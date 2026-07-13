@@ -2,13 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { Banner, Icon, Input, Sheet, StatusPill } from '@/components/ui';
 import { colors, fonts, STATUS_HIDDEN_FROM_PICKER, STATUS_META } from '@/lib/theme';
-import {
-  bulkChangeStatus,
-  listStatusDefs,
-  type DeliveryRow,
-  type DeliveryStatusDef,
-} from '@/services/deliveries';
-import { useAsync } from '@/hooks/useAsync';
+import { bulkChangeStatus, type DeliveryRow, type DeliveryStatusDef } from '@/services/deliveries';
+import { useStatusDefs } from '@/hooks/queries';
 import { newClientUuid } from '@/lib/uuid';
 import { errorMessage } from '@/lib/errors';
 
@@ -36,7 +31,7 @@ export function BulkStatusSheet({
   onClose: () => void;
   onChanged: (counts: { changedCount: number; skippedCount: number }) => void;
 }) {
-  const defsQ = useAsync<DeliveryStatusDef[]>(() => listStatusDefs(), []);
+  const defsQ = useStatusDefs();
   const [picked, setPicked] = useState<DeliveryStatusDef | null>(null);
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);

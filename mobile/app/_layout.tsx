@@ -3,6 +3,8 @@ import { Slot, useRouter, useSegments } from 'expo-router';
 import { ActivityIndicator, Platform, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from '@/lib/query';
 import { AuthProvider, useAuth, type AccountState } from '@/hooks/useAuth';
 import { usePushTokenRegistration } from '@/hooks/usePushTokenRegistration';
 import { useRedaFonts } from '@/hooks/useRedaFonts';
@@ -74,13 +76,18 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <StatusBar style="auto" />
       <ErrorBoundary>
-        {/* AuthProvider must wrap QueueProvider — the queue keys its
-            persisted storage off the signed-in userId via useAuth(). */}
-        <AuthProvider>
-          <QueueProvider>
-            <AuthGate />
-          </QueueProvider>
-        </AuthProvider>
+        {/* QueryClientProvider wraps the app so every screen shares one cache.
+            The client is a module singleton, so sign-out (useAuth) can clear it
+            directly to keep one account's data out of the next. */}
+        <QueryClientProvider client={queryClient}>
+          {/* AuthProvider must wrap QueueProvider — the queue keys its
+              persisted storage off the signed-in userId via useAuth(). */}
+          <AuthProvider>
+            <QueueProvider>
+              <AuthGate />
+            </QueueProvider>
+          </AuthProvider>
+        </QueryClientProvider>
       </ErrorBoundary>
     </SafeAreaProvider>
   );

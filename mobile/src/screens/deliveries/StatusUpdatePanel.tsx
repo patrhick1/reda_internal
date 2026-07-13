@@ -4,7 +4,8 @@ import { Field } from '@/components/Field';
 import { Button } from '@/components/Button';
 import { Select } from '@/components/Select';
 import { useAsync } from '@/hooks/useAsync';
-import { listStatusDefs, listTransitionsFrom, type DeliveryRow } from '@/services/deliveries';
+import { useStatusDefs } from '@/hooks/queries';
+import { listTransitionsFrom, type DeliveryRow } from '@/services/deliveries';
 import { useEnqueueChangeStatus } from '@/queue/mutations';
 import { errorMessage } from '@/lib/errors';
 
@@ -31,7 +32,7 @@ export function StatusUpdatePanel({
     () => listTransitionsFrom(currentStatus, isAdmin),
     [currentStatus, isAdmin],
   );
-  const defsQ = useAsync(() => listStatusDefs(), []);
+  const defsQ = useStatusDefs();
 
   const [toStatus, setToStatus] = useState<string | null>(null);
   const [reason, setReason] = useState('');

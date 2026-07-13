@@ -15,11 +15,11 @@ import * as Clipboard from 'expo-clipboard';
 import { useSupabaseChannel } from '@/hooks/useSupabaseChannel';
 import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
+import { useStatusDefs } from '@/hooks/queries';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
   getDelivery,
   listDeliveryHistoryChain,
-  listStatusDefs,
   rolledFromLabel,
   type DeliveryChainHistoryRow,
 } from '@/services/deliveries';
@@ -77,7 +77,7 @@ export function DeliveryDetail() {
 
   const deliveryQ = useAsync(() => getDelivery(user.role, id), [user.role, id]);
   const historyQ = useAsync(() => listDeliveryHistoryChain(id), [id]);
-  const defsQ = useAsync(() => listStatusDefs(), []);
+  const defsQ = useStatusDefs();
   const notifQ = useAsync(() => listClientNotificationsForDelivery(id), [id]);
   const canMarkNotified = canMarkClientNotified(user.role);
 

@@ -16,12 +16,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
+import { useStatusDefs } from '@/hooks/queries';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
   getDelivery,
   getDeliveryHandoffState,
   listDeliveryHistoryChain,
-  listStatusDefs,
   getSiblingContact,
   type DeliveryChainHistoryRow,
   type DeliveryHandoffState,
@@ -60,7 +60,7 @@ export default function AgentDeliveryDetail() {
   // an agent read tags for their own delivery. Read-only here — agents don't
   // notify — so the rider can see e.g. "Client notified · Moyo" on each status.
   const notifQ = useAsync(() => listClientNotificationsForDelivery(id), [id]);
-  const defsQ = useAsync(() => listStatusDefs(), []);
+  const defsQ = useStatusDefs();
   // "Another agent is also on this order" — the cross-agent race. Surfaces the
   // sibling's latest contact so this agent doesn't call the customer a second
   // time (see get_sibling_contact). Null when there's no worked sibling.

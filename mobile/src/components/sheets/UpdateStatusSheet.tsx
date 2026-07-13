@@ -10,12 +10,12 @@ import {
   TERMINAL_STATUSES,
 } from '@/lib/theme';
 import {
-  listStatusDefs,
   listTransitionsFrom,
   type DeliveryRow,
   type DeliveryStatusTransition,
 } from '@/services/deliveries';
 import { useAsync } from '@/hooks/useAsync';
+import { useStatusDefs } from '@/hooks/queries';
 import { useEnqueueChangeStatus, useEnqueueFlagDelivery } from '@/queue/mutations';
 import { STATUS_AUTO_ISSUE } from '@/services/delivery-messages';
 import { errorMessage } from '@/lib/errors';
@@ -54,7 +54,7 @@ export function UpdateStatusSheet({
     () => (open && delivery ? listTransitionsFrom(currentStatus, isAdmin) : Promise.resolve([])),
     [open, currentStatus, isAdmin],
   );
-  const defsQ = useAsync(() => listStatusDefs(), []);
+  const defsQ = useStatusDefs();
 
   const [picked, setPicked] = useState<DeliveryStatusTransition | null>(null);
   const [reason, setReason] = useState('');
