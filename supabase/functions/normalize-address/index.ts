@@ -12,10 +12,13 @@
 //      free tier. Same model, paid billing.
 //   5. Always write a row to address_match_log (delivery_id may be null).
 //
-// Returns:
-//   { match_log_id, matched_location_id, confidence, maps_response, gemini_response }
-//   (The `gemini_response` column name is historical — it now stores the
-//    OpenRouter chat-completion response. Model is still Gemini.)
+// Returns (compact by default — the full Maps/OpenRouter envelopes are already
+// persisted to address_match_log, and callers only read these three fields):
+//   { match_log_id, matched_location_id, confidence }
+// Pass { include_debug: true } to additionally get { maps_response,
+// gemini_response } in the response body (the `gemini_response` name is
+// historical — it now holds the OpenRouter chat-completion response; model is
+// still Gemini).
 //
 // Deploy:  supabase functions deploy normalize-address
 // Secrets: GOOGLE_MAPS_API_KEY, OPENROUTER_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
@@ -199,6 +202,10 @@ Deno.serve(async (req) => {
 
   const rawAddress: string = String(body.raw_address ?? '').trim();
   let deliveryId: string | null = body.delivery_id ?? null;
+  // Opt-in: return the full Maps/OpenRouter envelopes too. Off by default so the
+  // internal callers, which use only match_log_id/matched_location_id/confidence,
+  // don't pull several KB of debug JSON back on every parse.
+  const includeDebug = body.include_debug === true;
   if (!rawAddress) return new Response('raw_address required', { status: 400 });
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
@@ -322,11 +329,19 @@ Deno.serve(async (req) => {
     }), { status: 200, headers: { 'content-type': 'application/json' } });
   }
 
-  return new Response(JSON.stringify({
+  // Compact by default — maps_response/gemini_response were already written to
+  // address_match_log above, so we don't echo them back unless asked.
+  const result: Record<string, unknown> = {
     match_log_id: logRow.id,
     matched_location_id: matchedLocationId,
     confidence,
-    maps_response: mapsResponse,
-    gemini_response: geminiResponse,
-  }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  if (includeDebug) {
+    result.maps_response = mapsResponse;
+    result.gemini_response = geminiResponse;
+  }
+  return new Response(JSON.stringify(result), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
 });
