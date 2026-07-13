@@ -8,10 +8,10 @@
 // Reached from a "Needs attention" row on the admin Home; registered as a
 // hidden tab in (admin)/_layout.tsx. The (admin) group already gates to admins;
 // deliveries_admin independently enforces is_admin().
-import { useCallback } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, Text, View } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import {
   deliveryProductsLabel,
   listNegativeMarginDeliveries,
@@ -25,12 +25,9 @@ export default function AdminNegativeMargin() {
   const router = useRouter();
   const rowsQ = useAsync<DeliveryRow[]>(() => listNegativeMarginDeliveries(), []);
 
-  useFocusEffect(
-    useCallback(() => {
-      rowsQ.reload();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []),
-  );
+  useReloadOnFocus(() => {
+    rowsQ.reload();
+  });
 
   const rows = rowsQ.data ?? [];
 

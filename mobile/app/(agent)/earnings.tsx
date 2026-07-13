@@ -1,7 +1,7 @@
-import { useCallback, useMemo } from 'react';
+import { useMemo } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, Text, View } from 'react-native';
-import { useFocusEffect } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { listAgentEarnings, type AgentEarningRow } from '@/services/deliveries';
 import { listAgentEarningsSummary } from '@/services/reconciliation';
@@ -25,13 +25,10 @@ export default function AgentEarnings() {
   const today = useMemo(() => lagosWeekRange().today, []);
   const remitQ = useAsync(() => listAgentEarningsSummary(today, today), [today]);
 
-  useFocusEffect(
-    useCallback(() => {
-      reload();
-      remitQ.reload();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [reload]),
-  );
+  useReloadOnFocus(() => {
+    reload();
+    remitQ.reload();
+  });
 
   const buckets = useMemo(() => bucketize(data ?? []), [data]);
   // Single-row response keyed to the caller; defensive fallbacks keep the

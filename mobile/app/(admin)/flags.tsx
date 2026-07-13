@@ -8,8 +8,9 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { listFeatureFlags, setFeatureFlag, type FeatureFlag } from '@/services/bot';
 import { AppBar, Banner, Card, Empty } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
@@ -20,12 +21,9 @@ export default function Flags() {
   const flagsQ = useAsync<FeatureFlag[]>(() => listFeatureFlags(), []);
   const [busy, setBusy] = useState<string | null>(null);
 
-  useFocusEffect(
-    useCallback(() => {
-      flagsQ.reload();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []),
-  );
+  useReloadOnFocus(() => {
+    flagsQ.reload();
+  });
 
   const toggle = useCallback(
     async (key: string, next: boolean) => {

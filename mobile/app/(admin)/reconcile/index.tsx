@@ -12,8 +12,9 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
   getWaybillPaidOutTotal,
@@ -117,20 +118,17 @@ export default function AdminReconcile() {
   // money this day isn't silently dropped from the file.
   const clientBanksQ = useAsync(() => listClients({ includeInactive: true }), []);
 
-  useFocusEffect(
-    useCallback(() => {
-      if (!rangeValid) return;
-      clientsQ.reload();
-      agentsQ.reload();
-      waybillCostsQ.reload();
-      settlementsQ.reload();
-      // Bank details can be edited on another screen between visits — refresh so
-      // the payout file reflects newly-added details instead of treating the
-      // vendor as still missing.
-      clientBanksQ.reload();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [from, to, rangeValid]),
-  );
+  useReloadOnFocus(() => {
+    if (!rangeValid) return;
+    clientsQ.reload();
+    agentsQ.reload();
+    waybillCostsQ.reload();
+    settlementsQ.reload();
+    // Bank details can be edited on another screen between visits — refresh so
+    // the payout file reflects newly-added details instead of treating the
+    // vendor as still missing.
+    clientBanksQ.reload();
+  });
 
   const notify = useCallback((title: string, msg: string) => {
     if (Platform.OS === 'web') {

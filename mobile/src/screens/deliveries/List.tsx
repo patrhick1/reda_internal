@@ -10,9 +10,10 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
   listDeliveries,
@@ -348,18 +349,15 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     [exitSelect, reload, postponedQ, unassignedQ],
   );
 
-  useFocusEffect(
-    useCallback(() => {
-      reload();
-      if (canSeeClaims) {
-        followupsQ.reload();
-        unreadQ.reload();
-        postponedQ.reload();
-        unassignedQ.reload();
-      }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [reload, canSeeClaims]),
-  );
+  useReloadOnFocus(() => {
+    reload();
+    if (canSeeClaims) {
+      followupsQ.reload();
+      unreadQ.reload();
+      postponedQ.reload();
+      unassignedQ.reload();
+    }
+  });
 
   // Selection belongs to the current list scope. Changing status/date filters
   // clears it so a hidden row can never remain selected after the visible pool

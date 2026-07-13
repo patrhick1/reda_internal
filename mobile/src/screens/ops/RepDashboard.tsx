@@ -8,10 +8,11 @@
 // inside a shared component. If rep and dispatcher diverge further the
 // two files evolve independently; if they converge again we extract more
 // shared building blocks then.
-import { useCallback, useMemo } from 'react';
+import { useMemo } from 'react';
 import { ScrollView, Text, View } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
   listDeliveries,
@@ -63,16 +64,13 @@ export function RepDashboard() {
   // workload row so reps know who's in transit before relaying a message.
   const departuresQ = useAsync(() => listDeparturesToday(), []);
 
-  useFocusEffect(
-    useCallback(() => {
-      deliveriesQ.reload();
-      postponedQ.reload();
-      issuesQ.reload();
-      unreadQ.reload();
-      departuresQ.reload();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []),
-  );
+  useReloadOnFocus(() => {
+    deliveriesQ.reload();
+    postponedQ.reload();
+    issuesQ.reload();
+    unreadQ.reload();
+    departuresQ.reload();
+  });
 
   const deliveries = useMemo(() => deliveriesQ.data ?? [], [deliveriesQ.data]);
   const agents = useMemo(

@@ -5,8 +5,9 @@
 //      Each row taps through to the existing Delivery detail screen.
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, Text, View } from 'react-native';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import {
   listAvailableOrders,
   getAvailableOrderRawMessage,
@@ -65,13 +66,10 @@ export function AvailableAgentDetail({ basePath }: { basePath: AvailableBasePath
   const ordersQ = useAsync(() => listAvailableOrders(), []);
   const stockQ = useAsync(() => listCurrentStock(), []);
 
-  useFocusEffect(
-    useCallback(() => {
-      ordersQ.reload();
-      stockQ.reload();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []),
-  );
+  useReloadOnFocus(() => {
+    ordersQ.reload();
+    stockQ.reload();
+  });
 
   const agentRows = useMemo<AvailableOrderRow[]>(
     () => (ordersQ.data ?? []).filter((r) => r.agent_id === agentId),

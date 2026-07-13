@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -8,9 +8,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Link, useFocusEffect } from 'expo-router';
+import { Link } from 'expo-router';
 import { Button } from '@/components/Button';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { listUsers, type AppUser } from '@/services/users';
 
 export default function UsersList() {
@@ -19,11 +20,7 @@ export default function UsersList() {
     () => listUsers({ includeInactive }),
     [includeInactive],
   );
-  useFocusEffect(
-    useCallback(() => {
-      reload();
-    }, [reload]),
-  );
+  useReloadOnFocus(reload);
 
   return (
     <View style={styles.container}>

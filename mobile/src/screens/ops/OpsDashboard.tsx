@@ -1,13 +1,14 @@
 // Dispatcher home dashboard. The rep home is RepDashboard (separate file)
 // because reps also surface a Recent-activity list; dispatchers don't.
-import { useCallback, useMemo } from 'react';
+import { useMemo } from 'react';
 import { ScrollView, Text, View } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { usePendingLocationChangesCount } from '@/hooks/usePendingLocationChangesCount';
 import { listDeliveries, siblingGroupKey, type DeliveryRow } from '@/services/deliveries';
-import { listBotInbound } from '@/services/bot';
+import { countNeedsReview } from '@/services/bot';
 import { listAvailableOrders } from '@/services/available-orders';
 import { listOpenIssuesForOps } from '@/services/delivery-messages';
 import { AppBar, Card, FAB, Icon } from '@/components/ui';
@@ -30,26 +31,23 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
   const user = useCurrentUser();
   const router = useRouter();
   const deliveriesQ = useAsync(() => listDeliveries(user.role), [user.role]);
-  const reviewQ = useAsync(() => listBotInbound('needs_review', 100), []);
+  const reviewQ = useAsync(() => countNeedsReview(), []);
   const availableQ = useAsync(() => listAvailableOrders(), []);
   // Actionable agent-flagged issues — wrong_address / payment_dispute /
   // product_issue / other. Auto-seeded cant_reach_client threads are filtered
   // out server-side so this card doesn't double up with the soft-fail count.
   const issuesQ = useAsync(() => listOpenIssuesForOps(), []);
 
-  useFocusEffect(
-    useCallback(() => {
-      deliveriesQ.reload();
-      reviewQ.reload();
-      availableQ.reload();
-      issuesQ.reload();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []),
-  );
+  useReloadOnFocus(() => {
+    deliveriesQ.reload();
+    reviewQ.reload();
+    availableQ.reload();
+    issuesQ.reload();
+  });
 
   const deliveries = useMemo(() => deliveriesQ.data ?? [], [deliveriesQ.data]);
   const stats = useMemo(() => bucketCounts(deliveries), [deliveries]);
-  const reviewCount = (reviewQ.data ?? []).length;
+  const reviewCount = reviewQ.data ?? 0;
   // Zone-change approvals are dispatcher-only (managers); reps never poll.
   const pendingZoneCount = usePendingLocationChangesCount(user.role === 'dispatcher');
   const unassignedCount = deliveries.filter((d) => !d.assigned_agent_id).length;

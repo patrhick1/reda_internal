@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -10,9 +10,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Link, useFocusEffect } from 'expo-router';
+import { Link } from 'expo-router';
 import { Button } from '@/components/Button';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { listProducts, type ProductWithClient } from '@/services/products';
 
 type Section = { title: string; data: ProductWithClient[] };
@@ -25,11 +26,7 @@ export default function ProductsList() {
     [includeInactive],
   );
 
-  useFocusEffect(
-    useCallback(() => {
-      reload();
-    }, [reload]),
-  );
+  useReloadOnFocus(reload);
 
   // Search is a pure client-side filter — the full list is already loaded, so
   // no extra query/pagination. Empty query = unfiltered (today's behavior).

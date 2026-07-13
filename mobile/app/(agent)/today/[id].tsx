@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,8 +13,9 @@ import { initiateTeamCall } from '@/services/calls';
 import { ensureMicPermission } from '@/lib/calls/permissions';
 import { canPlaceCall } from '@/lib/calls/availability';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
   getDelivery,
@@ -88,16 +89,13 @@ export default function AgentDeliveryDetail() {
   const optimisticStatus = optimistic?.status ?? null;
   const { snapshot: queueSnapshot } = useQueue();
 
-  useFocusEffect(
-    useCallback(() => {
-      deliveryQ.reload();
-      historyQ.reload();
-      siblingQ.reload();
-      handoffQ.reload();
-      notifQ.reload();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []),
-  );
+  useReloadOnFocus(() => {
+    deliveryQ.reload();
+    historyQ.reload();
+    siblingQ.reload();
+    handoffQ.reload();
+    notifQ.reload();
+  });
 
   useEffect(() => {
     if (!optimistic) return;

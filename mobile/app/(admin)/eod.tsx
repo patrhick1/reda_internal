@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Platform, ScrollView, Text, View } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import {
   previewEodRollover,
   runEodRolloverAllStuck,
@@ -33,12 +34,9 @@ export default function EndOfDay() {
   const [rolling, setRolling] = useState(false);
   const today = todayLagos();
   const previewQ = useAsync<EodPreviewRow[]>(() => previewEodRollover(today), [today]);
-  useFocusEffect(
-    useCallback(() => {
-      previewQ.reload();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [today]),
-  );
+  useReloadOnFocus(() => {
+    previewQ.reload();
+  });
 
   // Split by the server's verdict: only 'roll' carries forward; everything else
   // is closed out. No status logic on the device — `action` comes straight from

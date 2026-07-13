@@ -1,4 +1,3 @@
-import { useCallback } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -8,19 +7,16 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Link, useFocusEffect } from 'expo-router';
+import { Link } from 'expo-router';
 import { Button } from '@/components/Button';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { listCurrentRates, type LocationRate } from '@/services/rate-card';
 import { formatNaira } from '@/lib/format';
 
 export default function RatesMatrix() {
   const { data, loading, error, reload } = useAsync(() => listCurrentRates(), []);
-  useFocusEffect(
-    useCallback(() => {
-      reload();
-    }, [reload]),
-  );
+  useReloadOnFocus(reload);
 
   if (error) {
     return (

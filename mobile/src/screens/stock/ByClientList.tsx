@@ -9,10 +9,11 @@
 // them. basePath is the route group the per-client detail lives under — only the
 // warehouse uses this today; admin/dispatcher get the same data via the
 // StockOverview "By client" tab.
-import { useCallback, useMemo } from 'react';
+import { useMemo } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, View } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import {
   listCurrentStock,
   groupByClient,
@@ -31,13 +32,10 @@ export function StockByClientList({ basePath }: { basePath: ByClientBasePath }) 
   const stockQ = useAsync(() => listCurrentStock(), []);
   const clientsQ = useAsync<Client[]>(() => listClients(), []);
 
-  useFocusEffect(
-    useCallback(() => {
-      stockQ.reload();
-      clientsQ.reload();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []),
-  );
+  useReloadOnFocus(() => {
+    stockQ.reload();
+    clientsQ.reload();
+  });
 
   // Merge every active client over the stock groups so "do we have any Decency?"
   // resolves to an explicit "Nothing in stock" card rather than a missing row.

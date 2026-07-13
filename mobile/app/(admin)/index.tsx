@@ -1,7 +1,8 @@
-import { useCallback, useMemo } from 'react';
+import { useMemo } from 'react';
 import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { usePendingLocationChangesCount } from '@/hooks/usePendingLocationChangesCount';
 import {
@@ -39,15 +40,12 @@ export default function AdminHome() {
   const usersQ = useAsync(() => listUsers(), []);
   const negMarginQ = useAsync(() => countNegativeMarginDeliveries(), []);
 
-  useFocusEffect(
-    useCallback(() => {
-      todayQ.reload();
-      reviewQ.reload();
-      issuesQ.reload();
-      negMarginQ.reload();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []),
-  );
+  useReloadOnFocus(() => {
+    todayQ.reload();
+    reviewQ.reload();
+    issuesQ.reload();
+    negMarginQ.reload();
+  });
 
   const stats = useMemo(() => summarize(todayQ.data ?? []), [todayQ.data]);
   const reviewCount = reviewQ.data ?? 0;

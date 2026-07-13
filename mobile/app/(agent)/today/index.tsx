@@ -8,9 +8,10 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
   listDeliveries,
@@ -92,14 +93,11 @@ export default function AgentToday() {
   // "Left the warehouse" state for today — drives the hero control and, once set,
   // lets ops (warehouse/dispatcher/rep) see this rider is on the road.
   const departureQ = useAsync(() => getMyDepartureToday(user.userId), [user.userId]);
-  useFocusEffect(
-    useCallback(() => {
-      reload();
-      reloadPostponed();
-      departureQ.reload();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [reload, reloadPostponed]),
-  );
+  useReloadOnFocus(() => {
+    reload();
+    reloadPostponed();
+    departureQ.reload();
+  });
 
   // Optimistic override so the toggle feels instant: undefined = trust the
   // server value, string = optimistically departed, null = optimistically not.

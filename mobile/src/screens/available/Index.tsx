@@ -4,10 +4,11 @@
 //      person reads this to know which units to surface today.
 //   2. "By agent" — one row per agent with available orders, summarising
 //      the per-product breakdown inline. Tap a row → per-agent drilldown.
-import { useCallback, useMemo } from 'react';
+import { useMemo } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, Text, View } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import {
   listAvailableOrders,
   groupByAgent,
@@ -29,13 +30,10 @@ export function AvailableOrdersIndex({ basePath }: { basePath: AvailableBasePath
   // the dispatcher/warehouse don't assign fresh orders to a rider already gone.
   const departuresQ = useAsync(() => listDeparturesToday(), []);
 
-  useFocusEffect(
-    useCallback(() => {
-      ordersQ.reload();
-      departuresQ.reload();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []),
-  );
+  useReloadOnFocus(() => {
+    ordersQ.reload();
+    departuresQ.reload();
+  });
 
   const rows = useMemo(() => ordersQ.data ?? [], [ordersQ.data]);
   const agents = useMemo(() => groupByAgent(rows), [rows]);

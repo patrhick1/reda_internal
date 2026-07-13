@@ -1,10 +1,11 @@
 // Warehouse-facing read-only view of stock currently held by agents. This is a
 // narrower companion to the admin/dispatcher Stock Overview: warehouse staff can
 // answer "who has this stock?" without getting the full ops stock dashboard.
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, Text, View } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { listCurrentStock, type StockMatrixRow } from '@/services/stock';
 import { listUsers, type AppUser } from '@/services/users';
 import { AppBar, Avatar, Card, Empty, FilterChips, Icon, Input } from '@/components/ui';
@@ -25,13 +26,10 @@ export function AgentStockList() {
   const stockQ = useAsync(() => listCurrentStock(), []);
   const usersQ = useAsync(() => listUsers(), []);
 
-  useFocusEffect(
-    useCallback(() => {
-      stockQ.reload();
-      usersQ.reload();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []),
-  );
+  useReloadOnFocus(() => {
+    stockQ.reload();
+    usersQ.reload();
+  });
 
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<AgentFilter>('all');

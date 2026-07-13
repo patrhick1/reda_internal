@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -8,10 +8,11 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Link, useFocusEffect } from 'expo-router';
+import { Link } from 'expo-router';
 import { Button } from '@/components/Button';
 import { Icon, Input } from '@/components/ui';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { listLocations, type Location } from '@/services/locations';
 
 export default function LocationsList() {
@@ -22,11 +23,7 @@ export default function LocationsList() {
     [includeInactive],
   );
 
-  useFocusEffect(
-    useCallback(() => {
-      reload();
-    }, [reload]),
-  );
+  useReloadOnFocus(reload);
 
   // Search matches the location name OR any of its aliases — so "have I added
   // this alias before?" is answerable without opening every location. Pure

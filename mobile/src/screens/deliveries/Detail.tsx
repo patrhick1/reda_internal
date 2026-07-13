@@ -10,10 +10,11 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import { useSupabaseChannel } from '@/hooks/useSupabaseChannel';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
   getDelivery,
@@ -109,14 +110,11 @@ export function DeliveryDetail() {
   );
   const hasSubAgents = (subAgentsQ.data ?? []).length > 0;
 
-  useFocusEffect(
-    useCallback(() => {
-      deliveryQ.reload();
-      historyQ.reload();
-      notifQ.reload();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []),
-  );
+  useReloadOnFocus(() => {
+    deliveryQ.reload();
+    historyQ.reload();
+    notifQ.reload();
+  });
 
   // Realtime: when a teammate marks a status-history row as "client
   // notified", every other rep watching the screen sees the green tick

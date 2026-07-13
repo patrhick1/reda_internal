@@ -1,7 +1,8 @@
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
   listBotInbound,
@@ -43,12 +44,9 @@ export function NeedsReviewScreen() {
   const status = TABS.find((t) => t.key === tab)!.status;
   const rowsQ = useAsync<BotInboundRow[]>(() => listBotInbound(status, 100), [status]);
 
-  useFocusEffect(
-    useCallback(() => {
-      rowsQ.reload();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [status]),
-  );
+  useReloadOnFocus(() => {
+    rowsQ.reload();
+  });
 
   const canFix = canResolveReview(user.role);
   const detailRouteBase: `/${string}` =

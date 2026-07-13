@@ -1,7 +1,8 @@
 import { useCallback, useMemo } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, Share, Text, View } from 'react-native';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { listClientRemitDetail, type ClientRemitDetailRow } from '@/services/reconciliation';
 import { AppBar, Button, Card, Empty } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
@@ -33,13 +34,10 @@ export default function ClientReconcileDetail() {
     [id, from, to, rangeValid],
   );
 
-  useFocusEffect(
-    useCallback(() => {
-      if (!rangeValid) return;
-      detailQ.reload();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [id, from, to, rangeValid]),
-  );
+  useReloadOnFocus(() => {
+    if (!rangeValid) return;
+    detailQ.reload();
+  });
 
   const rows = useMemo(() => detailQ.data ?? [], [detailQ.data]);
 

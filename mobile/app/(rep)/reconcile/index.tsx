@@ -1,7 +1,8 @@
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { listRepClientRemit, type RepClientRemitRow } from '@/services/reconciliation';
 import { AppBar, Card, DateField, Empty, FilterChips, Icon } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
@@ -30,12 +31,9 @@ export default function RepReconcile() {
     [from, to, rangeValid],
   );
 
-  useFocusEffect(
-    useCallback(() => {
-      if (rangeValid) clientsQ.reload();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [from, to, rangeValid]),
-  );
+  useReloadOnFocus(() => {
+    if (rangeValid) clientsQ.reload();
+  });
 
   const applyPreset = useCallback((p: Preset) => {
     setPreset(p);

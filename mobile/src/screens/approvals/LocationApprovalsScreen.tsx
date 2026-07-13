@@ -1,7 +1,7 @@
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
-import { useFocusEffect } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import {
   listLocationChanges,
   approveLocationChange,
@@ -34,12 +34,9 @@ export function LocationApprovalsScreen() {
     [tab],
   );
 
-  useFocusEffect(
-    useCallback(() => {
-      rowsQ.reload();
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [tab]),
-  );
+  useReloadOnFocus(() => {
+    rowsQ.reload();
+  });
 
   // Reason prompt for reject / revert (both require a reason).
   const [prompt, setPrompt] = useState<{ changeId: string; kind: 'reject' | 'revert' } | null>(

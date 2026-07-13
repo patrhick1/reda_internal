@@ -9,10 +9,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Link, useFocusEffect } from 'expo-router';
-import { useCallback } from 'react';
+import { Link } from 'expo-router';
 import { Button } from '@/components/Button';
 import { useAsync } from '@/hooks/useAsync';
+import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { listClients, type Client } from '@/services/clients';
 
 export default function ClientsList() {
@@ -24,11 +24,7 @@ export default function ClientsList() {
   );
 
   // Re-fetch when this screen comes back into focus (e.g., after creating a client)
-  useFocusEffect(
-    useCallback(() => {
-      reload();
-    }, [reload]),
-  );
+  useReloadOnFocus(reload);
 
   // Pure client-side filter over the already-loaded list (no extra query).
   const filtered = useMemo(() => filterClients(data ?? [], query), [data, query]);
