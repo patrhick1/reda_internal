@@ -205,7 +205,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   }, [datePreset, customDate, debouncedNeedle]);
 
   const { data, loading, error, reload } = useAsync(
-    () => listDeliveries(user.role, listFilters),
+    (signal) => listDeliveries(user.role, listFilters, signal),
     [user.role, datePreset, customDate, debouncedNeedle],
   );
 

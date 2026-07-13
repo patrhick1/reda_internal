@@ -95,6 +95,7 @@ export type DeliveryRow = (DeliveryAdminRow | DeliverySafeRow) &
  *  cutover, so the table name is cast. */
 export async function fetchDeliveryItemsFor(
   deliveryIds: string[],
+  signal?: AbortSignal,
 ): Promise<Record<string, DeliveryItem[]>> {
   const ids = deliveryIds.filter(Boolean);
   if (ids.length === 0) return {};
@@ -121,14 +122,16 @@ export async function fetchDeliveryItemsFor(
   const slices: string[][] = [];
   for (let i = 0; i < ids.length; i += CHUNK) slices.push(ids.slice(i, i + CHUNK));
   const results = await Promise.all(
-    slices.map((slice) =>
-      untyped
+    slices.map((slice) => {
+      let q = untyped
         .from('delivery_items')
         .select(
           'id, delivery_id, product_catalog_id, quantity_ordered, quantity_delivered, customer_price, product:product_catalog(product_name)',
         )
-        .in('delivery_id', slice),
-    ),
+        .in('delivery_id', slice);
+      if (signal) q = q.abortSignal(signal);
+      return q;
+    }),
   );
   const map: Record<string, DeliveryItem[]> = {};
   for (const { data, error } of results) {
@@ -202,9 +205,11 @@ export function deliveryProductsLabel(row: {
  *  no items get []. Used by listDeliveries / getDelivery. */
 async function attachItemsToRows<T extends { id: string | null }>(
   rows: (T & { items?: DeliveryItem[] })[],
+  signal?: AbortSignal,
 ): Promise<(T & { items: DeliveryItem[] })[]> {
   const byDelivery = await fetchDeliveryItemsFor(
     rows.map((r) => r.id).filter((x): x is string => !!x),
+    signal,
   );
   return rows.map((r) => ({ ...r, items: (r.id && byDelivery[r.id]) || [] }));
 }
@@ -398,6 +403,7 @@ function todayLagos(): string {
 export async function listDeliveries(
   role: Role,
   filters: ListFilters = {},
+  signal?: AbortSignal,
 ): Promise<DeliveryRow[]> {
   const view = VIEW_FOR[role];
   // created_at DESC is the stable tiebreaker for rows that share a
@@ -422,13 +428,18 @@ export async function listDeliveries(
     // so a browse doesn't ship the whole history each load. Older orders → search.
     query = query.limit(ALL_DATES_LIMIT);
   }
+  // Cancel this request on the wire if the caller's signal fires (superseded
+  // search term / filter change / unmount) instead of letting the response
+  // drain egress after useAsync has already discarded it.
+  if (signal) query = query.abortSignal(signal);
   const { data, error } = await query;
   if (error) throw error;
   const joined = (data ?? []).map((row) =>
     attachJoins(row as unknown as JoinShape & object),
   ) as Omit<DeliveryRow, 'items'>[];
-  // [Feature A] attach line items (one batched query).
-  const rows = (await attachItemsToRows(joined)) as DeliveryRow[];
+  // [Feature A] attach line items (one batched query) — same signal so the
+  // follow-up items fetch is cancelled too.
+  const rows = (await attachItemsToRows(joined, signal)) as DeliveryRow[];
 
   // Sort by most recent ACTIVITY DESC — a row touched 30s ago sits above one
   // untouched all day. "Activity" = the latest of a status change
@@ -1276,8 +1287,20 @@ export async function listLocationChanges(states?: string[]): Promise<LocationCh
   return data ?? [];
 }
 
-/** Count of pending zone-change requests — for the approvals tab badge. */
+/** Count of pending zone-change requests — for the approvals tab badge.
+ *  Scalar count_pending_location_changes() RPC (mirrors list_location_changes'
+ *  is_manager() gate) instead of downloading the full pending list to read
+ *  .length. Untyped rpc handle: the new function isn't in database.gen.ts yet.
+ *  Needs tools/live-defs/count_pending_location_changes.sql applied live; until
+ *  it is, we fall back to the old list-count so the badge can't silently read 0
+ *  if the app ships before the SQL. Drop the fallback once the RPC is live. */
 export async function countPendingLocationChanges(): Promise<number> {
+  const rpc = supabase.rpc as unknown as (
+    fn: string,
+    args?: Record<string, unknown>,
+  ) => Promise<{ data: unknown; error: unknown }>;
+  const { data, error } = await rpc('count_pending_location_changes');
+  if (!error) return Number(data ?? 0);
   const rows = await listLocationChanges(['pending']);
   return rows.length;
 }
