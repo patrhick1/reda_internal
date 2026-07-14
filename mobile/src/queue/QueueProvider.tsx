@@ -14,6 +14,7 @@ import { newClientUuid } from '@/lib/uuid';
 import { logError } from '@/lib/sentry';
 import { errorMessage, TerminalError } from '@/lib/errors';
 import { useAuth } from '@/hooks/useAuth';
+import { invalidateDeliveries } from '@/services/deliveries';
 import { loadJobs, saveJobs, migrateLegacyQueue, clearAllQueueStorageForTests } from './storage';
 import { executeJob } from './executors';
 import {
@@ -44,6 +45,19 @@ type QueueContextValue = {
 };
 
 const QueueContext = createContext<QueueContextValue | null>(null);
+
+// [Egress Phase 2.4] Queued job kinds that change a delivery row (status, flag,
+// leftover return, agent zone change). When one lands, invalidate the cached
+// delivery lists so the agent/ops list updates itself the moment the queue
+// drains — no need to wait for a focus/pull refresh. Stock-only kinds
+// (create_stock_adjustment / create_stock_transfer) are intentionally absent —
+// they don't touch the delivery lists.
+const DELIVERY_JOB_KINDS: ReadonlySet<JobKind> = new Set<JobKind>([
+  'change_delivery_status',
+  'flag_delivery',
+  'return_delivery_leftover',
+  'agent_change_delivery_location',
+]);
 
 export function QueueProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -197,6 +211,10 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         try {
           await executeJob(next);
           setJobs((curr) => curr.filter((j) => j.id !== next.id));
+          // A queued delivery mutation just landed server-side — refresh the
+          // cached delivery lists so the change surfaces without waiting for the
+          // next focus/pull. (No-op for stock-only jobs.)
+          if (DELIVERY_JOB_KINDS.has(next.kind)) invalidateDeliveries();
         } catch (e) {
           const msg = errorMessage(e);
           const isTerminal = e instanceof TerminalError;

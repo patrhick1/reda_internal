@@ -1,8 +1,21 @@
 import { supabase } from '@/lib/supabase';
+import { queryClient } from '@/lib/query';
 import type { Database } from '@/types/database.gen';
 import type { Role } from '@/lib/permissions';
 import { STATUS_GROUPS, STATUS_META, TERMINAL_STATUSES } from '@/lib/theme';
 import { formatDayMonthLagos } from '@/lib/date';
+
+/** [Egress Phase 2.4] Invalidate every cached delivery list at once. All list
+ *  variants (date-scoped list, unassigned, postponed, agent-postponed — see
+ *  hooks/queries.ts) share the ['deliveries'] key prefix, so this one prefix
+ *  match marks them stale and refetches whichever are mounted. Called after
+ *  every direct delivery-mutation RPC below, and from the queue drain loop when
+ *  a delivery-affecting job lands (queue/QueueProvider.tsx) — those two are the
+ *  only paths that change a delivery, so the cache can't drift from the server.
+ *  `void` because callers don't await the background refetch. */
+export function invalidateDeliveries(): void {
+  void queryClient.invalidateQueries({ queryKey: ['deliveries'] });
+}
 
 // The two role-scoped views over deliveries. Same columns except:
 //   - deliveries_admin has charged_snapshot, agent_payment_snapshot, margin
@@ -761,6 +774,7 @@ export async function createDelivery(input: CreateDeliveryInput): Promise<string
     p_items: toItemsJsonb(input.items) as unknown as undefined, // [Feature A]
   });
   if (error) throw error;
+  invalidateDeliveries();
   return data as string;
 }
 
@@ -807,6 +821,7 @@ export async function updateDeliveryFields(
     p_items: toItemsJsonb(patch.items) as unknown as undefined, // [Feature A]
   });
   if (error) throw error;
+  invalidateDeliveries();
 }
 
 /** Returns the agent's current on-hand quantity for a specific product.
@@ -888,6 +903,7 @@ export async function changeDeliveryStatus(input: ChangeStatusInput): Promise<vo
     p_item_quantities: itemQuantities as unknown as undefined, // [Feature A]
   });
   if (error) throw error;
+  invalidateDeliveries();
 }
 
 /** Team-lead handoff: move a delivery from the current owner (must be the
@@ -906,6 +922,7 @@ export async function reassignToSubAgent(
     p_sub_agent_id: subAgentId,
   });
   if (error) throw error;
+  invalidateDeliveries();
 }
 
 /** Admin/dispatcher/rep: clear assigned_agent_id on a non-terminal delivery,
@@ -922,6 +939,7 @@ export async function unassignDelivery(deliveryId: string, reason: string): Prom
     p_reason: reason,
   });
   if (error) throw error;
+  invalidateDeliveries();
 }
 
 /** Admin: correct the location on an already-DELIVERED row. The server re-runs
@@ -944,6 +962,7 @@ export async function correctDeliveryLocation(
     p_reason: reason,
   });
   if (error) throw error;
+  invalidateDeliveries();
 }
 
 /** Admin: manually override a delivery's snapshotted Reda charge + agent payout.
@@ -964,6 +983,7 @@ export async function correctDeliveryCharge(
     p_reason: reason,
   });
   if (error) throw error;
+  invalidateDeliveries();
 }
 
 /** Create a waybill / pickup order: a money-only record (no product, customer,
@@ -988,6 +1008,7 @@ export async function createWaybill(input: {
     p_label: (input.label ?? undefined) as unknown as string,
   });
   if (error) throw error;
+  invalidateDeliveries();
   return data as string;
 }
 
@@ -1023,6 +1044,7 @@ export async function updateWaybill(input: {
     p_note: (input.note ?? undefined) as unknown as string,
   });
   if (error) throw error;
+  invalidateDeliveries();
 }
 
 /** Admin: revert a wrongly-`delivered` row back to `pending`. The server
@@ -1056,6 +1078,7 @@ export async function revertDeliveryToPending(deliveryId: string, reason: string
     p_reason: reason,
   });
   if (error) throw error;
+  invalidateDeliveries();
 }
 
 /** Admin/dispatcher/rep: clear `location_id` on a non-terminal delivery so
@@ -1076,6 +1099,7 @@ export async function clearDeliveryLocation(deliveryId: string, reason: string):
     p_reason: reason,
   });
   if (error) throw error;
+  invalidateDeliveries();
 }
 
 /** Admin/dispatcher bulk reassign: set the assigned agent on every supplied
@@ -1094,6 +1118,7 @@ export async function bulkAssignDeliveries(
     p_agent_id: agentId,
   });
   if (error) throw error;
+  invalidateDeliveries();
   return (data ?? 0) as number;
 }
 
@@ -1106,6 +1131,7 @@ export async function deleteDelivery(deliveryId: string, reason: string): Promis
     p_reason: reason,
   });
   if (error) throw error;
+  invalidateDeliveries();
 }
 
 /** Admin-only bulk soft delete. Returns the per-row tally. Rows in
@@ -1120,6 +1146,7 @@ export async function bulkDeleteDeliveries(
     p_reason: reason,
   });
   if (error) throw error;
+  invalidateDeliveries();
   const row = (data ?? {}) as { deleted_count?: number; skipped_count?: number };
   return {
     deletedCount: row.deleted_count ?? 0,
@@ -1145,6 +1172,7 @@ export async function bulkChangeStatus(
     p_reason: reason,
   });
   if (error) throw error;
+  invalidateDeliveries();
   const row = (data ?? {}) as { changed_count?: number; skipped_count?: number };
   return {
     changedCount: row.changed_count ?? 0,
@@ -1314,6 +1342,7 @@ export async function approveLocationChange(changeId: string, reason?: string): 
     p_reason: (reason ?? null) as unknown as string,
   });
   if (error) throw error;
+  invalidateDeliveries();
 }
 
 /** Manager: reject a pending zone change (reason required). Notifies the agent. */
@@ -1323,6 +1352,7 @@ export async function rejectLocationChange(changeId: string, reason: string): Pr
     p_reason: reason,
   });
   if (error) throw error;
+  invalidateDeliveries();
 }
 
 /** Manager: revert an applied/approved zone change back to its original zone
@@ -1333,4 +1363,5 @@ export async function revertLocationChange(changeId: string, reason: string): Pr
     p_reason: reason,
   });
   if (error) throw error;
+  invalidateDeliveries();
 }

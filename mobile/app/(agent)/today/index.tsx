@@ -13,12 +13,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
-import {
-  listDeliveries,
-  listAgentPostponed,
-  deliveryProductsLabel,
-  type DeliveryRow,
-} from '@/services/deliveries';
+import { useDeliveriesList, useAgentPostponed } from '@/hooks/queries';
+import { deliveryProductsLabel, type DeliveryRow } from '@/services/deliveries';
 import { formatNaira, formatYmdShort } from '@/lib/format';
 import { formatTimeLagos } from '@/lib/date';
 import { errorMessage } from '@/lib/errors';
@@ -80,7 +76,10 @@ export default function AgentToday() {
   // Unread admin/dispatcher replies, keyed by delivery — drives the per-row
   // dot here and the bottom-tab badge in the layout. Shared single subscription.
   const { byDelivery: unreadByDelivery, total: unreadTotal } = useAgentUnread();
-  const { data, loading, error, reload } = useAsync(() => listDeliveries(user.role), [user.role]);
+  // Cached today list (audit Phase 2.4): no filters → today's Lagos date scope.
+  // detail→back within staleTime is a cache hit; a queued mark-delivered
+  // invalidates ['deliveries'] on drain so the row flips to delivered on its own.
+  const { data, loading, error, reload, fetching, refetchIfStale } = useDeliveriesList(user.role);
   // Future-dated postponed orders this agent owns — a separate light query so
   // they survive leaving the today list (see listAgentPostponed). Only drives
   // the "Postponed" chip + its list slice; never folds into today's `data`.
@@ -89,13 +88,17 @@ export default function AgentToday() {
     loading: postponedLoading,
     error: postponedError,
     reload: reloadPostponed,
-  } = useAsync(() => listAgentPostponed(user.userId), [user.userId]);
+    fetching: postponedFetching,
+    refetchIfStale: refetchPostponedIfStale,
+  } = useAgentPostponed(user.userId);
   // "Left the warehouse" state for today — drives the hero control and, once set,
   // lets ops (warehouse/dispatcher/rep) see this rider is on the road.
   const departureQ = useAsync(() => getMyDepartureToday(user.userId), [user.userId]);
   useReloadOnFocus(() => {
-    reload();
-    reloadPostponed();
+    // Stale-aware: a fresh today list is served from cache on back-navigation;
+    // only an aged one re-downloads. departure is a tiny scalar — force it.
+    refetchIfStale();
+    refetchPostponedIfStale();
     departureQ.reload();
   });
 
@@ -613,7 +616,7 @@ export default function AgentToday() {
         refreshControl={
           <RefreshControl
             refreshing={
-              filter === 'postponed' ? postponedLoading && !!postponedData : loading && !!data
+              filter === 'postponed' ? postponedFetching && !!postponedData : fetching && !!data
             }
             onRefresh={() => {
               reload();

@@ -16,9 +16,11 @@ import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
-  listDeliveries,
-  listPostponed,
-  listUnassigned,
+  useDeliveriesList,
+  usePostponedDeliveries,
+  useUnassignedDeliveries,
+} from '@/hooks/queries';
+import {
   deliveryProductsLabel,
   rolledFromLabel,
   SEARCH_LIMIT,
@@ -204,9 +206,15 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     }
   }, [datePreset, customDate, debouncedNeedle]);
 
-  const { data, loading, error, reload } = useAsync(
-    (signal) => listDeliveries(user.role, listFilters, signal),
-    [user.role, datePreset, customDate, debouncedNeedle],
+  // Cached delivery list (audit Phase 2.4): keyed by role + the normalized
+  // filter, so detail→back within staleTime is a cache hit and each date/search
+  // scope keeps its own entry. `fetching` drives the pull-to-refresh spinner;
+  // `refetchIfStale` (wired to focus below) only re-downloads once the cache has
+  // aged past the list staleTime. Delivery mutations invalidate ['deliveries']
+  // so live changes still land immediately.
+  const { data, loading, error, reload, fetching, refetchIfStale } = useDeliveriesList(
+    user.role,
+    listFilters,
   );
 
   // Active follow-up claims, fetched only for the ops set (admin / dispatcher /
@@ -238,20 +246,14 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   // the dedicated "Postponed" filter — a separate query because the main list is
   // date-scoped, while postponed orders scatter across future dates. Ops-wide
   // (RLS-scoped); see listPostponed.
-  const postponedQ = useAsync<DeliveryRow[]>(
-    () => (canSeeClaims ? listPostponed(user.role) : Promise.resolve([])),
-    [canSeeClaims, user.role],
-  );
+  const postponedQ = usePostponedDeliveries(user.role, { enabled: canSeeClaims });
 
   // Every unassigned, still-open delivery across ALL dates. Like Postponed, this
   // is its OWN query — the Unassigned chip is deliberately date-INDEPENDENT (a
   // row waiting for an agent is queue work no matter its scheduled_date) and
   // never shows terminal rows (both enforced server-side in listUnassigned).
   // Ops-wide (RLS-scoped); empty for agents.
-  const unassignedQ = useAsync<DeliveryRow[]>(
-    () => (canSeeClaims ? listUnassigned(user.role) : Promise.resolve([])),
-    [canSeeClaims, user.role],
-  );
+  const unassignedQ = useUnassignedDeliveries(user.role, { enabled: canSeeClaims });
 
   // Roster for the agent picker. Skip the fetch entirely when the picker
   // won't render (agents). Cached for the screen's lifetime — agents don't
@@ -350,12 +352,16 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   );
 
   useReloadOnFocus(() => {
-    reload();
+    // Stale-aware on focus: a list still within staleTime is served from cache
+    // (the back-navigation egress win); only an aged list re-downloads. The
+    // uncached overlays (followups / unread — cheap + realtime-backed) still
+    // force-refresh so their pills stay live.
+    refetchIfStale();
     if (canSeeClaims) {
       followupsQ.reload();
       unreadQ.reload();
-      postponedQ.reload();
-      unassignedQ.reload();
+      postponedQ.refetchIfStale();
+      unassignedQ.refetchIfStale();
     }
   });
 
@@ -790,10 +796,10 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
           <RefreshControl
             refreshing={
               filter === 'postponed'
-                ? postponedQ.loading && !!postponedQ.data
+                ? postponedQ.fetching && !!postponedQ.data
                 : filter === 'unassigned'
-                  ? unassignedQ.loading && !!unassignedQ.data
-                  : loading && !!data
+                  ? unassignedQ.fetching && !!unassignedQ.data
+                  : fetching && !!data
             }
             onRefresh={() => {
               reload();
