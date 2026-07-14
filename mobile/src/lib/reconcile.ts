@@ -53,6 +53,10 @@ export type ShareDeliveryLine = {
   /** 'waybill' rows are client charges, not customer/product deliveries. */
   orderType?: string | null;
   customerName: string | null;
+  /** Customer phone — included in each block only when the client opts in
+   *  (clientShareShowsPhone), so they can reconcile rows against their own
+   *  records. Null/blank simply omits the line. */
+  customerPhone?: string | null;
   /** Client's own sales rep / closer captured from the forwarded order. */
   clientRep?: string | null;
   /** Every product on the delivery. Multi-product orders carry N entries — the
@@ -258,6 +262,20 @@ export function clientShareFormat(clientId: string | null | undefined): ClientSh
   return (clientId && CLIENT_SHARE_FORMAT[clientId]) || 'default';
 }
 
+// Clients who want each delivery block to carry the customer's phone number in
+// their "Share with client" report (e.g. Afaking Nig Ltd reconcile by phone).
+// Orthogonal to CLIENT_SHARE_FORMAT — a client can want the phone AND a custom
+// layout — and safe on the rep path (the phone isn't a Reda-internal figure).
+// Keyed by client id (stable across renames). To add a client: drop their id here.
+const CLIENT_SHARE_PHONE: Set<string> = new Set([
+  '8e250591-864e-479d-a4da-e85b30794be9', // Afaking Nig Ltd
+]);
+
+/** Whether a client's share message should include the customer phone per row. */
+export function clientShareShowsPhone(clientId: string | null | undefined): boolean {
+  return !!clientId && CLIENT_SHARE_PHONE.has(clientId);
+}
+
 // Builds the WhatsApp "Share with client" message in Uzo's preferred shape:
 // Delivery rows use Name / Product(s) / Paid: Cash / To Remit / Note (default)
 // or Name / Product(s) / Customer paid / Delivery fee / Note (paidAndFee).
@@ -272,8 +290,13 @@ export function buildClientShareMessage(input: {
    *  "Customer paid" + "Delivery fee" (Karami). Admin-only — see
    *  ShareDeliveryLine.paid. Defaults to 'default'. */
   format?: ClientShareFormat;
+  /** When true, add a "Phone: …" line under each customer's Name (clients who
+   *  reconcile against their own records by phone — e.g. Afaking). Composes with
+   *  any format. Defaults to false. */
+  showPhone?: boolean;
 }): string {
   const format = input.format ?? 'default';
+  const showPhone = input.showPhone ?? false;
   const blocks = input.rows.map((r) => {
     if (r.orderType === 'waybill') {
       // Uzo's format: the charge-side breakdown only (type fee + each pickup
@@ -285,7 +308,9 @@ export function buildClientShareMessage(input: {
         `${r.customerName ?? 'Pickup / Waybill'} ${formatNaira(Math.abs(Number(r.remit ?? 0)))}`
       );
     }
-    const lines = [`Name: ${r.customerName ?? 'Customer'}`, ...shareProductLines(r.products)];
+    const lines = [`Name: ${r.customerName ?? 'Customer'}`];
+    if (showPhone && r.customerPhone?.trim()) lines.push(`Phone: ${r.customerPhone.trim()}`);
+    lines.push(...shareProductLines(r.products));
     if (format === 'paidAndFee') {
       // Karami's format: show what the customer paid and Reda's delivery fee
       // instead of the net remit. The cash POS fee (when any) is listed too so

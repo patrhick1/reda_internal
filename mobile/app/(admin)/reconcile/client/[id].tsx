@@ -11,6 +11,7 @@ import { formatDateLagos, formatRangeLagos, isYmd } from '@/lib/date';
 import {
   buildClientShareMessage,
   clientShareFormat,
+  clientShareShowsPhone,
   deriveDeliveryNote,
   remitProductsDisplay,
   remitRowProducts,
@@ -78,11 +79,14 @@ export default function ClientReconcileDetail() {
       // Per-client layout (Karami gets the paid + delivery-fee breakdown). Admin
       // path only — this exposes the Reda fee, which reps must never see.
       format: clientShareFormat(id),
+      // Per-client: include the customer phone per row (e.g. Afaking Nig Ltd).
+      showPhone: clientShareShowsPhone(id),
       rows: rows.map((r) => {
         const q = remitRowQuantities(r);
         return {
           orderType: r.order_type,
           customerName: r.customer_name,
+          customerPhone: r.customer_phone,
           clientRep: r.client_rep,
           products: remitRowProducts(r),
           remit: Number(r.remit ?? 0),

@@ -54,6 +54,7 @@ export type ClientRemitDetailRow = {
   order_type: string | null;
   scheduled_date: string;
   customer_name: string;
+  customer_phone: string | null;
   client_rep: string | null;
   product_name: string | null;
   location_name: string | null;
@@ -151,6 +152,7 @@ export type RepClientRemitDetailRow = {
   order_type: string | null;
   scheduled_date: string;
   customer_name: string;
+  customer_phone: string | null;
   client_rep: string | null;
   product_name: string | null;
   location_name: string | null;

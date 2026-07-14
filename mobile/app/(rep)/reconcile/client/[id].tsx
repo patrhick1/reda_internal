@@ -11,6 +11,7 @@ import { formatDateLagos, formatRangeLagos, isYmd } from '@/lib/date';
 import {
   buildClientShareMessage,
   clientShareFormat,
+  clientShareShowsPhone,
   deriveDeliveryNote,
   remitProductsDisplay,
   remitRowProducts,
@@ -59,11 +60,14 @@ export default function RepClientReconcileDetail() {
       // releases paid/reda_fee; for every other client they arrive null and the
       // default net-remit layout is used, so the fee stays hidden from reps.
       format: clientShareFormat(id),
+      // Per-client: include the customer phone per row (e.g. Afaking Nig Ltd).
+      showPhone: clientShareShowsPhone(id),
       rows: rows.map((r) => {
         const q = remitRowQuantities(r);
         return {
           orderType: r.order_type,
           customerName: r.customer_name,
+          customerPhone: r.customer_phone,
           clientRep: r.client_rep,
           products: remitRowProducts(r),
           remit: Number(r.remit ?? 0),
