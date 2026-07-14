@@ -56,7 +56,7 @@ import {
 } from '@/lib/reconcile';
 import { buildKudaPayoutXlsx, type KudaPayoutRow } from '@/lib/kuda-export';
 import { kudaCodeForBankName } from '@/lib/kuda-banks';
-import { listClients } from '@/services/clients';
+import { useClients } from '@/hooks/queries';
 import { downloadTextFile, downloadBinaryFile } from '@/lib/download';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -116,7 +116,7 @@ export default function AdminReconcile() {
   // Vendor bank details for the Moniepoint payout CSV. Date-independent, so it
   // loads once. Includes inactive clients so a deactivated vendor still owed
   // money this day isn't silently dropped from the file.
-  const clientBanksQ = useAsync(() => listClients({ includeInactive: true }), []);
+  const clientBanksQ = useClients({ includeInactive: true });
 
   useReloadOnFocus(() => {
     if (!rangeValid) return;

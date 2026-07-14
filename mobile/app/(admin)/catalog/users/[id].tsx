@@ -20,7 +20,7 @@ import {
   type AgentStockRow,
   type AppUser,
 } from '@/services/users';
-import { listLocations, type Location } from '@/services/locations';
+import { useLocations } from '@/hooks/queries';
 import type { Role } from '@/lib/permissions';
 import { errorMessage } from '@/lib/errors';
 
@@ -366,7 +366,7 @@ function CredentialsPanel({
 type ZoneKind = 'preferred' | 'avoid';
 
 function PreferredZones({ agentId, agentName }: { agentId: string; agentName: string }) {
-  const locsQ = useAsync<Location[]>(() => listLocations(), []);
+  const locsQ = useLocations();
   const currentQ = useAsync(() => listAgentLocations(agentId), [agentId]);
 
   const [picks, setPicks] = useState<Map<string, ZoneKind>>(new Map());

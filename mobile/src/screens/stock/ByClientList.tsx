@@ -20,7 +20,7 @@ import {
   mergeClientsWithStockGroups,
   type ClientStockGroup,
 } from '@/services/stock';
-import { listClients, type Client } from '@/services/clients';
+import { useClients } from '@/hooks/queries';
 import { AppBar, Empty } from '@/components/ui';
 import { ClientStockCard } from '@/components/stock/ClientStockCard';
 import { colors } from '@/lib/theme';
@@ -30,7 +30,7 @@ export type ByClientBasePath = '/(warehouse)';
 export function StockByClientList({ basePath }: { basePath: ByClientBasePath }) {
   const router = useRouter();
   const stockQ = useAsync(() => listCurrentStock(), []);
-  const clientsQ = useAsync<Client[]>(() => listClients(), []);
+  const clientsQ = useClients();
 
   useReloadOnFocus(() => {
     stockQ.reload();

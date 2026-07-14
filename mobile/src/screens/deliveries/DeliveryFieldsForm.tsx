@@ -2,9 +2,8 @@ import type { ReactElement } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { useAsync } from '@/hooks/useAsync';
-import { listClients, type Client } from '@/services/clients';
 import { listActiveProductsByClient, type Product } from '@/services/products';
-import { listLocations, type Location } from '@/services/locations';
+import { useClients, useLocations } from '@/hooks/queries';
 import { listUsers, type AppUser } from '@/services/users';
 import { getAgentProductsStock } from '@/services/deliveries';
 import { Avatar, Banner, Card, DateField, Empty, Input } from '@/components/ui';
@@ -189,8 +188,8 @@ export function DeliveryFieldsForm({
 }: DeliveryFieldsFormProps) {
   const hide = useMemo(() => new Set(hideFields ?? []), [hideFields]);
 
-  const clientsQ = useAsync<Client[]>(() => listClients(), []);
-  const locationsQ = useAsync<Location[]>(() => listLocations(), []);
+  const clientsQ = useClients();
+  const locationsQ = useLocations();
   const agentsQ = useAsync<AppUser[]>(
     () => listUsers().then((all) => all.filter((u) => u.role === 'agent' && u.is_active)),
     [],

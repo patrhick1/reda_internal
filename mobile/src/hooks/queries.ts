@@ -13,6 +13,14 @@ import { errorMessage } from '@/lib/errors';
 import { useAuth } from '@/hooks/useAuth';
 import { listStatusDefs, type DeliveryStatusDef } from '@/services/deliveries';
 import { listUsers, type AppUser } from '@/services/users';
+import { listClients, type Client } from '@/services/clients';
+import { listLocations, type Location } from '@/services/locations';
+import {
+  listActiveProductsByClient,
+  listProducts,
+  type Product,
+  type ProductWithClient,
+} from '@/services/products';
 
 /** The subset of useAsync's return shape that consumers rely on. */
 export type AsyncLike<T> = {
@@ -80,6 +88,73 @@ export function useUsers(
       queryFn: () => listUsers({ includeInactive }),
       staleTime: REFERENCE_STALE,
       enabled: opts.enabled ?? true,
+    }),
+  );
+}
+
+/** Vendors directory. Invalidated by services/clients.ts on any client mutation
+ *  (create/update/bank/ceiling/(de/re)activate). */
+export function useClients(
+  opts: { includeInactive?: boolean; enabled?: boolean } = {},
+): AsyncLike<Client[]> {
+  const uid = useUid();
+  const includeInactive = !!opts.includeInactive;
+  return asAsync(
+    useQuery({
+      queryKey: ['clients', uid, includeInactive],
+      queryFn: () => listClients({ includeInactive }),
+      staleTime: REFERENCE_STALE,
+      enabled: opts.enabled ?? true,
+    }),
+  );
+}
+
+/** Delivery locations / zones. Invalidated by services/locations.ts on any
+ *  location mutation. */
+export function useLocations(
+  opts: { includeInactive?: boolean; enabled?: boolean } = {},
+): AsyncLike<Location[]> {
+  const uid = useUid();
+  const includeInactive = !!opts.includeInactive;
+  return asAsync(
+    useQuery({
+      queryKey: ['locations', uid, includeInactive],
+      queryFn: () => listLocations({ includeInactive }),
+      staleTime: REFERENCE_STALE,
+      enabled: opts.enabled ?? true,
+    }),
+  );
+}
+
+/** Product catalog (joined with client name). Invalidated by services/
+ *  products.ts on any product mutation, and by services/clients.ts on client
+ *  (de/re)activation (which cascades to that client's products). */
+export function useProducts(
+  opts: { includeInactive?: boolean; enabled?: boolean } = {},
+): AsyncLike<ProductWithClient[]> {
+  const uid = useUid();
+  const includeInactive = !!opts.includeInactive;
+  return asAsync(
+    useQuery({
+      queryKey: ['products', uid, includeInactive],
+      queryFn: () => listProducts({ includeInactive }),
+      staleTime: REFERENCE_STALE,
+      enabled: opts.enabled ?? true,
+    }),
+  );
+}
+
+/** Active products for one client (the delivery-creation picker). A null client
+ *  resolves to [] without a request. Shares the ['products-by-client'] key space
+ *  invalidated alongside ['products']. */
+export function useActiveProductsByClient(clientId: string | null): AsyncLike<Product[]> {
+  const uid = useUid();
+  return asAsync(
+    useQuery({
+      queryKey: ['products-by-client', uid, clientId],
+      queryFn: () =>
+        clientId ? listActiveProductsByClient(clientId) : Promise.resolve([] as Product[]),
+      staleTime: REFERENCE_STALE,
     }),
   );
 }

@@ -2,8 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Text, View } from 'react-native';
 import { Banner, Button, Input, Sheet } from '@/components/ui';
 import { Select } from '@/components/Select';
-import { useAsync } from '@/hooks/useAsync';
-import { listClients, type Client } from '@/services/clients';
+import { useClients } from '@/hooks/queries';
 import { updateWaybill } from '@/services/deliveries';
 import { formatNaira } from '@/lib/format';
 import { colors, fonts } from '@/lib/theme';
@@ -40,7 +39,7 @@ export function EditWaybillSheet({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const clientsQ = useAsync<Client[]>(() => listClients(), []);
+  const clientsQ = useClients();
 
   const [clientId, setClientId] = useState<string | null>(null);
   const [label, setLabel] = useState('Waybill');

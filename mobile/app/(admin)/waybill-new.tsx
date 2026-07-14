@@ -15,8 +15,7 @@
 import { useMemo, useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from 'react-native';
 import { router } from 'expo-router';
-import { useAsync } from '@/hooks/useAsync';
-import { listClients, type Client } from '@/services/clients';
+import { useClients } from '@/hooks/queries';
 import { createWaybill } from '@/services/deliveries';
 import { AppBar, Banner, Button, Input } from '@/components/ui';
 import { Select } from '@/components/Select';
@@ -32,7 +31,7 @@ function num(s: string): number {
 }
 
 export default function NewWaybill() {
-  const clientsQ = useAsync<Client[]>(() => listClients(), []);
+  const clientsQ = useClients();
 
   const [clientId, setClientId] = useState<string | null>(null);
   const [orderType, setOrderType] = useState<'Pickup' | 'Waybill' | 'Failed delivery'>('Pickup');

@@ -1,5 +1,17 @@
 import { supabase } from '@/lib/supabase';
+import { queryClient } from '@/lib/query';
 import type { Database } from '@/types/database.gen';
+
+/** Client mutation → refresh cached useClients() consumers (Phase 2). */
+function invalidateClients(): void {
+  void queryClient.invalidateQueries({ queryKey: ['clients'] });
+}
+/** (De)activating a client cascades to its products, so refresh those too. */
+function invalidateClientsAndProducts(): void {
+  invalidateClients();
+  void queryClient.invalidateQueries({ queryKey: ['products'] });
+  void queryClient.invalidateQueries({ queryKey: ['products-by-client'] });
+}
 
 export type Client = Database['public']['Tables']['clients']['Row'];
 
@@ -69,6 +81,7 @@ export async function createClient(input: ClientInput): Promise<string> {
     p_notes: input.notes as unknown as string,
   });
   if (error) throw error;
+  invalidateClients();
   return data as string;
 }
 
@@ -84,6 +97,7 @@ export async function updateClient(id: string, input: ClientInput, reason: RpcTe
     p_auto_cancel_soft_fails: input.autoCancelSoftFails as unknown as boolean,
   });
   if (error) throw error;
+  invalidateClients();
 }
 
 /** Set (overwrite) a client's bank details for the Moniepoint payout CSV. All
@@ -102,6 +116,7 @@ export async function setClientBankDetails(
     p_reason: reason,
   });
   if (error) throw error;
+  invalidateClients();
 }
 
 /** Explicitly remove a client's per-delivery charge cap. Distinct from
@@ -109,14 +124,17 @@ export async function setClientBankDetails(
 export async function clearClientCeiling(id: string, reason: string): Promise<void> {
   const { error } = await supabase.rpc('clear_client_ceiling', { p_id: id, p_reason: reason });
   if (error) throw error;
+  invalidateClients();
 }
 
 export async function deactivateClient(id: string, reason: string): Promise<void> {
   const { error } = await supabase.rpc('deactivate_client', { p_id: id, p_reason: reason });
   if (error) throw error;
+  invalidateClientsAndProducts();
 }
 
 export async function reactivateClient(id: string): Promise<void> {
   const { error } = await supabase.rpc('reactivate_client', { p_id: id });
   if (error) throw error;
+  invalidateClientsAndProducts();
 }

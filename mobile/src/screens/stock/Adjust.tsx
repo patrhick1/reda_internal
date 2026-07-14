@@ -4,11 +4,9 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-nat
 import { Field } from '@/components/Field';
 import { Button } from '@/components/Button';
 import { Select } from '@/components/Select';
-import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { isWarehousePlace } from '@/services/users';
-import { useUsers } from '@/hooks/queries';
-import { listClients } from '@/services/clients';
+import { useUsers, useClients } from '@/hooks/queries';
 import { listActiveProductsByClient } from '@/services/products';
 import { ADJUSTMENT_REASONS, type SingleReason } from '@/services/stock';
 import { useEnqueueStockAdjustment } from '@/queue/mutations';
@@ -40,7 +38,7 @@ export type StockAdjustScreenProps = {
 export function StockAdjustScreen({ scope }: StockAdjustScreenProps) {
   const currentUser = useCurrentUser();
   const usersQ = useUsers();
-  const clientsQ = useAsync(() => listClients(), []);
+  const clientsQ = useClients();
 
   // Admin scope: a pickable user. Warehouse scope derives the place
   // (warehouseHolder) so it can't silently fall back to the caller's own id.

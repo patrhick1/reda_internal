@@ -2,10 +2,9 @@ import { useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { Banner, Input, Sheet } from '@/components/ui';
 import { Select } from '@/components/Select';
-import { useAsync } from '@/hooks/useAsync';
+import { useLocations } from '@/hooks/queries';
 import { colors, fonts } from '@/lib/theme';
 import { correctDeliveryLocation } from '@/services/deliveries';
-import { listLocations, type Location } from '@/services/locations';
 import { errorMessage } from '@/lib/errors';
 
 /** Admin-only confirm sheet for correcting the location on an already-DELIVERED
@@ -40,7 +39,7 @@ export function CorrectLocationSheet({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const locationsQ = useAsync<Location[]>(() => listLocations(), []);
+  const locationsQ = useLocations();
   const options = useMemo(
     () =>
       (locationsQ.data ?? [])

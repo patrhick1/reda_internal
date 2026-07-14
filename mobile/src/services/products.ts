@@ -1,5 +1,13 @@
 import { supabase } from '@/lib/supabase';
+import { queryClient } from '@/lib/query';
 import type { Database } from '@/types/database.gen';
+
+/** Product mutation → refresh cached useProducts()/useActiveProductsByClient()
+ *  consumers (Phase 2). */
+function invalidateProducts(): void {
+  void queryClient.invalidateQueries({ queryKey: ['products'] });
+  void queryClient.invalidateQueries({ queryKey: ['products-by-client'] });
+}
 
 export type Product = Database['public']['Tables']['product_catalog']['Row'];
 
@@ -61,6 +69,7 @@ export async function createProduct(clientId: string, input: ProductInput): Prom
     p_description: input.description as unknown as string,
   });
   if (error) throw error;
+  invalidateProducts();
   return data as string;
 }
 
@@ -76,14 +85,17 @@ export async function updateProduct(
     p_reason: reason as unknown as string,
   });
   if (error) throw error;
+  invalidateProducts();
 }
 
 export async function deactivateProduct(id: string, reason: string): Promise<void> {
   const { error } = await supabase.rpc('deactivate_product', { p_id: id, p_reason: reason });
   if (error) throw error;
+  invalidateProducts();
 }
 
 export async function reactivateProduct(id: string): Promise<void> {
   const { error } = await supabase.rpc('reactivate_product', { p_id: id });
   if (error) throw error;
+  invalidateProducts();
 }

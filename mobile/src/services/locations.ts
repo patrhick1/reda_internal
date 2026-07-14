@@ -1,5 +1,11 @@
 import { supabase } from '@/lib/supabase';
+import { queryClient } from '@/lib/query';
 import type { Database } from '@/types/database.gen';
+
+/** Location mutation → refresh cached useLocations() consumers (Phase 2). */
+function invalidateLocations(): void {
+  void queryClient.invalidateQueries({ queryKey: ['locations'] });
+}
 
 export type Location = Database['public']['Tables']['locations']['Row'];
 
@@ -34,6 +40,7 @@ export async function createLocation(input: LocationInput): Promise<string> {
     p_longitude: input.longitude as unknown as number,
   });
   if (error) throw error;
+  invalidateLocations();
   return data as string;
 }
 
@@ -51,14 +58,17 @@ export async function updateLocation(
     p_reason: reason as unknown as string,
   });
   if (error) throw error;
+  invalidateLocations();
 }
 
 export async function deactivateLocation(id: string, reason: string): Promise<void> {
   const { error } = await supabase.rpc('deactivate_location', { p_id: id, p_reason: reason });
   if (error) throw error;
+  invalidateLocations();
 }
 
 export async function reactivateLocation(id: string): Promise<void> {
   const { error } = await supabase.rpc('reactivate_location', { p_id: id });
   if (error) throw error;
+  invalidateLocations();
 }

@@ -21,7 +21,7 @@ import {
   type ClientProductTotal,
   type ClientStockGroup,
 } from '@/services/stock';
-import { listActiveProductsByClient, type Product } from '@/services/products';
+import { useActiveProductsByClient } from '@/hooks/queries';
 import { AppBar, Button, Card, Empty, Icon } from '@/components/ui';
 import { canViewGlobalStockHistory } from '@/lib/permissions';
 import { colors, fonts } from '@/lib/theme';
@@ -36,10 +36,7 @@ export function ClientStockDetail({ basePath }: { basePath?: '/(admin)' | '/(dis
   const { id, name } = useLocalSearchParams<{ id: string; name?: string }>();
 
   const stockQ = useAsync(() => listCurrentStock(), []);
-  const productsQ = useAsync<Product[]>(
-    () => (id ? listActiveProductsByClient(id) : Promise.resolve([])),
-    [id],
-  );
+  const productsQ = useActiveProductsByClient(id ?? null);
   useReloadOnFocus(() => {
     stockQ.reload();
     productsQ.reload();

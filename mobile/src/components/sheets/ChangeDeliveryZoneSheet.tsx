@@ -2,9 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { Banner, Input, Sheet } from '@/components/ui';
 import { Select } from '@/components/Select';
-import { useAsync } from '@/hooks/useAsync';
+import { useLocations } from '@/hooks/queries';
 import { colors, fonts } from '@/lib/theme';
-import { listLocations, type Location } from '@/services/locations';
 import { useEnqueueAgentChangeLocation } from '@/queue/mutations';
 import { errorMessage } from '@/lib/errors';
 
@@ -38,7 +37,7 @@ export function ChangeDeliveryZoneSheet({
   const [error, setError] = useState<string | null>(null);
   const enqueueZoneChange = useEnqueueAgentChangeLocation();
 
-  const locationsQ = useAsync<Location[]>(() => listLocations(), []);
+  const locationsQ = useLocations();
   const options = useMemo(
     () =>
       (locationsQ.data ?? [])

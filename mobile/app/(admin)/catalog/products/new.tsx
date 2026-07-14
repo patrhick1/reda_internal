@@ -5,17 +5,12 @@ import { Screen } from '@/components/Screen';
 import { Field } from '@/components/Field';
 import { Button } from '@/components/Button';
 import { Select } from '@/components/Select';
-import { useAsync } from '@/hooks/useAsync';
-import { listClients } from '@/services/clients';
+import { useClients } from '@/hooks/queries';
 import { createProduct } from '@/services/products';
 import { errorMessage } from '@/lib/errors';
 
 export default function NewProduct() {
-  const {
-    data: clients,
-    loading: loadingClients,
-    error: clientsError,
-  } = useAsync(() => listClients(), []);
+  const { data: clients, loading: loadingClients, error: clientsError } = useClients();
 
   const [clientId, setClientId] = useState<string | null>(null);
   const [productName, setProductName] = useState('');
