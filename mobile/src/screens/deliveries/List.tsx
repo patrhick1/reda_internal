@@ -23,7 +23,6 @@ import {
   useUsers,
 } from '@/hooks/queries';
 import {
-  deliveryProductsLabel,
   rolledFromLabel,
   SEARCH_LIMIT,
   ALL_DATES_LIMIT,
@@ -1191,7 +1190,7 @@ const DeliveryListRow = memo(function DeliveryListRow({
             }}
             numberOfLines={1}
           >
-            {deliveryProductsLabel(delivery)}
+            {delivery.product_label}
             {delivery.location_name ? ` · ${delivery.location_name}` : ` · `}
             {!delivery.location_name ? (
               <Text style={{ color: colors.red, fontFamily: fonts.bold }}>Unmatched</Text>

@@ -8,7 +8,7 @@ import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { usePendingLocationChangesCount } from '@/hooks/usePendingLocationChangesCount';
 import { useDeliveriesList } from '@/hooks/queries';
-import { siblingGroupKey, type DeliveryRow } from '@/services/deliveries';
+import { type DeliveryRow } from '@/services/deliveries';
 import { countNeedsReview } from '@/services/bot';
 import { listAvailableOrders } from '@/services/available-orders';
 import { listOpenIssuesForOps } from '@/services/delivery-messages';
@@ -353,7 +353,7 @@ function bucketCounts(rows: DeliveryRow[]): {
 } {
   const groups = new Map<string, DeliveryRow[]>();
   for (const r of rows) {
-    const key = siblingGroupKey(r);
+    const key = r.sibling_group_key;
     let arr = groups.get(key);
     if (!arr) {
       arr = [];

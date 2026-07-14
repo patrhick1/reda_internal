@@ -14,7 +14,7 @@ import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
-import { siblingGroupKey, type DeliveryRow } from '@/services/deliveries';
+import { type DeliveryRow } from '@/services/deliveries';
 import { useUsers, useDeliveriesList, usePostponedDeliveries } from '@/hooks/queries';
 import { listDeparturesToday } from '@/services/agent-departures';
 import { listOpenIssuesForOps, opsUnreadAgentCounts } from '@/services/delivery-messages';
@@ -116,7 +116,7 @@ export function RepDashboard() {
     // (today's postponed sits in both) collapses by sibling group below.
     for (const d of [...deliveries, ...(postponedQ.data ?? [])]) {
       if (!awaitsClientNotification(d)) continue;
-      const key = siblingGroupKey(d);
+      const key = d.sibling_group_key;
       const cur = freshestByGroup.get(key);
       if (!cur || (d.latest_changed_at ?? '') > (cur.latest_changed_at ?? '')) {
         freshestByGroup.set(key, d);
@@ -314,7 +314,7 @@ function bucketCounts(rows: DeliveryRow[]): {
 } {
   const groups = new Map<string, DeliveryRow[]>();
   for (const r of rows) {
-    const key = siblingGroupKey(r);
+    const key = r.sibling_group_key;
     let arr = groups.get(key);
     if (!arr) {
       arr = [];

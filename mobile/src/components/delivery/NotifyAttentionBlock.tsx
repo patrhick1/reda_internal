@@ -1,7 +1,7 @@
 import { Text, TouchableOpacity, View } from 'react-native';
 import { Card, Icon, StatusPill } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
-import { deliveryProductsLabel, type DeliveryRow } from '@/services/deliveries';
+import { type DeliveryRow } from '@/services/deliveries';
 
 /** Rep "Awaiting client notification" card: deliveries whose latest status change
  *  the client hasn't been told about yet (see awaitsClientNotification). It's one
@@ -89,9 +89,7 @@ export function NotifyAttentionBlock({
                   }}
                   numberOfLines={1}
                 >
-                  {[deliveryProductsLabel(row), row.assigned_agent_name]
-                    .filter(Boolean)
-                    .join(' · ')}
+                  {[row.product_label, row.assigned_agent_name].filter(Boolean).join(' · ')}
                 </Text>
               </View>
               {row.current_status ? (

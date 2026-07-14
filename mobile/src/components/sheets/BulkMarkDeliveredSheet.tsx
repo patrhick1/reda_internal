@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { Banner, Button, Icon, Sheet } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
-import { type DeliveryRow } from '@/services/deliveries';
+import { fetchDeliveryItemsFor, type DeliveryItem, type DeliveryRow } from '@/services/deliveries';
 import { useEnqueueChangeStatus } from '@/queue/mutations';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { canBulkDeliverRow, canSeePosFeeNote } from '@/lib/permissions';
@@ -69,6 +69,42 @@ export function BulkMarkDeliveredSheet({
   );
   const cashPosFeeTotal = method === 'cash' ? eligible.length * 500 : 0;
 
+  // [Egress Phase 3] List rows no longer carry line items (the compact
+  // projection dropped the per-list delivery_items fetch). Bulk deliver needs
+  // each order's per-line quantities, so hydrate them here — a single batched
+  // fetch for just the selected rows, only when this sheet is open — instead of
+  // shipping items with every list load. Falls back to the legacy single
+  // quantity if the fetch fails (submit tolerates an empty map).
+  const [itemsById, setItemsById] = useState<Record<string, DeliveryItem[]>>({});
+  const [hydrating, setHydrating] = useState(false);
+  const eligibleIdsKey = useMemo(() => eligible.map((d) => d.id).join(','), [eligible]);
+  useEffect(() => {
+    if (!open) {
+      setItemsById({});
+      return;
+    }
+    const ids = eligibleIdsKey ? eligibleIdsKey.split(',') : [];
+    if (ids.length === 0) {
+      setItemsById({});
+      return;
+    }
+    let cancelled = false;
+    setHydrating(true);
+    fetchDeliveryItemsFor(ids)
+      .then((map) => {
+        if (!cancelled) setItemsById(map);
+      })
+      .catch(() => {
+        if (!cancelled) setItemsById({}); // submit falls back to legacy quantity
+      })
+      .finally(() => {
+        if (!cancelled) setHydrating(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, eligibleIdsKey]);
+
   async function submit() {
     if (eligible.length === 0) return;
     setSubmitting(true);
@@ -80,17 +116,18 @@ export function BulkMarkDeliveredSheet({
     try {
       for (const d of eligible) {
         // [Feature A] Bulk = deliver every line in full. Build per-item
-        // quantities from delivery_items (each delivered at its ordered qty);
-        // fall back to the legacy single quantity for rows without items.
-        const hasItems = !!d.items && d.items.length > 0;
+        // quantities from the hydrated line items (each delivered at its ordered
+        // qty); fall back to the legacy single quantity for rows without items.
+        const rowItems = itemsById[d.id!] ?? d.items ?? [];
+        const hasItems = rowItems.length > 0;
         const itemQuantities = hasItems
-          ? d.items.map((it) => ({
+          ? rowItems.map((it) => ({
               productCatalogId: it.product_catalog_id,
               quantityDelivered: it.quantity_ordered,
             }))
           : undefined;
         const totalQty = hasItems
-          ? d.items.reduce((s, it) => s + it.quantity_ordered, 0)
+          ? rowItems.reduce((s, it) => s + it.quantity_ordered, 0)
           : (d.quantity_ordered ?? 1);
         // Each enqueue() mints its own clientUuid, so the N jobs are
         // independently idempotent on retry / re-drain.
@@ -217,13 +254,15 @@ export function BulkMarkDeliveredSheet({
               full
               icon="check"
               onPress={submit}
-              disabled={submitting || eligible.length === 0}
+              disabled={submitting || eligible.length === 0 || hydrating}
             >
               {submitting
                 ? 'Saving…'
-                : eligible.length === 0
-                  ? 'Nothing eligible'
-                  : `Mark ${eligible.length} delivered`}
+                : hydrating
+                  ? 'Loading…'
+                  : eligible.length === 0
+                    ? 'Nothing eligible'
+                    : `Mark ${eligible.length} delivered`}
             </Button>
           </View>
         </View>

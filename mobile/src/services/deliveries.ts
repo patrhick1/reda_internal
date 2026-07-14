@@ -64,6 +64,22 @@ export type DeliveryDisplayJoins = {
    *  base column maintained by trg_set_assigned_at; null on rows never assigned
    *  (ignored by the sort's max). See scripts/assigned-at-activity-sort.sql. */
   assigned_at: string | null;
+  /** [Egress Phase 3] Compact product label ("N items" / single product name /
+   *  legacy name), computed server-side by the deliveries views so the LIST no
+   *  longer fetches delivery_items just to render the label. Mirrors
+   *  deliveryProductsLabel(). Detail rows still carry the full `items` array.
+   *  See scripts/list-projection-phase3.sql. */
+  product_label: string;
+  /** [Egress Phase 3] Server-computed sibling identity (md5 of the same
+   *  normalized phone|item-signature|date|address the client's siblingGroupKey()
+   *  used) so dashboards collapse race-assigned siblings WITHOUT phone/address on
+   *  every row. 'solo:<id>' when the row can't have a sibling. Same partition as
+   *  the old client key → identical unique-order counts. */
+  sibling_group_key: string;
+  /** [Egress Phase 3] greatest(created_at, latest_changed_at, latest_message_at,
+   *  assigned_at) — the list's activity sort key, computed in the view so the
+   *  client sorts on one field instead of shipping all four. */
+  activity_at: string | null;
 };
 
 /** [Feature A] One product line of a delivery (from delivery_items, joined to
@@ -308,6 +324,16 @@ const JOIN_FRAGMENT = `
   assigned_agent:users!deliveries_assigned_agent_id_fkey(display_name)
 `;
 
+// [Egress Phase 3] The LIST join fragment drops the product embed — the compact
+// list projection carries a server-computed `product_label` instead, so cards no
+// longer need the product name joined per row (and lists no longer fetch
+// delivery_items at all). Detail / negative-margin keep the full JOIN_FRAGMENT.
+const LIST_JOIN_FRAGMENT = `
+  client:clients(name),
+  location:locations(name),
+  assigned_agent:users!deliveries_assigned_agent_id_fkey(display_name)
+`;
+
 // Explicit column list for the LIST queries — every column shared by both
 // deliveries_admin and deliveries_safe EXCEPT `bot_raw_message` (the full raw
 // order text, ~13% of each list payload, and only rendered on the detail screen,
@@ -316,15 +342,23 @@ const JOIN_FRAGMENT = `
 // are omitted too — the list never renders them; the one screen that needs
 // margin (listNegativeMarginDeliveries) keeps `*`. Keep this in sync with the
 // views if a column the list needs is ever added.
+// [Egress Phase 3] Compact card contract. Dropped vs the old projection (all
+// detail-only or now server-computed, and verified unread by any list/dashboard/
+// sheet path): customer_phone_alt, raw_address, quantity_delivered, paid,
+// payment_method, delivery_instructions (detail-only), and latest_message_at +
+// assigned_at (were only sort inputs — now folded into the view's activity_at).
+// The sibling key no longer needs raw_address on the client (server computes it).
+// Added: product_label, sibling_group_key, activity_at (see the deliveries views /
+// scripts/list-projection-phase3.sql). quantity_ordered stays for the bulk mark-
+// delivered legacy fallback; customer_phone stays for ops phone search.
 const LIST_COLUMNS = `
   id, client_id, product_catalog_id, location_id, assigned_agent_id, parent_delivery_id,
-  customer_name, customer_phone, customer_phone_alt, raw_address,
-  quantity_ordered, quantity_delivered, customer_price, paid, payment_method,
+  customer_name, customer_phone, quantity_ordered, customer_price,
   agent_payment_snapshot, current_status, created_via, created_by_user_id,
   created_date, scheduled_date, created_at, updated_at,
-  latest_history_id, latest_changed_at, latest_notified, latest_message_at,
-  rolled_from_status, rolled_from_date, rollover_count, delivery_instructions,
-  assigned_at, order_type
+  latest_history_id, latest_changed_at, latest_notified,
+  rolled_from_status, rolled_from_date, rollover_count,
+  order_type, product_label, sibling_group_key, activity_at
 `;
 
 // "All dates" browse pulls the whole table (2,600+ rows ≈ 4 MB + line items).
@@ -378,6 +412,15 @@ function attachJoins<T extends object>(
         : null,
     assigned_at:
       'assigned_at' in rest && typeof rest.assigned_at === 'string' ? rest.assigned_at : null,
+    // [Egress Phase 3] view-computed compact-list fields (see LIST_COLUMNS).
+    product_label:
+      'product_label' in rest && typeof rest.product_label === 'string' ? rest.product_label : '—',
+    sibling_group_key:
+      'sibling_group_key' in rest && typeof rest.sibling_group_key === 'string'
+        ? rest.sibling_group_key
+        : `solo:${String((rest as { id?: unknown }).id ?? '')}`,
+    activity_at:
+      'activity_at' in rest && typeof rest.activity_at === 'string' ? rest.activity_at : null,
   };
 }
 
@@ -423,7 +466,7 @@ export async function listDeliveries(
   // last-change timestamp (or none at all).
   let query = supabase
     .from(view)
-    .select(`${LIST_COLUMNS}, ${JOIN_FRAGMENT}`)
+    .select(`${LIST_COLUMNS}, ${LIST_JOIN_FRAGMENT}`)
     .order('created_at', { ascending: false });
   const searchTerm = filters.search ? sanitizeSearch(filters.search) : '';
   if (searchTerm.length >= 2) {
@@ -447,31 +490,25 @@ export async function listDeliveries(
   if (signal) query = query.abortSignal(signal);
   const { data, error } = await query;
   if (error) throw error;
-  const joined = (data ?? []).map((row) =>
-    attachJoins(row as unknown as JoinShape & object),
-  ) as Omit<DeliveryRow, 'items'>[];
-  // [Feature A] attach line items (one batched query) — same signal so the
-  // follow-up items fetch is cancelled too.
-  const rows = (await attachItemsToRows(joined, signal)) as DeliveryRow[];
+  // [Egress Phase 3] Compact list rows — no per-row line-item fetch. The card
+  // label + sibling identity are server-computed (product_label,
+  // sibling_group_key); detail screens hydrate the full `items` via getDelivery.
+  // `items: []` preserves the shared DeliveryRow shape. This whole function is
+  // now a single PostgREST round trip (no delivery_items chunk requests).
+  const rows = (data ?? []).map((row) => ({
+    ...attachJoins(row as unknown as JoinShape & object),
+    items: [] as DeliveryItem[],
+  })) as DeliveryRow[];
 
-  // Sort by most recent ACTIVITY DESC — a row touched 30s ago sits above one
-  // untouched all day. "Activity" = the latest of a status change
-  // (latest_changed_at), a thread message (latest_message_at), an assignment
-  // (assigned_at), or creation (created_at). Folding in latest_message_at means
-  // a new message bubbles the row up exactly like a status change does; folding
-  // in assigned_at means a freshly (re)assigned order — e.g. a rolled-over
-  // follow-up an admin just handed to an agent — surfaces at the top instead of
-  // sinking to its stale created_at. All timestamps are embedded on the
-  // deliveries views, so this whole function is a single PostgREST round trip.
-  // See scripts/embed-latest-history-in-deliveries-views.sql,
-  //     scripts/embed-latest-message-in-deliveries-views.sql and
-  //     scripts/assigned-at-activity-sort.sql.
-  // Direct comparison, not localeCompare — these are fixed-format UTC ISO
-  // timestamps, so lexicographic order IS chronological order (and it's faster
-  // and immune to locale collation quirks).
+  // Sort by most-recent ACTIVITY DESC using the view's server-computed
+  // activity_at = greatest(created_at, latest_changed_at, latest_message_at,
+  // assigned_at) — a row touched 30s ago sits above one untouched all day.
+  // Direct comparison, not localeCompare: fixed-format UTC ISO timestamps sort
+  // chronologically by lexical order (faster, locale-immune). activity_at is
+  // always >= created_at, so the created_at fallback only guards a null.
   return rows.sort((a, b) => {
-    const x = latestActivityAt(a);
-    const y = latestActivityAt(b);
+    const x = a.activity_at ?? a.created_at ?? '';
+    const y = b.activity_at ?? b.created_at ?? '';
     return x < y ? 1 : x > y ? -1 : 0; // most-recent activity first
   });
 }
@@ -490,16 +527,17 @@ export async function listDeliveries(
 export async function listAgentPostponed(userId: string): Promise<DeliveryRow[]> {
   const { data, error } = await supabase
     .from('deliveries_safe')
-    .select(`${LIST_COLUMNS}, ${JOIN_FRAGMENT}`)
+    .select(`${LIST_COLUMNS}, ${LIST_JOIN_FRAGMENT}`)
     .eq('assigned_agent_id', userId)
     .eq('current_status', 'postponed')
     .gt('scheduled_date', todayLagos())
     .order('scheduled_date', { ascending: true });
   if (error) throw error;
-  const joined = (data ?? []).map((row) =>
-    attachJoins(row as unknown as JoinShape & object),
-  ) as Omit<DeliveryRow, 'items'>[];
-  return (await attachItemsToRows(joined)) as DeliveryRow[];
+  // [Egress Phase 3] compact rows — no line-item fetch (product_label from view).
+  return (data ?? []).map((row) => ({
+    ...attachJoins(row as unknown as JoinShape & object),
+    items: [] as DeliveryItem[],
+  })) as DeliveryRow[];
 }
 
 /** The ops-wide twin of listAgentPostponed: every delivery currently in
@@ -516,14 +554,15 @@ export async function listPostponed(role: Role): Promise<DeliveryRow[]> {
   const view = VIEW_FOR[role];
   const { data, error } = await supabase
     .from(view)
-    .select(`${LIST_COLUMNS}, ${JOIN_FRAGMENT}`)
+    .select(`${LIST_COLUMNS}, ${LIST_JOIN_FRAGMENT}`)
     .eq('current_status', 'postponed')
     .order('scheduled_date', { ascending: true });
   if (error) throw error;
-  const joined = (data ?? []).map((row) =>
-    attachJoins(row as unknown as JoinShape & object),
-  ) as Omit<DeliveryRow, 'items'>[];
-  return (await attachItemsToRows(joined)) as DeliveryRow[];
+  // [Egress Phase 3] compact rows — no line-item fetch (product_label from view).
+  return (data ?? []).map((row) => ({
+    ...attachJoins(row as unknown as JoinShape & object),
+    items: [] as DeliveryItem[],
+  })) as DeliveryRow[];
 }
 
 /** Every UNASSIGNED, still-open delivery across ALL dates — drives the dedicated
@@ -539,15 +578,16 @@ export async function listUnassigned(role: Role): Promise<DeliveryRow[]> {
   const view = VIEW_FOR[role];
   const { data, error } = await supabase
     .from(view)
-    .select(`${LIST_COLUMNS}, ${JOIN_FRAGMENT}`)
+    .select(`${LIST_COLUMNS}, ${LIST_JOIN_FRAGMENT}`)
     .is('assigned_agent_id', null)
     .not('current_status', 'in', `(${[...TERMINAL_STATUSES].join(',')})`)
     .order('created_at', { ascending: false });
   if (error) throw error;
-  const joined = (data ?? []).map((row) =>
-    attachJoins(row as unknown as JoinShape & object),
-  ) as Omit<DeliveryRow, 'items'>[];
-  return (await attachItemsToRows(joined)) as DeliveryRow[];
+  // [Egress Phase 3] compact rows — no line-item fetch (product_label from view).
+  return (data ?? []).map((row) => ({
+    ...attachJoins(row as unknown as JoinShape & object),
+    items: [] as DeliveryItem[],
+  })) as DeliveryRow[];
 }
 
 /** Admin "Negative margin" review list: every live delivery whose snapshotted
@@ -589,22 +629,6 @@ export async function countNegativeMarginDeliveries(): Promise<number> {
     .neq('order_type', 'waybill');
   if (error) throw error;
   return count ?? 0;
-}
-
-/** Most recent activity timestamp for list ordering: the max of the row's last
- *  status change, last thread message, and creation time. ISO timestamptz
- *  strings share one format, so lexical comparison is chronological. */
-function latestActivityAt(r: {
-  latest_changed_at: string | null;
-  latest_message_at: string | null;
-  assigned_at: string | null;
-  created_at: string | null;
-}): string {
-  let t = r.created_at ?? '';
-  if ((r.latest_changed_at ?? '') > t) t = r.latest_changed_at as string;
-  if ((r.latest_message_at ?? '') > t) t = r.latest_message_at as string;
-  if ((r.assigned_at ?? '') > t) t = r.assigned_at as string;
-  return t;
 }
 
 /** A handful of fields per row — used by the New Delivery screen's pre-submit

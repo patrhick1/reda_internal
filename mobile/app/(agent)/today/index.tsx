@@ -14,7 +14,7 @@ import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { useDeliveriesList, useAgentPostponed } from '@/hooks/queries';
-import { deliveryProductsLabel, type DeliveryRow } from '@/services/deliveries';
+import { type DeliveryRow } from '@/services/deliveries';
 import { formatNaira, formatYmdShort } from '@/lib/format';
 import { formatTimeLagos } from '@/lib/date';
 import { errorMessage } from '@/lib/errors';
@@ -840,7 +840,7 @@ const DeliveryCard = memo(function DeliveryCard({
               style={{ flex: 1, fontFamily: fonts.medium, fontSize: 13, color: colors.black }}
               numberOfLines={1}
             >
-              <Text style={{ fontFamily: fonts.semibold }}>{deliveryProductsLabel(delivery)}</Text>
+              <Text style={{ fontFamily: fonts.semibold }}>{delivery.product_label}</Text>
             </Text>
             <Text
               style={{
