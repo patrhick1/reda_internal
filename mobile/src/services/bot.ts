@@ -11,11 +11,8 @@ export type InboundStatus =
 
 export type BotInboundRow = {
   id: string;
-  wasender_message_id: string;
-  remote_jid: string | null;
   raw_text: string | null;
   received_at: string;
-  processed_at: string | null;
   status: InboundStatus;
   parse_result: unknown;
   delivery_id: string | null;
@@ -26,17 +23,59 @@ export async function listBotInbound(
   status: InboundStatus | 'all',
   limit = 100,
 ): Promise<BotInboundRow[]> {
+  // [Egress Phase 3] Compact review-list projection. The full parse_result
+  // averages ~1.9 KB/row and is mostly provenance the list never renders
+  // (extraction_raw provider envelope, extraction_model, vendor_classifications,
+  // agent_resolution, hints, items…). The card + reviewReason() use only these
+  // six keys, so project them with PostgREST JSON selection and rebuild a compact
+  // parse_result — dropping ~1 KB/row. The DETAIL screen refetches the FULL
+  // parse_result via getBotInbound(). wasender_message_id / remote_jid /
+  // processed_at were selected but never rendered — dropped too.
   let q = supabase
     .from('bot_inbound_messages')
     .select(
-      'id, wasender_message_id, remote_jid, raw_text, received_at, processed_at, status, parse_result, delivery_id, error_text',
+      'id, raw_text, received_at, status, delivery_id, error_text,' +
+        ' extracted:parse_result->extracted, product:parse_result->product,' +
+        ' product_candidates:parse_result->product_candidates,' +
+        ' product_matches:parse_result->product_matches,' +
+        ' address:parse_result->address, location_hint:parse_result->location_hint',
     )
     .order('received_at', { ascending: false })
     .limit(limit);
   if (status !== 'all') q = q.eq('status', status);
   const { data, error } = await q;
   if (error) throw error;
-  return (data ?? []) as BotInboundRow[];
+  type ProjectedRow = {
+    id: string;
+    raw_text: string | null;
+    received_at: string;
+    status: InboundStatus;
+    delivery_id: string | null;
+    error_text: string | null;
+    extracted: unknown;
+    product: unknown;
+    product_candidates: unknown;
+    product_matches: unknown;
+    address: unknown;
+    location_hint: unknown;
+  };
+  return ((data ?? []) as unknown as ProjectedRow[]).map((r) => ({
+    id: r.id,
+    raw_text: r.raw_text,
+    received_at: r.received_at,
+    status: r.status,
+    delivery_id: r.delivery_id,
+    error_text: r.error_text,
+    // Rebuild the subset of parse_result the card + reviewReason() read.
+    parse_result: {
+      extracted: r.extracted,
+      product: r.product,
+      product_candidates: r.product_candidates,
+      product_matches: r.product_matches,
+      address: r.address,
+      location_hint: r.location_hint,
+    },
+  }));
 }
 
 /** HEAD-count of bot_inbound_messages rows in `needs_review` state. Cheap —
@@ -52,18 +91,16 @@ export async function countNeedsReview(): Promise<number> {
   return count ?? 0;
 }
 
-export type BotInboundDetailRow = BotInboundRow & {
-  raw_payload: unknown;
-};
+/** The detail row is now the same shape as the list row. `raw_payload` (the
+ *  contractor's full webhook body) was fetched here but is read nowhere in the
+ *  app — dropped as pure dead egress. Alias kept so callers don't churn. */
+export type BotInboundDetailRow = BotInboundRow;
 
-/** Fetches a single inbound row by id, including raw_payload (the
- *  contractor's webhook body). Used by the review-fix detail screen. */
+/** Fetches a single inbound row by id for the review-fix detail screen. */
 export async function getBotInbound(id: string): Promise<BotInboundDetailRow | null> {
   const { data, error } = await supabase
     .from('bot_inbound_messages')
-    .select(
-      'id, wasender_message_id, remote_jid, raw_text, raw_payload, received_at, processed_at, status, parse_result, delivery_id, error_text',
-    )
+    .select('id, raw_text, received_at, status, parse_result, delivery_id, error_text')
     .eq('id', id)
     .maybeSingle();
   if (error) throw error;
