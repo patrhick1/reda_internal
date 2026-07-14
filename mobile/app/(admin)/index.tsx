@@ -7,12 +7,11 @@ import { useCurrentUser } from '@/hooks/useAuth';
 import { usePendingLocationChangesCount } from '@/hooks/usePendingLocationChangesCount';
 import {
   countNegativeMarginDeliveries,
-  listDeliveries,
   siblingGroupKey,
   type DeliveryRow,
 } from '@/services/deliveries';
 import { countNeedsReview } from '@/services/bot';
-import { useUsers } from '@/hooks/queries';
+import { useUsers, useDeliveriesList } from '@/hooks/queries';
 import { listOpenIssuesForOps } from '@/services/delivery-messages';
 import { AppBar, Card, Icon, SectionHeader } from '@/components/ui';
 import { AgentWorkloadCard } from '@/components/delivery/AgentWorkloadCard';
@@ -34,14 +33,17 @@ function todayHeaderDate(): string {
 export default function AdminHome() {
   const user = useCurrentUser();
   const router = useRouter();
-  const todayQ = useAsync(() => listDeliveries(user.role), [user.role]);
+  // Shares the deliveries-list cache (audit Phase 2.4b) with the admin
+  // Deliveries tab — one cached today-list fetch feeds both the home hero and
+  // the list. Stale-aware on focus.
+  const todayQ = useDeliveriesList(user.role);
   const reviewQ = useAsync(() => countNeedsReview(), []);
   const issuesQ = useAsync(() => listOpenIssuesForOps(), []);
   const usersQ = useUsers();
   const negMarginQ = useAsync(() => countNegativeMarginDeliveries(), []);
 
   useReloadOnFocus(() => {
-    todayQ.reload();
+    todayQ.refetchIfStale();
     reviewQ.reload();
     issuesQ.reload();
     negMarginQ.reload();

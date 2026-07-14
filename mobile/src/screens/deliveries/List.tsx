@@ -16,9 +16,11 @@ import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
+  useClients,
   useDeliveriesList,
   usePostponedDeliveries,
   useUnassignedDeliveries,
+  useUsers,
 } from '@/hooks/queries';
 import {
   deliveryProductsLabel,
@@ -30,8 +32,8 @@ import {
 import { listActiveFollowups, type ActiveFollowup } from '@/services/followups';
 import { opsUnreadAgentCounts } from '@/services/delivery-messages';
 import { useSupabaseChannel } from '@/hooks/useSupabaseChannel';
-import { listUsers, type AppUser } from '@/services/users';
-import { listClients, type Client } from '@/services/clients';
+import { type AppUser } from '@/services/users';
+import { type Client } from '@/services/clients';
 import {
   canBulkAssignDelivery,
   canBulkChangeStatus,
@@ -255,25 +257,20 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   // Ops-wide (RLS-scoped); empty for agents.
   const unassignedQ = useUnassignedDeliveries(user.role, { enabled: canSeeClaims });
 
-  // Roster for the agent picker. Skip the fetch entirely when the picker
-  // won't render (agents). Cached for the screen's lifetime — agents don't
-  // get added/deactivated mid-session in practice.
-  const agentsQ = useAsync<AppUser[]>(
-    () => (showListFilters ? listUsers() : Promise.resolve([])),
-    [showListFilters],
-  );
+  // Roster for the agent picker. Cached ['users'] hook (audit Phase 2.4b) — one
+  // shared fetch across every screen, invalidated by user mutations; skipped for
+  // roles that never render the picker (agents).
+  const agentsQ = useUsers({ enabled: showListFilters });
   const agents = useMemo(() => {
     return (agentsQ.data ?? [])
       .filter((u) => u.role === 'agent' && u.is_active)
       .sort((a, b) => (a.display_name ?? '').localeCompare(b.display_name ?? ''));
   }, [agentsQ.data]);
-  // Active clients for the client picker (listClients returns active-only,
-  // name-sorted). Same gate as the agent picker; agents can't read clients
-  // (anti-poaching RLS) but the picker never renders for them anyway.
-  const clientsQ = useAsync<Client[]>(
-    () => (showListFilters ? listClients() : Promise.resolve([])),
-    [showListFilters],
-  );
+  // Active clients for the client picker (cached ['clients'] hook — active-only,
+  // name-sorted, shared + invalidated by client mutations). Same gate as the
+  // agent picker; agents can't read clients (anti-poaching RLS) but the picker
+  // never renders for them anyway.
+  const clientsQ = useClients({ enabled: showListFilters });
   const clients = useMemo(() => clientsQ.data ?? [], [clientsQ.data]);
   // Pool for bulk-assign — only top-level agents (no sub-agents). Mirrors
   // bulk_assign_deliveries' server-side check so the sheet doesn't show

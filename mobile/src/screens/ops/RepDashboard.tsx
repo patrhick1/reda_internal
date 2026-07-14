@@ -14,13 +14,8 @@ import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
-import {
-  listDeliveries,
-  listPostponed,
-  siblingGroupKey,
-  type DeliveryRow,
-} from '@/services/deliveries';
-import { useUsers } from '@/hooks/queries';
+import { siblingGroupKey, type DeliveryRow } from '@/services/deliveries';
+import { useUsers, useDeliveriesList, usePostponedDeliveries } from '@/hooks/queries';
 import { listDeparturesToday } from '@/services/agent-departures';
 import { listOpenIssuesForOps, opsUnreadAgentCounts } from '@/services/delivery-messages';
 import { AppBar, Card, Icon } from '@/components/ui';
@@ -45,11 +40,13 @@ function shortDate(): string {
 export function RepDashboard() {
   const user = useCurrentUser();
   const router = useRouter();
-  const deliveriesQ = useAsync(() => listDeliveries(user.role), [user.role]);
+  // Shares the deliveries-list + postponed caches (audit Phase 2.4b) with the
+  // rep Deliveries tab, so the Home and list screens collapse to one fetch each.
+  const deliveriesQ = useDeliveriesList(user.role);
   // Cross-date postponed slice: postpone moves scheduled_date forward in place, so
   // future-dated postponed orders fall outside the today-scoped deliveries fetch.
   // Pulled separately so they still surface in "To notify" (Uzo, 2026-06-20).
-  const postponedQ = useAsync(() => listPostponed(user.role), [user.role]);
+  const postponedQ = usePostponedDeliveries(user.role);
   const usersQ = useUsers();
   // Actionable agent-flagged issues — same card dispatchers get on OpsDashboard,
   // minus 'not my route': that's a reassign-only flag handled by admins/
@@ -65,8 +62,8 @@ export function RepDashboard() {
   const departuresQ = useAsync(() => listDeparturesToday(), []);
 
   useReloadOnFocus(() => {
-    deliveriesQ.reload();
-    postponedQ.reload();
+    deliveriesQ.refetchIfStale();
+    postponedQ.refetchIfStale();
     issuesQ.reload();
     unreadQ.reload();
     departuresQ.reload();

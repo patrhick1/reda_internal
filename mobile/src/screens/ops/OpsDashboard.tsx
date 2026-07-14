@@ -7,7 +7,8 @@ import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { usePendingLocationChangesCount } from '@/hooks/usePendingLocationChangesCount';
-import { listDeliveries, siblingGroupKey, type DeliveryRow } from '@/services/deliveries';
+import { useDeliveriesList } from '@/hooks/queries';
+import { siblingGroupKey, type DeliveryRow } from '@/services/deliveries';
 import { countNeedsReview } from '@/services/bot';
 import { listAvailableOrders } from '@/services/available-orders';
 import { listOpenIssuesForOps } from '@/services/delivery-messages';
@@ -30,7 +31,10 @@ function shortDate(): string {
 export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
   const user = useCurrentUser();
   const router = useRouter();
-  const deliveriesQ = useAsync(() => listDeliveries(user.role), [user.role]);
+  // Shares the deliveries-list cache (audit Phase 2.4b): the Home tab and the
+  // Deliveries tab now hit ONE cached today-list fetch for this role instead of
+  // pulling the 418 KB list twice. Stale-aware on focus like the list itself.
+  const deliveriesQ = useDeliveriesList(user.role);
   const reviewQ = useAsync(() => countNeedsReview(), []);
   const availableQ = useAsync(() => listAvailableOrders(), []);
   // Actionable agent-flagged issues — wrong_address / payment_dispute /
@@ -39,7 +43,7 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
   const issuesQ = useAsync(() => listOpenIssuesForOps(), []);
 
   useReloadOnFocus(() => {
-    deliveriesQ.reload();
+    deliveriesQ.refetchIfStale();
     reviewQ.reload();
     availableQ.reload();
     issuesQ.reload();
