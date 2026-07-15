@@ -73,29 +73,39 @@ export function BulkMarkDeliveredSheet({
   // projection dropped the per-list delivery_items fetch). Bulk deliver needs
   // each order's per-line quantities, so hydrate them here — a single batched
   // fetch for just the selected rows, only when this sheet is open — instead of
-  // shipping items with every list load. Falls back to the legacy single
-  // quantity if the fetch fails (submit tolerates an empty map).
+  // shipping items with every list load.
   const [itemsById, setItemsById] = useState<Record<string, DeliveryItem[]>>({});
   const [hydrating, setHydrating] = useState(false);
+  // A FAILED hydrate must block submit, not fall through to the legacy quantity:
+  // an empty map is indistinguishable from "legacy rows with no items", so the
+  // fallback would silently deliver a multi-line order as `quantity_ordered ?? 1`
+  // — wrong quantity AND wrong stock deduction, with no error shown. Only a
+  // SUCCESSFUL fetch that returns no items may take the legacy path.
+  const [hydrateError, setHydrateError] = useState<string | null>(null);
   const eligibleIdsKey = useMemo(() => eligible.map((d) => d.id).join(','), [eligible]);
   useEffect(() => {
     if (!open) {
       setItemsById({});
+      setHydrateError(null);
       return;
     }
     const ids = eligibleIdsKey ? eligibleIdsKey.split(',') : [];
     if (ids.length === 0) {
       setItemsById({});
+      setHydrateError(null);
       return;
     }
     let cancelled = false;
     setHydrating(true);
+    setHydrateError(null);
     fetchDeliveryItemsFor(ids)
       .then((map) => {
         if (!cancelled) setItemsById(map);
       })
-      .catch(() => {
-        if (!cancelled) setItemsById({}); // submit falls back to legacy quantity
+      .catch((e) => {
+        if (cancelled) return;
+        setItemsById({});
+        setHydrateError(`Could not load order items — ${errorMessage(e)}`);
       })
       .finally(() => {
         if (!cancelled) setHydrating(false);
@@ -107,6 +117,8 @@ export function BulkMarkDeliveredSheet({
 
   async function submit() {
     if (eligible.length === 0) return;
+    // Never submit on an unresolved item set — see hydrateError above.
+    if (hydrating || hydrateError) return;
     setSubmitting(true);
     setError(null);
     // Count what actually enqueued so a mid-loop failure (rare — enqueue is a
@@ -238,9 +250,9 @@ export function BulkMarkDeliveredSheet({
           <SummaryRow label="Total expected" value={formatNaira(totalExpected)} />
         </View>
 
-        {error ? (
+        {error || hydrateError ? (
           <Banner tone="error" icon="alert">
-            {error}
+            {error ?? hydrateError}
           </Banner>
         ) : null}
 
@@ -254,15 +266,17 @@ export function BulkMarkDeliveredSheet({
               full
               icon="check"
               onPress={submit}
-              disabled={submitting || eligible.length === 0 || hydrating}
+              disabled={submitting || eligible.length === 0 || hydrating || !!hydrateError}
             >
               {submitting
                 ? 'Saving…'
                 : hydrating
                   ? 'Loading…'
-                  : eligible.length === 0
-                    ? 'Nothing eligible'
-                    : `Mark ${eligible.length} delivered`}
+                  : hydrateError
+                    ? 'Could not load items'
+                    : eligible.length === 0
+                      ? 'Nothing eligible'
+                      : `Mark ${eligible.length} delivered`}
             </Button>
           </View>
         </View>
