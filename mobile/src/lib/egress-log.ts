@@ -168,6 +168,86 @@ export function instrumentedFetch(realFetch: typeof fetch): typeof fetch {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Realtime (websocket) egress — audit Phase 4 measurement gap.
+//
+// instrumentedFetch above only sees HTTP, so every number this audit has ever
+// printed is PostgREST-only. Supabase counts Realtime as egress too: the
+// delivery_messages subscription is deliberately unfiltered (any ops user must
+// see any agent's reply), so EVERY message row change is pushed to EVERY
+// connected ops device — and none of it showed up in any burst table.
+//
+// We wrap the GLOBAL WebSocket rather than passing realtime's `transport`
+// option, because realtime-js's WebSocketFactory prefers a native `WebSocket`
+// when one exists (web + RN both have it) and only falls back to `transport` for
+// Node. Wrapping the global is therefore the hook that actually gets used.
+//
+// This is pure observation: we subclass, attach a listener, and change nothing
+// about the data flow. (The alternative — realtime's `decode` option — REPLACES
+// the serializer, so a mistake there breaks realtime outright. Not worth it for
+// a measurement aid.)
+//
+// Only INBOUND frames are counted: egress is data leaving Supabase. Frames the
+// client sends (heartbeats, subscribe) are ingress and are ignored.
+// ---------------------------------------------------------------------------
+
+type WsCtor = new (url: string, protocols?: string | string[]) => WebSocket;
+
+/** Realtime wire frame → a stable label. The phoenix protocol puts an ARRAY on
+ *  the wire — [join_ref, ref, topic, event, payload] — see realtime-js
+ *  lib/serializer.js `decode`. postgres_changes frames are labelled by table +
+ *  operation so the cost of each subscription is attributable; everything else
+ *  (phx_reply, heartbeat, presence) folds under its event name. */
+function labelForWsFrame(data: unknown): string {
+  if (typeof data !== 'string') return 'WS binary';
+  try {
+    const arr = JSON.parse(data) as unknown[];
+    if (!Array.isArray(arr)) return 'WS frame';
+    const event = typeof arr[3] === 'string' ? arr[3] : 'unknown';
+    const payload = arr[4] as { data?: { table?: string; type?: string } } | undefined;
+    if (event === 'postgres_changes' && payload?.data?.table) {
+      return `WS pg/${payload.data.table}/${payload.data.type ?? '?'}`;
+    }
+    return `WS ${event}`;
+  } catch {
+    return 'WS frame';
+  }
+}
+
+function wsFrameBytes(data: unknown): number {
+  if (typeof data === 'string') return data.length;
+  if (data && typeof data === 'object' && 'byteLength' in data) {
+    return Number((data as { byteLength: number }).byteLength) || 0;
+  }
+  return 0;
+}
+
+/** Wrap globalThis.WebSocket so inbound realtime frames are counted alongside
+ *  HTTP in the same burst tables. Call BEFORE createClient. No-op outside dev
+ *  and idempotent, so a Fast-Refresh re-run can't double-count. */
+export function instrumentRealtimeWebSocket(): void {
+  if (!__DEV__) return;
+  const g = globalThis as unknown as { WebSocket?: WsCtor & { __egressWrapped?: boolean } };
+  const Real = g.WebSocket;
+  if (!Real || Real.__egressWrapped) return;
+
+  const Counting = class extends (Real as WsCtor) {
+    constructor(url: string, protocols?: string | string[]) {
+      super(url, protocols);
+      try {
+        this.addEventListener('message', (ev: MessageEvent) => {
+          record(labelForWsFrame(ev.data), wsFrameBytes(ev.data));
+        });
+      } catch {
+        // Environment without addEventListener on WebSocket — skip measuring
+        // rather than risk touching onmessage, which realtime-js owns.
+      }
+    }
+  } as unknown as WsCtor & { __egressWrapped?: boolean };
+  Counting.__egressWrapped = true;
+  g.WebSocket = Counting;
+}
+
 /** Print the full cumulative egress table, biggest total first. */
 export function egressReport(): TableRow[] {
   return printTable(`[egress] session total ≈ ${(sessionBytes / 1024).toFixed(1)} KB`, total);

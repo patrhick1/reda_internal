@@ -2,7 +2,7 @@ import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from '@/types/database.gen';
-import { instrumentedFetch } from '@/lib/egress-log';
+import { instrumentedFetch, instrumentRealtimeWebSocket } from '@/lib/egress-log';
 
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
@@ -12,6 +12,12 @@ if (!supabaseUrl || !supabaseAnonKey) {
     'Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY. Copy mobile/.env.example to mobile/.env.local and fill in.',
   );
 }
+
+// Dev-only Realtime (websocket) measurement — audit Phase 4's measurement gap.
+// MUST run before createClient: realtime-js's WebSocketFactory resolves the
+// native `globalThis.WebSocket` when it builds the socket, so the wrapper has to
+// be installed first. No-op outside dev.
+instrumentRealtimeWebSocket();
 
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
