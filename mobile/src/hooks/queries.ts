@@ -25,6 +25,7 @@ import {
   type ListFilters,
 } from '@/services/deliveries';
 import { listUsers, type AppUser } from '@/services/users';
+import { opsUnreadAgentCounts } from '@/services/delivery-messages';
 import { listClients, type Client } from '@/services/clients';
 import { listLocations, type Location } from '@/services/locations';
 import {
@@ -301,6 +302,30 @@ export function useStockMatrix(): DeliveryListResult<StockMatrixRow[]> {
 
 /** The signed-in agent's own future-dated postponed orders (the agent Today
  *  "Postponed" chip). Keyed by the agent id it queries. */
+/** [Egress Phase 4.1] Ops "agent replied" unread map, keyed delivery_id → count.
+ *  Shared by the ops delivery List and the RepDashboard — previously each ran its
+ *  own `useAsync`, so both paid the (pre-RPC) 155 kB query independently. Cached
+ *  under the ['unread'] prefix; `invalidateOpsUnread()` fires after markRead and
+ *  from the List's realtime subscription (debounced there), so the chip still
+ *  clears the moment someone opens a thread.
+ *
+ *  Not date-scoped, deliberately — the list matches this map against cross-date
+ *  rows (postponed / unassigned). See opsUnreadAgentCounts + the SQL header. */
+export function useOpsUnread(opts: {
+  excludeNotMyRoute: boolean;
+  enabled?: boolean;
+}): DeliveryListResult<Map<string, number>> {
+  const uid = useUid();
+  const queryKey = ['unread', uid, 'ops', opts.excludeNotMyRoute];
+  const q = useQuery({
+    queryKey,
+    queryFn: () => opsUnreadAgentCounts({ excludeNotMyRoute: opts.excludeNotMyRoute }),
+    staleTime: DELIVERIES_STALE,
+    enabled: opts.enabled ?? true,
+  });
+  return { ...asAsync(q), fetching: q.isFetching, refetchIfStale: () => refetchIfStale(queryKey) };
+}
+
 export function useAgentPostponed(userId: string): DeliveryListResult<DeliveryRow[]> {
   const uid = useUid();
   const queryKey = ['deliveries', uid, 'agent-postponed', userId];

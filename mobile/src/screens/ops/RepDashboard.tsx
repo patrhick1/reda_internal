@@ -15,9 +15,9 @@ import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { type DeliveryRow } from '@/services/deliveries';
-import { useUsers, useDeliveriesList, usePostponedDeliveries } from '@/hooks/queries';
+import { useUsers, useDeliveriesList, usePostponedDeliveries, useOpsUnread } from '@/hooks/queries';
 import { listDeparturesToday } from '@/services/agent-departures';
-import { listOpenIssuesForOps, opsUnreadAgentCounts } from '@/services/delivery-messages';
+import { listOpenIssuesForOps } from '@/services/delivery-messages';
 import { AppBar, Card, Icon } from '@/components/ui';
 import { AgentWorkloadCard } from '@/components/delivery/AgentWorkloadCard';
 import { IssuesAttentionBlock } from '@/components/delivery/IssuesAttentionBlock';
@@ -56,7 +56,10 @@ export function RepDashboard() {
   // opsUnreadAgentCounts). Read state is team-shared, so this is "unread by the
   // ops team", matching the per-row chip on the deliveries list. 'not my route'
   // excluded for reps to match the issues card above.
-  const unreadQ = useAsync(() => opsUnreadAgentCounts({ excludeNotMyRoute: true }), []);
+  // [Egress Phase 4.1] Cached — the same ['unread'] entry the deliveries List
+  // uses (same excludeNotMyRoute for reps), so Home ↔ Deliveries is one fetch
+  // rather than two independent ones.
+  const unreadQ = useOpsUnread({ excludeNotMyRoute: true });
   // Riders who've left the warehouse today — shown as a chip on each agent's
   // workload row so reps know who's in transit before relaying a message.
   const departuresQ = useAsync(() => listDeparturesToday(), []);

@@ -1,6 +1,15 @@
 import { supabase } from '@/lib/supabase';
+import { queryClient } from '@/lib/query';
 import { TERMINAL_STATUSES } from '@/lib/theme';
 import { todayLagos } from '@/lib/date';
+
+/** [Egress Phase 4.1] Invalidate the cached ops unread map (every date/role
+ *  variant — one prefix match). Called after markRead so the "agent replied"
+ *  chip clears the instant a thread is opened, and from the List's realtime
+ *  subscription (debounced there, not here). */
+export function invalidateOpsUnread(): void {
+  void queryClient.invalidateQueries({ queryKey: ['unread'] });
+}
 
 export type IssueType =
   | 'wrong_address'
@@ -114,6 +123,8 @@ export async function markRead(deliveryId: string): Promise<void> {
     p_delivery_id: deliveryId,
   });
   if (error) throw error;
+  // The chip for this delivery just cleared — refresh the cached ops map.
+  invalidateOpsUnread();
 }
 
 /** Unread ops-authored messages on the calling AGENT's own deliveries scheduled
@@ -184,6 +195,41 @@ export async function opsUnreadAgentCounts(opts?: {
    *  not_my_route_admin_only.sql. Admins/dispatchers pass nothing → still see it. */
   excludeNotMyRoute?: boolean;
 }): Promise<Map<string, number>> {
+  // [Egress Phase 4.1] Prefer the grouped RPC — it applies the same three
+  // filters in Postgres and returns one row per badged delivery instead of one
+  // row per unread message. Measured live 2026-07-15: the legacy path below
+  // ships 1,122 rows (~155 kB) per call, of which ~94% are auto-seeded
+  // `cant_reach_client` notes it then discards — to render 1 badge.
+  // Parity with the legacy path was verified both directions (0 badges
+  // lost/gained) before cutover. See tools/live-defs/ops_unread_agent_counts.sql.
+  // Deliberately NOT date-scoped — the list merges cross-date rows (postponed,
+  // unassigned) into what's on screen and matches them against this map, so a
+  // date scope would silently strip their chips. See the SQL header.
+  //
+  // Untyped rpc handle: the new function isn't in database.gen.ts until
+  // `npm run gen:types` runs at cutover (same pattern as
+  // countPendingLocationChanges).
+  const rpc = supabase.rpc as unknown as (
+    fn: string,
+    args?: Record<string, unknown>,
+  ) => Promise<{ data: unknown; error: { code?: string } | null }>;
+  const { data: rpcData, error: rpcError } = await rpc('ops_unread_agent_counts', {
+    p_exclude_not_my_route: !!opts?.excludeNotMyRoute,
+  });
+  if (!rpcError) {
+    const map = new Map<string, number>();
+    for (const r of (rpcData ?? []) as { delivery_id: string; unread_count: number }[]) {
+      map.set(r.delivery_id, Number(r.unread_count));
+    }
+    return map;
+  }
+  // Fallback: the RPC isn't live yet, so the app can ship before the SQL is
+  // applied. Only swallow "function not found" — a real failure (RLS, network)
+  // must surface rather than silently re-running the 155 kB query forever.
+  // PostgREST returns PGRST202 for an unresolvable function; 42883 is Postgres'
+  // undefined_function. Drop this fallback once the RPC is live.
+  if (rpcError.code !== 'PGRST202' && rpcError.code !== '42883') throw rpcError;
+
   const { data, error } = await supabase
     .from('delivery_messages')
     .select('delivery_id, issue_type, deliveries!inner(current_status)')

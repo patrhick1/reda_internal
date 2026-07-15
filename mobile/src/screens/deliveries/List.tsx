@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -18,6 +18,7 @@ import { useCurrentUser } from '@/hooks/useAuth';
 import {
   useClients,
   useDeliveriesList,
+  useOpsUnread,
   usePostponedDeliveries,
   useUnassignedDeliveries,
   useUsers,
@@ -29,7 +30,6 @@ import {
   type DeliveryRow,
 } from '@/services/deliveries';
 import { listActiveFollowups, type ActiveFollowup } from '@/services/followups';
-import { opsUnreadAgentCounts } from '@/services/delivery-messages';
 import { useSupabaseChannel } from '@/hooks/useSupabaseChannel';
 import { type AppUser } from '@/services/users';
 import { type Client } from '@/services/clients';
@@ -233,15 +233,18 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   // (read_at is a single column — see opsUnreadAgentCounts). Kept in lock-step
   // with the deliveries reload (focus + pull-to-refresh) plus a realtime sub
   // below so the chip clears the moment someone opens the thread.
-  const unreadQ = useAsync<Map<string, number>>(
-    () =>
-      canSeeClaims
-        ? // Reps don't handle 'not my route' (admin/dispatcher reassign job), so
-          // it's excluded from their per-row chip too (not_my_route_admin_only.sql).
-          opsUnreadAgentCounts({ excludeNotMyRoute: user.role === 'rep' })
-        : Promise.resolve(new Map()),
-    [canSeeClaims, user.role],
-  );
+  //
+  // [Egress Phase 4.1] Cached + shared with RepDashboard (one fetch, not two),
+  // and served by the grouped RPC. Still NOT date-scoped: allRows merges
+  // cross-date rows (a postponed order shows on its postpone day while its
+  // scheduled_date is already bumped forward; Unassigned is date-independent),
+  // and the chip is allRows ∩ this map — a date scope would strip those chips.
+  // Reps don't handle 'not my route' (admin/dispatcher reassign job), so it's
+  // excluded from their chip (not_my_route_admin_only.sql).
+  const unreadQ = useOpsUnread({
+    excludeNotMyRoute: user.role === 'rep',
+    enabled: canSeeClaims,
+  });
 
   // Every postponed order, across ALL dates, ordered by postpone-to date. Drives
   // the dedicated "Postponed" filter — a separate query because the main list is
@@ -350,8 +353,9 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   useReloadOnFocus(() => {
     // Stale-aware on focus: a list still within staleTime is served from cache
     // (the back-navigation egress win); only an aged list re-downloads. The
-    // uncached overlays (followups / unread — cheap + realtime-backed) still
-    // force-refresh so their pills stay live.
+    // overlays still force-refresh so their pills stay live — cheap now that
+    // unread is the grouped RPC (~1 row, Phase 4.1) and followups is uncached
+    // but small; both are realtime-backed anyway.
     refetchIfStale();
     if (canSeeClaims) {
       followupsQ.reload();
@@ -390,6 +394,24 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   // flips when an ops user opens the thread) → refetch the unread map so the
   // per-row chip appears/clears live. delivery_messages is already in the
   // supabase_realtime publication (added for the agent badge).
+  //
+  // [Egress Phase 4.1] COALESCED. The subscription is deliberately unfiltered
+  // (any ops user must see any agent's reply), so it fires on every message
+  // change system-wide. mark_messages_read() flips read_at one row at a time, so
+  // opening a 5-message thread emitted 5 events → 5 back-to-back refetches of
+  // the whole map, on every connected ops device: reading messages generated the
+  // traffic. A trailing debounce collapses each burst into one refetch. 250 ms is
+  // well under human-perceptible for a chip and is the audit's recommended
+  // 100–300 ms window (finding 7, Stage A).
+  const unreadReloadRef = useRef(unreadQ.reload);
+  unreadReloadRef.current = unreadQ.reload;
+  const unreadBurst = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (unreadBurst.current) clearTimeout(unreadBurst.current);
+    },
+    [],
+  );
   useSupabaseChannel(
     canSeeClaims ? 'deliveries-list-unread' : null,
     (ch) =>
@@ -397,7 +419,11 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'delivery_messages' },
         () => {
-          unreadQ.reload();
+          if (unreadBurst.current) clearTimeout(unreadBurst.current);
+          unreadBurst.current = setTimeout(() => {
+            unreadBurst.current = null;
+            unreadReloadRef.current();
+          }, 250);
         },
       ),
     [canSeeClaims],
