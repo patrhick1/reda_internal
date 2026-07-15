@@ -248,7 +248,12 @@ export async function previewEodRollover(forDate?: string): Promise<EodPreviewRo
   // preview_eod_rollover isn't in database.gen.ts until `npm run gen:types` runs
   // at cutover (same as the reconcile RPCs above), so reach it through an untyped
   // rpc handle and assert the row shape ourselves.
-  const rpc = supabase.rpc as unknown as (
+  // .bind(supabase) is REQUIRED — SupabaseClient.rpc is a prototype method whose
+  // body is `return this.rest.rpc(...)`. Extracted unbound into a variable,
+  // `this` is undefined and the call throws `TypeError: ... (reading 'rest')`
+  // before any request goes out, so this screen's preview always failed. Fixed
+  // 2026-07-15; verified against @supabase/supabase-js 2.105.4.
+  const rpc = supabase.rpc.bind(supabase) as unknown as (
     fn: string,
     args?: Record<string, unknown>,
   ) => Promise<{ data: unknown; error: unknown }>;

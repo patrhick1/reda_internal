@@ -207,9 +207,16 @@ export async function opsUnreadAgentCounts(opts?: {
   // date scope would silently strip their chips. See the SQL header.
   //
   // Untyped rpc handle: the new function isn't in database.gen.ts until
-  // `npm run gen:types` runs at cutover (same pattern as
-  // countPendingLocationChanges).
-  const rpc = supabase.rpc as unknown as (
+  // `npm run gen:types` runs at cutover.
+  //
+  // .bind(supabase) is REQUIRED, not stylistic: SupabaseClient.rpc is a
+  // prototype method whose body is `return this.rest.rpc(...)`. Extracting it
+  // unbound (`const rpc = supabase.rpc`) makes `this` undefined at call time, so
+  // it throws `TypeError: Cannot read properties of undefined (reading 'rest')`
+  // BEFORE issuing any request — the promise rejects, the fallback below is
+  // never reached, and no network call is ever made (invisible in the egress
+  // log). Verified against @supabase/supabase-js 2.105.4.
+  const rpc = supabase.rpc.bind(supabase) as unknown as (
     fn: string,
     args?: Record<string, unknown>,
   ) => Promise<{ data: unknown; error: { code?: string } | null }>;

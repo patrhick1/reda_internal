@@ -1347,7 +1347,14 @@ export async function listLocationChanges(states?: string[]): Promise<LocationCh
  *  it is, we fall back to the old list-count so the badge can't silently read 0
  *  if the app ships before the SQL. Drop the fallback once the RPC is live. */
 export async function countPendingLocationChanges(): Promise<number> {
-  const rpc = supabase.rpc as unknown as (
+  // .bind(supabase) is REQUIRED: SupabaseClient.rpc is a prototype method whose
+  // body is `return this.rest.rpc(...)`. Extracted unbound, `this` is undefined
+  // and it throws `TypeError: ... (reading 'rest')` before issuing any request —
+  // which made this whole function throw and left the fallback below
+  // unreachable, so the badge silently failed and the RPC never fired (it never
+  // appeared in the egress log). Fixed 2026-07-15; verified against
+  // @supabase/supabase-js 2.105.4.
+  const rpc = supabase.rpc.bind(supabase) as unknown as (
     fn: string,
     args?: Record<string, unknown>,
   ) => Promise<{ data: unknown; error: unknown }>;
