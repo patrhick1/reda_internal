@@ -112,11 +112,16 @@ function scheduleFlush(): void {
   flushTimer = setTimeout(flushBurst, QUIET_MS);
 }
 
-function record(label: string, bytes: number): void {
+/** @param quiet Count the bytes but DON'T re-arm the burst auto-print. For
+ *  background protocol chatter that would otherwise make an idle app print a
+ *  near-empty table forever (see isWsDataFrame). Quiet bytes still land in the
+ *  next burst that real activity triggers, so nothing is lost — only the
+ *  spurious flush is suppressed. */
+function record(label: string, bytes: number, quiet = false): void {
   bump(total, label, bytes);
   bump(burst, label, bytes);
   sessionBytes += bytes;
-  scheduleFlush();
+  if (!quiet) scheduleFlush();
   if (VERBOSE) {
     // eslint-disable-next-line no-console
     console.log(`[egress] ${label}  +${bytes}B`);
@@ -177,21 +182,38 @@ export function instrumentedFetch(realFetch: typeof fetch): typeof fetch {
 // see any agent's reply), so EVERY message row change is pushed to EVERY
 // connected ops device — and none of it showed up in any burst table.
 //
-// We wrap the GLOBAL WebSocket rather than passing realtime's `transport`
-// option, because realtime-js's WebSocketFactory prefers a native `WebSocket`
-// when one exists (web + RN both have it) and only falls back to `transport` for
-// Node. Wrapping the global is therefore the hook that actually gets used.
+// Hooked in via realtime's `transport` option — createClient(…, { realtime: {
+// transport } }). realtime-js resolves it as
+//     result.transport = options?.transport ?? WebSocketFactory.getWebSocketConstructor()
+// i.e. a supplied transport WINS and the native-WebSocket factory is only the
+// fallback. So this stays scoped to Supabase's own socket: no monkey-patching of
+// globalThis.WebSocket (which would affect any other socket user and impose an
+// install-before-createClient ordering trap).
 //
-// This is pure observation: we subclass, attach a listener, and change nothing
-// about the data flow. (The alternative — realtime's `decode` option — REPLACES
-// the serializer, so a mistake there breaks realtime outright. Not worth it for
-// a measurement aid.)
+// This is pure observation: we subclass the platform WebSocket, attach a
+// listener, and change nothing about the data flow. (The alternative —
+// realtime's `decode` option — REPLACES the serializer, so a mistake there
+// breaks realtime outright. Not worth it for a measurement aid.)
 //
 // Only INBOUND frames are counted: egress is data leaving Supabase. Frames the
 // client sends (heartbeats, subscribe) are ingress and are ignored.
 // ---------------------------------------------------------------------------
 
 type WsCtor = new (url: string, protocols?: string | string[]) => WebSocket;
+
+/** True for frames carrying actual application data. Phoenix protocol chatter
+ *  (`phx_reply` to the 25-second heartbeat — realtime-js CONNECTION_TIMEOUTS
+ *  .HEARTBEAT_INTERVAL = 25000 — plus phx_join/close/error) is counted but must
+ *  never re-arm the burst auto-print: otherwise an idle app prints a table
+ *  containing nothing but `WS phx_reply` every 25s, forever, burying the real
+ *  measurements. */
+function isWsDataFrame(label: string): boolean {
+  return (
+    label.startsWith('WS pg/') ||
+    label.startsWith('WS broadcast') ||
+    label.startsWith('WS presence')
+  );
+}
 
 /** Realtime wire frame → a stable label. The phoenix protocol puts an ARRAY on
  *  the wire — [join_ref, ref, topic, event, payload] — see realtime-js
@@ -222,30 +244,28 @@ function wsFrameBytes(data: unknown): number {
   return 0;
 }
 
-/** Wrap globalThis.WebSocket so inbound realtime frames are counted alongside
- *  HTTP in the same burst tables. Call BEFORE createClient. No-op outside dev
- *  and idempotent, so a Fast-Refresh re-run can't double-count. */
-export function instrumentRealtimeWebSocket(): void {
-  if (!__DEV__) return;
-  const g = globalThis as unknown as { WebSocket?: WsCtor & { __egressWrapped?: boolean } };
-  const Real = g.WebSocket;
-  if (!Real || Real.__egressWrapped) return;
-
-  const Counting = class extends (Real as WsCtor) {
+/** A WebSocket subclass that counts inbound realtime frames into the same burst
+ *  tables as HTTP. Pass to createClient as `realtime: { transport }`. Returns
+ *  undefined outside dev (and where the platform has no WebSocket), so callers
+ *  simply omit the option and realtime-js resolves its own default. */
+export function countingWebSocketTransport(): WsCtor | undefined {
+  if (!__DEV__) return undefined;
+  const Real = (globalThis as unknown as { WebSocket?: WsCtor }).WebSocket;
+  if (!Real) return undefined;
+  return class extends (Real as WsCtor) {
     constructor(url: string, protocols?: string | string[]) {
       super(url, protocols);
       try {
         this.addEventListener('message', (ev: MessageEvent) => {
-          record(labelForWsFrame(ev.data), wsFrameBytes(ev.data));
+          const label = labelForWsFrame(ev.data);
+          record(label, wsFrameBytes(ev.data), !isWsDataFrame(label));
         });
       } catch {
-        // Environment without addEventListener on WebSocket — skip measuring
+        // Platform without addEventListener on WebSocket — skip measuring
         // rather than risk touching onmessage, which realtime-js owns.
       }
     }
-  } as unknown as WsCtor & { __egressWrapped?: boolean };
-  Counting.__egressWrapped = true;
-  g.WebSocket = Counting;
+  } as unknown as WsCtor;
 }
 
 /** Print the full cumulative egress table, biggest total first. */
