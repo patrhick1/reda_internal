@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { rpcUntyped, supabase } from '@/lib/supabase';
 import { queryClient } from '@/lib/query';
 import { TERMINAL_STATUSES } from '@/lib/theme';
 import { todayLagos } from '@/lib/date';
@@ -206,28 +206,13 @@ export async function opsUnreadAgentCounts(opts?: {
   // unassigned) into what's on screen and matches them against this map, so a
   // date scope would silently strip their chips. See the SQL header.
   //
-  // Untyped rpc handle: the new function isn't in database.gen.ts until
-  // `npm run gen:types` runs at cutover.
-  //
-  // .bind(supabase) is REQUIRED, not stylistic: SupabaseClient.rpc is a
-  // prototype method whose body is `return this.rest.rpc(...)`. Extracting it
-  // unbound (`const rpc = supabase.rpc`) makes `this` undefined at call time, so
-  // it throws `TypeError: Cannot read properties of undefined (reading 'rest')`
-  // BEFORE issuing any request — the promise rejects, the fallback below is
-  // never reached, and no network call is ever made (invisible in the egress
-  // log). Verified against @supabase/supabase-js 2.105.4.
-  const rpc = supabase.rpc.bind(supabase) as unknown as (
-    fn: string,
-    args?: Record<string, unknown>,
-  ) => Promise<{ data: unknown; error: { code?: string } | null }>;
-  const { data: rpcData, error: rpcError } = await rpc('ops_unread_agent_counts', {
-    p_exclude_not_my_route: !!opts?.excludeNotMyRoute,
-  });
+  // rpcUntyped: not in database.gen.ts until `npm run gen:types` at cutover.
+  const { data: rpcData, error: rpcError } = await rpcUntyped<
+    { delivery_id: string; unread_count: number }[]
+  >('ops_unread_agent_counts', { p_exclude_not_my_route: !!opts?.excludeNotMyRoute });
   if (!rpcError) {
     const map = new Map<string, number>();
-    for (const r of (rpcData ?? []) as { delivery_id: string; unread_count: number }[]) {
-      map.set(r.delivery_id, Number(r.unread_count));
-    }
+    for (const r of rpcData ?? []) map.set(r.delivery_id, Number(r.unread_count));
     return map;
   }
   // Fallback: the RPC isn't live yet, so the app can ship before the SQL is

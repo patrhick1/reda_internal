@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { rpcUntyped } from '@/lib/supabase';
 
 // Rep performance (Phase 1) — read-only admin reporting. Types are hand-written
 // for now; will regenerate via `npm run gen:types` once the SQL is applied.
@@ -58,21 +58,17 @@ function lagosRange(from: string, to: string): { p_from: string; p_to: string } 
 
 // These RPCs are not in database.gen.ts until the SQL is applied + types are
 // regenerated (`npm run gen:types`); until then the generated rpc() overloads
-// reject the names. Route through a loose-typed wrapper so this compiles now and
-// stays correct after regeneration — no `@ts-expect-error` that would go stale.
-const rpc = supabase.rpc.bind(supabase) as unknown as (
-  fn: string,
-  args?: Record<string, unknown>,
-) => Promise<{ data: unknown; error: unknown }>;
+// reject the names. rpcUntyped (@/lib/supabase) is the shared handle — it binds
+// `this` correctly; see its docs for why that matters.
 
 export async function listRepActivity(from: string, to: string): Promise<RepActivityRow[]> {
-  const { data, error } = await rpc('rep_activity_summary', lagosRange(from, to));
+  const { data, error } = await rpcUntyped('rep_activity_summary', lagosRange(from, to));
   if (error) throw error;
   return (data ?? []) as RepActivityRow[];
 }
 
 export async function getRepCoverage(from: string, to: string): Promise<RepCoverage | null> {
-  const { data, error } = await rpc('rep_notify_coverage', lagosRange(from, to));
+  const { data, error } = await rpcUntyped('rep_notify_coverage', lagosRange(from, to));
   if (error) throw error;
   const rows = (data ?? []) as RepCoverage[];
   return rows[0] ?? null;

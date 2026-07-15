@@ -8,22 +8,7 @@
 //   warehouse staff      -> their own warehouse place + themselves
 //   agent                -> themselves only
 // The mobile side never grants more visibility than the RPC.
-import { supabase } from '@/lib/supabase';
-
-/** Call an RPC that isn't in the generated DB types. `list_stock_movements`
- *  and `list_movement_actors` are hand-written SQL functions, so the typed
- *  `supabase.rpc` chain rejects their names — cast through this one helper
- *  instead of repeating the assertion at each call site. */
-function rpcUntyped(fn: string, args: Record<string, unknown>) {
-  return (
-    supabase as unknown as {
-      rpc: (
-        fn: string,
-        args: Record<string, unknown>,
-      ) => Promise<{ data: unknown; error: { message: string } | null }>;
-    }
-  ).rpc(fn, args);
-}
+import { rpcUntyped } from '@/lib/supabase';
 
 export type MovementSource = 'adjustment' | 'delivery';
 

@@ -25,7 +25,14 @@
       { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }
     ],
     "@typescript-eslint/no-explicit-any": "error",
-    "@typescript-eslint/consistent-type-imports": "error"
+    "@typescript-eslint/consistent-type-imports": "error",
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "VariableDeclarator > MemberExpression[object.name='supabase'][property.name='rpc'], VariableDeclarator > TSAsExpression > MemberExpression[object.name='supabase'][property.name='rpc'], VariableDeclarator > TSAsExpression > TSAsExpression > MemberExpression[object.name='supabase'][property.name='rpc']",
+        "message": "Never assign supabase.rpc to a variable. It is a prototype method (`return this.rest.rpc(...)`), so detaching it makes `this` undefined and the call throws TypeError BEFORE issuing any request — silently, with any fallback below unreachable. This shipped broken in 4 places (2026-07-15). Use rpcUntyped() from @/lib/supabase, or call supabase.rpc(...) directly."
+      }
+    ]
   },
   "ignorePatterns": ["node_modules", ".expo", "dist", "*.gen.ts"]
 }

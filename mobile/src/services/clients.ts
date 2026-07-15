@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { rpcUntyped, supabase } from '@/lib/supabase';
 import { queryClient } from '@/lib/query';
 import type { Database } from '@/types/database.gen';
 
@@ -35,20 +35,6 @@ export type ClientInput = {
 // accepts NULL at runtime. Use this cast at the boundary so call sites can
 // pass null cleanly.
 type RpcText = string | null;
-
-// `set_client_bank_details` is a hand-written RPC not yet in the generated DB
-// types, so the typed `supabase.rpc` chain rejects its name. Cast through this
-// one helper (mirrors the pattern in services/stock-movements.ts).
-function rpcUntyped(fn: string, args: Record<string, unknown>) {
-  return (
-    supabase as unknown as {
-      rpc: (
-        fn: string,
-        args: Record<string, unknown>,
-      ) => Promise<{ data: unknown; error: { message: string } | null }>;
-    }
-  ).rpc(fn, args);
-}
 
 export type ClientBankInput = {
   bankAccountName: string | null;

@@ -5,7 +5,7 @@
 // `record_stock_count` RPC (SECURITY DEFINER — computes expected server-side and
 // enforces permission). Neither is in database.gen.ts, so handles are cast, as in
 // services/available-orders.ts.
-import { supabase } from '@/lib/supabase';
+import { rpcUntyped, supabase } from '@/lib/supabase';
 
 type PgResult = { data: unknown; error: { message: string } | null };
 type PgQuery = {
@@ -14,7 +14,6 @@ type PgQuery = {
   limit: (n: number) => PgQuery;
 } & Promise<PgResult>;
 type UntypedFrom = { from: (table: string) => { select: (cols: string) => PgQuery } };
-type UntypedRpc = (fn: string, args: Record<string, unknown>) => Promise<PgResult>;
 
 /** One counted product from a count run. */
 export type StockCountItem = { productCatalogId: string; countedQty: number };
@@ -46,7 +45,7 @@ export async function recordStockCount(
   items: StockCountItem[],
   note?: string | null,
 ): Promise<StockCountResult> {
-  const { data, error } = await (supabase.rpc as unknown as UntypedRpc)('record_stock_count', {
+  const { data, error } = await rpcUntyped('record_stock_count', {
     p_batch_id: batchId,
     p_holder_id: holderId,
     p_items: items.map((i) => ({

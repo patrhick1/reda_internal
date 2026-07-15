@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { rpcUntyped, supabase } from '@/lib/supabase';
 
 export type InboundStatus =
   | 'queued'
@@ -138,18 +138,8 @@ export async function discardInbound(inboundId: string, reason: string): Promise
  *  re-queued. Reprocessing happens server-side a moment later, so callers should
  *  refresh the list shortly after. Not in the generated RPC types yet → cast. */
 export async function requeueFailedInbound(ids: string[]): Promise<number> {
-  // .bind(supabase) is REQUIRED — SupabaseClient.rpc is a prototype method whose
-  // body is `return this.rest.rpc(...)`. Extracted unbound into a variable,
-  // `this` is undefined and the call throws `TypeError: ... (reading 'rest')`
-  // before any request goes out. (Casting in place — `(supabase.rpc as X)(...)` —
-  // is safe, since the cast erases and the member reference keeps `this`; it is
-  // only the assignment that breaks it.) Fixed 2026-07-15.
-  const rpc = supabase.rpc.bind(supabase) as unknown as (
-    fn: string,
-    args: Record<string, unknown>,
-  ) => Promise<{ data: unknown; error: { message: string } | null }>;
-  const { data, error } = await rpc('requeue_failed_inbound', { p_ids: ids });
-  if (error) throw new Error(error.message);
+  const { data, error } = await rpcUntyped<number>('requeue_failed_inbound', { p_ids: ids });
+  if (error) throw new Error(error.message ?? 'Could not requeue the selected messages.');
   return typeof data === 'number' ? data : 0;
 }
 

@@ -5,7 +5,7 @@
 // `set_left_warehouse` RPC (SECURITY DEFINER — enforces self/ops permission and
 // audits). Neither the table nor the RPC is in database.gen.ts yet, so the
 // PostgREST/rpc handles are cast, exactly like services/available-orders.ts.
-import { supabase } from '@/lib/supabase';
+import { rpcUntyped, supabase } from '@/lib/supabase';
 import { todayLagos } from '@/lib/date';
 
 type PgReadResult = { data: unknown; error: { message: string } | null };
@@ -14,7 +14,6 @@ type PgFilter = {
   maybeSingle: () => Promise<PgReadResult>;
 } & Promise<PgReadResult>;
 type UntypedFrom = { from: (table: string) => { select: (cols: string) => PgFilter } };
-type UntypedRpc = (fn: string, args: Record<string, unknown>) => Promise<PgReadResult>;
 
 /** All agents who have left the warehouse TODAY (Lagos), keyed agent_id →
  *  departed_at (ISO). Ops-facing: RLS returns every agent for admin/dispatcher/
@@ -50,7 +49,7 @@ export async function getMyDepartureToday(agentId: string): Promise<string | nul
  *  undoes it. Omit `agentId` for an agent marking themselves; ops pass an
  *  agentId to mark a rider on their behalf. Server enforces the permission. */
 export async function setLeftWarehouse(left: boolean, agentId?: string): Promise<void> {
-  const { error } = await (supabase.rpc as unknown as UntypedRpc)('set_left_warehouse', {
+  const { error } = await rpcUntyped('set_left_warehouse', {
     p_left: left,
     p_agent_id: agentId ?? null,
   });
