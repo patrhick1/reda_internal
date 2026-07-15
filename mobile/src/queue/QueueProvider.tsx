@@ -15,6 +15,7 @@ import { logError } from '@/lib/sentry';
 import { errorMessage, TerminalError } from '@/lib/errors';
 import { useAuth } from '@/hooks/useAuth';
 import { invalidateDeliveries } from '@/services/deliveries';
+import { invalidateStock } from '@/services/stock';
 import { loadJobs, saveJobs, migrateLegacyQueue, clearAllQueueStorageForTests } from './storage';
 import { executeJob } from './executors';
 import {
@@ -57,6 +58,18 @@ const DELIVERY_JOB_KINDS: ReadonlySet<JobKind> = new Set<JobKind>([
   'flag_delivery',
   'return_delivery_leftover',
   'agent_change_delivery_location',
+]);
+
+// [Egress Phase 3] Queued job kinds that move STOCK. Adjustments/transfers and a
+// leftover return obviously do; change_delivery_status does too when it lands on
+// (or reverts from) `delivered`, since current_stock nets the delivered rows —
+// we can't tell which transition it was from here, so invalidate on any of them.
+// Cheap: one refetch of a cached matrix that only the broad stock screens read.
+const STOCK_JOB_KINDS: ReadonlySet<JobKind> = new Set<JobKind>([
+  'create_stock_adjustment',
+  'create_stock_transfer',
+  'return_delivery_leftover',
+  'change_delivery_status',
 ]);
 
 export function QueueProvider({ children }: { children: ReactNode }) {
@@ -211,10 +224,11 @@ export function QueueProvider({ children }: { children: ReactNode }) {
         try {
           await executeJob(next);
           setJobs((curr) => curr.filter((j) => j.id !== next.id));
-          // A queued delivery mutation just landed server-side — refresh the
-          // cached delivery lists so the change surfaces without waiting for the
-          // next focus/pull. (No-op for stock-only jobs.)
+          // A queued mutation just landed server-side — refresh the caches it
+          // touched so the change surfaces without waiting for the next
+          // focus/pull. A delivered status change hits both.
           if (DELIVERY_JOB_KINDS.has(next.kind)) invalidateDeliveries();
+          if (STOCK_JOB_KINDS.has(next.kind)) invalidateStock();
         } catch (e) {
           const msg = errorMessage(e);
           const isTerminal = e instanceof TerminalError;

@@ -12,15 +12,13 @@
 import { useMemo } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import {
-  listCurrentStock,
   groupByClient,
   mergeClientsWithStockGroups,
   type ClientStockGroup,
 } from '@/services/stock';
-import { useClients } from '@/hooks/queries';
+import { useClients, useStockMatrix } from '@/hooks/queries';
 import { AppBar, Empty } from '@/components/ui';
 import { ClientStockCard } from '@/components/stock/ClientStockCard';
 import { colors } from '@/lib/theme';
@@ -29,11 +27,13 @@ export type ByClientBasePath = '/(warehouse)';
 
 export function StockByClientList({ basePath }: { basePath: ByClientBasePath }) {
   const router = useRouter();
-  const stockQ = useAsync(() => listCurrentStock(), []);
+  // [Egress Phase 3] Cached global matrix, shared with Stock Overview + the
+  // Agent-stock list (one fetch across all three) instead of its own full pull.
+  const stockQ = useStockMatrix();
   const clientsQ = useClients();
 
   useReloadOnFocus(() => {
-    stockQ.reload();
+    stockQ.refetchIfStale();
     clientsQ.reload();
   });
 
@@ -78,7 +78,7 @@ export function StockByClientList({ basePath }: { basePath: ByClientBasePath }) 
           contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
           refreshControl={
             <RefreshControl
-              refreshing={loading && !!stockQ.data}
+              refreshing={stockQ.fetching && !!stockQ.data}
               onRefresh={reload}
               tintColor={colors.black}
             />

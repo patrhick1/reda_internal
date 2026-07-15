@@ -13,7 +13,7 @@ import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } fr
 import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
-import { listCurrentStock, type StockMatrixRow } from '@/services/stock';
+import { listHolderStock, listStockHolderIds, type StockMatrixRow } from '@/services/stock';
 import { isWarehousePlace, type AppUser } from '@/services/users';
 import { useUsers } from '@/hooks/queries';
 import { AppBar, Card, Empty, FilterChips, Icon, Input } from '@/components/ui';
@@ -36,21 +36,27 @@ export function HolderDetail({
   showMovementsLink?: boolean;
 }) {
   const router = useRouter();
-  const stockQ = useAsync(() => listCurrentStock(), []);
-  const usersQ = useUsers();
+  // [Egress Phase 3] Only THIS holder's stock — the product list + stats need no
+  // other holder. Prev/next needs only which holders HAVE stock (a tiny ids-only
+  // query) + the roster (incl. inactive, so a deactivated holder still holding
+  // stock resolves its name). No whole-matrix fetch on this drilldown.
+  const holderStockQ = useAsync(() => listHolderStock(holderId), [holderId]);
+  const holderIdsQ = useAsync(() => listStockHolderIds(), []);
+  const usersQ = useUsers({ includeInactive: true });
 
   useReloadOnFocus(() => {
-    stockQ.reload();
+    holderStockQ.reload();
+    holderIdsQ.reload();
     usersQ.reload();
   });
 
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<ProductFilter>('all');
 
-  const rows = useMemo(() => stockQ.data ?? [], [stockQ.data]);
+  const holderRows = useMemo(() => holderStockQ.data ?? [], [holderStockQ.data]);
   const orderedHolders = useMemo(
-    () => buildOrderedHolderIds(rows, usersQ.data ?? []),
-    [rows, usersQ.data],
+    () => buildOrderedHolderIds(new Set(holderIdsQ.data ?? []), usersQ.data ?? []),
+    [holderIdsQ.data, usersQ.data],
   );
   const currentIndex = orderedHolders.indexOf(holderId);
   const prevHolderId = currentIndex > 0 ? orderedHolders[currentIndex - 1] : null;
@@ -63,8 +69,10 @@ export function HolderDetail({
     () => (usersQ.data ?? []).find((u) => u.id === holderId) ?? null,
     [usersQ.data, holderId],
   );
-  const holderRows = useMemo(() => rows.filter((r) => r.user_id === holderId), [rows, holderId]);
-  const stats = useMemo<HolderStats>(() => getHolderStats(rows, holderId), [rows, holderId]);
+  const stats = useMemo<HolderStats>(
+    () => getHolderStats(holderRows, holderId),
+    [holderRows, holderId],
+  );
 
   // Filter the product rows in scope down to what matches search + chip.
   const visibleRows = useMemo(() => {
@@ -87,8 +95,8 @@ export function HolderDetail({
       });
   }, [holderRows, query, filter]);
 
-  const loading = stockQ.loading || usersQ.loading;
-  const error = stockQ.error || usersQ.error;
+  const loading = holderStockQ.loading || usersQ.loading;
+  const error = holderStockQ.error || usersQ.error;
 
   const goPrev = () => {
     if (!prevHolderId) return;
@@ -214,7 +222,7 @@ export function HolderDetail({
         ListEmptyComponent={
           error ? (
             <Empty icon="alert" title="Could not load" sub={error} />
-          ) : loading && !stockQ.data ? (
+          ) : loading && !holderStockQ.data ? (
             <View style={{ padding: 60, alignItems: 'center' }}>
               <ActivityIndicator color={colors.black} />
             </View>
@@ -237,9 +245,10 @@ export function HolderDetail({
         contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={
           <RefreshControl
-            refreshing={loading && !!stockQ.data}
+            refreshing={loading && !!holderStockQ.data}
             onRefresh={() => {
-              stockQ.reload();
+              holderStockQ.reload();
+              holderIdsQ.reload();
               usersQ.reload();
             }}
             tintColor={colors.black}
@@ -372,12 +381,18 @@ function movementsRoute(basePath: DetailBasePath) {
 /** Ordered list of holder ids the prev/next arrows step through. Must mirror
  *  the Overview list (buildHolders): seed active warehouse PLACES + active
  *  agents (so zero-stock agents are in the sequence too), plus any other holder
- *  that appears in the stock matrix; sort warehouses first, then holders-with-
- *  stock above cleared-out empties, alpha within each. `withStock` keys off
- *  appearing in `rows` (which are non-zero by construction) — equivalent to
- *  buildHolders' `productCount > 0`. */
-function buildOrderedHolderIds(rows: StockMatrixRow[], users: AppUser[]): string[] {
-  const withStock = new Set(rows.map((r) => r.user_id));
+ *  that still HOLDS stock; sort warehouses first, then holders-with-stock above
+ *  cleared-out empties, alpha within each.
+ *
+ *  [Egress Phase 3] Takes the set of holder ids that hold stock (from the
+ *  ids-only listStockHolderIds) instead of the whole stock matrix — this list
+ *  only ever needed a "has stock" flag per holder, never quantities. `users` is
+ *  the incl-inactive roster so a deactivated holder still holding stock resolves
+ *  its name/role (previously read off the matrix row). Membership in `withStock`
+ *  is equivalent to buildHolders' `productCount > 0` (stock rows are non-zero by
+ *  construction). */
+function buildOrderedHolderIds(withStock: ReadonlySet<string>, users: AppUser[]): string[] {
+  const userById = new Map(users.map((u) => [u.id, u]));
   const byId = new Map<string, { id: string; name: string; isWarehouse: boolean }>();
 
   for (const u of users) {
@@ -385,12 +400,13 @@ function buildOrderedHolderIds(rows: StockMatrixRow[], users: AppUser[]): string
     if (!(isWarehousePlace(u) || u.role === 'agent')) continue;
     byId.set(u.id, { id: u.id, name: u.display_name, isWarehouse: isWarehousePlace(u) });
   }
-  for (const r of rows) {
-    if (byId.has(r.user_id)) continue;
-    byId.set(r.user_id, {
-      id: r.user_id,
-      name: r.user_display_name,
-      isWarehouse: r.user_role === 'warehouse',
+  for (const id of withStock) {
+    if (byId.has(id)) continue;
+    const u = userById.get(id);
+    byId.set(id, {
+      id,
+      name: u?.display_name ?? id,
+      isWarehouse: u?.role === 'warehouse',
     });
   }
 

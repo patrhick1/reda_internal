@@ -4,11 +4,10 @@
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
-import { listCurrentStock, type StockMatrixRow } from '@/services/stock';
+import { type StockMatrixRow } from '@/services/stock';
 import { type AppUser } from '@/services/users';
-import { useUsers } from '@/hooks/queries';
+import { useUsers, useStockMatrix } from '@/hooks/queries';
 import { AppBar, Avatar, Card, Empty, FilterChips, Icon, Input } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 import { getHolderStats, type HolderStats } from '@/lib/stock-helpers';
@@ -24,11 +23,14 @@ type AgentHolder = {
 
 export function AgentStockList() {
   const router = useRouter();
-  const stockQ = useAsync(() => listCurrentStock(), []);
+  // [Egress Phase 3] Cached global matrix, shared with Stock Overview +
+  // Stock-by-client (one fetch across all three). Per-agent totals/warning counts
+  // are still derived here from the shared matrix.
+  const stockQ = useStockMatrix();
   const usersQ = useUsers();
 
   useReloadOnFocus(() => {
-    stockQ.reload();
+    stockQ.refetchIfStale();
     usersQ.reload();
   });
 
@@ -160,7 +162,7 @@ export function AgentStockList() {
           contentContainerStyle={{ paddingBottom: 32 }}
           refreshControl={
             <RefreshControl
-              refreshing={loading && !!stockQ.data}
+              refreshing={stockQ.fetching && !!stockQ.data}
               onRefresh={reload}
               tintColor={colors.black}
             />

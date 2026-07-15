@@ -33,6 +33,7 @@ import {
   type Product,
   type ProductWithClient,
 } from '@/services/products';
+import { listCurrentStock, type StockMatrixRow } from '@/services/stock';
 
 /** The subset of useAsync's return shape that consumers rely on. */
 export type AsyncLike<T> = {
@@ -276,6 +277,24 @@ export function usePostponedDeliveries(
     queryFn: () => listPostponed(role),
     staleTime: DELIVERIES_STALE,
     enabled: opts.enabled ?? true,
+  });
+  return { ...asAsync(q), fetching: q.isFetching, refetchIfStale: () => refetchIfStale(queryKey) };
+}
+
+/** [Egress Phase 3] The global stock matrix (every holder × product). Legitimately
+ *  needed by the three BROAD stock screens (Overview, Stock-by-client, Agent-stock
+ *  list) — cached under the ['stock'] prefix so they share ONE fetch instead of
+ *  pulling the whole matrix each. The drill-down screens (holder / client / agent
+ *  detail) do NOT use this — they run scoped queries (listHolderStock /
+ *  listClientStock). Stock is live-ish, so it uses the short list staleTime;
+ *  invalidateStock() (queue drain) refreshes it the moment stock actually moves. */
+export function useStockMatrix(): DeliveryListResult<StockMatrixRow[]> {
+  const uid = useUid();
+  const queryKey = ['stock', uid, 'matrix'];
+  const q = useQuery({
+    queryKey,
+    queryFn: () => listCurrentStock(),
+    staleTime: DELIVERIES_STALE,
   });
   return { ...asAsync(q), fetching: q.isFetching, refetchIfStale: () => refetchIfStale(queryKey) };
 }

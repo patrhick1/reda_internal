@@ -15,7 +15,7 @@ import {
   type AvailableOrderRow,
   type AllocationLine,
 } from '@/services/available-orders';
-import { listCurrentStock } from '@/services/stock';
+import { listHolderStock } from '@/services/stock';
 import { AppBar, Card, Empty, Icon } from '@/components/ui';
 import { RawMessageSheet } from '@/components/sheets/RawMessageSheet';
 import { colors, fonts } from '@/lib/theme';
@@ -64,7 +64,12 @@ export function AvailableAgentDetail({ basePath }: { basePath: AvailableBasePath
   }, []);
 
   const ordersQ = useAsync(() => listAvailableOrders(), []);
-  const stockQ = useAsync(() => listCurrentStock(), []);
+  // [Egress Phase 3] Only THIS agent's stock — buildAllocation filters to agentId
+  // anyway, so the whole-matrix fetch was pure waste on this drilldown.
+  const stockQ = useAsync(
+    () => (agentId ? listHolderStock(agentId) : Promise.resolve([])),
+    [agentId],
+  );
 
   useReloadOnFocus(() => {
     ordersQ.reload();

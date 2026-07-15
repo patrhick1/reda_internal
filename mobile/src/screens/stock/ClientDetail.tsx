@@ -16,7 +16,7 @@ import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
-  listCurrentStock,
+  listClientStock,
   groupByClient,
   type ClientProductTotal,
   type ClientStockGroup,
@@ -35,7 +35,9 @@ export function ClientStockDetail({ basePath }: { basePath?: '/(admin)' | '/(dis
   const user = useCurrentUser();
   const { id, name } = useLocalSearchParams<{ id: string; name?: string }>();
 
-  const stockQ = useAsync(() => listCurrentStock(), []);
+  // [Egress Phase 3] Only THIS client's stock (scoped by its product ids) instead
+  // of the whole matrix; groupByClient() then yields the single group we render.
+  const stockQ = useAsync(() => (id ? listClientStock(id) : Promise.resolve([])), [id]);
   const productsQ = useActiveProductsByClient(id ?? null);
   useReloadOnFocus(() => {
     stockQ.reload();

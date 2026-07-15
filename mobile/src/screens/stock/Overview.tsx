@@ -11,18 +11,16 @@
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
-  listCurrentStock,
   groupByClient,
   mergeClientsWithStockGroups,
   type StockMatrixRow,
   type ClientStockGroup,
 } from '@/services/stock';
 import { isWarehousePlace, type AppUser } from '@/services/users';
-import { useUsers, useClients } from '@/hooks/queries';
+import { useUsers, useClients, useStockMatrix } from '@/hooks/queries';
 import {
   AppBar,
   Avatar,
@@ -66,12 +64,17 @@ export type StockBasePath = '/(admin)' | '/(dispatcher)';
 export function StockOverview({ basePath }: { basePath: StockBasePath }) {
   const router = useRouter();
   const user = useCurrentUser();
-  const stockQ = useAsync(() => listCurrentStock(), []);
+  // [Egress Phase 3] The global matrix, cached + shared with the other two broad
+  // stock screens (Stock-by-client, Agent-stock list) — one fetch instead of one
+  // per screen. Drill-downs run scoped queries and never touch this.
+  const stockQ = useStockMatrix();
   const usersQ = useUsers();
   const clientsQ = useClients();
 
   useReloadOnFocus(() => {
-    stockQ.reload();
+    // Stale-aware: a matrix still within staleTime is served from cache on
+    // back-navigation; stock mutations invalidate it regardless.
+    stockQ.refetchIfStale();
     usersQ.reload();
     clientsQ.reload();
   });
@@ -297,7 +300,7 @@ export function StockOverview({ basePath }: { basePath: StockBasePath }) {
             }}
             refreshControl={
               <RefreshControl
-                refreshing={loading && !!stockQ.data}
+                refreshing={stockQ.fetching && !!stockQ.data}
                 onRefresh={reload}
                 tintColor={colors.black}
               />
@@ -332,7 +335,7 @@ export function StockOverview({ basePath }: { basePath: StockBasePath }) {
           contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
           refreshControl={
             <RefreshControl
-              refreshing={loading && !!stockQ.data}
+              refreshing={stockQ.fetching && !!stockQ.data}
               onRefresh={reload}
               tintColor={colors.black}
             />

@@ -1,8 +1,17 @@
 import { supabase } from '@/lib/supabase';
+import { queryClient } from '@/lib/query';
 import type { Database } from '@/types/database.gen';
 import type { Client } from './clients';
 
 export type CurrentStockRow = Database['public']['Views']['current_stock']['Row'];
+
+/** [Egress Phase 3] Invalidate the cached stock matrix. Stock only changes via
+ *  the offline queue (adjustment / transfer / leftover return, and a delivery
+ *  going delivered-or-reverted), so the queue's drain loop is the single choke
+ *  point that calls this — see queue/QueueProvider.tsx. */
+export function invalidateStock(): void {
+  void queryClient.invalidateQueries({ queryKey: ['stock'] });
+}
 
 export type SingleReason = 'loss' | 'theft' | 'damaged' | 'found' | 'correction' | 'bulk_intake';
 export type PairedReason = 'transfer' | 'warehouse_return' | 'warehouse_issue';
@@ -186,6 +195,85 @@ export async function listHolderStock(holderId: string): Promise<StockMatrixRow[
     })
     .filter((r): r is StockMatrixRow => r !== null)
     .sort((a, b) => a.product_name.localeCompare(b.product_name));
+}
+
+/** [Egress Phase 3] Stock held for ONE client's products, across all holders
+ *  (non-zero). Scoped by the client's product ids so it never pulls the whole
+ *  matrix — the Client-detail screen only needs its own vendor's stock. Same
+ *  StockMatrixRow shape as listCurrentStock; feed to groupByClient() → one group.
+ *  Warehouse/ops only (agents don't see this screen and can't read clients). */
+export async function listClientStock(clientId: string): Promise<StockMatrixRow[]> {
+  // The client's products (+ vendor name) scope the stock read below.
+  const prodsRes = await supabase
+    .from('product_catalog')
+    .select('id, product_name, client_id, clients(name)')
+    .eq('client_id', clientId);
+  if (prodsRes.error) throw prodsRes.error;
+  const prods = (prodsRes.data ?? []) as {
+    id: string;
+    product_name: string;
+    client_id: string;
+    clients: { name: string } | null;
+  }[];
+  if (prods.length === 0) return [];
+  const prodIds = prods.map((p) => p.id);
+
+  const stockRes = await supabase
+    .from('current_stock')
+    .select('*')
+    .in('product_catalog_id', prodIds);
+  if (stockRes.error) throw stockRes.error;
+  const rows = (stockRes.data ?? []).filter(
+    (r): r is { agent_id: string; product_catalog_id: string; quantity_on_hand: number } =>
+      r.agent_id !== null && r.product_catalog_id !== null && r.quantity_on_hand !== null,
+  );
+  if (rows.length === 0) return [];
+
+  const holderIds = Array.from(new Set(rows.map((r) => r.agent_id)));
+  const usersRes = await supabase
+    .from('users')
+    .select('id, email, display_name, role')
+    .in('id', holderIds);
+  if (usersRes.error) throw usersRes.error;
+  const userById = new Map((usersRes.data ?? []).map((u) => [u.id, u]));
+  const prodById = new Map(
+    prods.map((p) => [
+      p.id,
+      { product_name: p.product_name, client_id: p.client_id, client_name: p.clients?.name ?? '' },
+    ]),
+  );
+
+  return rows
+    .map((r) => {
+      const u = userById.get(r.agent_id);
+      const p = prodById.get(r.product_catalog_id);
+      if (!u || !p) return null;
+      return {
+        user_id: r.agent_id,
+        user_email: u.email,
+        user_display_name: u.display_name,
+        user_role: u.role,
+        product_catalog_id: r.product_catalog_id,
+        product_name: p.product_name,
+        client_id: p.client_id,
+        client_name: p.client_name,
+        quantity_on_hand: r.quantity_on_hand,
+      };
+    })
+    .filter((r): r is StockMatrixRow => r !== null)
+    .sort((a, b) => a.product_name.localeCompare(b.product_name));
+}
+
+/** [Egress Phase 3] Just the holder ids that currently hold ANY non-zero stock,
+ *  for the Holder-detail prev/next navigation — which only needs a "has stock"
+ *  flag per holder, not quantities. Selects one column (no user/product/client
+ *  joins), so it's a fraction of the full matrix. Deduped client-side. */
+export async function listStockHolderIds(): Promise<string[]> {
+  const { data, error } = await supabase.from('current_stock').select('agent_id');
+  if (error) throw error;
+  const ids = new Set<string>();
+  for (const r of data ?? []) if (r.agent_id) ids.add(r.agent_id);
+  return Array.from(ids);
 }
 
 // ---------------------------------------------------------------------------
