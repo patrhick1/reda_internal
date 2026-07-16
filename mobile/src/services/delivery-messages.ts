@@ -369,3 +369,9 @@ const AUTO_SEEDED_ISSUE_TYPES = new Set<IssueType>(Object.values(STATUS_AUTO_ISS
 export const ACTIONABLE_ISSUE_TYPES: IssueType[] = (
   Object.keys(ISSUE_LABELS) as IssueType[]
 ).filter((t) => !AUTO_SEEDED_ISSUE_TYPES.has(t));
+
+/** Standalone flag choices shown to agents. No Product is intentionally
+ * excluded; ops owns inventory availability decisions. */
+export const AGENT_FLAG_ISSUE_TYPES: IssueType[] = ACTIONABLE_ISSUE_TYPES.filter(
+  (type) => type !== 'no_product',
+);

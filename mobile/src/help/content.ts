@@ -134,7 +134,7 @@ As admin you can change anything. Agents can only push a delivery forward (mark 
 
 ### Agent flagged something? Open issues from agents
 
-When an agent taps the alert icon on a delivery (wrong address, can't reach customer, payment dispute, product issue, other) you get a push titled **"Issue flagged"** and the delivery shows up in the **Open issues from agents** block on the home screen.
+When an agent taps the alert icon on a delivery (wrong address, can't reach customer, payment dispute, product issue, not my route, other) you get a push titled **"Issue flagged"** and the delivery shows up in the **Open issues from agents** block on the home screen.
 
 - Tap the row → opens the delivery. The agent's message is at the bottom with the issue chip + their note.
 - Type your reply in the composer and tap **Send** — the agent gets a push titled **"Reply from {your name}"**.
@@ -273,7 +273,6 @@ The delivery turns green and your **Earned today** ticks up. You can't change a 
 - **Tomorrow / Postponed / Follow up** — customer rescheduled. The delivery stays open but moves down your list.
 - **Failed delivery** — you went, customer refused or wasn't there. Closed.
 - **Unserious** — customer wasted your time. Closed.
-- **No product** — you don't have the product. Tell Reda so they can re-assign or send stock.
 
 Every status change is recorded. Reda sees it straight away.
 

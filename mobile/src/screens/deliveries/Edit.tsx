@@ -282,7 +282,11 @@ export default function EditDeliveryScreen() {
         contentContainerStyle={{ padding: 16, paddingBottom: 140 + insets.bottom, gap: 16 }}
         keyboardShouldPersistTaps="handled"
       >
-        <DeliveryFieldsForm initial={initial} onChange={handleFormChange} />
+        <DeliveryFieldsForm
+          initial={initial}
+          hideFields={['scheduledDate']}
+          onChange={handleFormChange}
+        />
         {/* Explicit unassign action. The agent picker above is set up to send
             null to update_delivery_fields, but the server-side `coalesce(p_x,
             v_old.x)` pattern silently preserves the existing agent on that

@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Platform, Pressable, Text, View } from 'react-native';
 import { useAsync } from '@/hooks/useAsync';
 import { listActiveProductsByClient, type Product } from '@/services/products';
 import { useClients, useLocations } from '@/hooks/queries';
@@ -10,12 +10,14 @@ import { Avatar, Banner, Card, DateField, Empty, Input } from '@/components/ui';
 import { Select } from '@/components/Select';
 import { colors, fonts } from '@/lib/theme';
 import { errorMessage } from '@/lib/errors';
+import {
+  completeProductLines,
+  resetProductsForClient,
+  type ProductLineDraft,
+} from './deliveryFormLogic';
 
 /** [Feature A] One editable product line. */
-export type DeliveryLineDraft = {
-  productCatalogId: string | null;
-  quantityOrdered: number | null; // null when blank or NaN
-};
+export type DeliveryLineDraft = ProductLineDraft;
 
 /** Form values emitted by `<DeliveryFieldsForm>` on every change. */
 export type DeliveryFormState = {
@@ -55,12 +57,7 @@ export function completeLines(items: DeliveryLineDraft[]): {
   productCatalogId: string;
   quantityOrdered: number;
 }[] {
-  return items
-    .filter(
-      (li): li is { productCatalogId: string; quantityOrdered: number } =>
-        !!li.productCatalogId && li.quantityOrdered != null && li.quantityOrdered > 0,
-    )
-    .map((li) => ({ productCatalogId: li.productCatalogId, quantityOrdered: li.quantityOrdered }));
+  return completeProductLines(items);
 }
 
 export type DeliveryFormInitial = Partial<DeliveryFormState>;
@@ -93,7 +90,7 @@ export type DeliveryFieldsFormProps = {
   onChange: (state: DeliveryFormState, validation: FormValidation) => void;
 };
 
-export type FormValidation = { isValid: boolean; missing: string[] };
+export type FormValidation = { isValid: boolean; missing: string[]; isBusy?: boolean };
 
 /** Required field → label shown to the operator when it's missing. Order
  *  matches the on-screen layout so the hint list reads top-to-bottom. */
@@ -296,14 +293,47 @@ export function DeliveryFieldsForm({
   }, [state.assignedAgentId, lineProductIds]);
 
   // Emit the latest state on every change, with the legacy primary derived.
+  // Loading a newly selected client's catalog is an invalid submission window.
   useEffect(() => {
     const emitted = withDerivedPrimary(state);
-    onChange(emitted, validateState(emitted));
+    const validation = validateState(emitted);
+    onChange(emitted, {
+      ...validation,
+      isValid: validation.isValid && !loadingProducts,
+      isBusy: loadingProducts,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state]);
+  }, [state, loadingProducts]);
 
   function patch(p: Partial<DeliveryFormState>) {
     setState((s) => ({ ...s, ...p }));
+  }
+
+  function confirmClientChange(lineCount: number, clientName: string): Promise<boolean> {
+    const message = `Changing to ${clientName} will clear ${lineCount} product ${lineCount === 1 ? 'line' : 'lines'}. Continue?`;
+    if (Platform.OS === 'web') {
+      return Promise.resolve(typeof window !== 'undefined' ? window.confirm(message) : false);
+    }
+    return new Promise((resolve) => {
+      Alert.alert(
+        'Change client?',
+        message,
+        [
+          { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+          { text: 'Change client', style: 'destructive', onPress: () => resolve(true) },
+        ],
+        { cancelable: true, onDismiss: () => resolve(false) },
+      );
+    });
+  }
+
+  async function selectClient(clientId: string, clientName: string) {
+    if (clientId === state.clientId) return;
+    const enteredLines = state.items.filter(
+      (line) => line.productCatalogId != null || line.quantityOrdered != null,
+    ).length;
+    if (enteredLines > 0 && !(await confirmClientChange(enteredLines, clientName))) return;
+    setState((current) => resetProductsForClient(current, clientId));
   }
 
   // [Feature A] line-item editors
@@ -510,7 +540,7 @@ export function DeliveryFieldsForm({
             return (
               <Pressable
                 key={c.id}
-                onPress={() => patch({ clientId: c.id, productCatalogId: null })}
+                onPress={() => void selectClient(c.id, c.name)}
                 style={({ pressed }) => [
                   {
                     paddingHorizontal: 12,

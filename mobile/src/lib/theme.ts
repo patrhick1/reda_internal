@@ -265,10 +265,8 @@ export const STATUS_HIDDEN_FROM_PICKER = new Set<string>([
   // terminally cancelled. DB transitions + status def kept intact for historical
   // rows and the rollover sibling-exclusion machinery.
   'agent_cancelled',
-  // 'No product' (no_product) is entered via the "No product" flag (which seeds
-  // an ops thread so Uzo knows what to send), not the plain status list — keeps
-  // it off the rider's everyday status options (Uzo, 2026-06-22). Still a valid,
-  // revertible soft-fail status; reverting it back to available uses the picker.
+  // Agents cannot select 'No product' from either statuses or flags. Keep the
+  // status for historical rows and ops-controlled recovery workflows only.
   'no_product',
 ]);
 
