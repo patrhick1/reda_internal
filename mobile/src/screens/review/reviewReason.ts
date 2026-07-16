@@ -57,29 +57,75 @@ export type ParseResultShape = {
   };
 };
 
-/** The fix-review form is single-line. Surface the FIRST product line, reading
- *  the Feature-A multi-product shape (`product_matches[0]`) and falling back to
- *  the legacy single-product keys for rows parsed before 2026-06-16. `lineCount`
- *  lets the screen warn when an order has more lines than the form can hold. */
-export function primaryProduct(parse: ParseResultShape): {
-  clientId: string | null;
+export type ReviewProductLine = {
   productCatalogId: string | null;
-  quantity: number | null;
+  quantityOrdered: number | null;
+  productName: string;
   candidates: ProductCandidate[];
   matched: boolean;
-  lineCount: number;
+};
+
+/** Normalize every parsed product line for the review editor. Lower-ranked
+ * candidates are surfaced only when the matcher did not resolve that line. */
+export function reviewProducts(parse: ParseResultShape): {
+  clientId: string | null;
+  lines: ReviewProductLine[];
 } {
   const matches = parse.product_matches ?? [];
-  const first = matches[0];
-  const matched = first?.matched ?? null;
+  if (matches.length > 0) {
+    const lines = matches.map((entry, index) => {
+      const matched = entry.matched ?? null;
+      return {
+        productCatalogId: matched?.id ?? null,
+        quantityOrdered:
+          entry.line?.quantity ?? parse.extracted?.products?.[index]?.quantity ?? null,
+        productName:
+          entry.line?.product_name ?? parse.extracted?.products?.[index]?.product_name ?? 'Product',
+        candidates: matched ? [] : (entry.candidates ?? []),
+        matched: !!matched,
+      };
+    });
+    const firstMatchedClient = matches.find((entry) => entry.matched)?.matched?.client_id ?? null;
+    const candidateClients = Array.from(
+      new Set(matches.flatMap((entry) => (entry.candidates ?? []).map((c) => c.client_id))),
+    );
+    return {
+      clientId: firstMatchedClient ?? (candidateClients.length === 1 ? candidateClients[0]! : null),
+      lines,
+    };
+  }
+
   const legacyQty = typeof parse.extracted?.quantity === 'number' ? parse.extracted.quantity : null;
+  const legacyMatched = parse.product ?? null;
   return {
-    clientId: matched?.client_id ?? parse.product?.client_id ?? null,
-    productCatalogId: matched?.id ?? parse.product?.id ?? null,
-    quantity: first?.line?.quantity ?? parse.extracted?.products?.[0]?.quantity ?? legacyQty,
-    candidates: first?.candidates ?? parse.product_candidates ?? [],
-    matched: !!(matched ?? parse.product),
-    lineCount: matches.length || (parse.product || parse.extracted?.product_name ? 1 : 0),
+    clientId: legacyMatched?.client_id ?? null,
+    lines: [
+      {
+        productCatalogId: legacyMatched?.id ?? null,
+        quantityOrdered: parse.extracted?.products?.[0]?.quantity ?? legacyQty,
+        productName:
+          parse.extracted?.product_name ??
+          parse.extracted?.products?.[0]?.product_name ??
+          legacyMatched?.product_name ??
+          'Product',
+        candidates: legacyMatched ? [] : (parse.product_candidates ?? []),
+        matched: !!legacyMatched,
+      },
+    ],
+  };
+}
+
+/** First-line view retained for review-reason copy and legacy callers. */
+export function primaryProduct(parse: ParseResultShape) {
+  const products = reviewProducts(parse);
+  const first = products.lines[0];
+  return {
+    clientId: products.clientId,
+    productCatalogId: first?.productCatalogId ?? null,
+    quantity: first?.quantityOrdered ?? null,
+    candidates: first?.candidates ?? [],
+    matched: first?.matched ?? false,
+    lineCount: products.lines.length,
   };
 }
 

@@ -21,6 +21,7 @@ import { AppBar, Banner, Button, Card, Empty, Sheet } from '@/components/ui';
 import {
   DeliveryFieldsForm,
   MissingFieldsBanner,
+  completeLines,
   type DeliveryFormState,
   type FormValidation,
 } from '@/screens/deliveries/DeliveryFieldsForm';
@@ -30,7 +31,7 @@ import { errorMessage } from '@/lib/errors';
 import {
   reviewReason,
   splitPhone,
-  primaryProduct,
+  reviewProducts,
   primaryPrice,
   type ParseResultShape,
 } from './reviewReason';
@@ -70,16 +71,17 @@ export default function InboundDetailScreen() {
     () => splitPhone(extracted.customer_phone ?? null),
     [extracted.customer_phone],
   );
-  // [Feature A] the bot now writes a multi-product shape (product_matches[] /
-  // extracted.products[] / total_amount); the old singular product/quantity/
-  // customer_price keys are gone for new rows. Read the first line via the shared
-  // helper (legacy fallback inside) so client/product/qty/price aren't blank.
-  const primary = useMemo(() => primaryProduct(parse), [parse]);
+  // Normalize every parsed product line for the editor; the helper retains a
+  // legacy fallback for rows created before the multi-product intake cutover.
+  const reviewProductState = useMemo(() => reviewProducts(parse), [parse]);
 
   const initial = useMemo<Partial<DeliveryFormState>>(
     () => ({
-      clientId: primary.clientId,
-      productCatalogId: primary.productCatalogId,
+      clientId: reviewProductState.clientId,
+      items: reviewProductState.lines.map((line) => ({
+        productCatalogId: line.productCatalogId,
+        quantityOrdered: line.quantityOrdered,
+      })),
       customerName: extracted.customer_name ?? '',
       customerPhone: phoneSplit.primary,
       // A parsed "0803… or 0815…" now persists: primary + alternate both land.
@@ -88,7 +90,6 @@ export default function InboundDetailScreen() {
       deliveryInstructions: extracted.instructions ?? '',
       locationId: parse.address?.matched_location_id ?? null,
       assignedAgentId: parse.agent_resolution?.agent_id ?? null,
-      quantityOrdered: primary.quantity,
       customerPrice: primaryPrice(parse),
       scheduledDate: todayLagos(),
     }),
@@ -247,6 +248,8 @@ export default function InboundDetailScreen() {
         locationId: state.locationId,
         scheduledDate: state.scheduledDate || todayLagos(),
         assignedAgentId: state.assignedAgentId,
+        customerPhoneAlt: state.customerPhoneAlt.trim() || null,
+        items: completeLines(state.items),
       });
       await resolveInboundToDelivery(row!.id, newId);
       // Server also drops the lock; release defensively in case of net hiccup.
@@ -350,19 +353,17 @@ export default function InboundDetailScreen() {
           </Card>
         ) : null}
 
-        {/* Multi-line order: the fix form is single-product, so warn before it
-            silently drops the extra lines (rare — most review rows are 1 line). */}
-        {primary.lineCount > 1 ? (
-          <Banner tone="warn" icon="alert">
-            {`This order has ${primary.lineCount} product lines. This screen creates a single-product delivery — only the first line is used. Create it, then add the other items by editing the delivery.`}
-          </Banner>
-        ) : null}
-
         {/* The form, pre-filled from parse_result */}
         <DeliveryFieldsForm
           initial={initial}
           hideFields={['scheduledDate']}
-          productCandidates={primary.candidates.length ? primary.candidates : null}
+          productCandidateGroups={reviewProductState.lines
+            .map((line, lineIndex) => ({
+              lineIndex,
+              productName: line.productName,
+              candidates: line.candidates,
+            }))
+            .filter((group) => group.candidates.length > 1)}
           onChange={handleFormChange}
         />
 

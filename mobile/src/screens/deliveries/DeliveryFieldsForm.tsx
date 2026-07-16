@@ -73,6 +73,12 @@ export type ProductCandidate = {
   score: number;
 };
 
+export type ProductCandidateGroup = {
+  lineIndex: number;
+  productName: string;
+  candidates: ProductCandidate[];
+};
+
 export type DeliveryFieldsFormProps = {
   initial?: DeliveryFormInitial;
   /** Hide fields not relevant to this flow. */
@@ -80,7 +86,7 @@ export type DeliveryFieldsFormProps = {
   /** Product candidates from the bot's parse_result; rendered as tappable
    *  chips above the product picker. Tapping a chip selects both client +
    *  product. Pass null when there's no ambiguity to surface. */
-  productCandidates?: ProductCandidate[] | null;
+  productCandidateGroups?: ProductCandidateGroup[] | null;
   /** Fired on every field change with the latest state + a validation summary.
    *  `missing` lists the human-readable labels of fields the operator still
    *  needs to fill or correct. `isValid` is `missing.length === 0`. */
@@ -183,7 +189,7 @@ const kicker = {
 export function DeliveryFieldsForm({
   initial,
   hideFields,
-  productCandidates,
+  productCandidateGroups,
   onChange,
 }: DeliveryFieldsFormProps) {
   const hide = useMemo(() => new Set(hideFields ?? []), [hideFields]);
@@ -434,63 +440,66 @@ export function DeliveryFieldsForm({
         />
       </Card>
 
-      {/* Product-candidate chips (review-flow only) */}
-      {productCandidates && productCandidates.length > 1 ? (
-        <Card>
-          <Text style={kicker}>The bot saw more than one match</Text>
-          <Text
-            style={{
-              fontFamily: fonts.medium,
-              fontSize: 12,
-              color: colors.textSecondary,
-              marginTop: 6,
-            }}
-          >
-            Tap the right one — it will fill in the client and product below.
-          </Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
-            {productCandidates.map((c) => {
-              const active =
-                state.items[0]?.productCatalogId === c.id && state.clientId === c.client_id;
-              return (
-                <Pressable
-                  key={c.id}
-                  onPress={() =>
-                    setState((s) => ({
-                      ...s,
-                      clientId: c.client_id,
-                      items: s.items.map((li, idx) =>
-                        idx === 0 ? { ...li, productCatalogId: c.id } : li,
-                      ),
-                    }))
-                  }
-                  style={({ pressed }) => [
-                    {
-                      paddingHorizontal: 12,
-                      paddingVertical: 8,
-                      borderRadius: 999,
-                      backgroundColor: active ? colors.black : colors.white,
-                      borderWidth: 1.5,
-                      borderColor: active ? colors.black : colors.border,
-                    },
-                    pressed && { opacity: 0.85 },
-                  ]}
-                >
-                  <Text
-                    style={{
-                      fontFamily: fonts.semibold,
-                      fontSize: 13,
-                      color: active ? colors.white : colors.black,
-                    }}
+      {/* Candidate choices belong to a specific unresolved parsed line. */}
+      {productCandidateGroups?.map((group) =>
+        group.candidates.length > 1 ? (
+          <Card key={group.lineIndex}>
+            <Text style={kicker}>Choose product for {group.productName}</Text>
+            <Text
+              style={{
+                fontFamily: fonts.medium,
+                fontSize: 12,
+                color: colors.textSecondary,
+                marginTop: 6,
+              }}
+            >
+              The bot could not confidently match this line. Tap the right product.
+            </Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+              {group.candidates.map((c) => {
+                const active =
+                  state.items[group.lineIndex]?.productCatalogId === c.id &&
+                  state.clientId === c.client_id;
+                return (
+                  <Pressable
+                    key={c.id}
+                    onPress={() =>
+                      setState((s) => ({
+                        ...s,
+                        clientId: c.client_id,
+                        items: s.items.map((li, idx) =>
+                          idx === group.lineIndex ? { ...li, productCatalogId: c.id } : li,
+                        ),
+                      }))
+                    }
+                    style={({ pressed }) => [
+                      {
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        borderRadius: 999,
+                        backgroundColor: active ? colors.black : colors.white,
+                        borderWidth: 1.5,
+                        borderColor: active ? colors.black : colors.border,
+                      },
+                      pressed && { opacity: 0.85 },
+                    ]}
                   >
-                    {c.product_name} · {c.client_name}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </Card>
-      ) : null}
+                    <Text
+                      style={{
+                        fontFamily: fonts.semibold,
+                        fontSize: 13,
+                        color: active ? colors.white : colors.black,
+                      }}
+                    >
+                      {c.product_name} · {c.client_name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </Card>
+        ) : null,
+      )}
 
       {/* Client picker */}
       <Card>
