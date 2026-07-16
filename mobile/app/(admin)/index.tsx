@@ -55,8 +55,8 @@ export default function AdminHome() {
   const stats = useMemo(() => summarize(todayQ.data ?? []), [todayQ.data]);
   const rateLabel = useMemo(() => {
     const r = rateQ.data;
-    if (!r || r.engaged === 0) return '—';
-    return `${Math.round((r.delivered / r.engaged) * 100)}%`;
+    if (!r || r.available === 0) return '—';
+    return `${Math.round((r.delivered / r.available) * 100)}%`;
   }, [rateQ.data]);
   const reviewCount = reviewQ.data ?? 0;
   const negMarginCount = negMarginQ.data ?? 0;
@@ -97,9 +97,11 @@ export default function AdminHome() {
             <HeroStat label="Completed" value={String(stats.delivered)} accent={colors.success} />
             <HeroStat label="Rate" value={rateLabel} accent={colors.red} />
           </View>
-          {/* The four chips sum to ORDERS so the hero card double-acts as a
-              budget: Completed + Active + Unassigned + Closed = total.
-              Completed is listed first to mirror the HeroStat focus order. */}
+          {/* Completed / Active / Unassigned / Closed are disjoint status buckets
+              that sum to ORDERS. "Available" is the odd one out on purpose: it's the
+              rate denominator — orders that ever reached Available (or delivered) —
+              so it OVERLAPS Completed/Active and is NOT part of that sum. It sits
+              here so the rate reads at a glance: Completed ÷ Available = Rate. */}
           <View
             style={{
               marginTop: 14,
@@ -112,6 +114,7 @@ export default function AdminHome() {
           >
             <BreakdownItem label="Completed" value={stats.delivered} />
             <BreakdownItem label="Active" value={stats.active} />
+            <BreakdownItem label="Available" value={rateQ.data?.available ?? 0} />
             <BreakdownItem label="Unassigned" value={stats.unassigned} />
             <BreakdownItem label="Closed" value={stats.closed} />
           </View>

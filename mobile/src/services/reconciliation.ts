@@ -256,17 +256,23 @@ export async function previewEodRollover(forDate?: string): Promise<EodPreviewRo
   return data ?? [];
 }
 
-export type TodayDeliveryRate = { delivered: number; engaged: number };
+export type TodayDeliveryRate = {
+  /** Orders delivered today. */
+  delivered: number;
+  /** Orders that EVER reached `available` / `available_evening` in their status
+   *  history, OR are delivered — the "Available" hero chip and the rate
+   *  denominator. delivered ⊆ available, so rate = delivered / available ≤ 100%. */
+  available: number;
+};
 
-/** Admin home "Rate" hero. Delivery rate measured against orders the customer was
- *  actually engaged on — every delivery that EVER reached `available` /
- *  `available_evening` in its status history, plus any delivered row — NOT the raw
- *  order count, and NOT the soft-fail queue (customers the vendor never convinced,
- *  who never made it to Available). This is the ~70%+ figure clients see in their
- *  weekly/monthly reports, not the old ~30% that counted unreachable leads against
- *  us. Server-side RPC (reads status history); see scripts/today-delivery-rate.sql.
- *  Defaults to Lagos-today. Client computes the percentage so it owns rounding and
- *  the empty state. */
+/** Admin home "Available" + "Rate" hero. Both are measured against orders the
+ *  customer was actually engaged on — every delivery that EVER reached Available in
+ *  its status history — NOT the raw order count, and NOT the soft-fail queue
+ *  (customers the vendor never convinced, who never made it to Available). This is
+ *  the ~70%+ figure clients see in their weekly/monthly reports, not the old ~30%
+ *  that counted unreachable leads against us. Server-side RPC (reads status
+ *  history); see scripts/today-delivery-rate.sql. Defaults to Lagos-today. Client
+ *  computes the percentage so it owns rounding and the empty state. */
 export async function getTodayDeliveryRate(forDate?: string): Promise<TodayDeliveryRate> {
   const { data, error } = await rpcUntyped<TodayDeliveryRate[]>(
     'today_delivery_rate',
@@ -274,7 +280,7 @@ export async function getTodayDeliveryRate(forDate?: string): Promise<TodayDeliv
   );
   if (error) throw error;
   const row = data?.[0];
-  return { delivered: row?.delivered ?? 0, engaged: row?.engaged ?? 0 };
+  return { delivered: row?.delivered ?? 0, available: row?.available ?? 0 };
 }
 
 // ---------------------------------------------------------------------------
