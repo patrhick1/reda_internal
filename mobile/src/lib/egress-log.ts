@@ -36,9 +36,25 @@ const burst = new Map<string, Stat>(); // since the last auto-flush
 let sessionBytes = 0;
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
+// [Egress Phase 5a] Distinguish the FIVE distinct queries that all read the same
+// deliveries_admin/_safe view — otherwise "loads per session" is invisible
+// (they'd fold under one label). Derived from the PostgREST filter params so we
+// can count how often the big date-scoped list reloads vs the small
+// postponed/unassigned chips vs the browse paths. Keep in sync with the queries
+// in services/deliveries.ts (listDeliveries / listPostponed / listUnassigned).
+function deliveriesQueryTag(params: URLSearchParams): string {
+  if (params.has('or')) return '[search]'; // name/phone ilike — search overrides date
+  if (params.get('current_status')?.startsWith('eq.postponed')) return '[postponed]';
+  if (params.get('assigned_agent_id') === 'is.null') return '[unassigned]';
+  if (params.get('scheduled_date')?.startsWith('eq.')) return '[date]'; // the 264 KB today-list
+  return '[alldates]';
+}
+
 // Request URL → a stable, aggregatable label. Strips the PostgREST/auth prefix
 // and the query string so "deliveries?select=…" and "deliveries?id=eq.…" fold
-// under one "deliveries" key; RPCs read as "rpc/<fn>".
+// under one "deliveries" key; RPCs read as "rpc/<fn>". The deliveries views are
+// the exception — they carry a query tag (see deliveriesQueryTag) so the five
+// same-view queries stay separately countable.
 function labelFor(url: string, method: string): string {
   try {
     const u = new URL(url);
@@ -48,6 +64,9 @@ function labelFor(url: string, method: string): string {
       .replace(/^\/realtime\/v1\//, 'realtime/')
       .replace(/^\/+/, '');
     if (!p) p = u.pathname || url;
+    if (method === 'GET' && (p === 'deliveries_admin' || p === 'deliveries_safe')) {
+      p += ` ${deliveriesQueryTag(u.searchParams)}`;
+    }
     return `${method} ${p}`;
   } catch {
     return `${method} ${url}`;
