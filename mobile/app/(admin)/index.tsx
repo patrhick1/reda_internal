@@ -6,6 +6,7 @@ import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { usePendingLocationChangesCount } from '@/hooks/usePendingLocationChangesCount';
 import { countNegativeMarginDeliveries, type DeliveryRow } from '@/services/deliveries';
+import { getTodayDeliveryRate } from '@/services/reconciliation';
 import { countNeedsReview } from '@/services/bot';
 import { useUsers, useDeliveriesList } from '@/hooks/queries';
 import { listOpenIssuesForOps } from '@/services/delivery-messages';
@@ -37,15 +38,26 @@ export default function AdminHome() {
   const issuesQ = useAsync(() => listOpenIssuesForOps(), []);
   const usersQ = useUsers();
   const negMarginQ = useAsync(() => countNegativeMarginDeliveries(), []);
+  // "Rate" hero. Measured server-side against orders the customer was actually
+  // engaged on (ever reached Available in status history), not the raw order count
+  // — so unreachable leads the vendor never convinced don't tank it. See
+  // getTodayDeliveryRate / scripts/today-delivery-rate.sql.
+  const rateQ = useAsync(() => getTodayDeliveryRate(), []);
 
   useReloadOnFocus(() => {
     todayQ.refetchIfStale();
     reviewQ.reload();
     issuesQ.reload();
     negMarginQ.reload();
+    rateQ.reload();
   });
 
   const stats = useMemo(() => summarize(todayQ.data ?? []), [todayQ.data]);
+  const rateLabel = useMemo(() => {
+    const r = rateQ.data;
+    if (!r || r.engaged === 0) return '—';
+    return `${Math.round((r.delivered / r.engaged) * 100)}%`;
+  }, [rateQ.data]);
   const reviewCount = reviewQ.data ?? 0;
   const negMarginCount = negMarginQ.data ?? 0;
   const pendingZoneCount = usePendingLocationChangesCount();
@@ -83,7 +95,7 @@ export default function AdminHome() {
           >
             <HeroStat label="Orders" value={String(stats.total)} accent={colors.white} />
             <HeroStat label="Completed" value={String(stats.delivered)} accent={colors.success} />
-            <HeroStat label="Rate" value={stats.rateLabel} accent={colors.red} />
+            <HeroStat label="Rate" value={rateLabel} accent={colors.red} />
           </View>
           {/* The four chips sum to ORDERS so the hero card double-acts as a
               budget: Completed + Active + Unassigned + Closed = total.
@@ -387,14 +399,11 @@ function summarize(rows: DeliveryRow[]) {
     closed++;
   }
   const total = groups.size;
-  // Completion rate is measured against orders actually in play today —
-  // delivered + active — NOT the full order count. The huge morning
-  // "unassigned" rollover queue hasn't been dispatched yet, so counting it
-  // in the denominator tanks the rate to a misleading single digit. This
-  // answers "of what the agents are working, how much is done?".
-  const inPlay = delivered + active;
-  const rateLabel = inPlay === 0 ? '—' : `${Math.round((delivered / inPlay) * 100)}%`;
-  return { delivered, active, unassigned, rolled, closed, total, rateLabel };
+  // NB: the "Rate" hero is NOT computed here. It's measured server-side against
+  // orders that ever reached Available (getTodayDeliveryRate), so unreachable leads
+  // don't tank it. These grouped counts still drive Orders / Completed / Active /
+  // Unassigned / Closed.
+  return { delivered, active, unassigned, rolled, closed, total };
 }
 
 function kicker(theme: 'light' | 'dark' = 'light', size: 'sm' | 'md' = 'md') {
