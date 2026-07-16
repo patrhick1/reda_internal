@@ -19,6 +19,7 @@ import { useStatusDefs } from '@/hooks/queries';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
   getDelivery,
+  getDeliveryRedaCharge,
   listDeliveryHistoryChain,
   rolledFromLabel,
   type DeliveryChainHistoryRow,
@@ -31,6 +32,7 @@ import { colors, fonts, historyReasonLine, TERMINAL_STATUSES } from '@/lib/theme
 import {
   canClaimFollowup,
   canCorrectDeliveryLocation,
+  canCorrectRedaCharge,
   canRevertDelivered,
   canCallCustomer,
   canDeleteDelivery,
@@ -60,6 +62,7 @@ import { ChainDivider } from '@/components/delivery/ChainDivider';
 import { MarkDeliveredSheet } from '@/components/sheets/MarkDeliveredSheet';
 import { CorrectLocationSheet } from '@/components/sheets/CorrectLocationSheet';
 import { CorrectChargesSheet } from '@/components/sheets/CorrectChargesSheet';
+import { EditRedaChargeSheet } from '@/components/sheets/EditRedaChargeSheet';
 import { RevertDeliveredSheet } from '@/components/sheets/RevertDeliveredSheet';
 import { EditWaybillSheet } from '@/components/sheets/EditWaybillSheet';
 import { UpdateStatusSheet } from '@/components/sheets/UpdateStatusSheet';
@@ -79,6 +82,11 @@ export function DeliveryDetail() {
   const historyQ = useAsync(() => listDeliveryHistoryChain(id), [id]);
   const defsQ = useStatusDefs();
   const notifQ = useAsync(() => listClientNotificationsForDelivery(id), [id]);
+  const mayCorrectRedaCharge = canCorrectRedaCharge(user.role);
+  const redaChargeQ = useAsync(
+    () => (mayCorrectRedaCharge && id ? getDeliveryRedaCharge(id) : Promise.resolve(null)),
+    [mayCorrectRedaCharge, id],
+  );
   const canMarkNotified = canMarkClientNotified(user.role);
 
   const [markOpen, setMarkOpen] = useState(false);
@@ -87,6 +95,7 @@ export function DeliveryDetail() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [correctLocOpen, setCorrectLocOpen] = useState(false);
   const [correctChargeOpen, setCorrectChargeOpen] = useState(false);
+  const [editRedaChargeOpen, setEditRedaChargeOpen] = useState(false);
   const [revertOpen, setRevertOpen] = useState(false);
   const [editWaybillOpen, setEditWaybillOpen] = useState(false);
   const [callBusy, setCallBusy] = useState(false);
@@ -277,14 +286,16 @@ export function DeliveryDetail() {
   const isDelivered = status === 'delivered';
   // customer_price is per-delivery, not per-unit. Do NOT multiply by quantity.
   const expectedTotal = Number(d.customer_price ?? 0);
-  const showCharged = canSeeCharged(user.role);
+  const showCharged = canSeeCharged(user.role) || mayCorrectRedaCharge;
   const showMargin = canSeeMargin(user.role);
   // Waybill/pickup: a money-only order with no product, customer, or address.
   const isWaybill = d.order_type === 'waybill';
   const showAgentPayment =
     user.role === 'admin' || (user.role === 'agent' && d.assigned_agent_id === user.userId);
 
-  const charged = 'charged_snapshot' in d ? (d.charged_snapshot ?? null) : null;
+  const charged =
+    redaChargeQ.data?.charged_snapshot ??
+    ('charged_snapshot' in d ? (d.charged_snapshot ?? null) : null);
   const canEdit = canUpdateStatus(user.role, d.assigned_agent_id === user.userId);
 
   const onCommitted = (newStatus: string, jobId: string) => {
@@ -761,6 +772,14 @@ export function DeliveryDetail() {
               <MoneyRow
                 label={isWaybill ? 'Client charge' : 'Reda charge'}
                 value={formatNaira(charged != null ? Number(charged) : null)}
+                actionLabel={
+                  mayCorrectRedaCharge && !isWaybill && redaChargeQ.data ? 'Edit' : undefined
+                }
+                onAction={
+                  mayCorrectRedaCharge && !isWaybill && redaChargeQ.data
+                    ? () => setEditRedaChargeOpen(true)
+                    : undefined
+                }
               />
             ) : null}
             {showAgentPayment ? (
@@ -1086,6 +1105,19 @@ export function DeliveryDetail() {
           historyQ.reload();
         }}
       />
+      <EditRedaChargeSheet
+        open={editRedaChargeOpen}
+        deliveryId={d.id ?? null}
+        charge={redaChargeQ.data}
+        customerName={d.customer_name ?? null}
+        onClose={() => setEditRedaChargeOpen(false)}
+        onSaved={() => {
+          setEditRedaChargeOpen(false);
+          redaChargeQ.reload();
+          deliveryQ.reload();
+          historyQ.reload();
+        }}
+      />
       <HandoffToSubAgentSheet
         open={handoffOpen}
         delivery={d}
@@ -1151,21 +1183,42 @@ function CallActionRow({
   );
 }
 
-function MoneyRow({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+function MoneyRow({
+  label,
+  value,
+  accent,
+  actionLabel,
+  onAction,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
   return (
     <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
       <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary }}>
         {label}
       </Text>
-      <Text
-        style={{
-          fontFamily: fonts.bold,
-          fontSize: 13,
-          color: accent ? colors.success : colors.black,
-        }}
-      >
-        {value}
-      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <Text
+          style={{
+            fontFamily: fonts.bold,
+            fontSize: 13,
+            color: accent ? colors.success : colors.black,
+          }}
+        >
+          {value}
+        </Text>
+        {actionLabel && onAction ? (
+          <TouchableOpacity onPress={onAction} hitSlop={8} accessibilityRole="button">
+            <Text style={{ fontFamily: fonts.bold, fontSize: 12, color: colors.red }}>
+              {actionLabel}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
     </View>
   );
 }

@@ -47,6 +47,12 @@ export function canSeeCharged(role: Role): boolean {
   return role === 'admin';
 }
 
+/** Correct one delivery's Reda charge snapshot. Managers only; dispatchers get
+ * the value through a narrow RPC rather than the admin financial view. */
+export function canCorrectRedaCharge(role: Role): boolean {
+  return isManager(role);
+}
+
 /** The "POS fee on cash" note in the mark-delivered sheets. It explains a
  *  client-remit deduction that only concerns back-office reconciliation — the
  *  field agents/reps who collect the cash never touch the remit, so the note is

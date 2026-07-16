@@ -1010,6 +1010,40 @@ export async function correctDeliveryCharge(
   invalidateDeliveries();
 }
 
+export type DeliveryRedaCharge = {
+  charged_snapshot: number | null;
+  recommended_charge: number | null;
+  client_day_settled: boolean;
+};
+
+/** Manager-safe financial projection for one delivery. Dispatchers must not
+ * query deliveries_admin, so this narrow RPC exposes only Reda's fee. */
+export async function getDeliveryRedaCharge(deliveryId: string): Promise<DeliveryRedaCharge> {
+  const { data, error } = await rpcUntyped<DeliveryRedaCharge[]>('get_delivery_reda_charge', {
+    p_delivery_id: deliveryId,
+  });
+  if (error) throw error;
+  const row = data?.[0];
+  if (!row) throw new Error('Delivery charge not available');
+  return row;
+}
+
+/** Admin/dispatcher: override only Reda's fee snapshot. Agent payout and rate
+ * cards are intentionally untouched. */
+export async function correctDeliveryRedaCharge(
+  deliveryId: string,
+  charged: number,
+  reason: string,
+): Promise<void> {
+  const { error } = await rpcUntyped('correct_delivery_reda_charge', {
+    p_delivery_id: deliveryId,
+    p_charged: charged,
+    p_reason: reason,
+  });
+  if (error) throw error;
+  invalidateDeliveries();
+}
+
 /** Create a waybill / pickup order: a money-only record (no product, customer,
  *  phone, address, or agent) that lands in the delivery report + client
  *  remittance. `charged` = total billed to the client, `paidOut` = total Reda
