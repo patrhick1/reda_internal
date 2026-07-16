@@ -281,7 +281,8 @@ export function clientShareShowsPhone(clientId: string | null | undefined): bool
 // or Name / Product(s) / Customer paid / Delivery fee / Note (paidAndFee).
 // Pickup and waybill rows instead use Type / Charge to client / deduction note,
 // because they are client charges rather than customer deliveries. The Total
-// block keeps delivered units, surfaces waybill charges, and states who owes whom.
+// block keeps delivered units and states who owes whom (the net) — pickup/waybill
+// charges are shown once in the body, not restated in the Total.
 export function buildClientShareMessage(input: {
   clientName: string;
   rangeLabel: string;
@@ -352,7 +353,10 @@ export function buildClientShareMessage(input: {
   const totalBlock = [
     'Total',
     ...productLines,
-    ...(waybillCharges > 0 ? [`Pickup / waybill charges: ${formatNaira(waybillCharges)}`] : []),
+    // Pickup / waybill / failed-delivery charges already appear as their own row
+    // in the body above (there's only ever one, if any) — restating the amount
+    // here just makes the charge conspicuous, which clients dislike. The final
+    // balanceLine already nets it out, so we don't repeat it.
     balanceLine,
   ].join('\n');
 
