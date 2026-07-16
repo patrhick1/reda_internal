@@ -38,10 +38,11 @@ export default function AdminHome() {
   const issuesQ = useAsync(() => listOpenIssuesForOps(), []);
   const usersQ = useUsers();
   const negMarginQ = useAsync(() => countNegativeMarginDeliveries(), []);
-  // "Rate" hero. Measured server-side against orders the customer was actually
-  // engaged on (ever reached Available in status history), not the raw order count
-  // — so unreachable leads the vendor never convinced don't tank it. See
-  // getTodayDeliveryRate / scripts/today-delivery-rate.sql.
+  // Feeds both the "Available" chip and the "Rate" hero. Measured server-side
+  // against orders the customer was actually engaged on (ever reached Available in
+  // status history), not the raw order count — so unreachable leads the vendor
+  // never convinced don't tank it. See getTodayDeliveryRate /
+  // scripts/today-delivery-rate.sql.
   const rateQ = useAsync(() => getTodayDeliveryRate(), []);
 
   useReloadOnFocus(() => {
