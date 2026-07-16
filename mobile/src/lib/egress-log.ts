@@ -244,6 +244,13 @@ function wsFrameBytes(data: unknown): number {
   return 0;
 }
 
+// One-time positive-install signal. Without it a broken hook and a working-but-
+// idle hook look identical: both silent (data frames only arrive when a row
+// actually changes on the server, and heartbeat replies are deliberately quiet).
+// Logging the first construction proves realtime-js actually adopted our
+// transport — the thing an idle burst table cannot show.
+let wsInstrumentAnnounced = false;
+
 /** A WebSocket subclass that counts inbound realtime frames into the same burst
  *  tables as HTTP. Pass to createClient as `realtime: { transport }`. Returns
  *  undefined outside dev (and where the platform has no WebSocket), so callers
@@ -255,6 +262,14 @@ export function countingWebSocketTransport(): WsCtor | undefined {
   return class extends (Real as WsCtor) {
     constructor(url: string, protocols?: string | string[]) {
       super(url, protocols);
+      if (!wsInstrumentAnnounced) {
+        wsInstrumentAnnounced = true;
+        // eslint-disable-next-line no-console
+        console.log(
+          '[egress] realtime WS instrumented — `WS pg/…` lines will appear when a ' +
+            'delivery_messages row changes on the server (open a thread + send a reply to see one).',
+        );
+      }
       try {
         this.addEventListener('message', (ev: MessageEvent) => {
           const label = labelForWsFrame(ev.data);
