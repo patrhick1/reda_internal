@@ -353,10 +353,11 @@ export default function EditClient() {
         <View style={styles.toggleText}>
           <Text style={styles.toggleLabel}>Cancel soft-failed orders at EOD</Text>
           <Text style={styles.toggleHelper}>
-            When the customer doesn&apos;t engage and the day ends, mark the delivery as failed
-            instead of rolling it to tomorrow. Applies only to customer-unreachable statuses
-            (didn&apos;t answer, line busy, phone off, couldn&apos;t find them). Customer deferrals
-            (tomorrow / postponed) and in-transit orders (picked up / waybilled) still roll.
+            When an order isn&apos;t completed and the day ends, mark it as failed instead of
+            carrying it forward. Applies to customer-unreachable statuses (didn&apos;t answer, line
+            busy, phone off, couldn&apos;t find them) and customer deferrals (postponed / tomorrow)
+            — postponed orders are cancelled when they come due rather than re-entering the pool.
+            In-transit orders (picked up / waybilled) are unaffected.
           </Text>
         </View>
         <Switch
