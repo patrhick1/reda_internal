@@ -50,3 +50,30 @@ export function pooledRatePct(days: RateDay[]): {
     available,
   };
 }
+
+/** Colour band for a rate % (Greg's scale): <50 red, 50–74 orange, 75–89
+ *  green, 90+ light green. Shared by the home hero/strip and the history
+ *  screen so every rate surface grades identically. */
+export type RateBand = 'low' | 'mid' | 'good' | 'great';
+
+export function rateBand(pct: number): RateBand {
+  if (pct < 50) return 'low';
+  if (pct < 75) return 'mid';
+  if (pct < 90) return 'good';
+  return 'great';
+}
+
+/** Band colours per background. `dark` = the black hero/chart cards (brighter
+ *  light-green pops there); `light` = white cards, where the 90+ tier uses a
+ *  deeper light-green so bold 13-14px text stays readable. Base tiers reuse
+ *  the theme palette (red / warning / success). */
+export const RATE_BAND_COLORS: Record<'light' | 'dark', Record<RateBand, string>> = {
+  light: { low: '#E63027', mid: '#F59E0B', good: '#16A34A', great: '#22C55E' },
+  dark: { low: '#E63027', mid: '#F59E0B', good: '#16A34A', great: '#4ADE80' },
+};
+
+/** Convenience: colour for a (possibly null) rate on a given background.
+ *  Null (no rateable orders) falls back to the caller-supplied neutral. */
+export function rateColor(pct: number | null, theme: 'light' | 'dark', neutral: string): string {
+  return pct == null ? neutral : RATE_BAND_COLORS[theme][rateBand(pct)];
+}

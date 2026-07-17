@@ -11,6 +11,7 @@ import {
   dayRatePct,
   monthDayLabel,
   pooledRatePct,
+  rateColor,
   weekdayShort,
   type RateDay,
 } from '@/lib/rate-trend';
@@ -62,7 +63,8 @@ export default function RateHistory() {
               style={{
                 fontFamily: fonts.extrabold,
                 fontSize: 56,
-                color: colors.white,
+                // Banded (<50 red, 50-74 orange, 75-89 green, 90+ light green).
+                color: rateColor(headline.pct, 'dark', colors.white),
                 letterSpacing: -1.5,
                 marginTop: 2,
               }}
@@ -151,15 +153,17 @@ function MiniStat({ label, value, sub }: { label: string; value: string; sub: st
 function ChartBar({ day, isToday }: { day: RateDay; isToday: boolean }) {
   const pct = dayRatePct(day);
   const fillH = pct == null ? 0 : Math.max(3, Math.round((pct / 100) * CHART_H));
+  // Banded colour so weak days jump out of the month at a glance.
+  const band = rateColor(pct, 'light', colors.border);
   return (
     <View style={{ flex: 1, justifyContent: 'flex-end', height: CHART_H }}>
       <View
         style={{
           height: fillH,
           borderRadius: 3,
-          backgroundColor: isToday ? 'transparent' : colors.success,
+          backgroundColor: isToday ? 'transparent' : band,
           borderWidth: isToday ? 1.5 : 0,
-          borderColor: colors.success,
+          borderColor: band,
         }}
       />
     </View>
@@ -201,7 +205,8 @@ function DayRow({ day, isToday, striped }: { day: RateDay; isToday: boolean; str
           style={{
             fontFamily: fonts.extrabold,
             fontSize: 14,
-            color: pct == null ? colors.textTertiary : colors.black,
+            // Banded like the chart, so the list and bars grade identically.
+            color: rateColor(pct, 'light', colors.textTertiary),
             width: 44,
             textAlign: 'right',
           }}

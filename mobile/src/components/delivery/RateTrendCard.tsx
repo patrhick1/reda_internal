@@ -1,7 +1,7 @@
 import { View, Text } from 'react-native';
 import { Card, Icon } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
-import { dayRatePct, weekdayShort, pooledRatePct, type RateDay } from '@/lib/rate-trend';
+import { dayRatePct, weekdayShort, pooledRatePct, rateColor, type RateDay } from '@/lib/rate-trend';
 
 const TRACK_H = 60;
 
@@ -57,13 +57,16 @@ export function RateTrendCard({
 function Bar({ day, isToday }: { day: RateDay; isToday: boolean }) {
   const pct = dayRatePct(day);
   const fillH = pct == null ? 0 : Math.max(3, Math.round((pct / 100) * TRACK_H));
+  // Banded colour (<50 red, 50-74 orange, 75-89 green, 90+ light green) so a
+  // bad day stands out in the strip at a glance.
+  const band = rateColor(pct, 'dark', colors.textTertiary);
   return (
     <View style={{ flex: 1, alignItems: 'center', gap: 6 }}>
       <Text
         style={{
           fontFamily: fonts.bold,
           fontSize: 11,
-          color: pct == null ? colors.textTertiary : colors.white,
+          color: pct == null ? colors.textTertiary : band,
         }}
       >
         {pct == null ? '—' : `${pct}%`}
@@ -83,9 +86,9 @@ function Bar({ day, isToday }: { day: RateDay; isToday: boolean }) {
             height: fillH,
             borderRadius: 5,
             // Today drawn hollow (outlined) since the number is still climbing.
-            backgroundColor: isToday ? 'transparent' : colors.success,
+            backgroundColor: isToday ? 'transparent' : band,
             borderWidth: isToday ? 1.5 : 0,
-            borderColor: colors.success,
+            borderColor: band,
           }}
         />
       </View>

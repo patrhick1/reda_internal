@@ -17,7 +17,7 @@ import { RecentActivityCard } from '@/components/delivery/RecentActivityCard';
 import { RateTrendCard } from '@/components/delivery/RateTrendCard';
 import { colors, fonts, statusBucket, isAssignedActive } from '@/lib/theme';
 import { todayLagos } from '@/lib/date';
-import { addDays } from '@/lib/rate-trend';
+import { addDays, rateColor } from '@/lib/rate-trend';
 import { type IconName } from '@/components/ui';
 
 function todayHeaderDate(): string {
@@ -67,10 +67,13 @@ export default function AdminHome() {
   });
 
   const stats = useMemo(() => summarize(todayQ.data ?? []), [todayQ.data]);
-  const rateLabel = useMemo(() => {
+  // Label + banded colour (Greg's scale: <50 red, 50-74 orange, 75-89 green,
+  // 90+ light green) — the hero was previously ALWAYS brand-red, which made a
+  // healthy 84% read like a problem.
+  const rate = useMemo(() => {
     const r = rateQ.data;
-    if (!r || r.available === 0) return '—';
-    return `${Math.round((r.delivered / r.available) * 100)}%`;
+    const pct = !r || r.available === 0 ? null : Math.round((r.delivered / r.available) * 100);
+    return { label: pct == null ? '—' : `${pct}%`, color: rateColor(pct, 'dark', colors.white) };
   }, [rateQ.data]);
   const reviewCount = reviewQ.data ?? 0;
   const negMarginCount = negMarginQ.data ?? 0;
@@ -116,7 +119,7 @@ export default function AdminHome() {
           >
             <HeroStat label="Orders" value={String(stats.total)} accent={colors.white} />
             <HeroStat label="Completed" value={String(stats.delivered)} accent={colors.success} />
-            <HeroStat label="Rate" value={rateLabel} accent={colors.red} />
+            <HeroStat label="Rate" value={rate.label} accent={rate.color} />
           </View>
           {/* Completed / Active / Unassigned / Closed are disjoint status buckets
               that sum to ORDERS. "Available" is the odd one out on purpose: it's the
