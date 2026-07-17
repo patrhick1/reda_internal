@@ -116,7 +116,7 @@ export default function RateHistory() {
               By day
             </Text>
             {[...days].reverse().map((d, i) => (
-              <DayRow key={d.day} day={d} isToday={d.day === today} first={i === 0} />
+              <DayRow key={d.day} day={d} isToday={d.day === today} striped={i % 2 === 1} />
             ))}
           </Card>
         </ScrollView>
@@ -166,17 +166,22 @@ function ChartBar({ day, isToday }: { day: RateDay; isToday: boolean }) {
   );
 }
 
-function DayRow({ day, isToday, first }: { day: RateDay; isToday: boolean; first: boolean }) {
+function DayRow({ day, isToday, striped }: { day: RateDay; isToday: boolean; striped: boolean }) {
   const pct = dayRatePct(day);
   return (
+    // Alternating row colours (Greg's ticket) so the eye traces date → counts →
+    // % across the row without slipping a line. Stripes replace the old border
+    // separators; negative margin lets the stripe bleed to the card edges.
     <View
       style={{
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
         paddingVertical: 10,
-        borderTopWidth: first ? 0 : 1,
-        borderTopColor: colors.border,
+        paddingHorizontal: 12,
+        marginHorizontal: -12,
+        borderRadius: 8,
+        backgroundColor: striped ? colors.surface : 'transparent',
       }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
