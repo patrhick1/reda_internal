@@ -11,6 +11,7 @@ import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
+import { useStockCoverage } from '@/hooks/queries';
 import { listHolderStock, type StockMatrixRow } from '@/services/stock';
 import { listAvailableOrders } from '@/services/available-orders';
 import { AppBar, Button, Card, Empty, FilterChips, Icon, Input, Sheet } from '@/components/ui';
@@ -34,10 +35,14 @@ export default function WarehouseHome() {
   // show. Cross-holder views live on the Agent-stock / By-client screens.
   const stockQ = useAsync(() => listHolderStock(holderId), [holderId]);
   const availableQ = useAsync(() => listAvailableOrders(), []);
+  // Demand-aware coverage for the "Stock coverage" card — warehouse is the
+  // persona who fixes shortages, so the check lives on their home.
+  const coverageQ = useStockCoverage();
 
   useReloadOnFocus(() => {
     stockQ.reload();
     availableQ.reload();
+    coverageQ.refetchIfStale();
   });
 
   const [query, setQuery] = useState('');
@@ -68,6 +73,12 @@ export default function WarehouseHome() {
         return a.product_name.localeCompare(b.product_name);
       });
   }, [holderRows, query, filter]);
+
+  // Products whose fleet stock can't cover today's open demand.
+  const shortStock = useMemo(() => {
+    const short = (coverageQ.data ?? []).filter((r) => r.on_hand_total < r.qty_open);
+    return { count: short.length, ordersAffected: short.reduce((s, r) => s + r.orders_open, 0) };
+  }, [coverageQ.data]);
 
   const showReceive = canReceiveStock(user.role);
   const showTransfer = canDoWarehouseTransfer(user.role);
@@ -223,6 +234,48 @@ export default function WarehouseHome() {
                     {availableRows.length === 0
                       ? 'Nothing confirmed yet today'
                       : `${availableUnits} ${availableUnits === 1 ? 'unit' : 'units'} across ${availableAgents} ${availableAgents === 1 ? 'agent' : 'agents'}`}
+                  </Text>
+                </View>
+                <Icon name="chevronRight" size={20} color={colors.textSecondary} />
+              </View>
+            </Card>
+
+            {/* Stock coverage — demand-aware shortage check. Always visible:
+                warehouse is the persona who FIXES a shortage (receive /
+                transfer), so the entry point stays put even when all clear. */}
+            <Card dense onPress={() => router.push('/(warehouse)/stock-coverage')}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 20,
+                    backgroundColor: shortStock.count > 0 ? colors.redSoft : colors.surface,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Icon
+                    name="warehouse"
+                    size={18}
+                    color={shortStock.count > 0 ? colors.red : colors.black}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>
+                    Stock coverage
+                  </Text>
+                  <Text
+                    style={{
+                      fontFamily: fonts.medium,
+                      fontSize: 12,
+                      color: shortStock.count > 0 ? colors.red : colors.textSecondary,
+                      marginTop: 2,
+                    }}
+                  >
+                    {shortStock.count === 0
+                      ? "All of today's orders are covered"
+                      : `${shortStock.count} ${shortStock.count === 1 ? 'product' : 'products'} short — ${shortStock.ordersAffected} orders at risk`}
                   </Text>
                 </View>
                 <Icon name="chevronRight" size={20} color={colors.textSecondary} />

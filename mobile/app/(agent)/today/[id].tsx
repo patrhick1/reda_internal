@@ -16,8 +16,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
-import { useStatusDefs } from '@/hooks/queries';
+import { useStatusDefs, useStockCoverage } from '@/hooks/queries';
 import { useCurrentUser } from '@/hooks/useAuth';
+import {
+  COMMITTED_STATUSES,
+  SIGNAL_META,
+  stockSignal,
+  worstSignal,
+  type StockSignal,
+} from '@/lib/stock-signal';
 import {
   getDelivery,
   getDeliveryHandoffState,
@@ -89,12 +96,17 @@ export default function AgentDeliveryDetail() {
   const optimisticStatus = optimistic?.status ?? null;
   const { snapshot: queueSnapshot } = useQueue();
 
+  // "Should I call?" coverage — same cached RPC the Today list uses (shared
+  // ['stock', uid, 'coverage'] cache entry, so this screen usually gets a hit).
+  const coverageQ = useStockCoverage();
+
   useReloadOnFocus(() => {
     deliveryQ.reload();
     historyQ.reload();
     siblingQ.reload();
     handoffQ.reload();
     notifQ.reload();
+    coverageQ.refetchIfStale();
   });
 
   useEffect(() => {
@@ -120,6 +132,40 @@ export default function AgentDeliveryDetail() {
     for (const d of defsQ.data ?? []) m.set(d.status, d.label);
     return m;
   }, [defsQ.data]);
+
+  // Per-line "should I call?" signals (worst drives the banner). Itemized rows
+  // check every line; legacy rows check the single top-level product. Must run
+  // before the early returns (hooks rule), so it guards on data itself.
+  const stockCheck = useMemo(() => {
+    const row = deliveryQ.data;
+    if (!row) return null;
+    const selfCommitted = COMMITTED_STATUSES.has(row.current_status ?? 'pending');
+    const byPid = new Map((coverageQ.data ?? []).map((r) => [r.product_catalog_id, r]));
+    const lines =
+      row.items && row.items.length > 0
+        ? row.items.map((it) => ({
+            pid: it.product_catalog_id,
+            name: it.product_name ?? 'Product',
+            qty: it.quantity_ordered ?? 1,
+          }))
+        : row.product_catalog_id
+          ? [
+              {
+                pid: row.product_catalog_id,
+                name: row.product_name ?? 'Product',
+                qty: row.quantity_ordered ?? 1,
+              },
+            ]
+          : [];
+    const perPid = new Map<string, StockSignal | null>();
+    const flagged: { name: string; signal: StockSignal }[] = [];
+    for (const l of lines) {
+      const s = stockSignal(byPid.get(l.pid), l.qty, selfCommitted);
+      perPid.set(l.pid, s);
+      if (s) flagged.push({ name: l.name, signal: s });
+    }
+    return { perPid, flagged, worst: worstSignal([...perPid.values()]) };
+  }, [deliveryQ.data, coverageQ.data]);
 
   if (deliveryQ.loading && !deliveryQ.data) {
     return (
@@ -242,6 +288,19 @@ export default function AgentDeliveryDetail() {
         {handoff && handedToYou ? (
           <Banner tone="info" icon="user" title="Handed to you">
             {`${handoff.from_agent_name ? `Handed over from ${handoff.from_agent_name}` : 'Handed over from the queue'} by ${handoff.handed_by_name ?? 'the team'} · ${formatDateTime(handoff.handed_at)}. Check the messages before calling — the customer may already have been reached.`}
+          </Banner>
+        ) : null}
+
+        {/* "Should I call?" stock check — worst line drives the tone. Silent
+            when the agent's bag or fleet uncommitted stock covers every line.
+            Informational only; nothing is blocked. */}
+        {stockCheck?.worst && !isTerminal ? (
+          <Banner
+            tone={SIGNAL_META[stockCheck.worst].tone === 'error' ? 'error' : 'warn'}
+            icon="warehouse"
+            title="Stock check"
+          >
+            {stockCheck.flagged.map((f) => `${f.name} — ${SIGNAL_META[f.signal].label}`).join('\n')}
           </Banner>
         ) : null}
 
@@ -390,6 +449,9 @@ export default function AgentDeliveryDetail() {
                     const partial =
                       it.quantity_delivered != null &&
                       it.quantity_delivered !== it.quantity_ordered;
+                    const itemSignal = isTerminal
+                      ? null
+                      : (stockCheck?.perPid.get(it.product_catalog_id) ?? null);
                     return (
                       <View key={it.id}>
                         <Text style={{ fontFamily: fonts.bold, fontSize: 15, color: colors.black }}>
@@ -417,6 +479,17 @@ export default function AgentDeliveryDetail() {
                             </>
                           ) : null}
                         </Text>
+                        {itemSignal ? (
+                          <Text
+                            style={{
+                              fontFamily: fonts.semibold,
+                              fontSize: 12,
+                              color: itemSignal === 'out' ? colors.red : colors.warningDark,
+                            }}
+                          >
+                            {SIGNAL_META[itemSignal].label}
+                          </Text>
+                        ) : null}
                       </View>
                     );
                   })}
@@ -445,6 +518,23 @@ export default function AgentDeliveryDetail() {
                     Quantity: {d.quantity_ordered}
                     {d.quantity_delivered != null ? ` · delivered ${d.quantity_delivered}` : null}
                   </Text>
+                  {!isTerminal &&
+                  d.product_catalog_id &&
+                  stockCheck?.perPid.get(d.product_catalog_id) ? (
+                    <Text
+                      style={{
+                        fontFamily: fonts.semibold,
+                        fontSize: 12,
+                        color:
+                          stockCheck.perPid.get(d.product_catalog_id) === 'out'
+                            ? colors.red
+                            : colors.warningDark,
+                        marginTop: 2,
+                      }}
+                    >
+                      {SIGNAL_META[stockCheck.perPid.get(d.product_catalog_id)!].label}
+                    </Text>
+                  ) : null}
                 </>
               )}
             </View>

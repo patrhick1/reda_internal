@@ -15,7 +15,14 @@ import * as Clipboard from 'expo-clipboard';
 import { useSupabaseChannel } from '@/hooks/useSupabaseChannel';
 import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
-import { useStatusDefs } from '@/hooks/queries';
+import { useStatusDefs, useStockCoverage } from '@/hooks/queries';
+import {
+  COMMITTED_STATUSES,
+  SIGNAL_META,
+  stockSignal,
+  worstSignal,
+  type StockSignal,
+} from '@/lib/stock-signal';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
   getDelivery,
@@ -27,7 +34,17 @@ import {
 import { initiateCall, initiateTeamCall } from '@/services/calls';
 import { ensureMicPermission } from '@/lib/calls/permissions';
 import { canPlaceCall } from '@/lib/calls/availability';
-import { AppBar, Avatar, Button, Card, Empty, Hint, Icon, StatusPill } from '@/components/ui';
+import {
+  AppBar,
+  Avatar,
+  Banner,
+  Button,
+  Card,
+  Empty,
+  Hint,
+  Icon,
+  StatusPill,
+} from '@/components/ui';
 import { colors, fonts, historyReasonLine, TERMINAL_STATUSES } from '@/lib/theme';
 import {
   canClaimFollowup,
@@ -198,6 +215,42 @@ export function DeliveryDetail() {
   const followupStatuses = useMemo(() => {
     return new Set<string>((defsQ.data ?? []).filter((d) => d.needs_followup).map((d) => d.status));
   }, [defsQ.data]);
+
+  // "Should I call?" stock check — same cached coverage + signal logic as the
+  // agent detail (two-detail-screens rule), so ops/reps see the same warning
+  // before promising a product that can't cover today. Hook + memo sit above
+  // the early returns (Rules of Hooks); the memo guards on data itself.
+  const coverageQ = useStockCoverage();
+  const stockCheck = useMemo(() => {
+    const row = deliveryQ.data;
+    if (!row || row.order_type === 'waybill') return null;
+    const selfCommitted = COMMITTED_STATUSES.has(row.current_status ?? 'pending');
+    const byPid = new Map((coverageQ.data ?? []).map((r) => [r.product_catalog_id, r]));
+    const lines =
+      row.items && row.items.length > 0
+        ? row.items.map((it) => ({
+            pid: it.product_catalog_id,
+            name: it.product_name ?? 'Product',
+            qty: it.quantity_ordered ?? 1,
+          }))
+        : row.product_catalog_id
+          ? [
+              {
+                pid: row.product_catalog_id,
+                name: row.product_name ?? 'Product',
+                qty: row.quantity_ordered ?? 1,
+              },
+            ]
+          : [];
+    const flagged: { name: string; signal: StockSignal }[] = [];
+    const signals: (StockSignal | null)[] = [];
+    for (const l of lines) {
+      const s = stockSignal(byPid.get(l.pid), l.qty, selfCommitted);
+      signals.push(s);
+      if (s) flagged.push({ name: l.name, signal: s });
+    }
+    return { flagged, worst: worstSignal(signals) };
+  }, [deliveryQ.data, coverageQ.data]);
 
   // In-app call to a specific teammate, linked to this delivery for audit.
   // MUST sit above the loading/error early returns — Rules of Hooks require
@@ -612,6 +665,18 @@ export function DeliveryDetail() {
         {/* Original WhatsApp message (collapsed by default; renders nothing
             when bot_raw_message is null — i.e. manually-created rows). */}
         <BotRawMessageCard message={d.bot_raw_message} />
+
+        {/* "Should I call?" stock check — worst line drives the tone. Same
+            signal as the agent detail; informational only. */}
+        {stockCheck?.worst && !isTerminal ? (
+          <Banner
+            tone={SIGNAL_META[stockCheck.worst].tone === 'error' ? 'error' : 'warn'}
+            icon="warehouse"
+            title="Stock check"
+          >
+            {stockCheck.flagged.map((f) => `${f.name} — ${SIGNAL_META[f.signal].label}`).join('\n')}
+          </Banner>
+        ) : null}
 
         {/* Product + Money */}
         <Card>

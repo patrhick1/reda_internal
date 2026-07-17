@@ -35,6 +35,7 @@ import {
   type ProductWithClient,
 } from '@/services/products';
 import { listCurrentStock, type StockMatrixRow } from '@/services/stock';
+import { stockCoverageToday, type CoverageRow } from '@/services/stock-coverage';
 
 /** The subset of useAsync's return shape that consumers rely on. */
 export type AsyncLike<T> = {
@@ -296,6 +297,28 @@ export function useStockMatrix(): DeliveryListResult<StockMatrixRow[]> {
     queryKey,
     queryFn: () => listCurrentStock(),
     staleTime: DELIVERIES_STALE,
+  });
+  return { ...asAsync(q), fetching: q.isFetching, refetchIfStale: () => refetchIfStale(queryKey) };
+}
+
+/** Today's demand-vs-stock coverage (the "should I call?" signal + ops coverage
+ *  surfaces). One tiny RPC row per product with open orders (~30-60 rows).
+ *  Keyed by uid — `my_on_hand` is caller-specific. Lives under the ['stock']
+ *  prefix ON PURPOSE: invalidateStock() (queue drain, incl. change_delivery_status
+ *  jobs) refreshes it the moment stock moves OR an order is confirmed — the
+ *  self-tightening behaviour the signal's design relies on, with zero new
+ *  invalidation wiring. `enabled:false` lets role-shared screens (OpsDashboard)
+ *  skip the fetch entirely for roles that never render it. */
+export function useStockCoverage(
+  opts: { enabled?: boolean } = {},
+): DeliveryListResult<CoverageRow[]> {
+  const uid = useUid();
+  const queryKey = ['stock', uid, 'coverage'];
+  const q = useQuery({
+    queryKey,
+    queryFn: () => stockCoverageToday(),
+    staleTime: DELIVERIES_STALE,
+    enabled: opts.enabled ?? true,
   });
   return { ...asAsync(q), fetching: q.isFetching, refetchIfStale: () => refetchIfStale(queryKey) };
 }

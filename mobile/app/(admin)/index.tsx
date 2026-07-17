@@ -8,7 +8,7 @@ import { usePendingLocationChangesCount } from '@/hooks/usePendingLocationChange
 import { countNegativeMarginDeliveries, type DeliveryRow } from '@/services/deliveries';
 import { getTodayDeliveryRate, getDeliveryRateHistory } from '@/services/reconciliation';
 import { countNeedsReview } from '@/services/bot';
-import { useUsers, useDeliveriesList } from '@/hooks/queries';
+import { useUsers, useDeliveriesList, useStockCoverage } from '@/hooks/queries';
 import { listOpenIssuesForOps } from '@/services/delivery-messages';
 import { AppBar, Card, Icon, SectionHeader } from '@/components/ui';
 import { AgentWorkloadCard } from '@/components/delivery/AgentWorkloadCard';
@@ -51,6 +51,10 @@ export default function AdminHome() {
   // (≤7 rows); reads immutable status history so past days never move.
   const today = todayLagos();
   const trendQ = useAsync(() => getDeliveryRateHistory(addDays(today, -6), today), [today]);
+  // Stock coverage — products whose fleet on-hand can't cover today's open
+  // demand. Drives the "Needs attention" row; cached under ['stock'] so stock
+  // moves and confirmations auto-refresh it.
+  const coverageQ = useStockCoverage();
 
   useReloadOnFocus(() => {
     todayQ.refetchIfStale();
@@ -59,6 +63,7 @@ export default function AdminHome() {
     negMarginQ.reload();
     rateQ.reload();
     trendQ.reload();
+    coverageQ.refetchIfStale();
   });
 
   const stats = useMemo(() => summarize(todayQ.data ?? []), [todayQ.data]);
@@ -71,6 +76,13 @@ export default function AdminHome() {
   const negMarginCount = negMarginQ.data ?? 0;
   const pendingZoneCount = usePendingLocationChangesCount();
   const openIssues = issuesQ.data ?? [];
+  // Products whose fleet stock can't cover today's open demand. `ordersAffected`
+  // sums per-product order counts, so a multi-product order short on two
+  // products counts twice — fine for an attention headline.
+  const shortStock = useMemo(() => {
+    const short = (coverageQ.data ?? []).filter((r) => r.on_hand_total < r.qty_open);
+    return { count: short.length, ordersAffected: short.reduce((s, r) => s + r.orders_open, 0) };
+  }, [coverageQ.data]);
   const agents = useMemo(
     () => (usersQ.data ?? []).filter((u) => u.role === 'agent' && u.is_active),
     [usersQ.data],
@@ -138,7 +150,11 @@ export default function AdminHome() {
         />
 
         {/* Needs attention */}
-        {reviewCount > 0 || openIssues.length > 0 || pendingZoneCount > 0 || negMarginCount > 0 ? (
+        {reviewCount > 0 ||
+        openIssues.length > 0 ||
+        pendingZoneCount > 0 ||
+        negMarginCount > 0 ||
+        shortStock.count > 0 ? (
           <>
             <SectionHeader>Needs attention</SectionHeader>
             <View style={{ gap: 8 }}>
@@ -181,6 +197,16 @@ export default function AdminHome() {
                   title={`${negMarginCount} negative-margin ${negMarginCount === 1 ? 'order' : 'orders'}`}
                   sub="Reda pays the agent more than it collects — correct the charges"
                   onPress={() => router.push('/(admin)/negative-margin')}
+                />
+              ) : null}
+              {shortStock.count > 0 ? (
+                <AttentionRow
+                  icon="warehouse"
+                  iconBg={colors.redSoft}
+                  iconColor={colors.red}
+                  title={`${shortStock.count} ${shortStock.count === 1 ? 'product' : 'products'} can't cover today`}
+                  sub={`${shortStock.ordersAffected} orders affected — see what's short`}
+                  onPress={() => router.push('/(admin)/stock-coverage')}
                 />
               ) : null}
             </View>

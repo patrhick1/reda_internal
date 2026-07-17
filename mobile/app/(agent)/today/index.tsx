@@ -13,8 +13,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
-import { useDeliveriesList, useAgentPostponed } from '@/hooks/queries';
+import { useDeliveriesList, useAgentPostponed, useStockCoverage } from '@/hooks/queries';
 import { type DeliveryRow } from '@/services/deliveries';
+import { type CoverageRow } from '@/services/stock-coverage';
+import { COMMITTED_STATUSES, SIGNAL_META, stockSignal, type StockSignal } from '@/lib/stock-signal';
 import { formatNaira, formatYmdShort } from '@/lib/format';
 import { formatTimeLagos } from '@/lib/date';
 import { errorMessage } from '@/lib/errors';
@@ -94,11 +96,21 @@ export default function AgentToday() {
   // "Left the warehouse" state for today — drives the hero control and, once set,
   // lets ops (warehouse/dispatcher/rep) see this rider is on the road.
   const departureQ = useAsync(() => getMyDepartureToday(user.userId), [user.userId]);
+  // "Should I call?" coverage — one tiny cached RPC (~50 rows). Drives the
+  // per-row stock warning; refreshed automatically via invalidateStock() when
+  // stock moves or any order is confirmed (queue drain).
+  const coverageQ = useStockCoverage();
+  const coverageByPid = useMemo(() => {
+    const m = new Map<string, CoverageRow>();
+    for (const r of coverageQ.data ?? []) m.set(r.product_catalog_id, r);
+    return m;
+  }, [coverageQ.data]);
   useReloadOnFocus(() => {
     // Stale-aware: a fresh today list is served from cache on back-navigation;
     // only an aged one re-downloads. departure is a tiny scalar — force it.
     refetchIfStale();
     refetchPostponedIfStale();
+    coverageQ.refetchIfStale();
     departureQ.reload();
   });
 
@@ -524,9 +536,24 @@ export default function AgentToday() {
             filter !== 'postponed' &&
             canBulkDeliverRow(item) &&
             !(itemId && pendingDeliveredIds.has(itemId));
+          // "Should I call?" — silent unless calling would likely over-promise.
+          // Open rows only; itemized rows with no top-level pid resolve on the
+          // detail screen instead (items aren't hydrated on lists). Passed as a
+          // primitive so the memoized card stays cheap.
+          const itemStatus = item.current_status ?? 'pending';
+          const itemBucket = statusBucket(itemStatus);
+          const warning =
+            itemBucket === 'done' || itemBucket === 'closed' || !item.product_catalog_id
+              ? null
+              : stockSignal(
+                  coverageByPid.get(item.product_catalog_id),
+                  item.quantity_ordered ?? 1,
+                  COMMITTED_STATUSES.has(itemStatus),
+                );
           return (
             <DeliveryCard
               delivery={item}
+              stockWarning={warning}
               unreadCount={itemId ? (unreadByDelivery.get(itemId) ?? 0) : 0}
               selectMode={selectMode}
               selectable={selectable}
@@ -705,6 +732,7 @@ function StatCell({ label, value, accent }: { label: string; value: string; acce
 
 const DeliveryCard = memo(function DeliveryCard({
   delivery,
+  stockWarning,
   unreadCount,
   onPress,
   onLongPress,
@@ -713,6 +741,10 @@ const DeliveryCard = memo(function DeliveryCard({
   selected,
 }: {
   delivery: DeliveryRow;
+  /** "Should I call?" stock signal for this row — null renders nothing
+   *  (silence is the good state). Computed in the parent so this stays a
+   *  primitive prop and memoization holds. */
+  stockWarning: StockSignal | null;
   /** Unread admin/dispatcher replies on this delivery's thread. >0 → row dot. */
   unreadCount: number;
   onPress: () => void;
@@ -824,6 +856,24 @@ const DeliveryCard = memo(function DeliveryCard({
               <Icon name="calendar" size={12} color={colors.warning} />
               <Text style={{ fontFamily: fonts.semibold, fontSize: 12, color: colors.warningDark }}>
                 Postponed to {formatYmdShort(delivery.scheduled_date)}
+              </Text>
+            </View>
+          ) : null}
+          {stockWarning ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
+              <Icon
+                name="alert"
+                size={12}
+                color={stockWarning === 'out' ? colors.red : colors.warningDark}
+              />
+              <Text
+                style={{
+                  fontFamily: fonts.semibold,
+                  fontSize: 12,
+                  color: stockWarning === 'out' ? colors.red : colors.warningDark,
+                }}
+              >
+                {SIGNAL_META[stockWarning].label}
               </Text>
             </View>
           ) : null}

@@ -7,7 +7,7 @@ import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { usePendingLocationChangesCount } from '@/hooks/usePendingLocationChangesCount';
-import { useDeliveriesList } from '@/hooks/queries';
+import { useDeliveriesList, useStockCoverage } from '@/hooks/queries';
 import { type DeliveryRow } from '@/services/deliveries';
 import { countNeedsReview } from '@/services/bot';
 import { listAvailableOrders } from '@/services/available-orders';
@@ -41,12 +41,17 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
   // product_issue / other. Auto-seeded cant_reach_client threads are filtered
   // out server-side so this card doesn't double up with the soft-fail count.
   const issuesQ = useAsync(() => listOpenIssuesForOps(), []);
+  // Stock coverage shortage card (dispatcher-only, like zone approvals). The
+  // enabled guard keeps any other role that ever mounts this screen from
+  // fetching data it won't render.
+  const coverageQ = useStockCoverage({ enabled: user.role === 'dispatcher' });
 
   useReloadOnFocus(() => {
     deliveriesQ.refetchIfStale();
     reviewQ.reload();
     availableQ.reload();
     issuesQ.reload();
+    coverageQ.refetchIfStale();
   });
 
   const deliveries = useMemo(() => deliveriesQ.data ?? [], [deliveriesQ.data]);
@@ -65,6 +70,11 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
     () => availableRows.reduce((sum, r) => sum + r.quantity_ordered, 0),
     [availableRows],
   );
+  // Products whose fleet stock can't cover today's open demand.
+  const shortStock = useMemo(() => {
+    const short = (coverageQ.data ?? []).filter((r) => r.on_hand_total < r.qty_open);
+    return { count: short.length, ordersAffected: short.reduce((s, r) => s + r.orders_open, 0) };
+  }, [coverageQ.data]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -236,6 +246,44 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
                   }}
                 >
                   Agent delivered elsewhere — raises their pay
+                </Text>
+              </View>
+              <Icon name="chevronRight" size={18} color={colors.textSecondary} />
+            </View>
+          </Card>
+        ) : null}
+
+        {/* Stock coverage shortage (dispatcher only): products whose fleet
+            stock can't cover today's open orders — hold assignment, transfer,
+            or chase a restock before riders burn calls on them. */}
+        {user.role === 'dispatcher' && shortStock.count > 0 ? (
+          <Card dense onPress={() => router.push('/(dispatcher)/stock-coverage')}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <View
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 12,
+                  backgroundColor: colors.redSoft,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Icon name="warehouse" size={20} color={colors.red} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>
+                  {`${shortStock.count} ${shortStock.count === 1 ? 'product' : 'products'} can't cover today`}
+                </Text>
+                <Text
+                  style={{
+                    fontFamily: fonts.medium,
+                    fontSize: 12,
+                    color: colors.textSecondary,
+                    marginTop: 2,
+                  }}
+                >
+                  {`${shortStock.ordersAffected} orders affected — see what's short`}
                 </Text>
               </View>
               <Icon name="chevronRight" size={18} color={colors.textSecondary} />
