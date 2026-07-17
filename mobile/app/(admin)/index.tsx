@@ -6,7 +6,7 @@ import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { usePendingLocationChangesCount } from '@/hooks/usePendingLocationChangesCount';
 import { countNegativeMarginDeliveries, type DeliveryRow } from '@/services/deliveries';
-import { getTodayDeliveryRate } from '@/services/reconciliation';
+import { getTodayDeliveryRate, getDeliveryRateHistory } from '@/services/reconciliation';
 import { countNeedsReview } from '@/services/bot';
 import { useUsers, useDeliveriesList } from '@/hooks/queries';
 import { listOpenIssuesForOps } from '@/services/delivery-messages';
@@ -14,7 +14,10 @@ import { AppBar, Card, Icon, SectionHeader } from '@/components/ui';
 import { AgentWorkloadCard } from '@/components/delivery/AgentWorkloadCard';
 import { IssuesAttentionBlock } from '@/components/delivery/IssuesAttentionBlock';
 import { RecentActivityCard } from '@/components/delivery/RecentActivityCard';
+import { RateTrendCard } from '@/components/delivery/RateTrendCard';
 import { colors, fonts, statusBucket, isAssignedActive } from '@/lib/theme';
+import { todayLagos } from '@/lib/date';
+import { addDays } from '@/lib/rate-trend';
 import { type IconName } from '@/components/ui';
 
 function todayHeaderDate(): string {
@@ -44,6 +47,10 @@ export default function AdminHome() {
   // never convinced don't tank it. See getTodayDeliveryRate /
   // scripts/today-delivery-rate.sql.
   const rateQ = useAsync(() => getTodayDeliveryRate(), []);
+  // Last 7 days for the home trend strip (tap → full history). Tiny payload
+  // (≤7 rows); reads immutable status history so past days never move.
+  const today = todayLagos();
+  const trendQ = useAsync(() => getDeliveryRateHistory(addDays(today, -6), today), [today]);
 
   useReloadOnFocus(() => {
     todayQ.refetchIfStale();
@@ -51,6 +58,7 @@ export default function AdminHome() {
     issuesQ.reload();
     negMarginQ.reload();
     rateQ.reload();
+    trendQ.reload();
   });
 
   const stats = useMemo(() => summarize(todayQ.data ?? []), [todayQ.data]);
@@ -120,6 +128,14 @@ export default function AdminHome() {
             <BreakdownItem label="Closed" value={stats.closed} />
           </View>
         </Card>
+
+        {/* Delivery-rate trend — 7-day strip, tap for the 30-day history. */}
+        <RateTrendCard
+          days={trendQ.data ?? []}
+          today={today}
+          loading={trendQ.loading && !trendQ.data}
+          onPress={() => router.push('/(admin)/rate-history')}
+        />
 
         {/* Needs attention */}
         {reviewCount > 0 || openIssues.length > 0 || pendingZoneCount > 0 || negMarginCount > 0 ? (

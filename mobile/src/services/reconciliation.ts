@@ -283,6 +283,35 @@ export async function getTodayDeliveryRate(forDate?: string): Promise<TodayDeliv
   return { delivered: row?.delivered ?? 0, available: row?.available ?? 0 };
 }
 
+export type RateHistoryDay = {
+  /** ISO date (YYYY-MM-DD), Africa/Lagos. */
+  day: string;
+  delivered: number;
+  /** Denominator: ever reached Available (or delivered). See getTodayDeliveryRate. */
+  available: number;
+};
+
+/** Per-day delivery-rate series for the home 7-day strip and the history screen's
+ *  30-day average. Same metric as getTodayDeliveryRate, one row per day. Reads
+ *  immutable status history, so past days are stable. Only days that had orders are
+ *  returned (no-order days are absent). `from`/`to` are inclusive ISO dates;
+ *  defaults server-side to the last 30 days. See scripts/delivery-rate-history.sql. */
+export async function getDeliveryRateHistory(
+  from?: string,
+  to?: string,
+): Promise<RateHistoryDay[]> {
+  const args: Record<string, string> = {};
+  if (from) args.p_from = from;
+  if (to) args.p_to = to;
+  const { data, error } = await rpcUntyped<RateHistoryDay[]>('delivery_rate_history', args);
+  if (error) throw error;
+  return (data ?? []).map((r) => ({
+    day: r.day,
+    delivered: r.delivered ?? 0,
+    available: r.available ?? 0,
+  }));
+}
+
 // ---------------------------------------------------------------------------
 // Settlement / period-lock (§14-2). Freezes one subject-day's figures so a
 // later edit can't silently rewrite a period that was already paid out.

@@ -139,6 +139,16 @@ export default function AdminLayout() {
         }}
       />
       <Tabs.Screen
+        name="rate-history"
+        options={{
+          title: 'Delivery rate',
+          tabBarIcon: ({ color, focused }) => (
+            <Icon name="history" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
+          ),
+          href: null,
+        }}
+      />
+      <Tabs.Screen
         name="negative-margin"
         options={{
           title: 'Negative margin',
