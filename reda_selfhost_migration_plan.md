@@ -781,6 +781,15 @@ few minutes**; Evolution is never restarted.
   400-probe verified on BOTH ends; functions recreated healthy, trimmed containers stayed down;
   bak `reda-secrets.box.env.bak.20260719`) — **the contractor's cutover step is now URL-only**:
   point their bot at `https://api.redalogisticss.com/functions/v1/inbound-message`.
+  **CUTOVER ATTEMPTED THEN ABORTED same evening (contractor unreachable).** Sequence ran: final
+  micro-sync (box == Cloud @ 6,155 deliveries), crons swapped (box armed / Cloud disarmed), repo
+  repointed. Rollback executed cleanly ~2 h later, BEFORE any client flip, contractor flip, or EOD:
+  Cloud crons re-armed, box crons back to disabled, repo re-pointed to Cloud. **Verified the box took
+  zero actions while armed** (0 status changes, 0 notify invocations — mirror data holds only
+  processed rows, so watchdogs had nothing to fire on). Production never left Cloud; no user impact.
+  **Durable wins that survive the abort:** box in full parity, `BOT_INBOUND_SECRET` aligned, reusable
+  sync scripts staged. **Next attempt = re-run the §8 flip only** (micro-sync → cron swap → client env
+  flips → contractor URL change) — ideally a Sunday, with the contractor confirmed reachable FIRST.
 
 **Strategy:** fresh `pg_dump` from Cloud (live = source of truth), **not** replaying repo `.sql`.
 Drop+restore `public`, reload `auth` data, re-copy edge functions, re-create cron. All run on the

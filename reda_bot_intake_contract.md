@@ -18,7 +18,7 @@ creation behind feature flags. None of that is your concern.
 ## Endpoint
 
 ```
-POST https://api.redalogisticss.com/functions/v1/inbound-message
+POST https://wadjlpqfpaxycspofgrc.supabase.co/functions/v1/inbound-message
 ```
 
 Headers:
@@ -134,7 +134,7 @@ Typical end-to-end latency from your POST to step 7: **2–5 seconds.**
 ## Sample cURL
 
 ```bash
-curl -X POST https://api.redalogisticss.com/functions/v1/inbound-message \
+curl -X POST https://wadjlpqfpaxycspofgrc.supabase.co/functions/v1/inbound-message \
   -H "Authorization: Bearer $BOT_INBOUND_SECRET" \
   -H "Content-Type: application/json" \
   -d '{
