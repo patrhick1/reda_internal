@@ -17,7 +17,7 @@
       },
       "channel": "preview",
       "env": {
-        "EXPO_PUBLIC_SUPABASE_URL": "https://wadjlpqfpaxycspofgrc.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://api.redalogisticss.com",
         "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_4yCi2tP-lv2igyuGgrsR9w_Dk28nNiM",
         "EXPO_PUBLIC_ENV": "preview"
       }

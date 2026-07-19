@@ -757,15 +757,36 @@ Pings the box from outside every 5 min; alerts if the edge stops responding.
 
 The box is a **rehearsal** stack (cutover never happened), so Cloud keeps drifting ahead of it.
 This is the procedure to bring the box back in line with live Cloud — also the dress rehearsal
-for the cutover's "final dump → restore". **Done 2026-06-23** (Cloud had moved to 29 tables /
-171 functions / 51 policies / 5 views / 38 users / 5 cron jobs vs the box's 25/136/48/4/32/3).
-A full re-sync is **~12 MB and a few minutes**; Evolution is never restarted.
+for the cutover's "final dump → restore". A full re-sync is **~12 MB (25 MB uncompressed) and a
+few minutes**; Evolution is never restarted.
+
+**Sync log:**
+- **2026-06-23** — first full re-sync (Cloud 29t/171f/51p/5v/38u/5cron vs box 25/136/48/4/32/3).
+- **2026-06-26** — brought `client_rep` + remit RPCs + `correct_delivery_charge`/`create_waybill`/etc.
+- **2026-07-16** — Cloud 31t/185f/53p/5v/39u vs box 29/175/51/5/38; brought the agent-location-change
+  feature, Kimi-fallback/requeue intake, vendor classifier + compact-projection edge fns current.
+  Full parity restored (5,618 deliveries). Surfaced gotcha 2's **4th** URL spot + the new **gotcha 6**
+  (push-safety) and the execution pitfalls below.
+- **2026-07-19** — pre-cutover re-sync. Schema was already at parity (31t/190f/53p/6v/39u both sides
+  — Cloud drift was data-only, +538 deliveries); ran the full drop+restore anyway → **6,156
+  deliveries**. Same 4 URL spots repointed (sweep → 0, no new ones; box `INTERNAL_FUNCTION_SECRET`
+  confirmed == Cloud literal). Edge functions verified **byte-identical** to repo (18/18 md5 — no
+  copies needed). Re-verified: system login → JWT (200), gated fn 401→400 with secret,
+  `service_role` intake write → `queued` (grants good), `bot_parse_on_insert` ends `O`, notify crons
+  still disabled, public allow-list intact. **Data-plane host is `api.redalogisticss.com`** (bare
+  `redalogisticss.com` serves only the landing page + `/healthz`) — use it for `EXPO_PUBLIC_SUPABASE_URL`
+  at cutover. Reusable scripts from this run: `/root/migrate/resync.sh` + `repoint.sh` (no secrets
+  inside; re-stage the Cloud URI, rerun both = the cutover's final dump→restore in ~5 min).
+  Same day: **`BOT_INBOUND_SECRET` aligned box == Cloud** (operator recovered Cloud's plaintext;
+  400-probe verified on BOTH ends; functions recreated healthy, trimmed containers stayed down;
+  bak `reda-secrets.box.env.bak.20260719`) — **the contractor's cutover step is now URL-only**:
+  point their bot at `https://api.redalogisticss.com/functions/v1/inbound-message`.
 
 **Strategy:** fresh `pg_dump` from Cloud (live = source of truth), **not** replaying repo `.sql`.
 Drop+restore `public`, reload `auth` data, re-copy edge functions, re-create cron. All run on the
 box as root over SSH (`root@178.104.73.186`).
 
-### The five gotchas (each one will silently break things if skipped)
+### The six gotchas (each one will silently break things if skipped)
 
 1. **`DROP SCHEMA public CASCADE` wipes role GRANTs *and* the default privileges.** After a
    `--no-privileges` restore the tables end up with **no grants for `anon`/`authenticated`/
@@ -783,13 +804,18 @@ box as root over SSH (`root@178.104.73.186`).
    ```
    (The `pg_trgm` "no privileges were granted" warnings are benign — extension-owned funcs.)
 2. **Cloud URLs ride along in the restored `public`.** Restoring verbatim re-points DB→edge calls
-   at Cloud. Three spots, **all must be repointed to `http://kong:8000`** (sweep with
-   `pg_get_functiondef`/`pg_get_triggerdef ... ilike '%supabase.co%'` until 0):
+   at Cloud. **Four spots** (was three — a new one appeared 2026-07-16), **all repointed to
+   `http://kong:8000`**. Sweep with `pg_get_functiondef`/`pg_get_triggerdef ... ilike '%supabase.co%'`
+   until 0 — but the function sweep **must add `and prokind='f'`**: `pg_get_functiondef` on an aggregate
+   throws *"array_agg is an aggregate function"* and aborts the whole query, silently hiding later hits.
    - function **`send_edge_notification`** (hard-coded URL; keep the `x-internal-secret` header);
+   - function **`requeue_failed_inbound(uuid[])`** (NEW 2026-07-16, from the requeue-failed-messages
+     change) — an inline `net.http_post` to the Cloud `bot-parse-message` URL; repoint, keep the secret;
    - trigger **`bot_parse_on_insert`** on `bot_inbound_messages` (`supabase_functions.http_request`
      args carry the URL + `x-internal-secret`);
    - trigger **`mybot_parse_on_insert`** on `mybot_inbound_messages` (carries the URL **and a
      Cloud `service_role` JWT** — swap to `x-internal-secret` = the box's `INTERNAL_FUNCTION_SECRET`).
+   (Recreate triggers with `create or replace trigger` — PG14+; the args can't be `ALTER`ed in place.)
 3. **`auth` reload overwrites the system user's password.** A full `truncate auth.users/identities
    + restore` is needed (Cloud is a superset; `public.users` FKs the new users), but it replaces
    `system@reda.local`'s hash with Cloud's → the box's `SYSTEM_USER_PASSWORD` (in
@@ -805,8 +831,39 @@ box as root over SSH (`root@178.104.73.186`).
 5. **`docker restart` does NOT re-read `env_file`.** New secrets only load on **recreate**:
    `cd /root/supabase && sh run.sh recreate functions` (force-recreate, `--no-deps`, Evolution
    untouched). `docker restart supabase-edge-functions` will leave the new env absent.
+6. **Push-safety — a fresh-data restore turns the rehearsal box into a live push source.** The restore
+   loads Cloud's real `push_tokens` (36 rows) and `send-notification` POSTs to `https://exp.host/...`
+   with **no auth — just the device token** → the box can push **real agent phones**. With fresh data,
+   the box's own `scheduled-eod-check` (`59 22 * * *` UTC = **23:59 Lagos**) acting on real due-today
+   deliveries, and the two `*-pending-watchdog`s re-firing parse (**`bot_shadow_mode` is OFF** →
+   parse *creates deliveries + assignment pushes*), would spam production **the very night of the sync**.
+   **After every re-sync, until cutover, disable the three notify-capable crons:**
+   ```sql
+   select cron.alter_job(jobid, active := false)
+   from cron.job where jobname in ('scheduled-eod-check','bot-pending-watchdog','mybot-pending-watchdog');
+   ```
+   (A direct `update cron.job set active=false` → *"permission denied for table job"*; use `cron.alter_job`.)
+   Leave `internal-calls-expire-ringing` / `internal-calls-prune-net-responses` (no push). **RE-ENABLE all
+   three at actual cutover** — that's when the box legitimately becomes the sender. Read the flag with
+   `select get_flag('bot_shadow_mode')::text;` (→ `{"value":null,"enabled":false}` = shadow OFF).
 
-### Order of operations (what was run 2026-06-23)
+### Execution pitfalls (hit 2026-07-16 — avoid next time)
+
+- **Two things truncate/kill the SSH pipe mid-script**, each of which left `bot_parse_on_insert`
+  **DISABLED** (silent: intake stops parsing): (1) the `drop schema public cascade` NOTICE flood
+  (~179 objects) and (2) an in-SSH `curl http://localhost:8000/...`. **Run restores quietly**
+  (`docker exec -e PGOPTIONS='-c client_min_messages=warning' … psql`), and **never combine a trigger
+  toggle with `curl` in one script.** If you must disable a trigger, re-enable it in a **standalone**
+  command and verify `select tgenabled from pg_trigger where tgname='…';` returns `O`.
+- **Test the intake WRITE path server-side, not over HTTP** (avoids the truncation *and* the push risk of
+  a live parse): `set role service_role; insert into bot_inbound_messages(…) values(…); reset role;` —
+  proves the gotcha-1 grant restore. The HTTP layers (Caddy allow-list → kong → fn auth gate) are proven
+  separately: gated fn `401` without / non-`401` with `x-internal-secret`.
+- Stage the Cloud URI onto the box via **ssh stdin into a `600` file** (`printf '%s' "$URI" | ssh box
+  'umask 077; cat > /root/migrate/.cloud_uri'`) so the password never lands in a visible command or `ps`;
+  `docker cp` it into the container for `pg_dump`; shred both at the end.
+
+### Order of operations (baseline; run 2026-06-23, refined 2026-07-16)
 
 1. Add `INTERNAL_FUNCTION_SECRET` to `reda-secrets.box.env` (gotcha 4).
 2. `pg_dump` from Cloud **inside the db container** (v17 matches Cloud), session pooler:
@@ -820,19 +877,25 @@ box as root over SSH (`root@178.104.73.186`).
 6. `pg_restore -U postgres --no-owner --no-privileges` the public dump (the lone "schema public
    already exists" error is benign). **`-U postgres` is required** or it peer-auths as `root`.
 7. Apply the **grants** block (gotcha 1).
-8. Re-reset system password (gotcha 3); repoint the 3 cloud URLs (gotcha 2).
+8. Re-reset system password (gotcha 3); repoint the **4** cloud URLs (gotcha 2 — sweep with
+   `prokind='f'` until 0).
 9. Re-create cron to match Cloud's 5 jobs, translated to kong + secret: `bot-pending-watchdog`,
    `internal-calls-prune-net-responses` (missing on box), and **update** `mybot-pending-watchdog`
    to send `x-internal-secret` (now that the fn self-gates). `scheduled-eod-check` /
    `internal-calls-expire-ringing` already correct.
-10. `scp` repo `supabase/functions/*` (the 11 fns + `_shared`) into `volumes/functions/` (leaves the
-    box-only `main` router + `hello` intact) → `sh run.sh recreate functions` (gotcha 5).
-11. **Verify:** object counts == Cloud; system-user login → JWT; `rpc/is_admin` → true; gated fn
-    401 without / non-401 with the secret; **intake smoke test** (notify triggers disabled →
-    `POST /functions/v1/inbound-message` with `BOT_INBOUND_SECRET` → row `queued`→`needs_review`
-    in ~4s → delete row → **re-enable triggers**); all 5 cron `job_run_details` = `succeeded`.
-12. **Cleanup:** shred the staged Cloud URI, delete the `/tmp/*.dump` (PII) inside the container
-    and the old `/root/migrate/*.dump` rehearsal copies.
+10. `scp` **only the changed** function dirs from repo (`git log --since=<last sync> -- supabase/functions/`
+    to find them) into `volumes/functions/` via **relative paths** (`scp -r supabase/functions/<d> box:…`
+    — an absolute `c:/…` path makes scp read `c:` as a hostname; leaves box-only `main`/`hello`/`deno.json`
+    intact) → `sh run.sh recreate functions` (gotcha 5). 2026-07-16 set: `_shared`, `bot-parse-message`,
+    `normalize-address`, `auth-email`.
+11. **Push-safety (gotcha 6):** disable the 3 notify-capable crons via `cron.alter_job` — do this before
+    the box's 23:59 EOD can act on the fresh data.
+12. **Verify:** object counts == Cloud; system-user login → JWT; gated fn `401` without / non-`401` with
+    `x-internal-secret`; **intake write path** server-side (`set role service_role; insert …; reset role;`
+    → `queued`, then delete) — NOT an HTTP smoke test (truncation + live-parse push risk); confirm
+    `bot_parse_on_insert` ends `tgenabled='O'`; sweep `%supabase.co%` = 0.
+13. **Cleanup:** shred the staged Cloud URI (host + container), delete the `/tmp/*.dump` (PII) inside the
+    container and any old `/root/migrate/*.dump` rehearsal copies.
 
 > Frontend is **not** part of a box re-sync — the web app (Vercel) and mobile (EAS) only repoint
 > their `EXPO_PUBLIC_SUPABASE_URL`/`_ANON_KEY` at **actual cutover** (§6). After a re-sync the
@@ -904,11 +967,11 @@ Net: ~4.2 GB disk + one-less-moving-part; does not change the C2 resize need.
 ### Path to "production-ready for 25–40 users"
 1. ✅ **Copy borg passphrase + key off-box — DONE 2026-07-03** (passphrase + exported key stored in
    the operator's Google password manager) *(C1)*
-2. ☐ Docker log rotation + truncate *(C3 — needs a brief maintenance window; daemon restart bounces
-   all containers)*
+2. ✅ **Docker log rotation — DONE 2026-07-03** (`json-file` cap `10m × 3` in `/etc/docker/daemon.json`;
+   running containers recreated to adopt it; old 69 MB/28 MB logs cleared; swap 477→23 MiB) *(C3)*
 3. ✅ **`chmod 600 /root/supabase/.env` — DONE 2026-07-03** *(H2)*
 4. ✅ **SSH key-only (`PasswordAuthentication no`) + fail2ban — DONE 2026-07-03** *(H1)*
-5. ☐ Reset Storage Box password *(H3 — operator action, Hetzner console)*
+5. ⏭️ Reset Storage Box password — **dropped per operator** *(H3)*
 6. ☐ Tune Postgres to final RAM *(M1 — low priority given the light load)*
 7. ✅ **Uptime + backup monitoring — DONE** — healthchecks.io dead-man switch (green) + UptimeRobot
    repointed to `https://redalogisticss.com/healthz` *(M2)*
@@ -918,8 +981,8 @@ Net: ~4.2 GB disk + one-less-moving-part; does not change the C2 resize need.
 10. ✅ **Retire Evolution + delete `supabase-src` — DONE 2026-07-03** (relay fed 0 rows ever; ~4 GB
     disk + ~200 MB RAM reclaimed; Caddy untouched, data plane verified 200).
 
-**Remaining open:** #2 (log rotation, needs a window), #5 (Storage Box pw reset — yours), #6 (Postgres
-tuning, low priority), #9 (restore drill).
+**Remaining open:** #6 (Postgres tuning, low priority) and #9 (restore drill). #5 (Storage Box pw)
+dropped per operator.
 
 ### 12.1 Hardening applied — 2026-07-03 (Track A, as-built)
 
@@ -947,3 +1010,17 @@ All executed live, zero-downtime; `redalogisticss.com` data plane verified **200
     targeted `sh run.sh recreate functions` does not revive them. Making the trim permanent (a
     `profiles:` guard or removing the services from compose) is deferred — `docker stop` is reversible
     and low-friction.
+- **C3 — Docker log rotation (done 2026-07-03).** `/etc/docker/daemon.json` set to the `json-file`
+  driver with `max-size: 10m`, `max-file: 3` (30 MB max per container, auto-rotating). JSON validated
+  (`python3 -m json`) **before** `systemctl restart docker` so a typo couldn't stop the daemon coming
+  back. **Key nuance:** `daemon.json` only sets the *default for newly-created containers* — the
+  daemon restart alone does NOT re-cap existing ones (their `LogConfig` is fixed at creation). So the
+  8 running services were **force-recreated** (`docker compose up -d --force-recreate auth db functions
+  kong meta realtime rest supavisor` — the trimmed 3 deliberately excluded; `COMPOSE_FILE` verified to
+  resolve `db` → `supabase/postgres:17.6.1.084` first). Verified `10m/3` on all 8 via
+  `docker inspect -f '{{index .HostConfig.LogConfig.Config "max-size"}}'`; old 69 MB (pooler) + 28 MB
+  (db) logs cleared with the old containers; swap fell 477→23 MiB. **Two gotchas:** (1) `up -d
+  --force-recreate <subset>` still revived `supabase-studio` via dependency resolution → had to
+  `docker stop supabase-studio` again to hold the trim; (2) **`evolution-caddy-1` was deliberately
+  NOT recreated** (it's the semi-exposed edge; 268 KB log), so it remains uncapped until its next
+  natural recreate — cheap to cap at cutover or on the next Caddyfile change that recreates it.
