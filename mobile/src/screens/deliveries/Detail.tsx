@@ -451,6 +451,20 @@ export function DeliveryDetail() {
           gap: 12,
         }}
       >
+        {/* "Should I call?" stock check — worst line drives the tone. Same
+            signal as the agent detail; informational only. FIRST in the stack
+            (Uzo, 2026-07-19, mirrored from the agent screen): it decides
+            whether to call at all, so it must be visible before scrolling. */}
+        {stockCheck?.worst && !isTerminal ? (
+          <Banner
+            tone={SIGNAL_META[stockCheck.worst].tone === 'error' ? 'error' : 'warn'}
+            icon="warehouse"
+            title="Stock check"
+          >
+            {stockCheck.flagged.map((f) => `${f.name} — ${SIGNAL_META[f.signal].label}`).join('\n')}
+          </Banner>
+        ) : null}
+
         {/* Hero */}
         <Card>
           <View
@@ -665,18 +679,6 @@ export function DeliveryDetail() {
         {/* Original WhatsApp message (collapsed by default; renders nothing
             when bot_raw_message is null — i.e. manually-created rows). */}
         <BotRawMessageCard message={d.bot_raw_message} />
-
-        {/* "Should I call?" stock check — worst line drives the tone. Same
-            signal as the agent detail; informational only. */}
-        {stockCheck?.worst && !isTerminal ? (
-          <Banner
-            tone={SIGNAL_META[stockCheck.worst].tone === 'error' ? 'error' : 'warn'}
-            icon="warehouse"
-            title="Stock check"
-          >
-            {stockCheck.flagged.map((f) => `${f.name} — ${SIGNAL_META[f.signal].label}`).join('\n')}
-          </Banner>
-        ) : null}
 
         {/* Product + Money */}
         <Card>
