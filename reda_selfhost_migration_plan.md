@@ -790,6 +790,18 @@ few minutes**; Evolution is never restarted.
   **Durable wins that survive the abort:** box in full parity, `BOT_INBOUND_SECRET` aligned, reusable
   sync scripts staged. **Next attempt = re-run the §8 flip only** (micro-sync → cron swap → client env
   flips → contractor URL change) — ideally a Sunday, with the contractor confirmed reachable FIRST.
+- **2026-07-26 ~03:00 Lagos — GO-LIVE (cutover executed).** Contractor flipped their webhook to
+  `api.redalogisticss.com` ~23:27 Sat (forensics: Cloud's last intake 16:49 Sat, box got only their
+  405 GET probe — **zero rows lost**). Sequence: box backup → final dump→restore **post-Saturday-EOD**
+  (Cloud EOD 22:59 UTC `succeeded`; box == Cloud @ **7,675 deliveries**, sweep 0, triggers `O`, login
+  200) → cron swap (box 5/5 armed; Cloud's 3 notify crons disarmed) → `SITE_URL`/redirects →
+  `https://app.redalogisticss.com` + auth recreated (bak `.env.bak.20260726-siteurl`) → **Vercel web
+  verified live on the box** (served bundle: 0 Cloud refs) → **EAS preview updated**; production
+  branch publish pending Uzo's morning verification. **Remaining:** publish EAS production; then
+  PAUSE the Cloud project (paused-but-alive = rollback for a week AND makes any stale phone fail
+  loudly instead of silently writing to the dead Cloud DB); Monday-morning note to the team: tap
+  "Update ready · Restart" before starting work (the app applies OTA on restart, not first open).
+  First live box EOD: Sunday 23:59 Lagos.
 
 **Strategy:** fresh `pg_dump` from Cloud (live = source of truth), **not** replaying repo `.sql`.
 Drop+restore `public`, reload `auth` data, re-copy edge functions, re-create cron. All run on the
@@ -1033,3 +1045,70 @@ All executed live, zero-downtime; `redalogisticss.com` data plane verified **200
   `docker stop supabase-studio` again to hold the trim; (2) **`evolution-caddy-1` was deliberately
   NOT recreated** (it's the semi-exposed edge; 268 KB log), so it remains uncapped until its next
   natural recreate — cheap to cap at cutover or on the next Caddyfile change that recreates it.
+
+---
+
+## 13. Post-cutover review — build rating, maintenance rhythm, security/DR roadmap (2026-07-26)
+
+Written the night of go-live, for revisiting at a future date. Grades: **architecture A-,
+security B+, disaster recovery C+** — the weak pillar is recoverability, not design.
+
+### What's strong (keep doing this)
+
+- **The architecture made the right bet: boring and portable.** All business logic is portable
+  Postgres (RPCs, RLS, triggers, the state machine) — cutover was env flips, and the same
+  dump/restore is the exit strategy *from* the box (bigger VPS, back to Cloud, anywhere, in an
+  afternoon). Every component is a stock container. For 25–40 users, "one box, stock parts,
+  portable data" beats a clever distributed setup nobody can debug at 2am.
+- **Edge security above par for self-hosts:** deny-by-default allow-list (internal fns don't
+  exist publicly), api/landing namespace split, `x-internal-secret` on a private docker net,
+  Studio/DB/pooler localhost-only, UFW default-deny, SSH key-only + fail2ban (6 real attackers
+  banned day one), clients hold only the publishable key, RLS on all 31 tables.
+- **Ops discipline is the sleeper asset:** every change had a `.bak` + verified rollback (the
+  2026-07-19 abort proved it under pressure); the §11 runbook + gotchas are institutional
+  memory; backups are layered (nightly dump + encrypted borg offsite, keys off-box + dead-man
+  switch).
+
+### Honest weaknesses, ranked
+
+1. **One box = one failure domain.** DB, auth, edge, TLS, intake on a single 2-vCPU node. Death
+   = down until manual rebuild; nightly dumps = worst-case ~24 h of orders lost. Accepted for
+   ~€4.5/mo — but it's the thing to actively manage.
+2. **Restore drill never run** (§12 M3, still open). Until a backup is restored end-to-end it's
+   a hope, not a backup. Single highest-value next action.
+3. **Monitoring is liveness-only.** Edge-answers + backup-ran are covered; disk-fill, memory
+   creep, CPU saturation alert nobody.
+4. **Postgres near-default tuning** (128 MB buffers on 3.7 GB) + 2 shared vCPUs — watch EOD +
+   parse spikes under real load.
+5. **Foot-guns:** bare `docker compose up -d` revives the trimmed storage/imgproxy/studio;
+   Caddy container log still uncapped; disk not encrypted at rest (customer PII readable if
+   Hetzner storage is compromised — acceptable at this tier, but known).
+
+### Maintenance rhythm
+
+- **Daily (automated):** backups + dead-man switch. Human job = never ignore a
+  healthchecks/UptimeRobot email.
+- **Weekly (5 min):** `df -h`, memory, `docker ps` (9 running / 3 stopped), tail
+  `/root/backups/backup.log`. (Candidate: a `box-health` script that pings only when off.)
+- **Monthly:** OS security patches are unattended; Supabase image bumps are DELIBERATE — read
+  the self-hosting changelog (GoTrue/Realtime break), snapshot first, service-scoped recreates
+  only, never bare `up -d`.
+- **Quarterly:** restore drill from the OFFSITE borg repo, verify a known row; confirm borg keys
+  still in the password manager.
+
+### Security/DR roadmap (short-term punch list)
+
+1. **Restore drill** — Friday's dump into a scratch DB on-box, verify counts. Converts backups
+   from assumed to proven.
+2. **RPO 24 h → 6 h** — dump is ~28 MB; 4×/day costs ~2 GB rotation. One cron edit.
+3. **Disk + memory alerts** — 10-line cron → second healthchecks check (disk >85%, avail RAM
+   <300 MB).
+4. **Postgres tuning** — `shared_buffers` 512 MB, `effective_cache_size` 2 GB, `work_mem`
+   8–16 MB.
+5. **Make the container trim permanent** (compose `profiles:`) — kills the `up -d` foot-gun.
+6. **Real password-reset test** — proves Resend + new `SITE_URL` end-to-end incl. SPF/DKIM
+   deliverability.
+7. **After the watch week:** decommission the Cloud project (stale PII in a dead database).
+
+**One-line summary:** the right system for the business's size, front door secured, cutover
+rehearsed into boring — now apply the same discipline to the back door: proving recovery.
