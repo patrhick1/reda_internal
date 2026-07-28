@@ -4,6 +4,7 @@
 // keeps a single source of truth for the client-facing report format — the
 // rep variant must produce byte-identical output to the admin one.
 import { daysAgoLagos, todayLagos, yesterdayLagos } from '@/lib/date';
+import { clientFacingDeliveryNote } from '@/lib/delivery-payment';
 import { formatNaira } from '@/lib/format';
 
 export type Preset = 'today' | 'yesterday' | 'last7' | 'custom';
@@ -327,7 +328,9 @@ export function buildClientShareMessage(input: {
       if (r.paymentMethod === 'cash') lines.push('Paid: Cash');
       lines.push(`To Remit: ${formatNaira(Number(r.remit ?? 0))}`);
     }
-    lines.push(`Note: ${clientShareNote(r.clientRep, r.note)}`);
+    lines.push(
+      `Note: ${clientShareNote(r.clientRep, clientFacingDeliveryNote(r.paymentMethod, r.note))}`,
+    );
     return lines.join('\n');
   });
 

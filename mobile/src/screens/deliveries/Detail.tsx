@@ -74,6 +74,7 @@ import { BotRawMessageCard } from '@/components/delivery/BotRawMessageCard';
 import { DeliveryInstructionsCard } from '@/components/delivery/DeliveryInstructionsCard';
 import { FollowupClaimBanner } from '@/components/delivery/FollowupClaimBanner';
 import { HINTS } from '@/hints/registry';
+import { deliveredPaymentDisplayAmount, hasDeliveredPaymentMismatch } from '@/lib/delivery-payment';
 import { formatDateTime, formatNaira } from '@/lib/format';
 import { ChainDivider } from '@/components/delivery/ChainDivider';
 import { MarkDeliveredSheet } from '@/components/sheets/MarkDeliveredSheet';
@@ -813,12 +814,20 @@ export function DeliveryDetail() {
                         : 'Paid'}
                 </Text>
                 <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.successDark }}>
-                  {formatNaira(d.paid)}
+                  {formatNaira(
+                    deliveredPaymentDisplayAmount({
+                      paymentMethod: d.payment_method,
+                      paid: d.paid,
+                      customerPrice: d.customer_price,
+                    }),
+                  )}
                 </Text>
               </View>
-              {d.paid != null &&
-              d.customer_price != null &&
-              Number(d.paid) !== Number(d.customer_price) ? (
+              {hasDeliveredPaymentMismatch({
+                paymentMethod: d.payment_method,
+                paid: d.paid,
+                customerPrice: d.customer_price,
+              }) ? (
                 <Text
                   style={{
                     fontFamily: fonts.semibold,
