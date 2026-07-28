@@ -360,6 +360,8 @@ language plpgsql security definer set search_path to 'public', 'auth'
 as $fn$
 declare
   v_actor uuid := auth.uid();
+  v_role  text;
+  v_zone  text;
   v_c     public.delivery_location_changes%rowtype;
 begin
   if not public.is_manager() then
@@ -381,10 +383,33 @@ begin
          reason = reason || ' | rejected: ' || btrim(p_reason)
    where id = p_change_id;
 
+  -- Surface the reason to the AGENT. Before this, the typed reason lived only in
+  -- delivery_location_changes.reason, which no agent-facing screen reads (the
+  -- list RPC is is_manager()-gated), so the agent got a generic push and nothing
+  -- more. Seed a manager->agent note on the delivery's thread: the agent detail
+  -- already renders <MessageThread> and agentUnreadCounts already badges
+  -- ops-authored unread messages, so the reason shows up (durable, in-context,
+  -- replyable, badged) with NO app change. author_id/role = the real manager so
+  -- the thread shows their name and it's accountable. issue_type left null (a
+  -- plain note, like a reply) so it does NOT register as an actionable flag; it
+  -- is ops-authored so it will not trip the ops "agent replied" chip either.
+  select role into v_role from public.users where id = v_actor;
+  v_role := case when v_role in ('admin', 'dispatcher') then v_role else 'admin' end;
+  select name into v_zone from public.locations where id = v_c.to_location_id;
+
+  insert into public.delivery_messages (delivery_id, author_id, author_role, note)
+    values (
+      v_c.delivery_id, v_actor, v_role,
+      'Zone change to ' || coalesce(v_zone, 'the requested zone')
+        || ' not approved: ' || btrim(p_reason)
+    );
+
   perform public.send_edge_notification(jsonb_build_object(
     'audience', 'user', 'user_id', v_c.requested_by_agent_id::text,
     'title', 'Zone change rejected',
-    'body',  'Your delivery zone change was not approved.',
+    -- Include the reason inline (OS truncates a long one); the full text is
+    -- durably in the order's messages, where the tap lands.
+    'body',  'Not approved: ' || btrim(p_reason),
     'data',  jsonb_build_object('delivery_id', v_c.delivery_id)));
 end;
 $fn$;
