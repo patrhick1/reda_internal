@@ -107,7 +107,8 @@ export function RepDashboard() {
   // Deliveries whose latest status the client hasn't been told about yet, freshest
   // first — the rep's #1 daily task. Built from the loaded today-list PLUS the
   // cross-date postponed slice (one extra query) so future-dated postponed orders
-  // still surface here; the same predicate backs the deliveries "To notify" filter.
+  // still surface here; the same predicate backs the deliveries "To notify" filter
+  // and applies the client's failed-delivery notification policy.
   // Collapsed per customer order (siblingGroupKey, keeping the freshest racing row) so the
   // count matches the sibling-collapsed hero above it and the rep sees one entry
   // per client to message — the list's "To notify" chip stays per-row, like its

@@ -29,6 +29,10 @@ export type DeliverySafeRow = Database['public']['Views']['deliveries_safe']['Ro
  *  was queried. See scripts/embed-latest-history-in-deliveries-views.sql. */
 export type DeliveryDisplayJoins = {
   client_name: string | null;
+  /** Client-level EOD ownership policy. When true, Reda auto-closes failed
+   *  attempts for the vendor and does not ask reps to relay failed_delivery
+   *  back to that vendor. Shalom currently uses this policy. */
+  client_auto_cancel_soft_fails: boolean;
   product_name: string | null;
   location_name: string | null;
   assigned_agent_name: string | null;
@@ -318,7 +322,7 @@ const VIEW_FOR: Record<Role, 'deliveries_admin' | 'deliveries_safe'> = {
 };
 
 const JOIN_FRAGMENT = `
-  client:clients(name),
+  client:clients(name, auto_cancel_soft_fails),
   product:product_catalog(product_name),
   location:locations(name),
   assigned_agent:users!deliveries_assigned_agent_id_fkey(display_name)
@@ -329,7 +333,7 @@ const JOIN_FRAGMENT = `
 // longer need the product name joined per row (and lists no longer fetch
 // delivery_items at all). Detail / negative-margin keep the full JOIN_FRAGMENT.
 const LIST_JOIN_FRAGMENT = `
-  client:clients(name),
+  client:clients(name, auto_cancel_soft_fails),
   location:locations(name),
   assigned_agent:users!deliveries_assigned_agent_id_fkey(display_name)
 `;
@@ -369,7 +373,7 @@ const LIST_COLUMNS = `
 export const ALL_DATES_LIMIT = 500;
 
 type JoinShape = {
-  client: { name: string } | null;
+  client: { name: string; auto_cancel_soft_fails: boolean } | null;
   product: { product_name: string } | null;
   location: { name: string } | null;
   assigned_agent: { display_name: string } | null;
@@ -382,6 +386,7 @@ function attachJoins<T extends object>(
   return {
     ...(rest as T),
     client_name: client?.name ?? null,
+    client_auto_cancel_soft_fails: client?.auto_cancel_soft_fails ?? false,
     product_name: product?.product_name ?? null,
     location_name: location?.name ?? null,
     assigned_agent_name: assigned_agent?.display_name ?? null,

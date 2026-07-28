@@ -94,24 +94,15 @@ begin
   end if;
 
   -- Resolve the row's scheduled_date after this transition:
-  --   * explicit postpone        -> the (workday-adjusted) new date
-  --   * LEAVING 'postponed' into a NON-TERMINAL status -> snap back to today
-  --     (Lagos), so the re-worked order returns to Today / Unassigned instead of
-  --     staying stranded on its future date (this is the Issue 2 fix)
-  --   * otherwise (incl. terminal closes) -> unchanged
-  -- The terminal exclusion matters: postponed -> rolled_over (via rollover_delivery
-  -- during the stuck sweep), postponed -> cancelled (ops closing a future order),
-  -- etc. are CLOSES, not re-work. They leave the working lists regardless of date,
-  -- so snapping gives no benefit and would rewrite the row's true scheduled day —
-  -- distorting EOD/earnings reporting. Only snap when the order is coming BACK as
-  -- live work.
+  --   * explicit postpone -> the workday-adjusted new date
+  --   * leaving postponed -> the Lagos action day, including terminal closes
+  --   * otherwise -> unchanged
+  -- Applying the snap to terminal closes prevents an EOD policy failure from
+  -- remaining attached to its future due date and polluting that day's workload.
   v_final_date := case
     when v_new_date is not null then v_new_date
     when v_delivery.current_status = 'postponed'
          and p_to_status <> 'postponed'
-         and not exists (
-           select 1 from public.delivery_status_defs sd
-            where sd.status = p_to_status and sd.category = 'terminal')
       then (now() at time zone 'Africa/Lagos')::date
     else v_delivery.scheduled_date
   end;

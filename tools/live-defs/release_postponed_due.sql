@@ -21,22 +21,46 @@ CREATE OR REPLACE FUNCTION public.release_postponed_due(p_due_date date)
  SET search_path TO 'public', 'auth'
 AS $function$
 declare
-  v_actor uuid := auth.uid();
-  v_row   record;
-  v_count integer := 0;
+  v_actor     uuid := auth.uid();
+  v_row       record;
+  v_count     integer := 0;
+  v_cancelled integer := 0;
 begin
   if not public.is_admin_or_dispatcher() then
     raise exception 'releasing postponed orders requires admin or dispatcher role' using errcode = '42501';
   end if;
 
   for v_row in
-    select id, current_status, scheduled_date, assigned_agent_id
-      from public.deliveries
-     where current_status = 'postponed'
-       and scheduled_date <= p_due_date
-       and deleted_at is null
-     for update
+    select d.id, d.current_status, d.scheduled_date, d.assigned_agent_id,
+           cl.auto_cancel_soft_fails
+      from public.deliveries d
+      join public.clients cl on cl.id = d.client_id
+     where d.current_status = 'postponed'
+       and d.scheduled_date <= p_due_date
+       and d.deleted_at is null
+     for update of d
   loop
+    -- Auto-cancel clients do not re-attempt postponed orders. Use the canonical
+    -- status RPC so scheduled_date snaps back to the Lagos action day and all
+    -- history/audit/terminal side effects stay consistent, then release the
+    -- terminal row from the former agent's workload.
+    if v_row.auto_cancel_soft_fails then
+      perform public.change_delivery_status(
+        p_client_uuid => 'eod-autocancel-postponed:' || v_row.scheduled_date::text || ':' || v_row.id::text,
+        p_delivery_id => v_row.id,
+        p_to_status   => 'failed_delivery',
+        p_reason      => 'eod_auto_cancel:client_policy'
+      );
+
+      update public.deliveries
+         set assigned_agent_id = null,
+             updated_at = now()
+       where id = v_row.id;
+
+      v_cancelled := v_cancelled + 1;
+      continue;
+    end if;
+
     -- Per-row idempotency already comes from the `current_status = 'postponed'`
     -- filter, so this insert doesn't need the unique key to dedup. on-conflict is
     -- belt-and-braces: if a row is released, re-postponed to the SAME due date, and
@@ -73,6 +97,9 @@ begin
 
   if v_count > 0 then
     raise notice 'eod: released % postponed order(s) due on/before % into the unassigned pool', v_count, p_due_date;
+  end if;
+  if v_cancelled > 0 then
+    raise notice 'eod: auto-cancelled % postponed order(s) due on/before % per client policy', v_cancelled, p_due_date;
   end if;
   return v_count;
 end;

@@ -91,6 +91,11 @@ begin
         p_client_uuid => 'eod-auto-cancel:' || v_row.delivery_id::text || ':' || p_for_date::text,
         p_delivery_id => v_row.delivery_id, p_to_status => 'failed_delivery',
         p_reason => 'eod_auto_cancel:client_policy');
+      if v_row.current_status = 'postponed' then
+        update public.deliveries
+           set assigned_agent_id = null, updated_at = now()
+         where id = v_row.delivery_id;
+      end if;
       v_policy_cancels := v_policy_cancels + 1;
 
     -- follow_up is handed back to the client (deferred_to_client), never rolled.

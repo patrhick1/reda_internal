@@ -343,7 +343,10 @@ export function isAssignedActive(d: {
  *                      outcomes the client doesn't need a per-row status ping for
  *                      (Uzo, 2026-06-23: exempt these from "To notify"). This narrows
  *                      the 2026-06-20 "notify every non-delivered terminal" rule.
- *  Deliberately an exclusion list, not an include list, so a new customer-facing
+ *  Client-policy exception: `failed_delivery` is also exempt when the client's
+ *  `auto_cancel_soft_fails` policy is on. Those failures are EOD-owned closures
+ *  the vendor does not expect Reda to relay (currently Shalom). Deliberately an
+ *  exclusion list, not an include list, so a new customer-facing
  *  status added later auto-qualifies. Mirrored by k_notify_exempt in
  *  tools/live-defs/rep-performance.sql (rep-performance SLA denominator). */
 const NOTIFY_EXEMPT_STATUSES = new Set<string>([
@@ -365,10 +368,12 @@ const NOTIFY_EXEMPT_STATUSES = new Set<string>([
 export function awaitsClientNotification(d: {
   current_status: string | null | undefined;
   latest_notified: boolean | null | undefined;
+  client_auto_cancel_soft_fails?: boolean | null | undefined;
 }): boolean {
   if (d.latest_notified) return false;
   const s = d.current_status;
   if (!s) return false;
+  if (s === 'failed_delivery' && d.client_auto_cancel_soft_fails) return false;
   return !NOTIFY_EXEMPT_STATUSES.has(s);
 }
 

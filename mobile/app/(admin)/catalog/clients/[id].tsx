@@ -356,8 +356,9 @@ export default function EditClient() {
             When an order isn&apos;t completed and the day ends, mark it as failed instead of
             carrying it forward. Applies to customer-unreachable statuses (didn&apos;t answer, line
             busy, phone off, couldn&apos;t find them) and customer deferrals (postponed / tomorrow)
-            — postponed orders are cancelled when they come due rather than re-entering the pool.
-            In-transit orders (picked up / waybilled) are unaffected.
+            — postponed orders are cancelled at EOD rather than re-entering the pool. Failed
+            closures under this policy are not added to “To notify,” because Reda does not relay
+            them back to the client. In-transit orders (picked up / waybilled) are unaffected.
           </Text>
         </View>
         <Switch

@@ -73,7 +73,10 @@ AS $function$
            and sib.current_status not in ('agent_cancelled', 'rolled_over')
          order by sib.created_at desc, sib.id limit 1
       ) as resolved on true
-     where d.scheduled_date = p_for_date
+     where (d.scheduled_date = p_for_date
+            -- Auto-cancel clients' postponed rows die the night they are
+            -- postponed, even though their scheduled date was moved forward.
+            or (d.current_status = 'postponed' and cl.auto_cancel_soft_fails))
        and d.deleted_at is null
        and d.order_type = 'delivery'   -- waybills/pickups are money-only & terminal; they never roll
        and sd.category <> 'terminal'
@@ -132,7 +135,7 @@ AS $function$
       when same_agent_rn > 1 then 'dedup_same_agent'
       when group_canonical_count > 1 and cross_agent_rn > 1 then 'dedup_cross_agent'
       when current_status in ('not_around','not_available') then 'close_disinterest'
-      when current_status in ('not_answering','not_connecting','number_busy','switched_off')
+      when current_status in ('not_answering','not_connecting','number_busy','switched_off','tomorrow','postponed')
            and auto_cancel_soft_fails then 'close_policy'
       when current_status = 'follow_up' then 'close_followup'
       when status_category in ('initial','soft_failure')

@@ -141,6 +141,8 @@ declare
   -- list -> any new customer-facing status auto-qualifies).
   -- deferred_to_client/unserious/picked_up/waybilled added 2026-06-23 (Uzo): these
   -- terminal outcomes are exempt from the "To notify" pill, so drop them here too.
+  -- failed_delivery remains notifiable unless the delivery's client owns failed
+  -- closures through auto_cancel_soft_fails (currently Shalom).
   k_notify_exempt constant text[] := array[
     'pending','delivered','rolled_over','agent_cancelled',
     'deferred_to_client','unserious','picked_up','waybilled'];
@@ -154,8 +156,10 @@ begin
     select dsh.id as status_history_id, dsh.delivery_id, dsh.changed_at
       from public.delivery_status_history dsh
       join public.deliveries d on d.id = dsh.delivery_id and d.deleted_at is null
+      join public.clients c on c.id = d.client_id
      where dsh.changed_at >= p_from and dsh.changed_at < p_to
        and dsh.to_status <> all (k_notify_exempt)
+       and not (dsh.to_status = 'failed_delivery' and c.auto_cancel_soft_fails)
   ),
   joined as (
     select nf.status_history_id, nf.delivery_id, nf.changed_at, dcn.notified_at,

@@ -458,7 +458,9 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   const buckets = useMemo(
     () => ({
       all,
-      // Cross-cutting slice: latest status the client hasn't been told about yet
+      // Cross-cutting slice: latest status the client hasn't been told about yet.
+      // The shared predicate also applies per-client policy (auto-cancel clients
+      // do not receive failed_delivery updates).
       // (shared predicate with the rep dashboard card). Orthogonal to the status
       // buckets below — a "To notify" row can be available, soft-fail, delivered, …
       to_notify: all.filter(awaitsClientNotification),

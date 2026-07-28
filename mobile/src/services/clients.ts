@@ -24,10 +24,11 @@ export type ClientInput = {
   // remove an existing cap, callers must use clearClientCeiling — keeps an
   // empty form from silently wiping a configured cap.
   maxChargePerDelivery?: number | null;
-  // Per-client EOD policy. When true, customer-unreachable soft-failed
-  // deliveries are marked failed_delivery at EOD instead of being rolled
-  // forward. Server-side coalesce: passing null leaves the existing value
-  // unchanged (parity with maxChargePerDelivery).
+  // Per-client EOD policy. When true, customer-unreachable soft failures and
+  // tomorrow/postponed deferrals close as failed_delivery instead of being
+  // rolled/released. Those policy-owned failures are also excluded from the
+  // rep "To notify" queue. Server-side coalesce: passing null leaves the
+  // existing value unchanged (parity with maxChargePerDelivery).
   autoCancelSoftFails?: boolean | null;
 };
 
