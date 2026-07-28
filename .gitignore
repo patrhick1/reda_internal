@@ -81,3 +81,8 @@ mobile/*-firebase-adminsdk-*.json
 # Local review notes
 bot-pipeline-prompt-review.md
 vps-telegram-isolated-intake.md
+
+# AI-assist deploy packaging artifacts
+.codex-deploy*/
+# Raw review/source images (optimized copies live in landing/reviews)
+Reviews/
