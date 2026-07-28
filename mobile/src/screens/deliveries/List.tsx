@@ -82,7 +82,9 @@ const EMPTY_UNREAD: ReadonlyMap<string, number> = new Map();
 // badge. Carried groups come first (in the status defs' natural order, so the
 // unreachable statuses sit together and the deferrals sit together), New last.
 type UnassignedGroupHeader = { label: string; count: number; carried: boolean };
+type LocationFilterOption = { id: string; name: string; count: number };
 const NEW_ORDERS_GROUP = '__new__';
+const UNMATCHED_LOCATION = '__unmatched_location__';
 const EMPTY_HEADER_MAP: ReadonlyMap<string, UnassignedGroupHeader> = new Map();
 
 function unassignedGroupKey(d: DeliveryRow): string {
@@ -133,6 +135,10 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   // (Uzo, 2026-06-22): slice the list to one vendor to gauge their pipeline —
   // e.g. how many orders Decency has before sending more stock out.
   const [clientId, setClientId] = useState<string | null>(null);
+  // null = "All locations". This narrower is intentionally scoped to the
+  // cross-date Unassigned queue: dispatch uses it to isolate one area, select
+  // every visible order, then bulk-assign that area in one pass.
+  const [locationId, setLocationId] = useState<string | null>(null);
   // Apply deep-link params then consume them: ?filter= from the dashboard "View
   // all" card, ?agent= from a tapped Agent-workload row. Consuming (setParams →
   // undefined) keeps the URL from retaining a stale filter/agent after the user
@@ -299,6 +305,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     (updated: number) => {
       setBulkSheetOpen(false);
       exitSelect();
+      setLocationId(null);
       reload();
       postponedQ.reload();
       unassignedQ.reload();
@@ -315,6 +322,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     (counts: { changedCount: number; skippedCount: number }) => {
       setBulkStatusSheetOpen(false);
       exitSelect();
+      setLocationId(null);
       reload();
       postponedQ.reload();
       unassignedQ.reload();
@@ -334,6 +342,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     (counts: { deletedCount: number; skippedCount: number }) => {
       setBulkDeleteSheetOpen(false);
       exitSelect();
+      setLocationId(null);
       reload();
       postponedQ.reload();
       unassignedQ.reload();
@@ -483,13 +492,46 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     [all],
   );
 
+  // Build the location menu directly from the unassigned payload. Every list
+  // row already carries location_id + location_name, so this adds no query or
+  // database function. Counts make the dispatch split visible before selection;
+  // the unmatched bucket keeps orders whose address still needs correction from
+  // becoming impossible to find.
+  const locationOptions = useMemo<LocationFilterOption[]>(() => {
+    const byId = new Map<string, LocationFilterOption>();
+    for (const row of unassignedQ.data ?? []) {
+      const id = row.location_id ?? UNMATCHED_LOCATION;
+      const existing = byId.get(id);
+      if (existing) {
+        existing.count += 1;
+      } else {
+        byId.set(id, {
+          id,
+          name: row.location_name ?? 'Unmatched location',
+          count: 1,
+        });
+      }
+    }
+    return [...byId.values()].sort((a, b) => {
+      if (a.id === UNMATCHED_LOCATION) return 1;
+      if (b.id === UNMATCHED_LOCATION) return -1;
+      return a.name.localeCompare(b.name);
+    });
+  }, [unassignedQ.data]);
+  const selectedLocationName =
+    locationOptions.find((location) => location.id === locationId)?.name ?? null;
+
   // Unassigned is a separate cross-date slice (its own query), narrowed by the
-  // same client + name filters as the date-scoped list. The agent filter makes
-  // it empty by definition (an unassigned row has no agent), which is correct.
+  // same client + name filters as the date-scoped list plus its location picker.
+  // The agent filter makes it empty by definition (an unassigned row has no
+  // agent), which is correct.
   const unassignedRows = useMemo(() => {
     let rows = unassignedQ.data ?? [];
     if (agentId) rows = rows.filter((d) => d.assigned_agent_id === agentId);
     if (clientId) rows = rows.filter((d) => d.client_id === clientId);
+    if (locationId) {
+      rows = rows.filter((d) => (d.location_id ?? UNMATCHED_LOCATION) === locationId);
+    }
     if (nameNeedle)
       rows = rows.filter(
         (d) =>
@@ -497,7 +539,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
           (d.customer_phone ?? '').toLowerCase().includes(nameNeedle),
       );
     return rows;
-  }, [unassignedQ.data, agentId, clientId, nameNeedle]);
+  }, [unassignedQ.data, agentId, clientId, locationId, nameNeedle]);
 
   // Unassigned tab: sort into prior-status groups and compute the header that
   // sits above the first row of each group. Other tabs keep the server order.
@@ -638,6 +680,23 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
               ? (unassignedSorted ?? unassignedRows)
               : buckets[filter];
 
+  const visibleIds = useMemo(() => list.flatMap((d) => (d.id ? [d.id] : [])), [list]);
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
+  const toggleSelectAllVisible = useCallback(() => {
+    setSelectMode(true);
+    setSelectedIds((previous) => {
+      if (visibleIds.length === 0) return previous;
+      const next = new Set(previous);
+      const everyVisibleSelected = visibleIds.every((id) => next.has(id));
+      if (everyVisibleSelected) {
+        for (const id of visibleIds) next.delete(id);
+      } else {
+        for (const id of visibleIds) next.add(id);
+      }
+      return next;
+    });
+  }, [visibleIds]);
+
   // Resolve IDs from the list currently visible on screen. This includes the
   // separate cross-date Postponed query and postponed rows merged into All, so
   // bulk status/delete previews receive the same rows the user highlighted.
@@ -661,7 +720,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       {selectMode ? (
         <AppBar
-          title={`${selectedIds.size} selected`}
+          title={`${selectedRows.length} selected`}
           subtitle={subtitleFor(datePreset, customDate)}
           left={
             <Pressable
@@ -705,27 +764,50 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         <FilterChips
           options={DATE_OPTIONS}
           value={datePreset}
-          onChange={(v) => setDatePreset(v as DatePreset)}
+          onChange={(v) => {
+            exitSelect();
+            setDatePreset(v as DatePreset);
+          }}
         />
         {datePreset === 'custom' ? (
           <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
-            <DateField label="Date" value={customDate} onChange={setCustomDate} />
+            <DateField
+              label="Date"
+              value={customDate}
+              onChange={(value) => {
+                exitSelect();
+                setCustomDate(value);
+              }}
+            />
           </View>
         ) : null}
-        <FilterChips options={filterOptions} value={filter} onChange={setFilter} />
+        <FilterChips
+          options={filterOptions}
+          value={filter}
+          onChange={(value) => {
+            exitSelect();
+            setFilter(value);
+          }}
+        />
         {showListFilters ? (
           <View style={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 4 }}>
             <Input
               icon="search"
               value={nameQuery}
-              onChange={setNameQuery}
+              onChange={(value) => {
+                exitSelect();
+                setNameQuery(value);
+              }}
               placeholder="Search name or phone (all dates)"
               autoCapitalize="none"
               autoCorrect={false}
               rightAdornment={
                 nameQuery ? (
                   <Pressable
-                    onPress={() => setNameQuery('')}
+                    onPress={() => {
+                      exitSelect();
+                      setNameQuery('');
+                    }}
                     accessibilityRole="button"
                     accessibilityLabel="Clear search"
                     hitSlop={8}
@@ -754,7 +836,10 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
             value={agentId}
             agents={agents}
             loading={agentsQ.loading}
-            onChange={setAgentId}
+            onChange={(value) => {
+              exitSelect();
+              setAgentId(value);
+            }}
           />
         ) : null}
         {showListFilters ? (
@@ -762,8 +847,29 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
             value={clientId}
             clients={clients}
             loading={clientsQ.loading}
-            onChange={setClientId}
+            onChange={(value) => {
+              exitSelect();
+              setClientId(value);
+            }}
           />
+        ) : null}
+        {showListFilters && filter === 'unassigned' ? (
+          <LocationPicker
+            value={locationId}
+            locations={locationOptions}
+            loading={unassignedQ.loading}
+            onChange={(value) => {
+              exitSelect();
+              setLocationId(value);
+            }}
+          />
+        ) : null}
+        {!selectMode && canBulkSelect && filter === 'unassigned' && visibleIds.length > 0 ? (
+          <View style={{ paddingHorizontal: 12, paddingBottom: 8 }}>
+            <Button variant="secondary" size="sm" full onPress={toggleSelectAllVisible}>
+              {`Select all ${visibleIds.length} visible`}
+            </Button>
+          </View>
         ) : null}
       </View>
       <FlatList
@@ -890,8 +996,12 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
             ) : (
               <Empty
                 icon="package"
-                title="Nothing unassigned"
-                sub="Open orders with no agent show here, across all dates."
+                title={locationId ? 'No unassigned orders here' : 'Nothing unassigned'}
+                sub={
+                  locationId
+                    ? `No open unassigned orders match ${selectedLocationName ?? 'this location'} and the other active filters.`
+                    : 'Open orders with no agent show here, across all dates.'
+                }
               />
             )
           ) : error ? (
@@ -951,10 +1061,10 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
                 variant="secondary"
                 size="sm"
                 full
-                onPress={() => setSelectedIds(new Set())}
-                disabled={selectedIds.size === 0}
+                onPress={toggleSelectAllVisible}
+                disabled={visibleIds.length === 0}
               >
-                Clear
+                {allVisibleSelected ? 'Clear visible' : 'Select all visible'}
               </Button>
             </View>
             {canBulkStatus ? (
@@ -964,8 +1074,8 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
                   size="sm"
                   full
                   onPress={() => setBulkStatusSheetOpen(true)}
-                  disabled={selectedIds.size === 0}
-                  accessibilityLabel={`Change status for ${selectedIds.size} selected`}
+                  disabled={selectedRows.length === 0}
+                  accessibilityLabel={`Change status for ${selectedRows.length} selected`}
                 >
                   Status
                 </Button>
@@ -979,8 +1089,8 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
                   full
                   icon="trash"
                   onPress={() => setBulkDeleteSheetOpen(true)}
-                  disabled={selectedIds.size === 0}
-                  accessibilityLabel={`Delete ${selectedIds.size} selected`}
+                  disabled={selectedRows.length === 0}
+                  accessibilityLabel={`Delete ${selectedRows.length} selected`}
                 >
                   Delete
                 </Button>
@@ -992,16 +1102,16 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
             full
             icon="check"
             onPress={() => setBulkSheetOpen(true)}
-            disabled={selectedIds.size === 0}
+            disabled={selectedRows.length === 0}
           >
-            {`Assign ${selectedIds.size}`}
+            {`Assign ${selectedRows.length}`}
           </Button>
         </View>
       ) : null}
 
       <BulkAssignSheet
         open={bulkSheetOpen}
-        deliveryIds={Array.from(selectedIds)}
+        deliveryIds={selectedRows.flatMap((d) => (d.id ? [d.id] : []))}
         agents={bulkAssignTargets}
         onClose={() => setBulkSheetOpen(false)}
         onAssigned={onBulkAssigned}
@@ -1710,6 +1820,194 @@ function ClientPicker({
                   }}
                 >
                   No clients match “{q.trim()}”.
+                </Text>
+              }
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </View>
+  );
+}
+
+/** Unassigned-queue location narrower. Options and counts come from the rows
+ * already loaded by listUnassigned, so the picker includes inactive or
+ * unmatched locations still present in the queue without another request. */
+function LocationPicker({
+  value,
+  locations,
+  onChange,
+  loading,
+}: {
+  value: string | null;
+  locations: LocationFilterOption[];
+  onChange: (v: string | null) => void;
+  loading: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const selected = locations.find((location) => location.id === value) ?? null;
+  const needle = q.trim().toLowerCase();
+  const filtered = needle
+    ? locations.filter((location) => location.name.toLowerCase().includes(needle))
+    : locations;
+  const triggerLabel = loading
+    ? 'Loading locations…'
+    : selected
+      ? `Location: ${selected.name} (${selected.count})`
+      : value
+        ? 'Location: Selected location'
+        : 'Location: All locations';
+  const close = () => {
+    setOpen(false);
+    setQ('');
+  };
+
+  return (
+    <View style={{ paddingHorizontal: 12, paddingTop: 4, paddingBottom: 8 }}>
+      <Pressable
+        onPress={() => {
+          if (!loading) setOpen(true);
+        }}
+        disabled={loading}
+        accessibilityRole="button"
+        accessibilityLabel="Filter unassigned orders by location"
+        style={({ pressed }) => [
+          {
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingVertical: 10,
+            paddingHorizontal: 14,
+            borderRadius: 999,
+            borderWidth: 1,
+            borderColor: colors.border,
+            backgroundColor: colors.white,
+          },
+          pressed && { opacity: 0.9 },
+        ]}
+      >
+        <Text
+          numberOfLines={1}
+          style={{
+            flex: 1,
+            fontFamily: fonts.semibold,
+            fontSize: 13,
+            color: value ? colors.black : colors.textSecondary,
+          }}
+        >
+          {triggerLabel}
+        </Text>
+        <Icon name="chevronDown" size={16} color={colors.textSecondary} />
+      </Pressable>
+
+      <Modal visible={open} transparent animationType="fade" onRequestClose={close}>
+        <Pressable
+          style={{ flex: 1, backgroundColor: 'rgba(10,10,10,0.42)', justifyContent: 'flex-end' }}
+          onPress={close}
+        >
+          <Pressable
+            style={{
+              backgroundColor: colors.white,
+              borderTopLeftRadius: 20,
+              borderTopRightRadius: 20,
+              paddingBottom: 24,
+              maxHeight: '70%',
+            }}
+            onPress={() => undefined}
+          >
+            <View style={{ alignItems: 'center', paddingTop: 8 }}>
+              <View
+                style={{ width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2 }}
+              />
+            </View>
+            <Text
+              style={{
+                fontFamily: fonts.bold,
+                fontSize: 13,
+                color: colors.textSecondary,
+                textTransform: 'uppercase',
+                letterSpacing: 0.8,
+                paddingHorizontal: 20,
+                paddingTop: 8,
+                paddingBottom: 8,
+              }}
+            >
+              Filter unassigned by location
+            </Text>
+            <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+              <Input
+                icon="search"
+                value={q}
+                onChange={setQ}
+                placeholder="Search locations"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+            <FlatList
+              data={[null as string | null, ...filtered.map((location) => location.id)]}
+              keyExtractor={(id) => id ?? '__all_locations__'}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item: id }) => {
+                const location = id ? locations.find((candidate) => candidate.id === id) : null;
+                const active = (value ?? null) === id;
+                return (
+                  <Pressable
+                    onPress={() => {
+                      onChange(id);
+                      close();
+                    }}
+                    style={({ pressed }) => [
+                      {
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        paddingHorizontal: 20,
+                        paddingVertical: 14,
+                      },
+                      active && { backgroundColor: colors.surface },
+                      pressed && { opacity: 0.88 },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        flex: 1,
+                        fontFamily: fonts.semibold,
+                        fontSize: 15,
+                        color: colors.black,
+                      }}
+                    >
+                      {location ? location.name : 'All locations'}
+                    </Text>
+                    {location ? (
+                      <Text
+                        style={{
+                          fontFamily: fonts.bold,
+                          fontSize: 13,
+                          color: colors.textSecondary,
+                          marginRight: 10,
+                        }}
+                      >
+                        {location.count}
+                      </Text>
+                    ) : null}
+                    {active ? <Icon name="check" size={18} color={colors.black} /> : null}
+                  </Pressable>
+                );
+              }}
+              ItemSeparatorComponent={() => (
+                <View style={{ height: 1, backgroundColor: colors.border }} />
+              )}
+              ListEmptyComponent={
+                <Text
+                  style={{
+                    fontFamily: fonts.medium,
+                    fontSize: 13,
+                    color: colors.textSecondary,
+                    padding: 20,
+                  }}
+                >
+                  No locations match “{q.trim()}”.
                 </Text>
               }
             />
