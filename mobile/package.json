@@ -14,6 +14,7 @@
     "lint": "eslint . --ext .ts,.tsx --max-warnings 0",
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,json,md}\"",
+    "test:stock-summary": "node --experimental-strip-types --test src/services/stock-movement-summary.test.mjs",
     "build:runbook": "node tools/build-runbook.mjs",
     "check:runbook": "node tools/build-runbook.mjs --check"
   },

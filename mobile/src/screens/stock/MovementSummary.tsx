@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Button } from '@/components/Button';
 import { Select } from '@/components/Select';
 import { FilterChips } from '@/components/ui';
@@ -26,6 +27,12 @@ import { colors, fonts } from '@/lib/theme';
  * Read-only.
  */
 type RangeKey = '7d' | '30d' | 'month';
+type MovementSummaryBasePath = '/(admin)' | '/(dispatcher)';
+type DeliveryDrillKind = 'delivered' | 'delivery_returned';
+type DeliveryDrill = {
+  kind: DeliveryDrillKind;
+  rows: GlobalMovement[] | 'loading';
+};
 
 function rangeDates(r: RangeKey): { from: string; to: string } {
   const to = todayLagos();
@@ -36,16 +43,32 @@ function rangeDates(r: RangeKey): { from: string; to: string } {
 
 const signed = (n: number) => `${n > 0 ? '+' : ''}${n}`;
 
-const LINES: { key: keyof Omit<MovementPeriod, 'period_start' | 'net'>; label: string }[] = [
-  { key: 'received', label: 'Received' },
-  { key: 'delivered', label: 'Delivered' },
-  { key: 'returned', label: 'Returned' },
-  { key: 'issued', label: 'Issued to riders' },
-  { key: 'transfers', label: 'Transfers' },
+type PeriodLine = {
+  key: keyof Omit<MovementPeriod, 'period_start' | 'net'>;
+  label: string;
+};
+
+const STOCK_CHANGE_LINES: PeriodLine[] = [
+  { key: 'received', label: 'Stock received' },
+  { key: 'delivered', label: 'Delivered to customers' },
+  { key: 'deliveryReversed', label: 'Delivery reversals' },
   { key: 'adjustments', label: 'Adjustments' },
 ];
 
-export function StockMovementSummaryScreen() {
+const INTERNAL_LINES: PeriodLine[] = [
+  { key: 'warehouseIssues', label: 'Issued to riders' },
+  { key: 'warehouseReturns', label: 'Returned to warehouse' },
+  { key: 'transfers', label: 'Transfers' },
+];
+
+const HOLDER_INTERNAL_LINES: PeriodLine[] = [
+  { key: 'warehouseIssues', label: 'Warehouse issues' },
+  { key: 'warehouseReturns', label: 'Warehouse returns' },
+  { key: 'transfers', label: 'Transfers' },
+];
+
+export function StockMovementSummaryScreen({ basePath }: { basePath: MovementSummaryBasePath }) {
+  const router = useRouter();
   const productsQ = useProducts();
   const usersQ = useUsers();
 
@@ -53,7 +76,7 @@ export function StockMovementSummaryScreen() {
   const [holderId, setHolderId] = useState<string | null>(null); // null = all holders
   const [range, setRange] = useState<RangeKey>('7d');
   const [bucket, setBucket] = useState<MovementBucket>('day');
-  const [delivered, setDelivered] = useState<GlobalMovement[] | 'loading' | null>(null);
+  const [deliveryDrill, setDeliveryDrill] = useState<DeliveryDrill | null>(null);
 
   const { from, to } = useMemo(() => rangeDates(range), [range]);
 
@@ -74,7 +97,7 @@ export function StockMovementSummaryScreen() {
   );
   const holderOptions = useMemo(
     () => [
-      { value: '', label: 'All holders', sub: 'Whole company (shows delivered)' },
+      { value: '', label: 'All holders', sub: 'Company-wide activity and net change' },
       ...(usersQ.data ?? [])
         .filter((u) => u.is_active && (u.role === 'agent' || isWarehousePlace(u)))
         .map((u) => ({
@@ -86,12 +109,16 @@ export function StockMovementSummaryScreen() {
     [usersQ.data],
   );
 
-  const grouped = useMemo(() => groupMovementSummary(summaryQ.data ?? []), [summaryQ.data]);
+  const companyWide = holderId === null;
+  const grouped = useMemo(
+    () => groupMovementSummary(summaryQ.data ?? [], companyWide),
+    [summaryQ.data, companyWide],
+  );
   const productName = productOptions.find((o) => o.value === productId)?.label ?? '';
 
-  async function openDelivered() {
+  async function openDeliveryDrill(kind: DeliveryDrillKind) {
     if (!productId) return;
-    setDelivered('loading');
+    setDeliveryDrill({ kind, rows: 'loading' });
     try {
       // The RPC caps limit at 200; a busy product over a month exceeds that, so
       // page through until exhausted (up to ~1200) — otherwise the drill would
@@ -104,7 +131,7 @@ export function StockMovementSummaryScreen() {
         const page = await listGlobalStockMovements(cursor, PAGE, {
           productCatalogId: productId,
           holderId: holderId ?? undefined,
-          kinds: ['delivered'],
+          kinds: [kind],
           from,
           to,
         });
@@ -113,35 +140,53 @@ export function StockMovementSummaryScreen() {
         cursor = nextCursor(page);
         if (!cursor) break;
       }
-      setDelivered(all);
+      setDeliveryDrill({ kind, rows: all });
     } catch {
-      setDelivered([]);
+      setDeliveryDrill({ kind, rows: [] });
     }
   }
 
-  // ---- Delivered drill sub-view -------------------------------------------
-  if (delivered !== null) {
+  // ---- Delivered / reversed-delivery drill sub-view -----------------------
+  if (deliveryDrill !== null) {
+    const { kind, rows } = deliveryDrill;
+    const isReversal = kind === 'delivery_returned';
     const totalUnits =
-      delivered === 'loading'
+      rows === 'loading'
         ? 0
-        : delivered.reduce((s, r) => s + Math.abs(Number(r.quantity_delta ?? 0)), 0);
+        : rows.reduce((s, r) => s + Math.abs(Number(r.quantity_delta ?? 0)), 0);
     return (
       <ScrollView style={styles.flex} contentContainerStyle={styles.content}>
-        <Text style={styles.h1}>Delivered — {productName}</Text>
+        <Text style={styles.h1}>
+          {isReversal ? 'Delivery reversals' : 'Delivered'} — {productName}
+        </Text>
         <Text style={styles.h1sub}>
           {formatDayMonthLagos(from)} → {formatDayMonthLagos(to)}
-          {delivered !== 'loading' ? ` · ${totalUnits} units, ${delivered.length} orders` : ''}
+          {rows !== 'loading' ? ` · ${totalUnits} units, ${rows.length} orders` : ''}
         </Text>
-        {delivered === 'loading' ? (
+        {rows === 'loading' ? (
           <View style={styles.centerPad}>
             <ActivityIndicator color={colors.black} />
           </View>
-        ) : delivered.length === 0 ? (
-          <Text style={styles.empty}>No deliveries in this range.</Text>
+        ) : rows.length === 0 ? (
+          <Text style={styles.empty}>
+            {isReversal ? 'No delivery reversals in this range.' : 'No deliveries in this range.'}
+          </Text>
         ) : (
           <View style={styles.card}>
-            {delivered.map((r, i) => (
-              <View key={r.event_id} style={[styles.offRow, i > 0 && styles.rowDivider]}>
+            {rows.map((r, i) => (
+              <Pressable
+                key={r.event_id}
+                disabled={!r.delivery_id}
+                onPress={
+                  r.delivery_id
+                    ? () =>
+                        router.push(
+                          `${basePath}/deliveries/${r.delivery_id}` as `${MovementSummaryBasePath}/deliveries/${string}`,
+                        )
+                    : undefined
+                }
+                style={[styles.offRow, i > 0 && styles.rowDivider]}
+              >
                 <View style={{ flex: 1 }}>
                   <Text style={styles.pName} numberOfLines={1}>
                     {r.customer_name ?? 'Customer'}
@@ -151,12 +196,16 @@ export function StockMovementSummaryScreen() {
                     {r.holder_name ? ` · ${r.holder_name}` : ''}
                   </Text>
                 </View>
-                <Text style={styles.varNeg}>{r.quantity_delta}</Text>
-              </View>
+                <Text style={isReversal ? styles.varPos : styles.varNeg}>{r.quantity_delta}</Text>
+              </Pressable>
             ))}
           </View>
         )}
-        <Button title="Back to summary" style={styles.spacer} onPress={() => setDelivered(null)} />
+        <Button
+          title="Back to summary"
+          style={styles.spacer}
+          onPress={() => setDeliveryDrill(null)}
+        />
       </ScrollView>
     );
   }
@@ -219,19 +268,34 @@ export function StockMovementSummaryScreen() {
             <Text style={styles.rollupTitle}>
               {formatDayMonthLagos(from)} → {formatDayMonthLagos(to)}
             </Text>
-            <PeriodLines period={grouped.total} />
+            <PeriodLines period={grouped.total} companyWide={companyWide} />
             <View style={styles.netRow}>
-              <Text style={styles.netLabel}>Net change</Text>
-              <Text style={[styles.netVal, grouped.total.net >= 0 ? styles.varPos : styles.varNeg]}>
+              <Text style={styles.netLabel}>
+                {companyWide ? 'Net company stock change' : 'Net change'}
+              </Text>
+              <Text style={[styles.netVal, varianceStyle(grouped.total.net)]}>
                 {signed(grouped.total.net)}
               </Text>
             </View>
+            {companyWide && hasInternalActivity(grouped.total) ? (
+              <Text style={styles.netHint}>
+                Internal movements are shown above but do not change total company stock.
+              </Text>
+            ) : null}
             {grouped.total.delivered !== 0 ? (
               <Button
-                title={`View delivered orders (${Math.abs(grouped.total.delivered)})`}
+                title={`View delivered units (${Math.abs(grouped.total.delivered)})`}
                 variant="secondary"
                 style={styles.spacer}
-                onPress={openDelivered}
+                onPress={() => openDeliveryDrill('delivered')}
+              />
+            ) : null}
+            {grouped.total.deliveryReversed !== 0 ? (
+              <Button
+                title={`View reversed deliveries (${Math.abs(grouped.total.deliveryReversed)} units)`}
+                variant="secondary"
+                style={styles.spacer}
+                onPress={() => openDeliveryDrill('delivery_returned')}
               />
             ) : null}
           </View>
@@ -246,12 +310,10 @@ export function StockMovementSummaryScreen() {
                   {bucket === 'week' ? 'Week of ' : ''}
                   {formatDayMonthLagos(p.period_start)}
                 </Text>
-                <PeriodLines period={p} />
+                <PeriodLines period={p} companyWide={companyWide} />
                 <View style={styles.netRowSm}>
-                  <Text style={styles.netLabelSm}>Net</Text>
-                  <Text style={[styles.netValSm, p.net >= 0 ? styles.varPos : styles.varNeg]}>
-                    {signed(p.net)}
-                  </Text>
+                  <Text style={styles.netLabelSm}>{companyWide ? 'Company net' : 'Net'}</Text>
+                  <Text style={[styles.netValSm, varianceStyle(p.net)]}>{signed(p.net)}</Text>
                 </View>
               </View>
             ))
@@ -262,23 +324,61 @@ export function StockMovementSummaryScreen() {
   );
 }
 
-function PeriodLines({ period }: { period: MovementPeriod }) {
-  const rows = LINES.filter((l) => period[l.key] !== 0);
-  if (rows.length === 0) {
-    return <Text style={styles.noMoves}>No movement</Text>;
+function hasInternalActivity(period: MovementPeriod): boolean {
+  return period.warehouseIssues !== 0 || period.warehouseReturns !== 0 || period.transfers !== 0;
+}
+
+function varianceStyle(value: number) {
+  if (value > 0) return styles.varPos;
+  if (value < 0) return styles.varNeg;
+  return styles.varZero;
+}
+
+function PeriodLines({ period, companyWide }: { period: MovementPeriod; companyWide: boolean }) {
+  const stockRows = STOCK_CHANGE_LINES.filter((line) => period[line.key] !== 0);
+  const internalLines = companyWide ? INTERNAL_LINES : HOLDER_INTERNAL_LINES;
+  const internalRows = internalLines.filter((line) => period[line.key] !== 0);
+  if (stockRows.length === 0 && internalRows.length === 0) {
+    return <Text style={styles.noMoves}>No stock activity</Text>;
   }
+
   return (
     <View style={{ gap: 4, marginTop: 4 }}>
-      {rows.map((l) => {
-        const v = period[l.key];
+      <PeriodLineRows period={period} rows={stockRows} />
+      {companyWide && internalRows.length > 0 ? (
+        <Text style={styles.sectionLabel}>Stock moved internally</Text>
+      ) : null}
+      <PeriodLineRows period={period} rows={internalRows} neutral={companyWide} />
+    </View>
+  );
+}
+
+function PeriodLineRows({
+  period,
+  rows,
+  neutral = false,
+}: {
+  period: MovementPeriod;
+  rows: PeriodLine[];
+  neutral?: boolean;
+}) {
+  return (
+    <>
+      {rows.map((line) => {
+        const value = period[line.key];
+        const displayValue = neutral
+          ? `${Math.abs(value)} unit${Math.abs(value) === 1 ? '' : 's'}`
+          : signed(value);
         return (
-          <View key={l.key} style={styles.lineRow}>
-            <Text style={styles.lineLabel}>{l.label}</Text>
-            <Text style={[styles.lineVal, v > 0 ? styles.varPos : styles.varNeg]}>{signed(v)}</Text>
+          <View key={line.key} style={styles.lineRow}>
+            <Text style={styles.lineLabel}>{line.label}</Text>
+            <Text style={[styles.lineVal, neutral ? styles.varNeutral : varianceStyle(value)]}>
+              {displayValue}
+            </Text>
           </View>
         );
       })}
-    </View>
+    </>
   );
 }
 
@@ -327,6 +427,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
   },
   periodLabel: { fontFamily: fonts.bold, fontSize: 13, color: colors.black },
+  sectionLabel: {
+    fontFamily: fonts.bold,
+    fontSize: 11,
+    color: colors.textSecondary,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    marginTop: 8,
+  },
   lineRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   lineLabel: { fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary },
   lineVal: { fontFamily: fonts.semibold, fontSize: 14 },
@@ -342,6 +450,13 @@ const styles = StyleSheet.create({
   },
   netLabel: { fontFamily: fonts.bold, fontSize: 14, color: colors.black },
   netVal: { fontFamily: fonts.extrabold, fontSize: 18 },
+  netHint: {
+    fontFamily: fonts.medium,
+    fontSize: 11,
+    lineHeight: 16,
+    color: colors.textSecondary,
+    marginTop: 6,
+  },
   netRowSm: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -355,6 +470,8 @@ const styles = StyleSheet.create({
   netValSm: { fontFamily: fonts.bold, fontSize: 14 },
   varPos: { color: colors.success },
   varNeg: { color: colors.red },
+  varZero: { color: colors.textSecondary },
+  varNeutral: { color: colors.black },
   spacer: { marginTop: 12 },
   card: {
     borderWidth: 1,
