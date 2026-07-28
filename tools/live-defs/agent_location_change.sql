@@ -479,12 +479,18 @@ grant execute on function public.revert_location_change(uuid, text)  to authenti
 --     Returns rows only to managers (mirrors list_settlements_for_date's
 --     `where is_admin_or_dispatcher()` self-gating pattern). p_states null = all.
 -- ----------------------------------------------------------------------------
-create or replace function public.list_location_changes(p_states text[] default null)
+-- PostgreSQL cannot change a RETURNS TABLE shape with CREATE OR REPLACE.
+-- Drop + recreate in the same transaction when applying this definition so
+-- callers see either the old or new function atomically.
+drop function if exists public.list_location_changes(text[]);
+
+create function public.list_location_changes(p_states text[] default null)
 returns table(
   change_id          uuid,
   delivery_id        uuid,
   state              text,
   customer_name      text,
+  raw_address        text,
   current_status     text,
   scheduled_date     date,
   agent_id           uuid,
@@ -504,7 +510,7 @@ returns table(
 language sql security definer set search_path to 'public', 'auth' stable
 as $fn$
   select c.id, c.delivery_id, c.state,
-         d.customer_name, d.current_status, d.scheduled_date,
+         d.customer_name, d.raw_address, d.current_status, d.scheduled_date,
          c.requested_by_agent_id, u.display_name,
          c.from_location_id, fl.name, c.to_location_id, tl.name,
          c.from_charged, c.to_charged, c.from_agent_payment, c.to_agent_payment,

@@ -2700,6 +2700,7 @@ export type Database = {
           created_at: string
           current_status: string
           customer_name: string
+          raw_address: string
           decided_at: string
           delivery_id: string
           from_agent_payment: number

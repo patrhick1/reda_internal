@@ -9,7 +9,7 @@ import {
   revertLocationChange,
   type LocationChangeRow,
 } from '@/services/deliveries';
-import { AppBar, Banner, Button, Card, Empty, Input, Sheet } from '@/components/ui';
+import { AppBar, Banner, Button, Card, Empty, Icon, Input, Sheet } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 import { formatNaira } from '@/lib/format';
 import { errorMessage } from '@/lib/errors';
@@ -282,6 +282,45 @@ function ChangeCard({
       <View
         style={{ marginTop: 10, padding: 10, backgroundColor: colors.surfaceAlt, borderRadius: 10 }}
       >
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'flex-start',
+            gap: 8,
+            paddingBottom: 10,
+            marginBottom: 10,
+            borderBottomWidth: 1,
+            borderBottomColor: colors.border,
+          }}
+        >
+          <Icon name="mapPin" size={16} color={colors.textSecondary} />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text
+              style={{
+                fontFamily: fonts.bold,
+                fontSize: 10,
+                letterSpacing: 0.5,
+                color: colors.textSecondary,
+                textTransform: 'uppercase',
+                marginBottom: 3,
+              }}
+            >
+              Delivery address
+            </Text>
+            <Text
+              selectable
+              style={{
+                fontFamily: fonts.medium,
+                fontSize: 13,
+                lineHeight: 19,
+                color: colors.black,
+              }}
+            >
+              {row.raw_address || 'Address unavailable'}
+            </Text>
+          </View>
+        </View>
+
         <Text style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.black }}>
           {(row.from_location_name ?? 'no zone') + '  →  ' + (row.to_location_name ?? '—')}
         </Text>
