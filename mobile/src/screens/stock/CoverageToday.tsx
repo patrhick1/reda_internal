@@ -20,10 +20,19 @@ import { fetchCoverageClientNames, type CoverageRow } from '@/services/stock-cov
 import { AppBar, Card, Empty, FilterChips, Icon } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 
-type CoverageFilter = 'all' | 'short' | 'out';
+type CoverageFilter = 'all' | 'short' | 'out' | 'restock';
 
 const isOut = (r: CoverageRow) => r.on_hand_total <= 0;
 const isShort = (r: CoverageRow) => r.on_hand_total < r.qty_open;
+// Warehouse can't cover today's open orders on its own. Riders' dispersed bags
+// are deliberately NOT credited here — they're earmarked for those riders' own
+// deliveries, not shareable stock a new pickup can pull from at the warehouse.
+// `isRestock` is the case that matters most: the FLEET covers demand (so the
+// card would otherwise read "Covered") yet the warehouse is the bottleneck and
+// needs a restock. Surfaced after the 2026-07-28 investigation (Uzo): a
+// near-empty warehouse was hidden because on_hand_total sums the whole fleet.
+const isWarehouseLow = (r: CoverageRow) => r.on_hand_warehouse < r.qty_open;
+const isRestock = (r: CoverageRow) => isWarehouseLow(r) && !isShort(r);
 
 // No basePath prop (unlike HolderDetail): the screen has no outbound links —
 // back-navigation is router.back(), which lands in the right group for all
@@ -60,6 +69,7 @@ export function CoverageToday() {
     return {
       outCount: rows.filter(isOut).length,
       shortCount: short.length,
+      restockCount: rows.filter(isRestock).length,
       ordersAffected: short.reduce((s, r) => s + r.orders_open, 0),
     };
   }, [rows]);
@@ -68,14 +78,34 @@ export function CoverageToday() {
   // alphabetical at the bottom.
   const visibleRows = useMemo(() => {
     return rows
-      .filter((r) => (filter === 'out' ? isOut(r) : filter === 'short' ? isShort(r) : true))
+      .filter((r) =>
+        filter === 'out'
+          ? isOut(r)
+          : filter === 'short'
+            ? isShort(r)
+            : filter === 'restock'
+              ? isRestock(r)
+              : true,
+      )
       .sort((a, b) => {
-        const gapA = a.qty_open - a.on_hand_total;
-        const gapB = b.qty_open - b.on_hand_total;
+        // Short (biggest fleet shortfall) first, then restock (biggest
+        // warehouse shortfall), then covered products alphabetical.
         const shortA = isShort(a) ? 1 : 0;
         const shortB = isShort(b) ? 1 : 0;
         if (shortA !== shortB) return shortB - shortA;
-        if (shortA && gapA !== gapB) return gapB - gapA;
+        if (shortA) {
+          const gapA = a.qty_open - a.on_hand_total;
+          const gapB = b.qty_open - b.on_hand_total;
+          if (gapA !== gapB) return gapB - gapA;
+        }
+        const restockA = isRestock(a) ? 1 : 0;
+        const restockB = isRestock(b) ? 1 : 0;
+        if (restockA !== restockB) return restockB - restockA;
+        if (restockA) {
+          const whA = a.qty_open - a.on_hand_warehouse;
+          const whB = b.qty_open - b.on_hand_warehouse;
+          if (whA !== whB) return whB - whA;
+        }
         return a.product_name.localeCompare(b.product_name);
       });
   }, [rows, filter]);
@@ -113,7 +143,7 @@ export function CoverageToday() {
             <View style={{ gap: 12, marginBottom: 6 }}>
               {/* Hero: the shortage picture at a glance. */}
               <Card style={{ backgroundColor: colors.black, padding: 18 }}>
-                <View style={{ flexDirection: 'row', gap: 24 }}>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 14, columnGap: 22 }}>
                   <HeroStat
                     label="Out"
                     value={stats.outCount}
@@ -123,6 +153,11 @@ export function CoverageToday() {
                     label="Short"
                     value={stats.shortCount}
                     accent={stats.shortCount > 0 ? colors.warning : colors.white}
+                  />
+                  <HeroStat
+                    label="Restock"
+                    value={stats.restockCount}
+                    accent={stats.restockCount > 0 ? colors.warning : colors.white}
                   />
                   <HeroStat
                     label="Orders affected"
@@ -138,7 +173,7 @@ export function CoverageToday() {
                     marginTop: 12,
                   }}
                 >
-                  {`Committed = the customer already said yes. On hand − committed is what's still safely promisable.`}
+                  {`Committed = the customer already said yes. On hand − committed is what's still safely promisable. Restock = the fleet covers demand but the warehouse can't — riders' bags aren't counted.`}
                 </Text>
               </Card>
               <FilterChips<CoverageFilter>
@@ -146,6 +181,7 @@ export function CoverageToday() {
                   { id: 'all', label: 'All', count: rows.length },
                   { id: 'short', label: 'Short', count: stats.shortCount },
                   { id: 'out', label: 'Out', count: stats.outCount },
+                  { id: 'restock', label: 'Restock', count: stats.restockCount },
                 ]}
                 value={filter}
                 onChange={setFilter}
@@ -155,7 +191,13 @@ export function CoverageToday() {
           ListEmptyComponent={
             <Empty
               icon="check"
-              title={filter === 'out' ? 'Nothing fully out' : 'Nothing short'}
+              title={
+                filter === 'out'
+                  ? 'Nothing fully out'
+                  : filter === 'restock'
+                    ? 'Nothing to restock'
+                    : 'Nothing short'
+              }
               sub="Every product with open orders is covered."
             />
           }
@@ -204,6 +246,7 @@ function ProductCoverageCard({ row, clientName }: { row: CoverageRow; clientName
   const gap = row.qty_open - row.on_hand_total;
   const out = isOut(row);
   const short = isShort(row);
+  const warehouseLow = isWarehouseLow(row);
   const agentsOnHand = row.on_hand_total - row.on_hand_warehouse;
   return (
     <Card dense>
@@ -242,7 +285,14 @@ function ProductCoverageCard({ row, clientName }: { row: CoverageRow; clientName
               marginTop: 2,
             }}
           >
-            {`Warehouse ${Math.max(0, row.on_hand_warehouse)} · with riders ${Math.max(0, agentsOnHand)}`}
+            <Text
+              style={
+                warehouseLow ? { fontFamily: fonts.bold, color: colors.warningDark } : undefined
+              }
+            >
+              {`Warehouse ${Math.max(0, row.on_hand_warehouse)}`}
+            </Text>
+            {` · with riders ${Math.max(0, agentsOnHand)}`}
             {row.on_hand_total < 0 ? `  (book: ${row.on_hand_total})` : ''}
           </Text>
         </View>
@@ -267,6 +317,26 @@ function ProductCoverageCard({ row, clientName }: { row: CoverageRow; clientName
               }}
             >
               {out ? 'Out' : `−${gap}`}
+            </Text>
+          </View>
+        ) : warehouseLow ? (
+          // Fleet covers demand, but the warehouse alone can't — reads
+          // "Restock" instead of "Covered" so a near-empty warehouse isn't
+          // masked by stock sitting in riders' bags.
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 4,
+              backgroundColor: colors.warningSoft,
+              borderRadius: 999,
+              paddingHorizontal: 10,
+              paddingVertical: 4,
+            }}
+          >
+            <Icon name="warehouse" size={12} color={colors.warningDark} />
+            <Text style={{ fontFamily: fonts.bold, fontSize: 12, color: colors.warningDark }}>
+              Restock
             </Text>
           </View>
         ) : (
