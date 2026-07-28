@@ -80,6 +80,12 @@ export type ShareDeliveryLine = {
   /** [paidAndFee format] Reda's per-delivery delivery fee (= reda_fee / charged
    *  snapshot). Admin-only, same as `paid`. */
   redaFee?: number | null;
+  /** customer_price − paid (the rep RPC's `outstanding`; the admin path computes
+   *  it from its row). Non-zero → the share Note states the customer paid
+   *  less/extra (card 2026-07-28: 17,500 paid of 17,950 with no explanation).
+   *  Null when paid was never recorded — no claim is made. Safe on the rep path:
+   *  the difference alone cannot back out the Reda fee. */
+  outstanding?: number | null;
 };
 
 /** Normalize a reconcile row into share-ready product lines: prefer the RPC's
@@ -329,7 +335,13 @@ export function buildClientShareMessage(input: {
       lines.push(`To Remit: ${formatNaira(Number(r.remit ?? 0))}`);
     }
     lines.push(
-      `Note: ${clientShareNote(r.clientRep, clientFacingDeliveryNote(r.paymentMethod, r.note))}`,
+      `Note: ${clientShareNote(
+        r.clientRep,
+        clientFacingDeliveryNote(
+          { paymentMethod: r.paymentMethod, outstanding: r.outstanding },
+          r.note,
+        ),
+      )}`,
     );
     return lines.join('\n');
   });

@@ -73,6 +73,10 @@ export default function RepClientReconcileDetail() {
           remit: Number(r.remit ?? 0),
           paid: r.paid,
           redaFee: r.reda_fee,
+          // The rep RPC's customer_price − paid — lets the share Note state a
+          // short/extra payment without exposing `paid` itself (which would let
+          // the fee be derived from paid − remit − cash_pos_fee).
+          outstanding: r.outstanding,
           note:
             r.order_type === 'waybill'
               ? (r.note ?? '')
