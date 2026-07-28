@@ -274,22 +274,6 @@ export default function AgentDeliveryDetail() {
           gap: 12,
         }}
       >
-        {/* "Should I call?" stock check — worst line drives the tone. Silent
-            when the agent's bag or fleet uncommitted stock covers every line.
-            Informational only; nothing is blocked. FIRST in the stack (Uzo,
-            2026-07-19): it decides whether to call at all, so it must be
-            visible before any scrolling — ahead of the sibling/handoff
-            banners and everything else. */}
-        {stockCheck?.worst && !isTerminal ? (
-          <Banner
-            tone={SIGNAL_META[stockCheck.worst].tone === 'error' ? 'error' : 'warn'}
-            icon="warehouse"
-            title="Stock check"
-          >
-            {stockCheck.flagged.map((f) => `${f.name} — ${SIGNAL_META[f.signal].label}`).join('\n')}
-          </Banner>
-        ) : null}
-
         {/* Sibling-contact banner: another agent has the SAME order (the allowed
             cross-agent race) and already reached/tried the customer. Shown while
             this row is still actionable so the agent coordinates instead of
@@ -387,6 +371,22 @@ export default function AgentDeliveryDetail() {
             </Text>
           ) : null}
         </Card>
+
+        {/* "Should I call?" stock check — worst line drives the tone. Silent
+            when the agent's bag or fleet uncommitted stock covers every line.
+            Informational only; nothing is blocked. Sits directly under the
+            call area (Uzo, 2026-07-28): it decides whether to call at all, so
+            placing it right beside the Call button is the most disruptive spot
+            — it stops the rider in their tracks as they reach for the call. */}
+        {stockCheck?.worst && !isTerminal ? (
+          <Banner
+            tone={SIGNAL_META[stockCheck.worst].tone === 'error' ? 'error' : 'warn'}
+            icon="warehouse"
+            title="Stock check"
+          >
+            {stockCheck.flagged.map((f) => `${f.name} — ${SIGNAL_META[f.signal].label}`).join('\n')}
+          </Banner>
+        ) : null}
 
         {/* Address */}
         <Card>

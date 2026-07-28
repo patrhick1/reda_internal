@@ -452,20 +452,6 @@ export function DeliveryDetail() {
           gap: 12,
         }}
       >
-        {/* "Should I call?" stock check — worst line drives the tone. Same
-            signal as the agent detail; informational only. FIRST in the stack
-            (Uzo, 2026-07-19, mirrored from the agent screen): it decides
-            whether to call at all, so it must be visible before scrolling. */}
-        {stockCheck?.worst && !isTerminal ? (
-          <Banner
-            tone={SIGNAL_META[stockCheck.worst].tone === 'error' ? 'error' : 'warn'}
-            icon="warehouse"
-            title="Stock check"
-          >
-            {stockCheck.flagged.map((f) => `${f.name} — ${SIGNAL_META[f.signal].label}`).join('\n')}
-          </Banner>
-        ) : null}
-
         {/* Hero */}
         <Card>
           <View
@@ -559,6 +545,21 @@ export function DeliveryDetail() {
             </Button>
           </View>
         </Card>
+
+        {/* "Should I call?" stock check — worst line drives the tone. Same
+            signal as the agent detail; informational only. Sits directly under
+            the call area (Uzo, 2026-07-28, mirrored from the agent screen):
+            placing it right beside the Call button is the most disruptive spot,
+            so it stops the caller before they dial. */}
+        {stockCheck?.worst && !isTerminal ? (
+          <Banner
+            tone={SIGNAL_META[stockCheck.worst].tone === 'error' ? 'error' : 'warn'}
+            icon="warehouse"
+            title="Stock check"
+          >
+            {stockCheck.flagged.map((f) => `${f.name} — ${SIGNAL_META[f.signal].label}`).join('\n')}
+          </Banner>
+        ) : null}
 
         {/* One-time hint: teaches the "I'll handle this" claim button.
             Per-screen cap: this hint suppresses the EDIT_DELIVERY_ICON hint
