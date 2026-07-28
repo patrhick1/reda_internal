@@ -72,5 +72,5 @@ export function worstSignal(signals: (StockSignal | null)[]): StockSignal | null
 /** Display copy + tone per signal. `tone` maps onto the Banner tones. */
 export const SIGNAL_META: Record<StockSignal, { label: string; tone: 'error' | 'warn' }> = {
   out: { label: 'Out of stock — hold off calling', tone: 'error' },
-  committed: { label: 'Fully committed — check before promising', tone: 'warn' },
+  committed: { label: 'Out of stock — check before calling', tone: 'warn' },
 };
