@@ -18,7 +18,7 @@
       "channel": "preview",
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://api.redalogisticss.com",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_4yCi2tP-lv2igyuGgrsR9w_Dk28nNiM",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJyb2xlIjoiYW5vbiIsImlzcyI6InN1cGFiYXNlIiwiaWF0IjoxNzgwNjkxMTg4LCJleHAiOjE5MzgzNzExODh9.P73k3-EvOHkEvoTeaJfy_4g9RmImx7r8dCdkUCySM9s",
         "EXPO_PUBLIC_ENV": "preview"
       }
     },
