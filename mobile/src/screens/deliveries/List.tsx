@@ -86,6 +86,9 @@ type LocationFilterOption = { id: string; name: string; count: number };
 const NEW_ORDERS_GROUP = '__new__';
 const UNMATCHED_LOCATION = '__unmatched_location__';
 const EMPTY_HEADER_MAP: ReadonlyMap<string, UnassignedGroupHeader> = new Map();
+// Stable empty selection so an unchanged "All locations" state doesn't hand the
+// unassigned memo a fresh Set (→ needless recompute) each render.
+const EMPTY_LOCATION_IDS: ReadonlySet<string> = new Set();
 
 function unassignedGroupKey(d: DeliveryRow): string {
   return d.rolled_from_status && SOFT_STATUSES.has(d.rolled_from_status)
@@ -135,10 +138,11 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   // (Uzo, 2026-06-22): slice the list to one vendor to gauge their pipeline —
   // e.g. how many orders Decency has before sending more stock out.
   const [clientId, setClientId] = useState<string | null>(null);
-  // null = "All locations". This narrower is intentionally scoped to the
-  // cross-date Unassigned queue: dispatch uses it to isolate one area, select
-  // every visible order, then bulk-assign that area in one pass.
-  const [locationId, setLocationId] = useState<string | null>(null);
+  // Empty set = "All locations". MULTI-select, intentionally scoped to the
+  // cross-date Unassigned queue: dispatch picks several areas at once (e.g. every
+  // Island location), selects every visible order, then bulk-assigns the lot to
+  // one rider in a single pass (Uzo, 2026-07-29).
+  const [locationIds, setLocationIds] = useState<ReadonlySet<string>>(EMPTY_LOCATION_IDS);
   // Apply deep-link params then consume them: ?filter= from the dashboard "View
   // all" card, ?agent= from a tapped Agent-workload row. Consuming (setParams →
   // undefined) keeps the URL from retaining a stale filter/agent after the user
@@ -301,11 +305,31 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
       return next;
     });
   }, []);
+  // Location-filter toggles for the Unassigned queue. Changing the location set
+  // drops any in-progress row selection (a hidden row must never stay selected
+  // once the visible pool shifts under the action bar) — same reason the picker
+  // used to clear it inline.
+  const toggleLocation = useCallback(
+    (id: string) => {
+      exitSelect();
+      setLocationIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+    },
+    [exitSelect],
+  );
+  const clearLocations = useCallback(() => {
+    exitSelect();
+    setLocationIds(EMPTY_LOCATION_IDS);
+  }, [exitSelect]);
   const onBulkAssigned = useCallback(
     (updated: number) => {
       setBulkSheetOpen(false);
       exitSelect();
-      setLocationId(null);
+      setLocationIds(EMPTY_LOCATION_IDS);
       reload();
       postponedQ.reload();
       unassignedQ.reload();
@@ -322,7 +346,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     (counts: { changedCount: number; skippedCount: number }) => {
       setBulkStatusSheetOpen(false);
       exitSelect();
-      setLocationId(null);
+      setLocationIds(EMPTY_LOCATION_IDS);
       reload();
       postponedQ.reload();
       unassignedQ.reload();
@@ -342,7 +366,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     (counts: { deletedCount: number; skippedCount: number }) => {
       setBulkDeleteSheetOpen(false);
       exitSelect();
-      setLocationId(null);
+      setLocationIds(EMPTY_LOCATION_IDS);
       reload();
       postponedQ.reload();
       unassignedQ.reload();
@@ -518,8 +542,15 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
       return a.name.localeCompare(b.name);
     });
   }, [unassignedQ.data]);
-  const selectedLocationName =
-    locationOptions.find((location) => location.id === locationId)?.name ?? null;
+  const locationFilterActive = locationIds.size > 0;
+  // Human label for the active location narrow — drives the empty-state copy.
+  const selectedLocationsLabel =
+    locationIds.size === 0
+      ? null
+      : locationIds.size === 1
+        ? (locationOptions.find((location) => locationIds.has(location.id))?.name ??
+          'this location')
+        : `${locationIds.size} locations`;
 
   // Unassigned is a separate cross-date slice (its own query), narrowed by the
   // same client + name filters as the date-scoped list plus its location picker.
@@ -529,8 +560,8 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   const unassignedRows = useMemo(() => {
     let rows = unassignedQ.data ?? [];
     if (clientId) rows = rows.filter((d) => d.client_id === clientId);
-    if (locationId) {
-      rows = rows.filter((d) => (d.location_id ?? UNMATCHED_LOCATION) === locationId);
+    if (locationIds.size > 0) {
+      rows = rows.filter((d) => locationIds.has(d.location_id ?? UNMATCHED_LOCATION));
     }
     if (nameNeedle)
       rows = rows.filter(
@@ -539,7 +570,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
           (d.customer_phone ?? '').toLowerCase().includes(nameNeedle),
       );
     return rows;
-  }, [unassignedQ.data, clientId, locationId, nameNeedle]);
+  }, [unassignedQ.data, clientId, locationIds, nameNeedle]);
 
   // Unassigned tab: sort into prior-status groups and compute the header that
   // sits above the first row of each group. Other tabs keep the server order.
@@ -859,13 +890,11 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         ) : null}
         {showListFilters && filter === 'unassigned' ? (
           <LocationPicker
-            value={locationId}
+            selectedIds={locationIds}
             locations={locationOptions}
             loading={unassignedQ.loading}
-            onChange={(value) => {
-              exitSelect();
-              setLocationId(value);
-            }}
+            onToggle={toggleLocation}
+            onClear={clearLocations}
           />
         ) : null}
         {!selectMode && canBulkSelect && filter === 'unassigned' && visibleIds.length > 0 ? (
@@ -1000,10 +1029,10 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
             ) : (
               <Empty
                 icon="package"
-                title={locationId ? 'No unassigned orders here' : 'Nothing unassigned'}
+                title={locationFilterActive ? 'No unassigned orders here' : 'Nothing unassigned'}
                 sub={
-                  locationId
-                    ? `No open unassigned orders match ${selectedLocationName ?? 'this location'} and the other active filters.`
+                  locationFilterActive
+                    ? `No open unassigned orders match ${selectedLocationsLabel ?? 'the selected locations'} and the other active filters.`
                     : 'Open orders with no agent show here, across all dates.'
                 }
               />
@@ -1834,34 +1863,48 @@ function ClientPicker({
   );
 }
 
-/** Unassigned-queue location narrower. Options and counts come from the rows
- * already loaded by listUnassigned, so the picker includes inactive or
- * unmatched locations still present in the queue without another request. */
+/** Unassigned-queue location narrower — MULTI-select. Options and counts come
+ * from the rows already loaded by listUnassigned, so the picker includes
+ * inactive or unmatched locations still present in the queue without another
+ * request. Dispatch picks several areas (e.g. every Island location), taps Done,
+ * then "Select all visible" → bulk-assign the lot to one rider (Uzo,
+ * 2026-07-29). Empty selection = "All locations". */
 function LocationPicker({
-  value,
+  selectedIds,
   locations,
-  onChange,
+  onToggle,
+  onClear,
   loading,
 }: {
-  value: string | null;
+  selectedIds: ReadonlySet<string>;
   locations: LocationFilterOption[];
-  onChange: (v: string | null) => void;
+  onToggle: (id: string) => void;
+  onClear: () => void;
   loading: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
-  const selected = locations.find((location) => location.id === value) ?? null;
+  const count = selectedIds.size;
+  const onlySelected = count === 1 ? (locations.find((l) => selectedIds.has(l.id)) ?? null) : null;
   const needle = q.trim().toLowerCase();
   const filtered = needle
     ? locations.filter((location) => location.name.toLowerCase().includes(needle))
     : locations;
   const triggerLabel = loading
     ? 'Loading locations…'
-    : selected
-      ? `Location: ${selected.name} (${selected.count})`
-      : value
-        ? 'Location: Selected location'
-        : 'Location: All locations';
+    : count === 0
+      ? 'Location: All locations'
+      : count === 1
+        ? onlySelected
+          ? `Location: ${onlySelected.name} (${onlySelected.count})`
+          : 'Location: 1 location'
+        : `Location: ${count} locations`;
+  // Total orders across the chosen locations — shown on the Done button so the
+  // dispatcher sees how many rows they're about to reveal for bulk-assign.
+  const selectedTotal = locations.reduce(
+    (sum, location) => (selectedIds.has(location.id) ? sum + location.count : sum),
+    0,
+  );
   const close = () => {
     setOpen(false);
     setQ('');
@@ -1897,7 +1940,7 @@ function LocationPicker({
             flex: 1,
             fontFamily: fonts.semibold,
             fontSize: 13,
-            color: value ? colors.black : colors.textSecondary,
+            color: count > 0 ? colors.black : colors.textSecondary,
           }}
         >
           {triggerLabel}
@@ -1937,7 +1980,7 @@ function LocationPicker({
                 paddingBottom: 8,
               }}
             >
-              Filter unassigned by location
+              Filter unassigned by location — pick any
             </Text>
             <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
               <Input
@@ -1950,18 +1993,48 @@ function LocationPicker({
               />
             </View>
             <FlatList
+              style={{ flexShrink: 1 }}
               data={[null as string | null, ...filtered.map((location) => location.id)]}
               keyExtractor={(id) => id ?? '__all_locations__'}
               keyboardShouldPersistTaps="handled"
               renderItem={({ item: id }) => {
-                const location = id ? locations.find((candidate) => candidate.id === id) : null;
-                const active = (value ?? null) === id;
+                // The lead row clears the whole selection ("All locations");
+                // every other row toggles its own location in/out of the set.
+                if (id === null) {
+                  const active = count === 0;
+                  return (
+                    <Pressable
+                      onPress={onClear}
+                      style={({ pressed }) => [
+                        {
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          paddingHorizontal: 20,
+                          paddingVertical: 14,
+                        },
+                        active && { backgroundColor: colors.surface },
+                        pressed && { opacity: 0.88 },
+                      ]}
+                    >
+                      <Text
+                        style={{
+                          flex: 1,
+                          fontFamily: fonts.semibold,
+                          fontSize: 15,
+                          color: colors.black,
+                        }}
+                      >
+                        All locations
+                      </Text>
+                      {active ? <Icon name="check" size={18} color={colors.black} /> : null}
+                    </Pressable>
+                  );
+                }
+                const location = locations.find((candidate) => candidate.id === id);
+                const active = selectedIds.has(id);
                 return (
                   <Pressable
-                    onPress={() => {
-                      onChange(id);
-                      close();
-                    }}
+                    onPress={() => onToggle(id)}
                     style={({ pressed }) => [
                       {
                         flexDirection: 'row',
@@ -1981,7 +2054,7 @@ function LocationPicker({
                         color: colors.black,
                       }}
                     >
-                      {location ? location.name : 'All locations'}
+                      {location ? location.name : 'Unknown location'}
                     </Text>
                     {location ? (
                       <Text
@@ -2015,6 +2088,13 @@ function LocationPicker({
                 </Text>
               }
             />
+            <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
+              <Button full onPress={close}>
+                {count === 0
+                  ? 'Done'
+                  : `Show ${selectedTotal} ${selectedTotal === 1 ? 'order' : 'orders'}`}
+              </Button>
+            </View>
           </Pressable>
         </Pressable>
       </Modal>
