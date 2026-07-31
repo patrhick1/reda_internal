@@ -2495,7 +2495,7 @@ export type Database = {
       }
       current_user_role: { Args: never; Returns: string }
       deactivate_client: {
-        Args: { p_id: string; p_reason: string }
+        Args: { p_id: string; p_force?: boolean; p_reason: string }
         Returns: undefined
       }
       deactivate_location: {
@@ -2503,7 +2503,7 @@ export type Database = {
         Returns: undefined
       }
       deactivate_product: {
-        Args: { p_id: string; p_reason: string }
+        Args: { p_id: string; p_force?: boolean; p_reason: string }
         Returns: undefined
       }
       deactivate_user: {
@@ -2817,6 +2817,7 @@ export type Database = {
           was_clamped: boolean
         }[]
       }
+      product_deactivation_blockers: { Args: { p_id: string }; Returns: Json }
       prune_net_response_log: { Args: never; Returns: number }
       reactivate_client: { Args: { p_id: string }; Returns: undefined }
       reactivate_location: { Args: { p_id: string }; Returns: undefined }

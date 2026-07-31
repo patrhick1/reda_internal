@@ -118,9 +118,7 @@ export async function clearClientCeiling(id: string, reason: string): Promise<vo
  *  of them is still in use (agent-held stock or open orders) and names them.
  *  `force` acknowledges that and proceeds. */
 export async function deactivateClient(id: string, reason: string, force = false): Promise<void> {
-  // rpcUntyped until database.gen.ts is regenerated — deactivate_client grew
-  // p_force in scripts/product-deactivation-guard.sql.
-  const { error } = await rpcUntyped('deactivate_client', {
+  const { error } = await supabase.rpc('deactivate_client', {
     p_id: id,
     p_reason: reason,
     p_force: force,

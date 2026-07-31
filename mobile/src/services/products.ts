@@ -1,4 +1,4 @@
-import { rpcUntyped, supabase } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import { queryClient } from '@/lib/query';
 import type { Database } from '@/types/database.gen';
 
@@ -107,21 +107,16 @@ export type ProductBlockers = {
   open_statuses: string[];
 };
 
-// rpcUntyped for both of these until database.gen.ts is regenerated against the
-// box: product_deactivation_blockers is new and deactivate_product grew p_force,
-// so neither matches the captured schema yet.
 export async function getProductDeactivationBlockers(id: string): Promise<ProductBlockers> {
-  const { data, error } = await rpcUntyped<ProductBlockers>('product_deactivation_blockers', {
-    p_id: id,
-  });
+  const { data, error } = await supabase.rpc('product_deactivation_blockers', { p_id: id });
   if (error) throw error;
-  return data as ProductBlockers;
+  return data as unknown as ProductBlockers;
 }
 
 /** `force` acknowledges the blockers and retires the product anyway. The server
  *  records the blocker snapshot on the audit row when it does. */
 export async function deactivateProduct(id: string, reason: string, force = false): Promise<void> {
-  const { error } = await rpcUntyped('deactivate_product', {
+  const { error } = await supabase.rpc('deactivate_product', {
     p_id: id,
     p_reason: reason,
     p_force: force,
