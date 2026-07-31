@@ -16,7 +16,7 @@ import { Icon } from '@/components/ui';
 import { useAsync } from '@/hooks/useAsync';
 import { useBulkRows } from '@/hooks/useBulkRows';
 import { useCurrentUser } from '@/hooks/useAuth';
-import { isWarehousePlace, type AppUser } from '@/services/users';
+import { isWarehousePlace } from '@/services/users';
 import { useUsers } from '@/hooks/queries';
 import {
   PAIRED_REASONS,
@@ -41,8 +41,7 @@ function transferFailureMessage(failed: number, total: number, firstReason: stri
  *
  * `scope` toggles which reasons + endpoints are available:
  *  - admin:      all three reasons (transfer / warehouse_issue / warehouse_return),
- *                every user pickable as from/to. Mirrors the original
- *                /(admin)/stock/transfer.tsx exactly.
+ *                every holder pickable as from/to.
  *  - dispatcher: same as admin — dispatcher coordinates rider stock and is
  *                trusted with both warehouse-issued and agent→agent moves,
  *                without being a participant in either. Server gate mirrors
@@ -53,6 +52,12 @@ function transferFailureMessage(failed: number, total: number, firstReason: stri
  *                caller, matching the create_stock_transfer warehouse
  *                branches (`p_from_user_id = auth.uid()` for issue,
  *                `p_to_user_id = auth.uid()` for return).
+ *
+ * Every reason is multi-row. create_stock_transfer is a per-line endpoint
+ * (one product, one quantity, one call), so "several products in one move" is
+ * a client-side loop over the rows — nothing about agent→agent made it
+ * single-product except the form. The two sides differ only in WHO can stand
+ * on each end, which `REASON_SIDES` describes.
  *
  * Product selection is driven by the SOURCE holder's on-hand stock (not by
  * client). Once the source is known, the picker lists exactly what that holder
@@ -74,6 +79,15 @@ const newRow = (): BulkRow => ({
 // Stable reference for useBulkRows so the hook's useCallback deps don't churn.
 const makeNewBulkRow = newRow;
 
+/** Who may stand on each end of a paired transfer. Drives the pickers, their
+ *  labels, and which side the warehouse scope locks to the caller's place. */
+type SideKind = 'agent' | 'warehouse';
+const REASON_SIDES: Record<PairedReason, { from: SideKind; to: SideKind }> = {
+  transfer: { from: 'agent', to: 'agent' },
+  warehouse_issue: { from: 'warehouse', to: 'agent' },
+  warehouse_return: { from: 'agent', to: 'warehouse' },
+};
+
 export type StockTransferScreenProps = {
   scope: 'admin' | 'warehouse' | 'dispatcher';
 };
@@ -81,24 +95,12 @@ export type StockTransferScreenProps = {
 export function StockTransferScreen({ scope }: StockTransferScreenProps) {
   const currentUser = useCurrentUser();
   const usersQ = useUsers();
+  const isWarehouseScope = scope === 'warehouse';
 
-  // Common state
   const [reason, setReason] = useState<PairedReason | null>(null);
   const [notes, setNotes] = useState('');
-  const enqueueTransfer = useEnqueueStockTransfer();
-  // Owns submit state + "stay on-screen until the queued jobs settle".
-  const { submitting, setSubmitting, error, setError, finish, retrying } =
-    useQueuedSubmit(transferFailureMessage);
-
-  // Single-row state (used for reason === 'transfer'; admin/dispatcher scope only)
-  const [fromUserId, setFromUserId] = useState<string | null>(null);
-  const [toUserId, setToUserId] = useState<string | null>(null);
-  const [singleProductId, setSingleProductId] = useState<string | null>(null);
-  const [singleQty, setSingleQty] = useState('');
-
-  // Bulk state (used for reason === 'warehouse_issue' | 'warehouse_return').
-  const [warehouseId, setWarehouseId] = useState<string | null>(null);
-  const [bulkAgentId, setBulkAgentId] = useState<string | null>(null);
+  const [fromHolderId, setFromHolderId] = useState<string | null>(null);
+  const [toHolderId, setToHolderId] = useState<string | null>(null);
   const {
     rows,
     addRow,
@@ -107,26 +109,25 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
     resetRows,
   } = useBulkRows<BulkRow>(makeNewBulkRow);
 
-  const isBulk = reason === 'warehouse_issue' || reason === 'warehouse_return';
+  const enqueueTransfer = useEnqueueStockTransfer();
+  // Owns submit state + "stay on-screen until the queued jobs settle".
+  const { submitting, setSubmitting, error, setError, finish, retrying } =
+    useQueuedSubmit(transferFailureMessage);
+
+  const sides = reason ? REASON_SIDES[reason] : null;
 
   // Reset when reason changes; prompt confirm if user has filled anything.
   function changeReason(next: PairedReason | null) {
-    const hadSingleData = !!(fromUserId || toUserId || singleProductId || singleQty);
-    const hadBulkData =
-      rows.some((r) => r.productId || r.quantity) ||
+    const anyDirty =
+      !!fromHolderId ||
+      !!toHolderId ||
       rows.length > 1 ||
-      (scope !== 'warehouse' && !!warehouseId) ||
-      !!bulkAgentId;
-    const anyDirty = hadSingleData || hadBulkData;
+      rows.some((r) => r.productId || r.quantity);
     const apply = () => {
       setReason(next);
       setError(null);
-      setFromUserId(null);
-      setToUserId(null);
-      setSingleProductId(null);
-      setSingleQty('');
-      setWarehouseId(null);
-      setBulkAgentId(null);
+      setFromHolderId(null);
+      setToHolderId(null);
       resetRows();
     };
     if (!anyDirty) {
@@ -155,7 +156,7 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
   // than defaulting to the caller's own id (which the server rejects).
   const warehouseHolder = useMemo(
     () =>
-      scope === 'warehouse'
+      isWarehouseScope
         ? resolveWarehouseHolder(
             {
               userId: currentUser.userId,
@@ -165,31 +166,40 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
             usersQ.data ?? undefined,
           )
         : null,
-    [scope, currentUser.userId, currentUser.warehouseId, currentUser.displayName, usersQ.data],
+    [
+      isWarehouseScope,
+      currentUser.userId,
+      currentUser.warehouseId,
+      currentUser.displayName,
+      usersQ.data,
+    ],
   );
-  // The warehouse side of the paired transfer: derived place (warehouse scope)
-  // or the picked warehouse (admin scope).
-  const effectiveWarehouseId =
-    scope === 'warehouse' ? (warehouseHolder?.ok ? warehouseHolder.holderId : null) : warehouseId;
+  const lockedWarehouseId = warehouseHolder?.ok ? warehouseHolder.holderId : null;
   const placeName = warehouseHolder?.ok ? warehouseHolder.placeName : currentUser.displayName;
-  useEffect(() => {
-    if (scope === 'warehouse') return;
-    const only = warehouseUsers[0];
-    if (isBulk && warehouseUsers.length === 1 && only && !warehouseId) {
-      setWarehouseId(only.id);
-    }
-  }, [scope, isBulk, warehouseUsers, warehouseId]);
+  // Warehouse scope pins its own side of the pair; every other side is picked.
+  const lockedSide: 'from' | 'to' | null = !isWarehouseScope
+    ? null
+    : sides?.from === 'warehouse'
+      ? 'from'
+      : sides?.to === 'warehouse'
+        ? 'to'
+        : null;
+  const effectiveFrom = lockedSide === 'from' ? lockedWarehouseId : fromHolderId;
+  const effectiveTo = lockedSide === 'to' ? lockedWarehouseId : toHolderId;
 
-  // The SOURCE holder whose stock seeds the product picker:
-  //  - transfer (agent→agent): the From agent
-  //  - warehouse_issue (warehouse→agent): the warehouse
-  //  - warehouse_return (agent→warehouse): the From agent
-  const sourceHolderId = useMemo(() => {
-    if (reason === 'transfer') return fromUserId;
-    if (reason === 'warehouse_issue') return effectiveWarehouseId;
-    if (reason === 'warehouse_return') return bulkAgentId;
-    return null;
-  }, [reason, fromUserId, effectiveWarehouseId, bulkAgentId]);
+  // Admin/dispatcher: with exactly one warehouse place, preselect it — the
+  // picker would offer a single option anyway.
+  useEffect(() => {
+    if (isWarehouseScope || !sides) return;
+    const only = warehouseUsers[0];
+    if (warehouseUsers.length !== 1 || !only) return;
+    if (sides.from === 'warehouse' && !fromHolderId) setFromHolderId(only.id);
+    if (sides.to === 'warehouse' && !toHolderId) setToHolderId(only.id);
+  }, [isWarehouseScope, sides, warehouseUsers, fromHolderId, toHolderId]);
+
+  // The source holder whose stock seeds the product picker is always the FROM
+  // side — agent (transfer / warehouse_return) or warehouse (warehouse_issue).
+  const sourceHolderId = effectiveFrom;
 
   const sourceStockQ = useAsync<StockMatrixRow[]>(
     () => (sourceHolderId ? listHolderStock(sourceHolderId) : Promise.resolve([])),
@@ -197,10 +207,10 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
   );
 
   // Derive everything the pickers need from the source's on-hand stock in one
-  // pass: the option list (shared by the single picker and every bulk row), plus
-  // lookups for on-hand validation and label-building. Only products actually
-  // held (>0) become options; client name + on-hand sit in the sub so both are
-  // searchable and visible.
+  // pass: the option list (shared by every row), plus lookups for on-hand
+  // validation and label-building. Only products actually held (>0) become
+  // options; client name + on-hand sit in the sub so both are searchable and
+  // visible.
   const { productOptions, onHandById, productNameById } = useMemo(() => {
     const options: SelectOption<string>[] = [];
     const onHand = new Map<string, number>();
@@ -225,58 +235,19 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
   useEffect(() => {
     if (prevSourceRef.current !== sourceHolderId) {
       prevSourceRef.current = sourceHolderId;
-      setSingleProductId(null);
       resetRows();
     }
   }, [sourceHolderId, resetRows]);
 
   const productsLoading = !!sourceHolderId && sourceStockQ.loading;
 
-  // --------------------------------------------------------------------------
-  // Single-mode submit (admin + dispatcher scope).
-  // --------------------------------------------------------------------------
-  async function handleSubmitSingle() {
+  async function handleSubmit() {
     setError(null);
-    if (!reason) return setError('Pick a transfer reason');
-    if (!fromUserId) return setError('Pick the source user');
-    if (!toUserId) return setError('Pick the destination user');
-    if (fromUserId === toUserId) return setError('Source and destination must differ');
-    if (!singleProductId) return setError('Pick a product');
-    const q = Number(singleQty);
-    if (!Number.isInteger(q) || q <= 0) return setError('Quantity must be a positive whole number');
-    const onHand = onHandById.get(singleProductId) ?? 0;
-    if (q > onHand) return setError(`Only ${onHand} in stock at the source`);
-
-    setSubmitting(true);
-    try {
-      const reasonLabel = PAIRED_REASONS.find((r) => r.value === reason)?.label ?? reason;
-      const productName = productNameById.get(singleProductId) ?? 'product';
-      const jobId = await enqueueTransfer(
-        {
-          fromUserId,
-          toUserId,
-          productCatalogId: singleProductId,
-          quantity: q,
-          reason,
-          notes: notes.trim() || null,
-        },
-        `${reasonLabel} · ${q} ${productName}`,
-      );
-      finish([jobId]);
-    } catch (e) {
-      setError(errorMessage(e));
-      setSubmitting(false);
-    }
-  }
-
-  async function handleSubmitBulk() {
-    setError(null);
-    if (!reason || !isBulk) return setError('Pick a transfer reason');
-    if (scope === 'warehouse' && warehouseHolder && !warehouseHolder.ok) {
-      return setError(warehouseHolder.reason);
-    }
-    if (!effectiveWarehouseId) return setError('Pick the warehouse');
-    if (!bulkAgentId) return setError('Pick the agent');
+    if (!reason || !sides) return setError('Pick a transfer reason');
+    if (warehouseHolder && !warehouseHolder.ok) return setError(warehouseHolder.reason);
+    if (!effectiveFrom) return setError(`Pick the source ${sides.from}`);
+    if (!effectiveTo) return setError(`Pick the destination ${sides.to}`);
+    if (effectiveFrom === effectiveTo) return setError('Source and destination must differ');
 
     const validRows: { productId: string; qty: number }[] = [];
     // Track the running total per product so the same product across multiple
@@ -308,17 +279,18 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
     setSubmitting(true);
     try {
       const reasonLabel = PAIRED_REASONS.find((r) => r.value === reason)?.label ?? reason;
-      const agent = agentUsers.find((u) => u.id === bulkAgentId);
-      const fromId = reason === 'warehouse_issue' ? effectiveWarehouseId : bulkAgentId;
-      const toId = reason === 'warehouse_issue' ? bulkAgentId : effectiveWarehouseId;
+      const counterparty = holderName(
+        activeUsers,
+        reason === 'warehouse_return' ? effectiveFrom : effectiveTo,
+      );
       const ids: string[] = [];
       for (const row of validRows) {
-        const label = `${reasonLabel} · ${row.qty} ${productNameById.get(row.productId) ?? 'product'} · ${agent?.display_name ?? 'agent'}`;
+        const label = `${reasonLabel} · ${row.qty} ${productNameById.get(row.productId) ?? 'product'} · ${counterparty}`;
         ids.push(
           await enqueueTransfer(
             {
-              fromUserId: fromId,
-              toUserId: toId,
+              fromUserId: effectiveFrom,
+              toUserId: effectiveTo,
               productCatalogId: row.productId,
               quantity: row.qty,
               reason,
@@ -348,13 +320,17 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
   const holderError = warehouseHolder && !warehouseHolder.ok ? warehouseHolder.reason : null;
 
   // Reason picker: full set for admin; warehouse_issue + warehouse_return only
-  // for warehouse (transfer = agent→agent is admin-only on the server).
+  // for warehouse (transfer = agent→agent is admin/dispatcher-only on the server).
   const reasonOptions = PAIRED_REASONS.filter(
-    (r) => scope !== 'warehouse' || r.value !== 'transfer',
+    (r) => !isWarehouseScope || r.value !== 'transfer',
   ).map((r) => ({ value: r.value, label: r.label, sub: r.sub }));
-  const warehouseOptions = warehouseUsers.map((u) => ({ value: u.id, label: u.display_name }));
-  const agentOptions = agentUsers.map((u) => ({ value: u.id, label: u.display_name }));
-  const isWarehouseScope = scope === 'warehouse';
+
+  // Options for one side. The destination never offers the source back, so
+  // agent→agent can't pick the same agent twice.
+  const sideOptions = (kind: SideKind, exclude: string | null): SelectOption<string>[] =>
+    (kind === 'warehouse' ? warehouseUsers : agentUsers)
+      .filter((u) => u.id !== exclude)
+      .map((u) => ({ value: u.id, label: u.display_name }));
 
   // Placeholder for a product picker, given whether its source is set.
   const productPlaceholder = (sourceSet: boolean): string =>
@@ -382,55 +358,27 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
         onChange={(v) => changeReason(v as PairedReason)}
       />
 
-      {reason === 'transfer' ? (
-        <SingleForm
-          activeUsers={activeUsers}
-          fromUserId={fromUserId}
-          setFromUserId={setFromUserId}
-          toUserId={toUserId}
-          setToUserId={setToUserId}
-          productOptions={productOptions}
-          singleProductId={singleProductId}
-          setSingleProductId={setSingleProductId}
-          singleQty={singleQty}
-          setSingleQty={setSingleQty}
-          productPlaceholder={productPlaceholder}
-        />
-      ) : isBulk ? (
+      {sides ? (
         <>
-          {isWarehouseScope ? (
-            <View style={styles.lockedDestBox}>
-              <Text style={styles.lockedDestLabel}>
-                {reason === 'warehouse_issue' ? 'From warehouse' : 'To warehouse'}
-              </Text>
-              {holderError ? (
-                <Text style={styles.errorText}>{holderError}</Text>
-              ) : (
-                <Text style={styles.lockedDestValue}>{placeName}</Text>
-              )}
-            </View>
-          ) : (
-            <Select
-              label={reason === 'warehouse_issue' ? 'From warehouse' : 'To warehouse'}
-              required
-              value={warehouseId}
-              options={warehouseOptions}
-              onChange={setWarehouseId}
-              placeholder={
-                warehouseUsers.length === 0
-                  ? 'No warehouse user — add one in Catalog'
-                  : 'Pick warehouse'
-              }
-              disabled={warehouseUsers.length === 0}
-            />
-          )}
-          <Select
-            label={reason === 'warehouse_issue' ? 'To agent' : 'From agent'}
-            required
-            value={bulkAgentId}
-            options={agentOptions}
-            onChange={setBulkAgentId}
-            placeholder="Pick agent"
+          <HolderSide
+            label={`From ${sides.from}`}
+            kind={sides.from}
+            locked={lockedSide === 'from'}
+            lockedName={placeName}
+            lockedError={holderError}
+            value={effectiveFrom}
+            onChange={setFromHolderId}
+            options={sideOptions(sides.from, null)}
+          />
+          <HolderSide
+            label={`To ${sides.to}`}
+            kind={sides.to}
+            locked={lockedSide === 'to'}
+            lockedName={placeName}
+            lockedError={holderError}
+            value={effectiveTo}
+            onChange={setToHolderId}
+            options={sideOptions(sides.to, effectiveFrom)}
           />
 
           {rows.map((row, i) => (
@@ -490,16 +438,14 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
         </View>
       ) : null}
 
-      {reason === 'transfer' ? (
-        <Button title="Move stock" onPress={handleSubmitSingle} loading={submitting} />
-      ) : isBulk ? (
+      {reason ? (
         <Button
-          title={bulkSubmitLabel(
+          title={submitLabel(
             reason,
             countFilled(rows),
-            agentUsers.find((u) => u.id === bulkAgentId)?.display_name,
+            holderName(activeUsers, reason === 'warehouse_return' ? effectiveFrom : effectiveTo),
           )}
-          onPress={handleSubmitBulk}
+          onPress={handleSubmit}
           loading={submitting}
           disabled={!!holderError}
         />
@@ -523,83 +469,64 @@ function countFilled(rows: BulkRow[]): number {
   return rows.filter((r) => r.productId && Number(r.quantity) > 0).length;
 }
 
-// Action-oriented button label so the operator sees who they're giving to /
-// collecting from. Falls back to a neutral phrasing until the agent is picked.
-function bulkSubmitLabel(reason: PairedReason, n: number, agentName: string | undefined): string {
-  const word = n === 1 ? 'product' : 'products';
-  if (!agentName) {
-    return reason === 'warehouse_issue' ? `Issue ${n} ${word}` : `Collect ${n} ${word}`;
-  }
-  return reason === 'warehouse_issue'
-    ? `Issue ${n} ${word} to ${agentName}`
-    : `Collect ${n} ${word} from ${agentName}`;
+function holderName(users: { id: string; display_name: string }[], id: string | null): string {
+  if (!id) return '';
+  return users.find((u) => u.id === id)?.display_name ?? '';
 }
 
-function SingleForm(props: {
-  activeUsers: AppUser[];
-  fromUserId: string | null;
-  setFromUserId: (v: string | null) => void;
-  toUserId: string | null;
-  setToUserId: (v: string | null) => void;
-  productOptions: SelectOption<string>[];
-  singleProductId: string | null;
-  setSingleProductId: (v: string | null) => void;
-  singleQty: string;
-  setSingleQty: (v: string) => void;
-  productPlaceholder: (sourceSet: boolean) => string;
-}) {
-  const agentOptions = useMemo(
-    () =>
-      props.activeUsers
-        .filter((u) => u.role === 'agent' && u.id !== props.fromUserId)
-        .map((u) => ({ value: u.id, label: u.display_name })),
-    [props.activeUsers, props.fromUserId],
-  );
-  const sourceOptions = useMemo(
-    () =>
-      props.activeUsers
-        .filter((u) => u.role === 'agent')
-        .map((u) => ({ value: u.id, label: u.display_name })),
-    [props.activeUsers],
-  );
+// Action-oriented button label so the operator sees who they're giving to /
+// collecting from. Falls back to a neutral phrasing until the counterparty is
+// picked (or when it's the locked warehouse side, which is already on screen).
+function submitLabel(reason: PairedReason, n: number, counterparty: string): string {
+  const word = n === 1 ? 'product' : 'products';
+  const verb =
+    reason === 'warehouse_issue' ? 'Issue' : reason === 'warehouse_return' ? 'Collect' : 'Move';
+  if (!counterparty) return `${verb} ${n} ${word}`;
+  const preposition = reason === 'warehouse_return' ? 'from' : 'to';
+  return `${verb} ${n} ${word} ${preposition} ${counterparty}`;
+}
 
+/** One end of the pair: a picker, or a read-only box when the warehouse scope
+ *  pins this side to the caller's own place. */
+function HolderSide(props: {
+  label: string;
+  kind: SideKind;
+  locked: boolean;
+  lockedName: string;
+  lockedError: string | null;
+  value: string | null;
+  onChange: (v: string | null) => void;
+  options: SelectOption<string>[];
+}) {
+  if (props.locked) {
+    return (
+      <View style={styles.lockedDestBox}>
+        <Text style={styles.lockedDestLabel}>{props.label}</Text>
+        {props.lockedError ? (
+          <Text style={styles.errorText}>{props.lockedError}</Text>
+        ) : (
+          <Text style={styles.lockedDestValue}>{props.lockedName}</Text>
+        )}
+      </View>
+    );
+  }
+  const empty = props.options.length === 0;
   return (
-    <>
-      <Select
-        label="From"
-        required
-        value={props.fromUserId}
-        options={sourceOptions}
-        onChange={props.setFromUserId}
-      />
-      <Select
-        label="To"
-        required
-        value={props.toUserId}
-        options={agentOptions}
-        onChange={props.setToUserId}
-        disabled={!props.fromUserId}
-      />
-      <Select
-        label="Product"
-        required
-        searchable
-        searchPlaceholder="Search product or client"
-        value={props.singleProductId}
-        options={props.productOptions}
-        onChange={props.setSingleProductId}
-        disabled={!props.fromUserId || props.productOptions.length === 0}
-        placeholder={props.productPlaceholder(!!props.fromUserId)}
-      />
-      <Field
-        label="Quantity"
-        required
-        value={props.singleQty}
-        onChangeText={props.setSingleQty}
-        keyboardType="numeric"
-        autoCapitalize="none"
-      />
-    </>
+    <Select
+      label={props.label}
+      required
+      value={props.value}
+      options={props.options}
+      onChange={props.onChange}
+      placeholder={
+        !empty
+          ? `Pick ${props.kind}`
+          : props.kind === 'warehouse'
+            ? 'No warehouse user — add one in Catalog'
+            : 'No other agent available'
+      }
+      disabled={empty}
+    />
   );
 }
 
