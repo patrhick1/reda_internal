@@ -447,10 +447,10 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   const unreadByDelivery = unreadQ.data ?? EMPTY_UNREAD;
 
   // Narrow by agent + customer-name FIRST so the status segment counts
-  // (Active/Soft/Done/Unassigned) reflect just the slice the user is looking
-  // at — matches the intent of "show me Tunde's pending for Mr Adeyemi".
-  // When agentId is set, the Unassigned count is 0 by definition (an
-  // unassigned delivery has no agent). Name match is a case-insensitive
+  // (Active/Soft/Done) reflect just the slice the user is looking at — matches
+  // the intent of "show me Tunde's pending for Mr Adeyemi". The Unassigned count
+  // is exempt: it's the separate unassignedRows slice, which no agent narrow
+  // touches (unassigned rows have no agent). Name match is a case-insensitive
   // substring on customer_name.
   const all = useMemo(() => {
     let rows = data ?? [];
@@ -523,11 +523,11 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
 
   // Unassigned is a separate cross-date slice (its own query), narrowed by the
   // same client + name filters as the date-scoped list plus its location picker.
-  // The agent filter makes it empty by definition (an unassigned row has no
-  // agent), which is correct.
+  // The agent picker is intentionally NOT applied here: an unassigned row has no
+  // agent, so any agent narrow empties the list. Ignoring a leftover agentId
+  // (set on another tab) keeps the queue visible when the user switches over.
   const unassignedRows = useMemo(() => {
     let rows = unassignedQ.data ?? [];
-    if (agentId) rows = rows.filter((d) => d.assigned_agent_id === agentId);
     if (clientId) rows = rows.filter((d) => d.client_id === clientId);
     if (locationId) {
       rows = rows.filter((d) => (d.location_id ?? UNMATCHED_LOCATION) === locationId);
@@ -539,7 +539,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
           (d.customer_phone ?? '').toLowerCase().includes(nameNeedle),
       );
     return rows;
-  }, [unassignedQ.data, agentId, clientId, locationId, nameNeedle]);
+  }, [unassignedQ.data, clientId, locationId, nameNeedle]);
 
   // Unassigned tab: sort into prior-status groups and compute the header that
   // sits above the first row of each group. Other tabs keep the server order.
@@ -831,7 +831,11 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
             ) : null}
           </View>
         ) : null}
-        {showListFilters ? (
+        {/* The agent picker is hidden on the Unassigned tab — those rows have no
+            agent, so narrowing by agent can only ever empty the list (Uzo,
+            2026-07-29). This also drops Unassigned back to two filters (client +
+            location), matching every other tab. */}
+        {showListFilters && filter !== 'unassigned' ? (
           <AgentPicker
             value={agentId}
             agents={agents}
