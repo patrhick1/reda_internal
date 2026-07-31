@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ActivityIndicator, Alert, Platform, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { Screen } from '@/components/Screen';
 import { Field } from '@/components/Field';
 import { AliasEditor } from '@/components/AliasEditor';
 import { Button } from '@/components/Button';
+import { ReasonPanel } from '@/components/ReasonPanel';
 import { useAsync } from '@/hooks/useAsync';
 import {
   deactivateLocation,
@@ -26,6 +27,7 @@ export default function EditLocation() {
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [deactivating, setDeactivating] = useState(false);
 
   useEffect(() => {
     if (location) {
@@ -99,32 +101,6 @@ export default function EditLocation() {
     }
   }
 
-  function handleDeactivate() {
-    if (Platform.OS === 'web') {
-      const why =
-        (typeof window !== 'undefined' ? window.prompt('Reason for deactivation:') : null) ?? '';
-      if (why.trim()) performDeactivate(why.trim());
-      else setActionError('Reason required');
-      return;
-    }
-    Alert.prompt(
-      'Deactivate location',
-      'Reason (required). Existing deliveries to this location still work; new ones are blocked.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Deactivate',
-          style: 'destructive',
-          onPress: (why?: string) => {
-            if (why && why.trim()) performDeactivate(why.trim());
-            else setActionError('Reason required');
-          },
-        },
-      ],
-      'plain-text',
-    );
-  }
-
   async function handleReactivate() {
     setSubmitting(true);
     setActionError(null);
@@ -180,13 +156,24 @@ export default function EditLocation() {
       <Button title="Save changes" onPress={handleSave} loading={submitting} disabled={!dirty} />
 
       {location.is_active ? (
-        <Button
-          title="Deactivate"
-          onPress={handleDeactivate}
-          variant="danger"
-          style={styles.bottom}
-          disabled={submitting}
-        />
+        !deactivating ? (
+          <Button
+            title="Deactivate"
+            onPress={() => setDeactivating(true)}
+            variant="danger"
+            style={styles.bottom}
+            disabled={submitting}
+          />
+        ) : (
+          <ReasonPanel
+            title={`Deactivate ${location.name}?`}
+            blurb="Existing deliveries to this location still work; new ones are blocked."
+            confirmLabel="Deactivate"
+            submitting={submitting}
+            onCancel={() => setDeactivating(false)}
+            onConfirm={performDeactivate}
+          />
+        )
       ) : (
         <Button
           title="Reactivate"

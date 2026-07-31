@@ -1,18 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
-import {
-  ActivityIndicator,
-  Alert,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Switch,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { Screen } from '@/components/Screen';
 import { Field } from '@/components/Field';
 import { Button } from '@/components/Button';
+import { ReasonPanel } from '@/components/ReasonPanel';
 import { Select } from '@/components/Select';
 import { useAsync } from '@/hooks/useAsync';
 import {
@@ -49,6 +41,8 @@ export default function EditClient() {
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  /** Which destructive action is currently asking for its reason, if any. */
+  const [prompting, setPrompting] = useState<'cap' | 'bank' | 'deactivate' | null>(null);
 
   const bankOptions = useMemo(
     () =>
@@ -179,32 +173,6 @@ export default function EditClient() {
     }
   }
 
-  function handleRemoveCap() {
-    if (Platform.OS === 'web') {
-      const why =
-        (typeof window !== 'undefined' ? window.prompt('Reason for removing the cap:') : null) ??
-        '';
-      if (why.trim()) performClearCeiling(why.trim());
-      return;
-    }
-    Alert.prompt(
-      'Remove charge cap',
-      `Reda will charge this client the full rate-card amount from now on.\n\nReason (required).`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove cap',
-          style: 'destructive',
-          onPress: (why?: string) => {
-            if (why && why.trim()) performClearCeiling(why.trim());
-            else setActionError('Reason required');
-          },
-        },
-      ],
-      'plain-text',
-    );
-  }
-
   async function performClearBank(why: string) {
     setSubmitting(true);
     setActionError(null);
@@ -228,33 +196,6 @@ export default function EditClient() {
     }
   }
 
-  function handleClearBank() {
-    const blurb =
-      'Removes this vendor’s account name, number and bank. They’ll be left off the Moniepoint / Kuda payout files — for clients who collect remittance through their own system.';
-    if (Platform.OS === 'web') {
-      const why =
-        (typeof window !== 'undefined' ? window.prompt(`${blurb}\n\nReason:`) : null) ?? '';
-      if (why.trim()) performClearBank(why.trim());
-      return;
-    }
-    Alert.prompt(
-      'Clear bank details',
-      `${blurb}\n\nReason (required).`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: (why?: string) => {
-            if (why && why.trim()) performClearBank(why.trim());
-            else setActionError('Reason required');
-          },
-        },
-      ],
-      'plain-text',
-    );
-  }
-
   async function performDeactivate(why: string) {
     setSubmitting(true);
     setActionError(null);
@@ -265,31 +206,6 @@ export default function EditClient() {
       setActionError(errorMessage(e));
       setSubmitting(false);
     }
-  }
-
-  function handleDeactivate() {
-    if (Platform.OS === 'web') {
-      const why =
-        (typeof window !== 'undefined' ? window.prompt('Reason for deactivation:') : null) ?? '';
-      if (why.trim()) performDeactivate(why.trim());
-      return;
-    }
-    Alert.prompt(
-      'Deactivate client',
-      'Reason (required). Their products will be deactivated too.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Deactivate',
-          style: 'destructive',
-          onPress: (why?: string) => {
-            if (why && why.trim()) performDeactivate(why.trim());
-            else setActionError('Reason required');
-          },
-        },
-      ],
-      'plain-text',
-    );
   }
 
   async function handleReactivate() {
@@ -344,9 +260,26 @@ export default function EditClient() {
       </Text>
 
       {client.is_active && client.max_charge_per_delivery != null ? (
-        <Pressable onPress={handleRemoveCap} disabled={submitting} style={styles.clearLink}>
+        <Pressable
+          onPress={() => setPrompting('cap')}
+          disabled={submitting}
+          style={styles.clearLink}
+        >
           <Text style={styles.clearLinkText}>Remove cap (charge full rate-card amount)</Text>
         </Pressable>
+      ) : null}
+      {prompting === 'cap' ? (
+        <ReasonPanel
+          title="Remove charge cap"
+          blurb="Reda will charge this client the full rate-card amount from now on."
+          confirmLabel="Remove cap"
+          submitting={submitting}
+          onCancel={() => setPrompting(null)}
+          onConfirm={(why) => {
+            setPrompting(null);
+            void performClearCeiling(why);
+          }}
+        />
       ) : null}
 
       <View style={styles.toggleRow}>
@@ -400,9 +333,26 @@ export default function EditClient() {
       />
 
       {client.bank_account_name || client.bank_account_number || client.bank_name ? (
-        <Pressable onPress={handleClearBank} disabled={submitting} style={styles.clearLink}>
+        <Pressable
+          onPress={() => setPrompting('bank')}
+          disabled={submitting}
+          style={styles.clearLink}
+        >
           <Text style={styles.clearLinkText}>Clear bank details (collects on their own)</Text>
         </Pressable>
+      ) : null}
+      {prompting === 'bank' ? (
+        <ReasonPanel
+          title="Clear bank details"
+          blurb="Removes this vendor’s account name, number and bank. They’ll be left off the Moniepoint / Kuda payout files — for clients who collect remittance through their own system."
+          confirmLabel="Clear"
+          submitting={submitting}
+          onCancel={() => setPrompting(null)}
+          onConfirm={(why) => {
+            setPrompting(null);
+            void performClearBank(why);
+          }}
+        />
       ) : null}
 
       {dirty ? (
@@ -433,13 +383,24 @@ export default function EditClient() {
       ) : null}
 
       {client.is_active ? (
-        <Button
-          title="Deactivate"
-          onPress={handleDeactivate}
-          variant="danger"
-          style={styles.bottom}
-          disabled={submitting}
-        />
+        prompting !== 'deactivate' ? (
+          <Button
+            title="Deactivate"
+            onPress={() => setPrompting('deactivate')}
+            variant="danger"
+            style={styles.bottom}
+            disabled={submitting}
+          />
+        ) : (
+          <ReasonPanel
+            title={`Deactivate ${client.name}?`}
+            blurb="Their products will be deactivated too."
+            confirmLabel="Deactivate"
+            submitting={submitting}
+            onCancel={() => setPrompting(null)}
+            onConfirm={performDeactivate}
+          />
+        )
       ) : (
         <Button
           title="Reactivate"

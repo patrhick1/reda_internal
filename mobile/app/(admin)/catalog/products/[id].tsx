@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ActivityIndicator, Alert, Platform, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { Screen } from '@/components/Screen';
 import { Field } from '@/components/Field';
 import { Button } from '@/components/Button';
+import { ReasonPanel } from '@/components/ReasonPanel';
 import { useAsync } from '@/hooks/useAsync';
 import {
   deactivateProduct,
@@ -22,6 +23,7 @@ export default function EditProduct() {
   const [reason, setReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [deactivating, setDeactivating] = useState(false);
 
   useEffect(() => {
     if (product) {
@@ -80,32 +82,6 @@ export default function EditProduct() {
     }
   }
 
-  function handleDeactivate() {
-    if (Platform.OS === 'web') {
-      const why =
-        (typeof window !== 'undefined' ? window.prompt('Reason for deactivation:') : null) ?? '';
-      if (why.trim()) performDeactivate(why.trim());
-      else setActionError('Reason required');
-      return;
-    }
-    Alert.prompt(
-      'Deactivate product',
-      'Reason (required).',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Deactivate',
-          style: 'destructive',
-          onPress: (why?: string) => {
-            if (why && why.trim()) performDeactivate(why.trim());
-            else setActionError('Reason required');
-          },
-        },
-      ],
-      'plain-text',
-    );
-  }
-
   async function handleReactivate() {
     setSubmitting(true);
     setActionError(null);
@@ -158,13 +134,24 @@ export default function EditProduct() {
       <Button title="Save changes" onPress={handleSave} loading={submitting} disabled={!dirty} />
 
       {product.is_active ? (
-        <Button
-          title="Deactivate"
-          onPress={handleDeactivate}
-          variant="danger"
-          style={styles.bottom}
-          disabled={submitting}
-        />
+        !deactivating ? (
+          <Button
+            title="Deactivate"
+            onPress={() => setDeactivating(true)}
+            variant="danger"
+            style={styles.bottom}
+            disabled={submitting}
+          />
+        ) : (
+          <ReasonPanel
+            title={`Deactivate ${product.product_name}?`}
+            blurb="It stops appearing when new orders are created. Stock already on hand and deliveries already in flight are untouched."
+            confirmLabel="Deactivate"
+            submitting={submitting}
+            onCancel={() => setDeactivating(false)}
+            onConfirm={performDeactivate}
+          />
+        )
       ) : (
         <Button
           title="Reactivate"
