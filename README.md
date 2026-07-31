@@ -33,21 +33,32 @@ cd mobile && npm install && cd ..
 cp .env.example .env                    # CLI creds (project ref, db password, access token)
 cp mobile/.env.example mobile/.env.local # mobile app creds (URL, publishable key)
 
-# 4. Generate TypeScript types from your existing Supabase schema
+# 4. Generate TypeScript types from the schema (read the caveat under
+#    "Schema workflow" first — this currently targets the old Cloud project)
 npm run gen:types
 ```
 
 ## Schema workflow
 
-The Supabase dashboard is the **source of truth** for the schema. Make changes directly in the dashboard's SQL editor.
+The **self-hosted box is the source of truth** for the schema. Studio is stopped there (trimmed to free memory), so there is no SQL editor — apply changes with `psql` inside the database container:
 
-After any schema change:
+```bash
+scp scripts/your-change.sql root@<box>:/tmp/
+ssh root@<box> 'docker cp /tmp/your-change.sql supabase-db:/tmp/ \
+  && docker exec -i supabase-db psql -U postgres -d postgres -v ON_ERROR_STOP=1 -f /tmp/your-change.sql'
+```
+
+Changes live as idempotent `create or replace` scripts in `scripts/` (untracked — they are working files, not history). Wrap each in `begin; … rollback;` with `commit;` commented out, so the first run is a dry run you can read before committing it. Capture the previous definition into `tools/live-defs/` first — that directory _is_ tracked, and it is the only record of what a function looked like before you changed it.
+
+After any schema change, `mobile/src/types/database.gen.ts` needs to match:
 
 ```bash
 npm run gen:types
 ```
 
-This regenerates `mobile/src/types/database.gen.ts` so the app stays in sync. Commit the regenerated file alongside whatever code change relied on the new schema.
+> ⚠️ **`gen:types` is currently pointed at the wrong database.** It runs `supabase gen types --project-id $SUPABASE_PROJECT_REF`, which is the decommissioned Cloud project, and `>`-redirects over the types file — so it truncates the target _before_ the CLI runs. If Cloud still answers you get types for the wrong database; if it has been deleted you get an empty file. The types are already ~38 functions behind the box, which is why `rpcUntyped()` exists in `mobile/src/lib/supabase.ts`. Until this is repointed at the box (`--db-url` over an SSH tunnel, since the box does not publish 5432), either hand-add the changed signatures or call through `rpcUntyped`.
+
+Commit the updated types file alongside whatever code change relied on the new schema.
 
 **Why not git-tracked migrations?** Tried it. Needs Docker on Windows, and for a solo build at this stage the friction outweighs the reproducibility. We can snapshot the schema later with `supabase db pull` once Docker is on the machine.
 
@@ -61,7 +72,7 @@ npm run typecheck   # tsc --noEmit
 npm run lint        # eslint
 npm run format      # prettier --write
 
-# After schema change in the Supabase dashboard
+# After a schema change on the box — see the gen:types caveat above
 npm run gen:types   # from repo root
 ```
 
