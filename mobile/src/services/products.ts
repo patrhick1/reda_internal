@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { rpcUntyped, supabase } from '@/lib/supabase';
 import { queryClient } from '@/lib/query';
 import type { Database } from '@/types/database.gen';
 
@@ -88,8 +88,44 @@ export async function updateProduct(
   invalidateProducts();
 }
 
-export async function deactivateProduct(id: string, reason: string): Promise<void> {
-  const { error } = await supabase.rpc('deactivate_product', { p_id: id, p_reason: reason });
+/** What stands in the way of retiring a product, as the server sees it.
+ *
+ *  Agent-held units and open deliveries block; warehouse-held units are
+ *  reported but never block — a retired product sitting in the warehouse just
+ *  means the vendor hasn't collected their goods yet.
+ *
+ *  The same shape arrives two ways: from `getProductDeactivationBlockers` for
+ *  the preflight, and from the refusal error's `hint` when someone issues stock
+ *  between the panel rendering and the admin confirming. */
+export type ProductBlockers = {
+  code: 'product_deactivation_blocked';
+  product_id: string;
+  agent_stock: { holder_id: string; holder_name: string; quantity: number }[];
+  agent_units: number;
+  warehouse_units: number;
+  open_deliveries: number;
+  open_statuses: string[];
+};
+
+// rpcUntyped for both of these until database.gen.ts is regenerated against the
+// box: product_deactivation_blockers is new and deactivate_product grew p_force,
+// so neither matches the captured schema yet.
+export async function getProductDeactivationBlockers(id: string): Promise<ProductBlockers> {
+  const { data, error } = await rpcUntyped<ProductBlockers>('product_deactivation_blockers', {
+    p_id: id,
+  });
+  if (error) throw error;
+  return data as ProductBlockers;
+}
+
+/** `force` acknowledges the blockers and retires the product anyway. The server
+ *  records the blocker snapshot on the audit row when it does. */
+export async function deactivateProduct(id: string, reason: string, force = false): Promise<void> {
+  const { error } = await rpcUntyped('deactivate_product', {
+    p_id: id,
+    p_reason: reason,
+    p_force: force,
+  });
   if (error) throw error;
   invalidateProducts();
 }

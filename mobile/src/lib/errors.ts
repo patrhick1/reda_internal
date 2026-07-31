@@ -19,6 +19,30 @@ export function errorMessage(e: unknown): string {
   return s === '[object Object]' ? 'Unknown error' : s;
 }
 
+/**
+ * Parse the JSON payload our RPCs attach to a raised error's `hint`.
+ *
+ * Several RPCs raise with `hint = jsonb_build_object(...)::text` so the failure
+ * carries structure, not just prose — `insufficient_stock` reports on_hand and
+ * needed, `product_in_use` reports which agents hold how many units and how
+ * many orders are open. That lets a screen render the refusal properly instead
+ * of dumping a sentence at the user.
+ *
+ * Returns null when there is no hint or it isn't JSON (most errors), so callers
+ * can fall back to errorMessage().
+ */
+export function rpcHint(e: unknown): Record<string, unknown> | null {
+  if (!e || typeof e !== 'object') return null;
+  const hint = (e as Record<string, unknown>).hint;
+  if (typeof hint !== 'string' || !hint.trim().startsWith('{')) return null;
+  try {
+    const parsed: unknown = JSON.parse(hint);
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Terminal-vs-retryable RPC error classification.
 //

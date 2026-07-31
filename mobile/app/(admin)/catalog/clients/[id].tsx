@@ -16,7 +16,7 @@ import {
   updateClient,
 } from '@/services/clients';
 import { MONIEPOINT_BANKS } from '@/lib/moniepoint-banks';
-import { errorMessage } from '@/lib/errors';
+import { errorMessage, rpcHint } from '@/lib/errors';
 import { formatNaira } from '@/lib/format';
 
 function ceilingToString(v: number | null | undefined): string {
@@ -43,6 +43,9 @@ export default function EditClient() {
   const [actionError, setActionError] = useState<string | null>(null);
   /** Which destructive action is currently asking for its reason, if any. */
   const [prompting, setPrompting] = useState<'cap' | 'bank' | 'deactivate' | null>(null);
+  /** Products the server refused over, from the last blocked attempt. */
+  const [blockedProducts, setBlockedProducts] = useState<string[] | null>(null);
+  const [acknowledged, setAcknowledged] = useState(false);
 
   const bankOptions = useMemo(
     () =>
@@ -196,14 +199,26 @@ export default function EditClient() {
     }
   }
 
-  async function performDeactivate(why: string) {
+  async function performDeactivate(why: string, force: boolean) {
     setSubmitting(true);
     setActionError(null);
     try {
-      await deactivateClient(client!.id, why);
+      await deactivateClient(client!.id, why, force);
       router.back();
     } catch (e) {
-      setActionError(errorMessage(e));
+      // No preflight here — scanning every product of every client on screen
+      // load would be real cost for a rare action, and the refusal already
+      // names each offender. Show them, then let the admin acknowledge.
+      const hint = rpcHint(e);
+      if (hint?.code === 'client_deactivation_blocked') {
+        setBlockedProducts(
+          (hint.products as { product_name: string }[] | undefined)?.map((p) => p.product_name) ??
+            [],
+        );
+        setAcknowledged(false);
+      } else {
+        setActionError(errorMessage(e));
+      }
       setSubmitting(false);
     }
   }
@@ -395,11 +410,42 @@ export default function EditClient() {
           <ReasonPanel
             title={`Deactivate ${client.name}?`}
             blurb="Their products will be deactivated too."
-            confirmLabel="Deactivate"
+            confirmLabel={blockedProducts?.length ? 'Deactivate anyway' : 'Deactivate'}
             submitting={submitting}
-            onCancel={() => setPrompting(null)}
-            onConfirm={performDeactivate}
-          />
+            confirmDisabled={!!blockedProducts?.length && !acknowledged}
+            onCancel={() => {
+              setPrompting(null);
+              setBlockedProducts(null);
+              setAcknowledged(false);
+            }}
+            onConfirm={(why) => performDeactivate(why, !!blockedProducts?.length)}
+          >
+            {blockedProducts?.length ? (
+              <View>
+                <View style={styles.blockBox}>
+                  <Text style={styles.blockTitle}>
+                    {blockedProducts.length === 1
+                      ? '1 product is still in use'
+                      : `${blockedProducts.length} products are still in use`}
+                  </Text>
+                  <Text style={styles.blockSub}>{blockedProducts.join(', ')}</Text>
+                  <Text style={styles.blockSub}>
+                    Agents are holding stock, or orders are still open. Clear those first, or
+                    deactivate the products individually to see the detail.
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => setAcknowledged((v) => !v)}
+                  style={[styles.ackRow, acknowledged && styles.ackRowOn]}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: acknowledged }}
+                >
+                  <View style={[styles.ackDot, acknowledged && styles.ackDotOn]} />
+                  <Text style={styles.ackLabel}>I&apos;ve read the above — deactivate anyway</Text>
+                </Pressable>
+              </View>
+            ) : null}
+          </ReasonPanel>
         )
       ) : (
         <Button
@@ -428,6 +474,33 @@ const styles = StyleSheet.create({
   inactiveBanner: { backgroundColor: '#fff4e0', padding: 12, borderRadius: 8, marginBottom: 16 },
   inactiveText: { color: '#a04000', fontWeight: '600' },
   bottom: { marginTop: 24 },
+  blockBox: {
+    borderWidth: 1,
+    borderColor: '#f0c9c2',
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    padding: 10,
+    marginBottom: 10,
+    gap: 6,
+  },
+  blockTitle: { fontSize: 13, fontWeight: '700', color: '#a02d1b' },
+  blockSub: { fontSize: 12, color: '#666', lineHeight: 17 },
+  ackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    marginBottom: 4,
+  },
+  ackRowOn: { borderColor: '#a02d1b', backgroundColor: '#fdecea' },
+  ackDot: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, borderColor: '#bbb' },
+  ackDotOn: { borderColor: '#a02d1b', backgroundColor: '#a02d1b' },
+  ackLabel: { fontSize: 13, color: '#222', flexShrink: 1 },
   hint: { color: '#6b7280', fontSize: 12, marginTop: -8, marginBottom: 8, lineHeight: 16 },
   sectionLabel: {
     fontWeight: '700',

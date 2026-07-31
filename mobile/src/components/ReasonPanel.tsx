@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Field } from '@/components/Field';
 import { Button } from '@/components/Button';
@@ -23,6 +23,8 @@ export function ReasonPanel({
   onConfirm,
   onCancel,
   submitting,
+  confirmDisabled,
+  children,
 }: {
   title: string;
   /** Optional consequence line shown above the reason box. */
@@ -31,6 +33,12 @@ export function ReasonPanel({
   onConfirm: (reason: string) => void;
   onCancel: () => void;
   submitting?: boolean;
+  /** Hold the confirm button until the caller is satisfied — e.g. until the
+   *  admin has acknowledged a list of blockers. */
+  confirmDisabled?: boolean;
+  /** Rendered between the blurb and the reason field. For detail the panel
+   *  can't know about, like who is holding what. */
+  children?: ReactNode;
 }) {
   const [reason, setReason] = useState('');
   const [touched, setTouched] = useState(false);
@@ -40,6 +48,7 @@ export function ReasonPanel({
     <View style={styles.panel}>
       <Text style={styles.title}>{title}</Text>
       {blurb ? <Text style={styles.blurb}>{blurb}</Text> : null}
+      {children}
 
       <Field
         label="Reason"
@@ -55,6 +64,7 @@ export function ReasonPanel({
         title={confirmLabel}
         variant="danger"
         loading={submitting}
+        disabled={confirmDisabled}
         onPress={() => {
           setTouched(true);
           if (trimmed) onConfirm(trimmed);
