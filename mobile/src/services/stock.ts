@@ -50,6 +50,11 @@ export type StockMatrixRow = {
   client_id: string;
   client_name: string;
   quantity_on_hand: number;
+  /** False once the product has been retired from the catalog. Held units
+   *  survive deactivation (a vendor may not have collected yet), so stock
+   *  surfaces still list them — but the server refuses to ISSUE an inactive
+   *  product to an agent, so the transfer picker needs to know. */
+  is_active: boolean;
 };
 
 export async function listCurrentStock(): Promise<StockMatrixRow[]> {
@@ -74,7 +79,7 @@ export async function listCurrentStock(): Promise<StockMatrixRow[]> {
       // agents (ops/warehouse still get the name). Agent My Stock doesn't
       // render the vendor name anyway, so nothing leaks.
       .from('product_catalog')
-      .select('id, product_name, client_id, clients(name)')
+      .select('id, product_name, client_id, is_active, clients(name)')
       .in('id', prodIds),
   ]);
   if (usersRes.error) throw usersRes.error;
@@ -87,6 +92,7 @@ export async function listCurrentStock(): Promise<StockMatrixRow[]> {
         id: string;
         product_name: string;
         client_id: string;
+        is_active: boolean;
         clients: { name: string } | null;
       };
       return [
@@ -98,6 +104,7 @@ export async function listCurrentStock(): Promise<StockMatrixRow[]> {
           // embed note above. Empty string keeps StockMatrixRow.client_name a
           // plain string for the ops/warehouse screens that do show it.
           client_name: row.clients?.name ?? '',
+          is_active: row.is_active,
         },
       ];
     }),
@@ -117,6 +124,7 @@ export async function listCurrentStock(): Promise<StockMatrixRow[]> {
         product_name: p.product_name,
         client_id: p.client_id,
         client_name: p.client_name,
+        is_active: p.is_active,
         quantity_on_hand: r.quantity_on_hand,
       };
     })
@@ -150,7 +158,7 @@ export async function listHolderStock(holderId: string): Promise<StockMatrixRow[
     // when the caller can't read clients.
     supabase
       .from('product_catalog')
-      .select('id, product_name, client_id, clients(name)')
+      .select('id, product_name, client_id, is_active, clients(name)')
       .in('id', prodIds),
   ]);
   if (userRes.error) throw userRes.error;
@@ -164,6 +172,7 @@ export async function listHolderStock(holderId: string): Promise<StockMatrixRow[
         id: string;
         product_name: string;
         client_id: string;
+        is_active: boolean;
         clients: { name: string } | null;
       };
       return [
@@ -172,6 +181,7 @@ export async function listHolderStock(holderId: string): Promise<StockMatrixRow[
           product_name: row.product_name,
           client_id: row.client_id,
           client_name: row.clients?.name ?? '',
+          is_active: row.is_active,
         },
       ];
     }),
@@ -190,6 +200,7 @@ export async function listHolderStock(holderId: string): Promise<StockMatrixRow[
         product_name: p.product_name,
         client_id: p.client_id,
         client_name: p.client_name,
+        is_active: p.is_active,
         quantity_on_hand: r.quantity_on_hand,
       };
     })
@@ -206,13 +217,14 @@ export async function listClientStock(clientId: string): Promise<StockMatrixRow[
   // The client's products (+ vendor name) scope the stock read below.
   const prodsRes = await supabase
     .from('product_catalog')
-    .select('id, product_name, client_id, clients(name)')
+    .select('id, product_name, client_id, is_active, clients(name)')
     .eq('client_id', clientId);
   if (prodsRes.error) throw prodsRes.error;
   const prods = (prodsRes.data ?? []) as {
     id: string;
     product_name: string;
     client_id: string;
+    is_active: boolean;
     clients: { name: string } | null;
   }[];
   if (prods.length === 0) return [];
@@ -239,7 +251,12 @@ export async function listClientStock(clientId: string): Promise<StockMatrixRow[
   const prodById = new Map(
     prods.map((p) => [
       p.id,
-      { product_name: p.product_name, client_id: p.client_id, client_name: p.clients?.name ?? '' },
+      {
+        product_name: p.product_name,
+        client_id: p.client_id,
+        client_name: p.clients?.name ?? '',
+        is_active: p.is_active,
+      },
     ]),
   );
 
@@ -257,6 +274,7 @@ export async function listClientStock(clientId: string): Promise<StockMatrixRow[
         product_name: p.product_name,
         client_id: p.client_id,
         client_name: p.client_name,
+        is_active: p.is_active,
         quantity_on_hand: r.quantity_on_hand,
       };
     })

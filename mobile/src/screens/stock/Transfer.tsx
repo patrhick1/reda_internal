@@ -211,6 +211,12 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
   // validation and label-building. Only products actually held (>0) become
   // options; client name + on-hand sit in the sub so both are searchable and
   // visible.
+  //
+  // Retired products are marked, not hidden. Their units survive deactivation
+  // (a vendor may not have collected yet) and draining them is exactly what
+  // warehouse_return and agent→agent transfer are for. The one move the server
+  // still refuses is issuing a retired product to an agent, so that — and only
+  // that — is filtered out here, keeping the picker and the server in step.
   const { productOptions, onHandById, productNameById } = useMemo(() => {
     const options: SelectOption<string>[] = [];
     const onHand = new Map<string, number>();
@@ -218,16 +224,16 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
     for (const r of sourceStockQ.data ?? []) {
       onHand.set(r.product_catalog_id, r.quantity_on_hand);
       name.set(r.product_catalog_id, r.product_name);
-      if (r.quantity_on_hand > 0) {
-        options.push({
-          value: r.product_catalog_id,
-          label: r.product_name,
-          sub: `${r.client_name} · ${r.quantity_on_hand} in stock`,
-        });
-      }
+      if (r.quantity_on_hand <= 0) continue;
+      if (reason === 'warehouse_issue' && !r.is_active) continue;
+      options.push({
+        value: r.product_catalog_id,
+        label: r.product_name,
+        sub: `${r.client_name} · ${r.quantity_on_hand} in stock${r.is_active ? '' : ' · discontinued'}`,
+      });
     }
     return { productOptions: options, onHandById: onHand, productNameById: name };
-  }, [sourceStockQ.data]);
+  }, [sourceStockQ.data, reason]);
 
   // Changing the source invalidates any picked products (they belong to the old
   // holder's stock) — clear them. Ref-guarded so it only fires on a real change.
@@ -341,7 +347,9 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
         : sourceStockQ.error
           ? 'Could not load stock'
           : productOptions.length === 0
-            ? 'No stock at source'
+            ? reason === 'warehouse_issue'
+              ? 'No active product in stock here'
+              : 'No stock at source'
             : 'Search product or client';
 
   return (
