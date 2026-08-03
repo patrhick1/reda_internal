@@ -36,6 +36,7 @@ import {
 } from '@/services/products';
 import { listCurrentStock, type StockMatrixRow } from '@/services/stock';
 import { stockCoverageToday, type CoverageRow } from '@/services/stock-coverage';
+import { listCountsForHolder, type StockCountRow } from '@/services/stock-counts';
 
 /** The subset of useAsync's return shape that consumers rely on. */
 export type AsyncLike<T> = {
@@ -319,6 +320,31 @@ export function useStockCoverage(
     queryFn: () => stockCoverageToday(),
     staleTime: DELIVERIES_STALE,
     enabled: opts.enabled ?? true,
+  });
+  return { ...asAsync(q), fetching: q.isFetching, refetchIfStale: () => refetchIfStale(queryKey) };
+}
+
+/** The most recent count run for one holder — drives the "Last counted …" line
+ *  on the count screen and holder detail. One row, so it is cheap, but it is
+ *  read on every visit to those screens, which is what makes it worth caching.
+ *
+ *  Under the ['stock', uid, 'counts', …] prefix so `invalidateStockCounts()`
+ *  (services/stock-counts.ts) refreshes it the moment a count is recorded.
+ *  Counts are report-only and never pass through the offline queue, so the
+ *  queue's invalidateStock() does NOT cover them — that is why counts get their
+ *  own narrow invalidation rather than riding the ['stock'] one.
+ *
+ *  The paginated history feed deliberately does NOT use a hook: it is an
+ *  infinite keyset list, so it follows the manual cursor + useFocusEffect
+ *  pattern of screens/stock/Movements.tsx like every other stock feed. */
+export function useLastCount(holderId: string | null): DeliveryListResult<StockCountRow[]> {
+  const uid = useUid();
+  const queryKey = ['stock', uid, 'counts', holderId ?? 'none'];
+  const q = useQuery({
+    queryKey,
+    queryFn: () => (holderId ? listCountsForHolder(holderId, 1) : Promise.resolve([])),
+    staleTime: REFERENCE_STALE,
+    enabled: !!holderId,
   });
   return { ...asAsync(q), fetching: q.isFetching, refetchIfStale: () => refetchIfStale(queryKey) };
 }

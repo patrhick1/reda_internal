@@ -2,17 +2,14 @@ import { useMemo, useState } from 'react';
 import { router } from 'expo-router';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Button } from '@/components/Button';
+import { VarianceRow } from '@/components/stock/VarianceRow';
 import { Field } from '@/components/Field';
 import { Select } from '@/components/Select';
 import { useAsync } from '@/hooks/useAsync';
 import { isWarehousePlace } from '@/services/users';
-import { useUsers } from '@/hooks/queries';
+import { useLastCount, useUsers } from '@/hooks/queries';
 import { listHolderStock, type StockMatrixRow } from '@/services/stock';
-import {
-  recordStockCount,
-  listCountsForHolder,
-  type StockCountResult,
-} from '@/services/stock-counts';
+import { recordStockCount, type StockCountResult } from '@/services/stock-counts';
 import { newClientUuid } from '@/lib/uuid';
 import { errorMessage } from '@/lib/errors';
 import { relativeTime } from '@/lib/date';
@@ -51,10 +48,9 @@ export function StockCountScreen({ scope }: StockCountScreenProps) {
     () => (holderId ? listHolderStock(holderId) : Promise.resolve([] as StockMatrixRow[])),
     [holderId],
   );
-  const lastCountQ = useAsync(
-    () => (holderId ? listCountsForHolder(holderId, 1) : Promise.resolve([])),
-    [holderId],
-  );
+  // Cached under ['stock', uid, 'counts', holderId] so recording a count
+  // refreshes this line immediately instead of leaving a stale "last counted".
+  const lastCountQ = useLastCount(holderId);
 
   // Holders: active agents + warehouse PLACES (staff never hold stock).
   const holderOptions = useMemo(
@@ -153,18 +149,14 @@ export function StockCountScreen({ scope }: StockCountScreenProps) {
         {offs.length > 0 ? (
           <View style={styles.card}>
             {offs.map((o, i) => (
-              <View key={o.name} style={[styles.offRow, i > 0 && styles.offRowDivider]}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.pName}>{o.name}</Text>
-                  <Text style={styles.pSub}>
-                    App {o.expected} · Counted {o.counted}
-                  </Text>
-                </View>
-                <Text style={[styles.variance, o.variance > 0 ? styles.varPos : styles.varNeg]}>
-                  {o.variance > 0 ? '+' : ''}
-                  {o.variance}
-                </Text>
-              </View>
+              <VarianceRow
+                key={o.name}
+                productName={o.name}
+                expected={o.expected}
+                counted={o.counted}
+                variance={o.variance}
+                divider={i > 0}
+              />
             ))}
           </View>
         ) : null}
@@ -370,7 +362,6 @@ const styles = StyleSheet.create({
   statusMuted: { fontFamily: fonts.medium, fontSize: 14, color: colors.border },
   statusOk: { fontFamily: fonts.bold, fontSize: 16, color: colors.success },
   statusOff: { fontFamily: fonts.bold, fontSize: 14 },
-  variance: { fontFamily: fonts.extrabold, fontSize: 16 },
   varPos: { color: colors.success },
   varNeg: { color: colors.red },
   summary: {
@@ -403,6 +394,4 @@ const styles = StyleSheet.create({
   bannerWarn: { backgroundColor: colors.warningSoft },
   bannerTitle: { fontFamily: fonts.bold, fontSize: 15, color: colors.black },
   bannerSub: { fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary, marginTop: 4 },
-  offRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12 },
-  offRowDivider: { borderTopWidth: 1, borderTopColor: colors.border },
 });

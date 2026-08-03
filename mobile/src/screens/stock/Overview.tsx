@@ -42,6 +42,7 @@ import {
   canAdjustOwnStock,
   canViewGlobalStockHistory,
   canRecordStockCount,
+  canViewOthersStockHistory,
 } from '@/lib/permissions';
 import { getHolderStats, getOverviewStats, type HolderStats } from '@/lib/stock-helpers';
 import { ClientStockCard } from '@/components/stock/ClientStockCard';
@@ -158,9 +159,14 @@ export function StockOverview({ basePath }: { basePath: StockBasePath }) {
   const showGlobalHistory = canViewGlobalStockHistory(user.role);
   // Count & reconcile (report-only physical count) — admin + dispatcher.
   const showCount = canRecordStockCount(user.role);
+  // Reading counts is broader than recording them — the stock_counts RLS admits
+  // rep too (is_admin_or_dispatcher includes it), which is exactly the role set
+  // canViewOthersStockHistory already describes.
+  const showCountHistory = canViewOthersStockHistory(user.role);
   // Overflow sheet only meaningful if there's ≥2 actions OR a non-transfer
   // action that wouldn't fit beside the primary Transfer button.
-  const showOverflow = showReceive || showAdjust || showGlobalHistory || showCount;
+  const showOverflow =
+    showReceive || showAdjust || showGlobalHistory || showCount || showCountHistory;
 
   // Responsive: 1-col on phones, 2 on tablets/narrow web, 3 on full web.
   // Key swap is required when numColumns changes on a FlatList (RN rule).
@@ -355,6 +361,19 @@ export function StockOverview({ basePath }: { basePath: StockBasePath }) {
               onPress={() => {
                 setOverflowOpen(false);
                 router.push(`${basePath}/stock/count` as `${StockBasePath}/stock/count`);
+              }}
+            />
+          ) : null}
+          {showCountHistory ? (
+            <ActionRow
+              icon="history"
+              label="Count history"
+              sub="Past counts and what was off — report only"
+              onPress={() => {
+                setOverflowOpen(false);
+                router.push(
+                  `${basePath}/stock/count-history` as `${StockBasePath}/stock/count-history`,
+                );
               }}
             />
           ) : null}

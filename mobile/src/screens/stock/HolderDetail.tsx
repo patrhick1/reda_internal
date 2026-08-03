@@ -15,9 +15,10 @@ import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { listHolderStock, listStockHolderIds, type StockMatrixRow } from '@/services/stock';
 import { isWarehousePlace, type AppUser } from '@/services/users';
-import { useUsers } from '@/hooks/queries';
+import { useLastCount, useUsers } from '@/hooks/queries';
 import { AppBar, Card, Empty, FilterChips, Icon, Input } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
+import { relativeTime } from '@/lib/date';
 import { getHolderStats, isLow, isNegative, type HolderStats } from '@/lib/stock-helpers';
 
 type ProductFilter = 'all' | 'low' | 'negative';
@@ -54,6 +55,20 @@ export function HolderDetail({
   const [filter, setFilter] = useState<ProductFilter>('all');
 
   const holderRows = useMemo(() => holderStockQ.data ?? [], [holderStockQ.data]);
+
+  // "Last counted …" reference. Counts are readable by ops + warehouse, but the
+  // history SCREEN only exists under the admin and dispatcher route groups, so
+  // the warehouse view shows the line without making it tappable rather than
+  // pushing a route that isn't there.
+  const lastCountQ = useLastCount(holderId);
+  const lastCountAt = lastCountQ.data?.[0]?.counted_at ?? null;
+  const countHistoryHref =
+    basePath === '/(warehouse)'
+      ? null
+      : ({
+          pathname: `${basePath}/stock/count-history`,
+          params: { holderId },
+        } as const);
   const orderedHolders = useMemo(
     () => buildOrderedHolderIds(new Set(holderIdsQ.data ?? []), usersQ.data ?? []),
     [holderIdsQ.data, usersQ.data],
@@ -200,6 +215,24 @@ export function HolderDetail({
                 <Stat label="Negative" value={stats.negativeCount} tone="red" />
               </View>
             </Card>
+            {lastCountAt ? (
+              <Pressable
+                onPress={countHistoryHref ? () => router.push(countHistoryHref) : undefined}
+                disabled={!countHistoryHref}
+                accessibilityRole={countHistoryHref ? 'button' : undefined}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
+              >
+                <Icon name="check" size={14} color={colors.textSecondary} />
+                <Text
+                  style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary }}
+                >
+                  Last counted {relativeTime(lastCountAt)}
+                </Text>
+                {countHistoryHref ? (
+                  <Icon name="chevronRight" size={14} color={colors.textTertiary} />
+                ) : null}
+              </Pressable>
+            ) : null}
             <Input
               icon="search"
               value={query}

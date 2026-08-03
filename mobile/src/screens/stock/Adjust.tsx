@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { router } from 'expo-router';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { router, useLocalSearchParams } from 'expo-router';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Field } from '@/components/Field';
 import { Button } from '@/components/Button';
@@ -40,11 +40,29 @@ export function StockAdjustScreen({ scope }: StockAdjustScreenProps) {
   const usersQ = useUsers();
   const clientsQ = useClients();
 
+  // Optional deep-link prefill, currently used by the count history so that
+  // "Make an adjustment" on a variance lands here with the holder and product
+  // already chosen instead of making the admin retype what they just read.
+  // Absent params leave every field null, so the normal entry is unaffected.
+  // Note clientId is needed as well as productId: the product picker is
+  // populated per client (listActiveProductsByClient), so productId alone would
+  // have nothing to select from.
+  const params = useLocalSearchParams<{
+    holderId?: string;
+    productId?: string;
+    clientId?: string;
+  }>();
+
   // Admin scope: a pickable user. Warehouse scope derives the place
   // (warehouseHolder) so it can't silently fall back to the caller's own id.
-  const [agentId, setAgentId] = useState<string | null>(null);
-  const [clientId, setClientId] = useState<string | null>(null);
-  const [productId, setProductId] = useState<string | null>(null);
+  const [agentId, setAgentId] = useState<string | null>(params.holderId ?? null);
+  const [clientId, setClientId] = useState<string | null>(params.clientId ?? null);
+  const [productId, setProductId] = useState<string | null>(params.productId ?? null);
+  // The product-loading effect below clears productId whenever the client
+  // changes — including the run it does on mount, which would wipe a
+  // deep-linked product before its options had even arrived. Honour the prefill
+  // once, then behave normally for every later client change.
+  const prefillProductRef = useRef<string | null>(params.productId ?? null);
   const [products, setProducts] = useState<{ id: string; product_name: string }[]>([]);
   const [reason, setReason] = useState<SingleReason | null>(null);
   const [quantity, setQuantity] = useState('');
@@ -59,7 +77,8 @@ export function StockAdjustScreen({ scope }: StockAdjustScreenProps) {
   // response once the client changes again, so a slow earlier request can't land
   // after a newer one and leave stale product options for the wrong client.
   useEffect(() => {
-    setProductId(null);
+    setProductId(prefillProductRef.current);
+    prefillProductRef.current = null;
     setProducts([]);
     if (!clientId) return;
     let cancelled = false;
