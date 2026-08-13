@@ -3,7 +3,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { useRouter } from 'expo-router';
 import { Button } from '@/components/Button';
 import { Select } from '@/components/Select';
-import { FilterChips } from '@/components/ui';
+import { DateField, FilterChips } from '@/components/ui';
 import { useAsync } from '@/hooks/useAsync';
 import { isWarehousePlace } from '@/services/users';
 import { useUsers, useProducts } from '@/hooks/queries';
@@ -16,7 +16,13 @@ import {
   type MovementPeriod,
   type GlobalMovement,
 } from '@/services/stock-movements';
-import { todayLagos, daysAgoLagos, formatDayMonthLagos, formatDateTimeLagos } from '@/lib/date';
+import {
+  todayLagos,
+  daysAgoLagos,
+  formatDayMonthLagos,
+  formatDateTimeLagos,
+  isYmd,
+} from '@/lib/date';
 import { colors, fonts } from '@/lib/theme';
 
 /**
@@ -26,7 +32,7 @@ import { colors, fonts } from '@/lib/theme';
  * exactly was delivered?" — the reconciliation trace without a calculator.
  * Read-only.
  */
-type RangeKey = '7d' | '30d' | 'month';
+type RangeKey = '7d' | '30d' | 'month' | 'custom';
 type MovementSummaryBasePath = '/(admin)' | '/(dispatcher)';
 type DeliveryDrillKind = 'delivered' | 'delivery_returned';
 type DeliveryDrill = {
@@ -34,7 +40,7 @@ type DeliveryDrill = {
   rows: GlobalMovement[] | 'loading';
 };
 
-function rangeDates(r: RangeKey): { from: string; to: string } {
+function rangeDates(r: Exclude<RangeKey, 'custom'>): { from: string; to: string } {
   const to = todayLagos();
   if (r === '7d') return { from: daysAgoLagos(6), to };
   if (r === '30d') return { from: daysAgoLagos(29), to };
@@ -75,15 +81,25 @@ export function StockMovementSummaryScreen({ basePath }: { basePath: MovementSum
   const [productId, setProductId] = useState<string | null>(null);
   const [holderId, setHolderId] = useState<string | null>(null); // null = all holders
   const [range, setRange] = useState<RangeKey>('7d');
+  const [customFrom, setCustomFrom] = useState(() => daysAgoLagos(6));
+  const [customTo, setCustomTo] = useState(() => todayLagos());
   const [bucket, setBucket] = useState<MovementBucket>('day');
   const [deliveryDrill, setDeliveryDrill] = useState<DeliveryDrill | null>(null);
 
-  const { from, to } = useMemo(() => rangeDates(range), [range]);
+  const { from, to } = useMemo(
+    () => (range === 'custom' ? { from: customFrom, to: customTo } : rangeDates(range)),
+    [customFrom, customTo, range],
+  );
+  // DateField updates on every keystroke. Pause the date-typed RPC until both
+  // values are complete, valid dates in chronological order.
+  const rangeValid = isYmd(from) && isYmd(to) && from <= to;
 
   const summaryQ = useAsync(
     () =>
-      productId ? stockMovementSummary(productId, from, to, holderId, bucket) : Promise.resolve([]),
-    [productId, holderId, from, to, bucket],
+      productId && rangeValid
+        ? stockMovementSummary(productId, from, to, holderId, bucket)
+        : Promise.resolve([]),
+    [productId, holderId, from, to, bucket, rangeValid],
   );
 
   const productOptions = useMemo(
@@ -117,7 +133,7 @@ export function StockMovementSummaryScreen({ basePath }: { basePath: MovementSum
   const productName = productOptions.find((o) => o.value === productId)?.label ?? '';
 
   async function openDeliveryDrill(kind: DeliveryDrillKind) {
-    if (!productId) return;
+    if (!productId || !rangeValid) return;
     setDeliveryDrill({ kind, rows: 'loading' });
     try {
       // The RPC caps limit at 200; a busy product over a month exceeds that, so
@@ -241,10 +257,21 @@ export function StockMovementSummaryScreen({ basePath }: { basePath: MovementSum
           { id: '7d', label: 'Last 7 days' },
           { id: '30d', label: 'Last 30 days' },
           { id: 'month', label: 'This month' },
+          { id: 'custom', label: 'Custom' },
         ]}
         value={range}
         onChange={setRange}
       />
+      {range === 'custom' ? (
+        <View style={styles.customDates}>
+          <View style={styles.dateField}>
+            <DateField label="From" value={customFrom} onChange={setCustomFrom} />
+          </View>
+          <View style={styles.dateField}>
+            <DateField label="To" value={customTo} onChange={setCustomTo} />
+          </View>
+        </View>
+      ) : null}
       <Text style={styles.chipLabel}>Group by</Text>
       <FilterChips
         options={[
@@ -257,6 +284,10 @@ export function StockMovementSummaryScreen({ basePath }: { basePath: MovementSum
 
       {!productId ? (
         <Text style={styles.empty}>Pick a product to see its movement summary.</Text>
+      ) : !rangeValid ? (
+        <Text style={styles.empty}>
+          Enter valid From and To dates. The From date must not be after the To date.
+        </Text>
       ) : summaryQ.loading && !summaryQ.data ? (
         <View style={styles.centerPad}>
           <ActivityIndicator color={colors.black} />
@@ -394,6 +425,8 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginTop: 8,
   },
+  customDates: { flexDirection: 'row', gap: 12, marginTop: 2, marginBottom: 6 },
+  dateField: { flex: 1 },
   empty: {
     fontFamily: fonts.medium,
     fontSize: 13,
