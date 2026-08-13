@@ -30,6 +30,60 @@ export async function markClientNotified(statusHistoryId: string): Promise<Clien
   };
 }
 
+/** Outcome of tagging a selection. `notified` = rows this caller claimed;
+ *  `alreadyTagged` = a peer had already tagged them (first-tap-wins server-side,
+ *  which is a no-op, not an error); `failed` = rows the server refused. */
+export type BulkNotifyCounts = {
+  notified: number;
+  alreadyTagged: number;
+  failed: number;
+  firstError: string | null;
+};
+
+/** How many rows are in flight at once. `mark_client_notified` is a per-row
+ *  RPC, so a "select all visible" of 100 would be 100 round trips; a small
+ *  window keeps a big selection quick without flooding the box. */
+const NOTIFY_CONCURRENCY = 5;
+
+/** Tag SEVERAL status-history rows in one action — the list's select-mode
+ *  counterpart to the single tap on a delivery's Detail screen.
+ *
+ *  There is no bulk RPC: `mark_client_notified` is already idempotent and
+ *  first-tap-wins per row, so this loops it the same way bulk Transfer and
+ *  Receive loop their per-line endpoints. Rows are independent — one refusal
+ *  never voids the rest, and the counts say exactly what landed. */
+export async function bulkMarkClientNotified(
+  statusHistoryIds: string[],
+): Promise<BulkNotifyCounts> {
+  const counts: BulkNotifyCounts = {
+    notified: 0,
+    alreadyTagged: 0,
+    failed: 0,
+    firstError: null,
+  };
+  const queue = [...statusHistoryIds];
+
+  async function worker(): Promise<void> {
+    for (;;) {
+      const id = queue.shift();
+      if (!id) return;
+      try {
+        const row = await markClientNotified(id);
+        if (row.isSelf) counts.notified += 1;
+        else counts.alreadyTagged += 1;
+      } catch (e) {
+        counts.failed += 1;
+        if (!counts.firstError) counts.firstError = e instanceof Error ? e.message : String(e);
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(NOTIFY_CONCURRENCY, queue.length) }, () => worker()),
+  );
+  return counts;
+}
+
 export type ClientNotificationRow = {
   statusHistoryId: string;
   notifiedByUserId: string;

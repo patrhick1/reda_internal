@@ -470,3 +470,13 @@ export function canClaimFollowup(
 export function canMarkClientNotified(role: Role): boolean {
   return isOps(role);
 }
+
+/** Tag SEVERAL deliveries as "client notified" from the list's select mode.
+ *  Same audience as the single-row action — it's the identical RPC per row,
+ *  just driven from a selection instead of one open delivery, so there is no
+ *  reason for the two to diverge. Reps are deliberately included: they are the
+ *  vendor-comms layer and do most of this tagging.
+ *  Server anchor: `mark_client_notified` RPC (per row). */
+export function canBulkMarkClientNotified(role: Role): boolean {
+  return isOps(role);
+}

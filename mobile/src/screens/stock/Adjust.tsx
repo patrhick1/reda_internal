@@ -1,108 +1,123 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Field } from '@/components/Field';
 import { Button } from '@/components/Button';
-import { Select } from '@/components/Select';
+import { Select, type SelectOption } from '@/components/Select';
+import { Icon } from '@/components/ui';
+import { useAsync } from '@/hooks/useAsync';
+import { useBulkRows } from '@/hooks/useBulkRows';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { isWarehousePlace } from '@/services/users';
-import { useUsers, useClients } from '@/hooks/queries';
-import { listActiveProductsByClient } from '@/services/products';
-import { ADJUSTMENT_REASONS, type SingleReason } from '@/services/stock';
+import { useUsers, useProducts } from '@/hooks/queries';
+import { listHolderStock, ADJUSTMENT_REASONS, type SingleReason } from '@/services/stock';
 import { useEnqueueStockAdjustment } from '@/queue/mutations';
 import { useQueuedSubmit } from '@/queue/useQueuedSubmit';
 import { errorMessage } from '@/lib/errors';
 import { resolveWarehouseHolder } from '@/lib/stock-helpers';
 
-// A single adjustment: the inline error is just the failure reason.
-function adjustFailureMessage(_failed: number, _total: number, firstReason: string): string {
-  return firstReason;
+// How a partial/failed bulk adjustment reads in the inline error. Each row is
+// an independent queued job, so 2 of 3 can land — say so rather than implying
+// the whole batch failed.
+function adjustFailureMessage(failed: number, total: number, firstReason: string): string {
+  return total === 1
+    ? firstReason
+    : `${total - failed} of ${total} applied; ${failed} failed: ${firstReason}`;
 }
 
 /**
- * Single stock adjustment screen.
+ * Stock adjustment screen — multi-row.
+ *
+ * One holder, one reason, N products. Each row enqueues an independent
+ * `create_stock_adjustment` job, the same shape Receive and Transfer already
+ * use; nothing about adjustments was ever single-product except this form.
+ * The case that forced it: an agent delivers three items off-app and every
+ * one of them needed a separate pass through user → client → product → reason.
+ *
+ * Sign comes from the REASON, not from the typist. loss/theft/damaged always
+ * remove, found always adds, and the server rejects the wrong sign anyway — so
+ * rows take a plain positive quantity. `correction` is the one either-sign
+ * reason, and gets an explicit Add/Remove choice for the whole batch.
+ *
+ * The product picker follows the direction: removing lists only what the holder
+ * actually holds (with on-hand shown, and validated cumulatively across rows so
+ * two rows for the same product can't overdraw it); adding lists the catalog,
+ * since you can find or correct-in something the books have at zero.
  *
  * `scope` toggles two behaviors:
- *  - admin:     full user picker (active agents + warehouses), all
- *               adjustment reasons (loss/theft/damaged/found/correction).
- *               Mirrors the original /(admin)/stock/adjust.tsx exactly.
- *  - warehouse: target user locked to caller (warehouse can only adjust
- *               own holdings); reasons filtered to loss/theft/damaged/found
- *               (no `correction` — that's the books-override path, admin
- *               only). Mirrors create_stock_adjustment warehouse branch.
+ *  - admin:     full holder picker (active agents + warehouse places), all
+ *               adjustment reasons including `correction`.
+ *  - warehouse: holder locked to the caller's PLACE (resolveWarehouseHolder —
+ *               a staff id would 42501); `correction` hidden, matching the
+ *               create_stock_adjustment warehouse branch.
  */
 export type StockAdjustScreenProps = {
   scope: 'admin' | 'warehouse';
 };
 
+/** Which way the whole batch moves stock. Derived from the reason except for
+ *  `correction`, where the operator picks. */
+type Direction = 'remove' | 'add';
+
+type AdjustRow = {
+  id: string;
+  productId: string | null;
+  quantity: string;
+};
+
+const makeRow = (): AdjustRow => ({
+  id: Math.random().toString(36).slice(2),
+  productId: null,
+  quantity: '',
+});
+
+/** Mirrors the sign rules inside create_stock_adjustment: loss/theft/damaged
+ *  demand a negative delta, found demands a positive one, correction takes
+ *  either. Keeping the mapping here means the form can't offer a combination
+ *  the server would reject. */
+function directionFor(reason: SingleReason | null, correctionDir: Direction): Direction | null {
+  if (!reason) return null;
+  if (reason === 'found') return 'add';
+  if (reason === 'correction') return correctionDir;
+  return 'remove';
+}
+
 export function StockAdjustScreen({ scope }: StockAdjustScreenProps) {
   const currentUser = useCurrentUser();
   const usersQ = useUsers();
-  const clientsQ = useClients();
+  // Inactive included: a retired product's leftover units still get lost,
+  // damaged or corrected off the books, and the server allows writing them
+  // DOWN. `found` is the one reason that must stay active-only (below).
+  const productsQ = useProducts({ includeInactive: true });
 
-  // Optional deep-link prefill, currently used by the count history so that
-  // "Make an adjustment" on a variance lands here with the holder and product
-  // already chosen instead of making the admin retype what they just read.
-  // Absent params leave every field null, so the normal entry is unaffected.
-  // Note clientId is needed as well as productId: the product picker is
-  // populated per client (listActiveProductsByClient), so productId alone would
-  // have nothing to select from.
+  // Optional deep-link prefill from the count history, so "Make an adjustment"
+  // on a variance lands here with the holder and product already chosen. The
+  // legacy `clientId` param is accepted and ignored — the picker is no longer
+  // scoped per client, so it has nothing left to do.
   const params = useLocalSearchParams<{
     holderId?: string;
     productId?: string;
     clientId?: string;
   }>();
 
-  // Admin scope: a pickable user. Warehouse scope derives the place
-  // (warehouseHolder) so it can't silently fall back to the caller's own id.
-  const [agentId, setAgentId] = useState<string | null>(params.holderId ?? null);
-  const [clientId, setClientId] = useState<string | null>(params.clientId ?? null);
-  const [productId, setProductId] = useState<string | null>(params.productId ?? null);
-  // The product-loading effect below clears productId whenever the client
-  // changes — including the run it does on mount, which would wipe a
-  // deep-linked product before its options had even arrived. Honour the prefill
-  // once, then behave normally for every later client change.
-  const prefillProductRef = useRef<string | null>(params.productId ?? null);
-  const [products, setProducts] = useState<{ id: string; product_name: string }[]>([]);
+  const [holderId, setHolderId] = useState<string | null>(params.holderId ?? null);
   const [reason, setReason] = useState<SingleReason | null>(null);
-  const [quantity, setQuantity] = useState('');
+  const [correctionDir, setCorrectionDir] = useState<Direction>('remove');
   const [notes, setNotes] = useState('');
+  const { rows, setRows, addRow, removeRow, updateRow, resetRows } =
+    useBulkRows<AdjustRow>(makeRow);
+
   const enqueueAdj = useEnqueueStockAdjustment();
-  // Owns submit state + "stay on-screen until the queued job settles".
+  // Owns submit state + "stay on-screen until the queued jobs settle".
   const { submitting, setSubmitting, error, setError, finish, retrying } =
     useQueuedSubmit(adjustFailureMessage);
 
-  // Load products when the client changes. Fetching + setState is a side effect,
-  // so it belongs in useEffect, not useMemo. The cancel flag drops an in-flight
-  // response once the client changes again, so a slow earlier request can't land
-  // after a newer one and leave stale product options for the wrong client.
-  useEffect(() => {
-    setProductId(prefillProductRef.current);
-    prefillProductRef.current = null;
-    setProducts([]);
-    if (!clientId) return;
-    let cancelled = false;
-    listActiveProductsByClient(clientId)
-      .then((p) => {
-        if (cancelled) return;
-        setProducts(p.map((x) => ({ id: x.id, product_name: x.product_name })));
-      })
-      .catch((e) => {
-        if (!cancelled) setError(errorMessage(e));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [clientId, setError]);
-
-  // Holders only: agents + warehouse PLACES (staff are never holders).
-  const userOptions = useMemo(
+  const activeUsers = useMemo(
     () =>
-      (usersQ.data ?? [])
-        .filter((u) => u.is_active && (u.role === 'agent' || isWarehousePlace(u)))
-        .map((u) => ({ value: u.id, label: u.display_name, sub: u.role })),
+      (usersQ.data ?? []).filter((u) => u.is_active && (u.role === 'agent' || isWarehousePlace(u))),
     [usersQ.data],
   );
+
   // Warehouse scope: resolve the PLACE this caller acts on (fail loud rather
   // than defaulting to the caller's own id, which the server rejects).
   const warehouseHolder = useMemo(
@@ -119,86 +134,152 @@ export function StockAdjustScreen({ scope }: StockAdjustScreenProps) {
         : null,
     [scope, currentUser.userId, currentUser.warehouseId, currentUser.displayName, usersQ.data],
   );
-  const effectiveAgentId =
-    scope === 'warehouse' ? (warehouseHolder?.ok ? warehouseHolder.holderId : null) : agentId;
+  const effectiveHolderId =
+    scope === 'warehouse' ? (warehouseHolder?.ok ? warehouseHolder.holderId : null) : holderId;
   const placeName = warehouseHolder?.ok ? warehouseHolder.placeName : currentUser.displayName;
   const holderError = warehouseHolder && !warehouseHolder.ok ? warehouseHolder.reason : null;
-  const clientOptions = useMemo(
-    () => (clientsQ.data ?? []).map((c) => ({ value: c.id, label: c.name })),
-    [clientsQ.data],
-  );
-  const productOptions = useMemo(
-    () => products.map((p) => ({ value: p.id, label: p.product_name })),
-    [products],
-  );
-  // Warehouse path drops `correction` — that's the books-override escape
-  // hatch and the SQL guard refuses it for non-admin callers anyway.
-  const reasonOptions = ADJUSTMENT_REASONS.filter(
-    (r) => scope === 'admin' || r.value !== 'correction',
-  ).map((r) => ({
-    value: r.value,
-    label: r.label,
-    sub:
-      r.sign === 'negative'
-        ? 'Negative quantity'
-        : r.sign === 'positive'
-          ? 'Positive quantity'
-          : 'Either sign',
-  }));
 
-  const signedHint = (() => {
-    const def = ADJUSTMENT_REASONS.find((r) => r.value === reason);
-    if (!def) return null;
-    if (def.sign === 'negative') return 'Enter a negative number (e.g. -3).';
-    if (def.sign === 'positive') return 'Enter a positive number (e.g. 5).';
-    return 'Positive or negative.';
-  })();
+  const direction = directionFor(reason, correctionDir);
+
+  // The holder's on-hand: the option list when removing, context when adding.
+  const holderStockQ = useAsync(
+    () => (effectiveHolderId ? listHolderStock(effectiveHolderId) : Promise.resolve([])),
+    [effectiveHolderId],
+  );
+
+  // One option list per direction, plus the lookups validation and labels need.
+  // Removing can only touch what's actually held; adding spans the catalog,
+  // because a `found` or a positive `correction` is precisely the case where
+  // the books say zero.
+  const { productOptions, onHandById, productNameById } = useMemo(() => {
+    const onHand = new Map<string, number>();
+    const name = new Map<string, string>();
+    for (const r of holderStockQ.data ?? []) {
+      onHand.set(r.product_catalog_id, r.quantity_on_hand);
+      name.set(r.product_catalog_id, r.product_name);
+    }
+    for (const p of productsQ.data ?? []) name.set(p.id, p.product_name);
+
+    const options: SelectOption<string>[] = [];
+    if (direction === 'remove') {
+      for (const r of holderStockQ.data ?? []) {
+        if (r.quantity_on_hand <= 0) continue;
+        options.push({
+          value: r.product_catalog_id,
+          label: r.product_name,
+          sub: `${r.client_name} · ${r.quantity_on_hand} on hand`,
+        });
+      }
+    } else if (direction === 'add') {
+      for (const p of productsQ.data ?? []) {
+        // Nobody may "find" more of a product the catalog has retired — the
+        // server raises on it. A positive `correction` is still allowed.
+        if (reason === 'found' && !p.is_active) continue;
+        const n = onHand.get(p.id) ?? 0;
+        const bits = [p.client_name];
+        if (n > 0) bits.push(`${n} on hand`);
+        if (!p.is_active) bits.push('discontinued');
+        options.push({ value: p.id, label: p.product_name, sub: bits.join(' · ') });
+      }
+    }
+    return { productOptions: options, onHandById: onHand, productNameById: name };
+  }, [holderStockQ.data, productsQ.data, direction, reason]);
+
+  // Honour the deep-linked product once the options it belongs to have arrived.
+  // Guarded by a ref so it fires once and never fights a later manual change.
+  const prefillDoneRef = useRef(!params.productId);
+  useEffect(() => {
+    if (prefillDoneRef.current) return;
+    if (productOptions.length === 0) return;
+    const pid = params.productId;
+    if (!pid || !productOptions.some((o) => o.value === pid)) return;
+    prefillDoneRef.current = true;
+    setRows((rs) => (rs[0] ? [{ ...rs[0], productId: pid }, ...rs.slice(1)] : rs));
+  }, [productOptions, params.productId, setRows]);
+
+  // Changing the holder or the direction invalidates picked products (they
+  // belong to the old option set) — clear the rows. Ref-guarded so it only
+  // fires on a real change, not on mount over a deep-linked prefill.
+  const prevScopeRef = useRef(`${effectiveHolderId ?? ''}|${direction ?? ''}`);
+  useEffect(() => {
+    const key = `${effectiveHolderId ?? ''}|${direction ?? ''}`;
+    if (prevScopeRef.current !== key) {
+      prevScopeRef.current = key;
+      resetRows();
+    }
+  }, [effectiveHolderId, direction, resetRows]);
 
   async function handleSubmit() {
     setError(null);
     if (scope === 'warehouse' && warehouseHolder && !warehouseHolder.ok) {
-      setError(warehouseHolder.reason);
-      return;
+      return setError(warehouseHolder.reason);
     }
-    if (!effectiveAgentId) {
-      setError('Pick the user whose stock is being adjusted');
-      return;
+    if (!effectiveHolderId) return setError('Pick whose stock is being adjusted');
+    if (!reason || !direction) return setError('Pick a reason');
+
+    const validRows: { productId: string; qty: number }[] = [];
+    // Running total per product, so the same product across two rows is checked
+    // against on-hand cumulatively rather than row-by-row.
+    const neededByProduct = new Map<string, number>();
+    for (const r of rows) {
+      const empty = !r.productId && !r.quantity;
+      if (empty) continue;
+      if (!r.productId) return setError('Each row needs a product');
+      const q = Number(r.quantity);
+      if (!Number.isInteger(q) || q <= 0) {
+        return setError('Each row needs a positive whole-number quantity');
+      }
+      if (direction === 'remove') {
+        const running = (neededByProduct.get(r.productId) ?? 0) + q;
+        neededByProduct.set(r.productId, running);
+        const onHand = onHandById.get(r.productId) ?? 0;
+        if (running > onHand) {
+          const name = productNameById.get(r.productId) ?? 'A product';
+          return setError(
+            running > q
+              ? `${name}: rows need ${running} but only ${onHand} on hand`
+              : `${name}: only ${onHand} on hand`,
+          );
+        }
+      }
+      validRows.push({ productId: r.productId, qty: q });
     }
-    if (!productId) {
-      setError('Pick a product');
-      return;
-    }
-    if (!reason) {
-      setError('Pick a reason');
-      return;
-    }
-    const q = Number(quantity);
-    if (!Number.isInteger(q) || q === 0) {
-      setError('Quantity must be a non-zero integer');
-      return;
-    }
+    if (validRows.length === 0) return setError('Add at least one row');
+
     setSubmitting(true);
     try {
       const reasonLabel = ADJUSTMENT_REASONS.find((r) => r.value === reason)?.label ?? reason;
-      const productName = products.find((p) => p.id === productId)?.product_name ?? 'product';
-      const jobId = await enqueueAdj(
-        {
-          agentId: effectiveAgentId,
-          productCatalogId: productId,
-          quantityDelta: q,
-          reason,
-          notes: notes.trim() || null,
-        },
-        `${reasonLabel} · ${q > 0 ? '+' : ''}${q} ${productName}`,
-      );
-      finish([jobId]);
+      const holderLabel =
+        scope === 'warehouse'
+          ? placeName
+          : (activeUsers.find((u) => u.id === effectiveHolderId)?.display_name ?? 'holder');
+      const ids: string[] = [];
+      for (const row of validRows) {
+        const delta = direction === 'remove' ? -row.qty : row.qty;
+        const label = `${reasonLabel} · ${delta > 0 ? '+' : ''}${delta} ${
+          productNameById.get(row.productId) ?? 'product'
+        } · ${holderLabel}`;
+        ids.push(
+          await enqueueAdj(
+            {
+              agentId: effectiveHolderId,
+              productCatalogId: row.productId,
+              quantityDelta: delta,
+              reason,
+              notes: notes.trim() || null,
+            },
+            label,
+          ),
+        );
+      }
+      finish(ids);
     } catch (e) {
       setError(errorMessage(e));
       setSubmitting(false);
     }
   }
 
-  if (usersQ.loading || clientsQ.loading) {
+  if (usersQ.loading || productsQ.loading) {
     return (
       <View style={styles.center}>
         <ActivityIndicator />
@@ -207,6 +288,38 @@ export function StockAdjustScreen({ scope }: StockAdjustScreenProps) {
   }
 
   const isWarehouseScope = scope === 'warehouse';
+  // Warehouse path drops `correction` — that's the books-override escape hatch
+  // and the SQL guard refuses it for non-admin callers anyway.
+  const reasonOptions = ADJUSTMENT_REASONS.filter(
+    (r) => scope === 'admin' || r.value !== 'correction',
+  ).map((r) => ({
+    value: r.value,
+    label: r.label,
+    sub:
+      r.sign === 'negative'
+        ? 'Removes stock'
+        : r.sign === 'positive'
+          ? 'Adds stock'
+          : 'Adds or removes',
+  }));
+  const holderOptions = activeUsers.map((u) => ({
+    value: u.id,
+    label: u.display_name,
+    sub: isWarehousePlace(u) ? 'Warehouse' : 'Rider',
+  }));
+  const filledCount = rows.filter((r) => r.productId && Number(r.quantity) > 0).length;
+
+  const productPlaceholder = !effectiveHolderId
+    ? 'Pick a holder first'
+    : !direction
+      ? 'Pick a reason first'
+      : holderStockQ.loading
+        ? 'Loading…'
+        : productOptions.length === 0
+          ? direction === 'remove'
+            ? 'This holder has no stock to remove'
+            : 'No products'
+          : 'Search product or client';
 
   return (
     <ScrollView
@@ -227,63 +340,109 @@ export function StockAdjustScreen({ scope }: StockAdjustScreenProps) {
         <Select
           label="User (agent / warehouse)"
           required
-          value={agentId}
-          options={userOptions}
-          onChange={setAgentId}
+          value={holderId}
+          options={holderOptions}
+          onChange={setHolderId}
+          searchable
+          searchPlaceholder="Search agent or warehouse…"
+          placeholder="Pick whose stock is being adjusted"
         />
       )}
+
       <Select
-        label="Client"
+        label="Reason"
         required
-        value={clientId}
-        options={clientOptions}
-        onChange={setClientId}
+        value={reason}
+        options={reasonOptions}
+        onChange={(v) => setReason(v)}
+        placeholder="Pick a reason"
       />
-      <Select
-        label="Product"
-        required
-        value={productId}
-        options={productOptions}
-        onChange={setProductId}
-        disabled={!clientId || products.length === 0}
-        placeholder={
-          !clientId
-            ? 'Pick a client first'
-            : products.length === 0
-              ? 'No products for this client'
-              : 'Choose'
-        }
+
+      {/* `correction` is the only either-sign reason, so it's the only one that
+          has to ask. Batch-level, because a sitting is all write-offs or all
+          write-ons — mixing the two is two deliberate passes. */}
+      {reason === 'correction' ? (
+        <View style={styles.dirRow}>
+          <DirChip
+            label="Remove stock"
+            active={correctionDir === 'remove'}
+            onPress={() => setCorrectionDir('remove')}
+          />
+          <DirChip
+            label="Add stock"
+            active={correctionDir === 'add'}
+            onPress={() => setCorrectionDir('add')}
+          />
+        </View>
+      ) : null}
+
+      {direction ? (
+        <Text style={styles.hint}>
+          {direction === 'remove'
+            ? 'Quantities are how many to take OFF the books.'
+            : 'Quantities are how many to put ON the books.'}
+        </Text>
+      ) : null}
+
+      {rows.map((row, i) => (
+        <View key={row.id} style={styles.rowCard}>
+          <View style={styles.rowHeader}>
+            <Text style={styles.rowTitle}>Item {i + 1}</Text>
+            {rows.length > 1 ? (
+              <Pressable onPress={() => removeRow(row.id)} hitSlop={6}>
+                <Icon name="x" size={18} color="#a02d1b" />
+              </Pressable>
+            ) : null}
+          </View>
+          <Select
+            label="Product"
+            required
+            searchable
+            searchPlaceholder="Search product or client"
+            value={row.productId}
+            options={productOptions}
+            onChange={(v) => updateRow(row.id, { productId: v })}
+            disabled={productOptions.length === 0}
+            placeholder={productPlaceholder}
+          />
+          <Field
+            label={direction === 'add' ? 'Quantity to add' : 'Quantity to remove'}
+            required
+            value={row.quantity}
+            onChangeText={(v) => updateRow(row.id, { quantity: v.replace(/[^0-9]/g, '') })}
+            keyboardType="number-pad"
+            autoCapitalize="none"
+          />
+        </View>
+      ))}
+
+      <Button
+        title="+ Add another item"
+        onPress={addRow}
+        variant="secondary"
+        style={styles.addRow}
+        disabled={productOptions.length === 0}
       />
-      <Select label="Reason" required value={reason} options={reasonOptions} onChange={setReason} />
-      <Field
-        label="Quantity"
-        required
-        value={quantity}
-        onChangeText={setQuantity}
-        keyboardType="numbers-and-punctuation"
-        autoCapitalize="none"
-        placeholder={signedHint ?? '0'}
-      />
-      {signedHint ? <Text style={styles.hint}>{signedHint}</Text> : null}
+
       <Field
         label="Notes"
         value={notes}
         onChangeText={setNotes}
         multiline
-        placeholder="Optional context"
+        placeholder="Optional — why the books are changing"
       />
 
-      {error || usersQ.error ? (
+      {error || usersQ.error || productsQ.error ? (
         <View style={styles.errorBox}>
-          <Text style={styles.errorText}>{error ?? usersQ.error}</Text>
+          <Text style={styles.errorText}>{error ?? usersQ.error ?? productsQ.error}</Text>
         </View>
       ) : null}
 
       <Button
-        title="Create adjustment"
+        title={`Apply ${filledCount} ${filledCount === 1 ? 'adjustment' : 'adjustments'}`}
         onPress={handleSubmit}
         loading={submitting}
-        disabled={!!holderError}
+        disabled={!!holderError || filledCount === 0}
       />
       {retrying ? (
         <Text style={styles.retryNote}>
@@ -300,6 +459,27 @@ export function StockAdjustScreen({ scope }: StockAdjustScreenProps) {
   );
 }
 
+function DirChip({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      style={[styles.dirChip, active && styles.dirChipActive]}
+    >
+      <Text style={[styles.dirChipText, active && styles.dirChipTextActive]}>{label}</Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: '#fff' },
   content: { padding: 16, paddingBottom: 48 },
@@ -310,10 +490,51 @@ const styles = StyleSheet.create({
     padding: 24,
     backgroundColor: '#fff',
   },
-  errorBox: { backgroundColor: '#fdecea', padding: 12, borderRadius: 8, marginBottom: 12 },
+  errorBox: {
+    backgroundColor: '#fdecea',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 12,
+    marginTop: 4,
+  },
   errorText: { color: '#a02d1b', fontSize: 14 },
   retryNote: { fontSize: 12, color: '#666', textAlign: 'center', marginTop: 10 },
-  hint: { fontSize: 12, color: '#666', marginTop: -8, marginBottom: 12, fontStyle: 'italic' },
+  hint: { fontSize: 12, color: '#666', marginTop: -4, marginBottom: 4, fontStyle: 'italic' },
+  dirRow: { flexDirection: 'row', gap: 8, marginBottom: 12, marginTop: -4 },
+  dirChip: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    backgroundColor: '#fff',
+    alignItems: 'center',
+  },
+  dirChipActive: { backgroundColor: '#111', borderColor: '#111' },
+  dirChipText: { fontSize: 13, fontWeight: '700', color: '#666' },
+  dirChipTextActive: { color: '#fff' },
+  rowCard: {
+    marginTop: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#eee',
+    borderRadius: 8,
+    backgroundColor: '#fafafa',
+  },
+  rowHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  rowTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#666',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  addRow: { marginTop: 12 },
   cancel: { marginTop: 12 },
   lockedDestBox: {
     padding: 12,

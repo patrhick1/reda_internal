@@ -37,6 +37,7 @@ import {
   canBulkAssignDelivery,
   canBulkChangeStatus,
   canBulkDeleteDeliveries,
+  canBulkMarkClientNotified,
   canCreateDelivery,
   canFilterDeliveriesList,
   canSeeClientName,
@@ -58,6 +59,8 @@ import {
 import { BulkAssignSheet } from '@/components/sheets/BulkAssignSheet';
 import { BulkStatusSheet } from '@/components/sheets/BulkStatusSheet';
 import { BulkDeleteSheet } from '@/components/sheets/BulkDeleteSheet';
+import { BulkNotifySheet } from '@/components/sheets/BulkNotifySheet';
+import type { BulkNotifyCounts } from '@/services/clientNotifications';
 import {
   colors,
   fonts,
@@ -176,12 +179,16 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   const canBulkAssign = canBulkAssignDelivery(user.role);
   const canBulkStatus = canBulkChangeStatus(user.role);
   const canBulkDelete = canBulkDeleteDeliveries(user.role);
-  const canBulkSelect = canBulkAssign || canBulkStatus || canBulkDelete;
+  // Tagging "client notified" in bulk is the rep's main list action, and it's
+  // the first bulk action reps can reach — select mode used to be manager-only.
+  const canBulkNotify = canBulkMarkClientNotified(user.role);
+  const canBulkSelect = canBulkAssign || canBulkStatus || canBulkDelete || canBulkNotify;
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set());
   const [bulkSheetOpen, setBulkSheetOpen] = useState(false);
   const [bulkStatusSheetOpen, setBulkStatusSheetOpen] = useState(false);
   const [bulkDeleteSheetOpen, setBulkDeleteSheetOpen] = useState(false);
+  const [bulkNotifySheetOpen, setBulkNotifySheetOpen] = useState(false);
   // Reps coordinate with vendors and need the client name on each row so they
   // can scan and call back without opening the detail. Agents have a separate
   // screen (`(agent)/today/index.tsx`) — this gate is defensive in case the
@@ -381,6 +388,26 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
       }
     },
     [exitSelect, reload, postponedQ, unassignedQ],
+  );
+  const onBulkNotified = useCallback(
+    (counts: BulkNotifyCounts) => {
+      setBulkNotifySheetOpen(false);
+      exitSelect();
+      reload();
+      // Rows are independent, so report what actually landed rather than a
+      // flat "done": a peer beating you to a row and a server refusal are
+      // different outcomes and only one of them is worth acting on.
+      const parts = [`Tagged ${counts.notified}`];
+      if (counts.alreadyTagged > 0) parts.push(`${counts.alreadyTagged} already done`);
+      if (counts.failed > 0) parts.push(`${counts.failed} failed`);
+      const msg = `${parts.join(', ')}.${counts.firstError ? `\n${counts.firstError}` : ''}`;
+      if (Platform.OS === 'web') {
+        if (typeof window !== 'undefined') window.alert(msg);
+      } else {
+        Alert.alert(counts.failed > 0 ? 'Partly done' : 'Done', msg);
+      }
+    },
+    [exitSelect, reload],
   );
 
   useReloadOnFocus(() => {
@@ -1142,16 +1169,47 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
                 </Button>
               </View>
             ) : null}
+            {/* Notify sits in the secondary row only when Assign owns the
+                emphasis slot below; otherwise it IS the emphasis action. */}
+            {canBulkNotify && canBulkAssign ? (
+              <View style={{ flex: 1 }}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  full
+                  onPress={() => setBulkNotifySheetOpen(true)}
+                  disabled={selectedRows.length === 0}
+                  accessibilityLabel={`Mark ${selectedRows.length} selected as client notified`}
+                >
+                  Notify
+                </Button>
+              </View>
+            ) : null}
           </View>
-          <Button
-            variant="emphasis"
-            full
-            icon="check"
-            onPress={() => setBulkSheetOpen(true)}
-            disabled={selectedRows.length === 0}
-          >
-            {`Assign ${selectedRows.length}`}
-          </Button>
+          {/* Assign is manager-only, but select mode is now reachable by reps
+              (bulk notify), so this has to be gated — an unguarded Assign would
+              open a sheet whose RPC refuses them. */}
+          {canBulkAssign ? (
+            <Button
+              variant="emphasis"
+              full
+              icon="check"
+              onPress={() => setBulkSheetOpen(true)}
+              disabled={selectedRows.length === 0}
+            >
+              {`Assign ${selectedRows.length}`}
+            </Button>
+          ) : canBulkNotify ? (
+            <Button
+              variant="emphasis"
+              full
+              icon="check"
+              onPress={() => setBulkNotifySheetOpen(true)}
+              disabled={selectedRows.length === 0}
+            >
+              {`Mark ${selectedRows.length} notified`}
+            </Button>
+          ) : null}
         </View>
       ) : null}
 
@@ -1167,6 +1225,12 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         selected={selectedRows}
         onClose={() => setBulkStatusSheetOpen(false)}
         onChanged={onBulkStatusChanged}
+      />
+      <BulkNotifySheet
+        open={bulkNotifySheetOpen}
+        selected={selectedRows}
+        onClose={() => setBulkNotifySheetOpen(false)}
+        onNotified={onBulkNotified}
       />
       <BulkDeleteSheet
         open={bulkDeleteSheetOpen}
