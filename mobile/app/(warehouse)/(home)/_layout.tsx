@@ -24,7 +24,9 @@ export default function WarehouseHomeLayout() {
       <Stack.Screen name="transfer" options={{ title: 'New transfer' }} />
       <Stack.Screen name="receive" options={{ title: 'Receive stock' }} />
       <Stack.Screen name="adjust" options={{ title: 'Adjustment' }} />
+      <Stack.Screen name="count" options={{ title: 'Count stock' }} />
       {/* These carry their own AppBar / nested stack. */}
+      <Stack.Screen name="count-history" options={{ headerShown: false }} />
       <Stack.Screen name="available" options={{ headerShown: false }} />
       <Stack.Screen name="stock-coverage" options={{ headerShown: false }} />
       <Stack.Screen name="agents" options={{ headerShown: false }} />

@@ -38,13 +38,21 @@ import { colors, fonts } from '@/lib/theme';
 
 const PAGE_SIZE = 30;
 
-export type CountHistoryBasePath = '/(admin)' | '/(dispatcher)';
+export type CountHistoryBasePath = '/(admin)' | '/(dispatcher)' | '/(warehouse)';
 
 export type CountHistoryProps = {
   basePath: CountHistoryBasePath;
   /** Pre-select a holder — set when arriving from a holder's detail screen. */
   initialHolderId?: string | null;
 };
+
+/** The Movements screen sits at a different depth per route group — warehouse
+ *  has no `/stock` segment. Mirrors movementsRoute() in HolderDetail.tsx. */
+function movementsRoute(basePath: CountHistoryBasePath) {
+  if (basePath === '/(warehouse)') return '/(warehouse)/movements/[holderId]' as const;
+  if (basePath === '/(admin)') return '/(admin)/stock/movements/[holderId]' as const;
+  return '/(dispatcher)/stock/movements/[holderId]' as const;
+}
 
 export function CountHistory({ basePath, initialHolderId = null }: CountHistoryProps) {
   const router = useRouter();
@@ -219,6 +227,9 @@ export function CountHistory({ basePath, initialHolderId = null }: CountHistoryP
             productName={productName}
             onToggle={() => toggle(item.batch_id)}
             onAdjust={
+              // canAdjust is admin-only (a variance fix is a `correction`, and
+              // that reason is admin-only server-side), so this deep link is
+              // never built under the warehouse base path.
               canAdjust
                 ? (productCatalogId) =>
                     router.push({
@@ -232,9 +243,10 @@ export function CountHistory({ basePath, initialHolderId = null }: CountHistoryP
                 : undefined
             }
             onTrace={() =>
-              router.push(
-                `${basePath}/stock/movements/${item.holder_id}` as `${CountHistoryBasePath}/stock/movements/${string}`,
-              )
+              router.push({
+                pathname: movementsRoute(basePath),
+                params: { holderId: item.holder_id },
+              })
             }
           />
         )}

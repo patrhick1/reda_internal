@@ -16,7 +16,13 @@ import { listHolderStock, type StockMatrixRow } from '@/services/stock';
 import { listAvailableOrders } from '@/services/available-orders';
 import { AppBar, Button, Card, Empty, FilterChips, Icon, Input, Sheet } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
-import { canAdjustOwnStock, canDoWarehouseTransfer, canReceiveStock } from '@/lib/permissions';
+import {
+  canAdjustOwnStock,
+  canDoWarehouseTransfer,
+  canReceiveStock,
+  canRecordStockCount,
+  canViewOthersStockHistory,
+} from '@/lib/permissions';
 import { getHolderStats, isLow, isNegative } from '@/lib/stock-helpers';
 
 type ProductFilter = 'all' | 'low' | 'negative';
@@ -83,7 +89,12 @@ export default function WarehouseHome() {
   const showReceive = canReceiveStock(user.role);
   const showTransfer = canDoWarehouseTransfer(user.role);
   const showAdjust = canAdjustOwnStock(user.role);
-  const showOverflow = showReceive || showAdjust;
+  // Counting is report-only, so it's gated more broadly than the write actions:
+  // warehouse staff record a count for their own place (server-enforced), and
+  // the history is readable by the same audience that can read stock_counts.
+  const showCount = canRecordStockCount(user.role);
+  const showCountHistory = canViewOthersStockHistory(user.role);
+  const showOverflow = showReceive || showAdjust || showCount || showCountHistory;
 
   const availableRows = useMemo(() => availableQ.data ?? [], [availableQ.data]);
   const availableAgents = useMemo(
@@ -418,6 +429,28 @@ export default function WarehouseHome() {
               }}
             />
           ) : null}
+          {showCount ? (
+            <ActionRow
+              icon="check"
+              label="Count stock"
+              sub="Check this shelf against the app — report only, no changes"
+              onPress={() => {
+                setOverflowOpen(false);
+                router.push('/(warehouse)/count');
+              }}
+            />
+          ) : null}
+          {showCountHistory ? (
+            <ActionRow
+              icon="history"
+              label="Count history"
+              sub="Past counts and what was off — report only"
+              onPress={() => {
+                setOverflowOpen(false);
+                router.push('/(warehouse)/count-history');
+              }}
+            />
+          ) : null}
         </View>
       </Sheet>
     </View>
@@ -511,7 +544,7 @@ function ActionRow({
   sub,
   onPress,
 }: {
-  icon: 'arrowDown' | 'edit';
+  icon: 'arrowDown' | 'edit' | 'check' | 'history';
   label: string;
   sub: string;
   onPress: () => void;

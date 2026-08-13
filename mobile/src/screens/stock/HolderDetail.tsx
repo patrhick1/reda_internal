@@ -56,19 +56,16 @@ export function HolderDetail({
 
   const holderRows = useMemo(() => holderStockQ.data ?? [], [holderStockQ.data]);
 
-  // "Last counted …" reference. Counts are readable by ops + warehouse, but the
-  // history SCREEN only exists under the admin and dispatcher route groups, so
-  // the warehouse view shows the line without making it tappable rather than
-  // pushing a route that isn't there.
+  // "Last counted …" reference, tappable through to that holder's history.
+  // Counts are readable by ops + warehouse alike (stock_counts RLS), and all
+  // three route groups now carry the screen — warehouse just without the
+  // `/stock` segment.
   const lastCountQ = useLastCount(holderId);
   const lastCountAt = lastCountQ.data?.[0]?.counted_at ?? null;
-  const countHistoryHref =
-    basePath === '/(warehouse)'
-      ? null
-      : ({
-          pathname: `${basePath}/stock/count-history`,
-          params: { holderId },
-        } as const);
+  const countHistoryHref = {
+    pathname: countHistoryRoute(basePath),
+    params: { holderId },
+  } as const;
   const orderedHolders = useMemo(
     () => buildOrderedHolderIds(new Set(holderIdsQ.data ?? []), usersQ.data ?? []),
     [holderIdsQ.data, usersQ.data],
@@ -217,9 +214,8 @@ export function HolderDetail({
             </Card>
             {lastCountAt ? (
               <Pressable
-                onPress={countHistoryHref ? () => router.push(countHistoryHref) : undefined}
-                disabled={!countHistoryHref}
-                accessibilityRole={countHistoryHref ? 'button' : undefined}
+                onPress={() => router.push(countHistoryHref)}
+                accessibilityRole="button"
                 style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
               >
                 <Icon name="check" size={14} color={colors.textSecondary} />
@@ -228,9 +224,7 @@ export function HolderDetail({
                 >
                   Last counted {relativeTime(lastCountAt)}
                 </Text>
-                {countHistoryHref ? (
-                  <Icon name="chevronRight" size={14} color={colors.textTertiary} />
-                ) : null}
+                <Icon name="chevronRight" size={14} color={colors.textTertiary} />
               </Pressable>
             ) : null}
             <Input
@@ -403,6 +397,12 @@ function holderRoute(basePath: DetailBasePath) {
   if (basePath === '/(warehouse)') return '/(warehouse)/holder/[holderId]' as const;
   if (basePath === '/(admin)') return '/(admin)/stock/holder/[holderId]' as const;
   return '/(dispatcher)/stock/holder/[holderId]' as const;
+}
+
+function countHistoryRoute(basePath: DetailBasePath) {
+  if (basePath === '/(warehouse)') return '/(warehouse)/count-history' as const;
+  if (basePath === '/(admin)') return '/(admin)/stock/count-history' as const;
+  return '/(dispatcher)/stock/count-history' as const;
 }
 
 function movementsRoute(basePath: DetailBasePath) {
