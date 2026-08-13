@@ -1443,15 +1443,15 @@ const DeliveryListRow = memo(function DeliveryListRow({
                 </>
               ) : (
                 <Text
+                  numberOfLines={1}
                   style={{
-                    fontFamily: fonts.bold,
-                    fontSize: 11,
-                    color: colors.red,
-                    letterSpacing: 0.6,
-                    textTransform: 'uppercase',
+                    fontFamily: fonts.medium,
+                    fontSize: 12,
+                    color: colors.textSecondary,
+                    flexShrink: 1,
                   }}
                 >
-                  Unassigned
+                  {delivery.raw_address?.trim() || delivery.location_name || 'Address not provided'}
                 </Text>
               )}
             </View>

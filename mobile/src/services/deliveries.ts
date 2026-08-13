@@ -348,7 +348,7 @@ const LIST_JOIN_FRAGMENT = `
 // views if a column the list needs is ever added.
 // [Egress Phase 3] Compact card contract. Dropped vs the old projection (all
 // detail-only or now server-computed, and verified unread by any list/dashboard/
-// sheet path): customer_phone_alt, raw_address, quantity_delivered, paid,
+// sheet path): customer_phone_alt, quantity_delivered, paid,
 // payment_method, delivery_instructions (detail-only), and latest_message_at +
 // assigned_at (were only sort inputs — now folded into the view's activity_at).
 // The sibling key no longer needs raw_address on the client (server computes it).
@@ -357,7 +357,7 @@ const LIST_JOIN_FRAGMENT = `
 // delivered legacy fallback; customer_phone stays for ops phone search.
 const LIST_COLUMNS = `
   id, client_id, product_catalog_id, location_id, assigned_agent_id, parent_delivery_id,
-  customer_name, customer_phone, quantity_ordered, customer_price,
+  customer_name, customer_phone, raw_address, quantity_ordered, customer_price,
   agent_payment_snapshot, current_status, created_via, created_by_user_id,
   created_date, scheduled_date, created_at, updated_at,
   latest_history_id, latest_changed_at, latest_notified,
