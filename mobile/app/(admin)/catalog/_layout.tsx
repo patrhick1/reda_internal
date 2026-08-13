@@ -24,7 +24,10 @@ export default function CatalogLayout() {
       <Stack.Screen name="locations/[id]" options={{ title: 'Edit location' }} />
 
       <Stack.Screen name="products/index" options={{ title: 'Products' }} />
-      <Stack.Screen name="products/new" options={{ title: 'New product', presentation: 'modal' }} />
+      <Stack.Screen
+        name="products/new"
+        options={{ title: 'Add products', presentation: 'modal' }}
+      />
       <Stack.Screen name="products/[id]" options={{ title: 'Edit product' }} />
 
       <Stack.Screen name="rates/index" options={{ title: 'Rate card' }} />

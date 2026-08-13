@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { queryClient } from '@/lib/query';
+import { errorMessage } from '@/lib/errors';
 import type { Database } from '@/types/database.gen';
 
 /** Product mutation → refresh cached useProducts()/useActiveProductsByClient()
@@ -71,6 +72,67 @@ export async function createProduct(clientId: string, input: ProductInput): Prom
   if (error) throw error;
   invalidateProducts();
   return data as string;
+}
+
+/** Per-row outcome of a bulk create. `skipped` = the client already has a
+ *  product by that name (the UNIQUE (client_id, product_name) constraint),
+ *  which is a no-op worth naming rather than an error worth alarming about. */
+export type BulkCreateProductsResult = {
+  created: number;
+  skipped: string[];
+  failed: number;
+  firstError: string | null;
+};
+
+/** Postgres unique_violation — the shape a duplicate product name comes back
+ *  as. Checked structurally because the message text is not a contract. */
+function isDuplicateNameError(e: unknown): boolean {
+  return typeof e === 'object' && e !== null && (e as { code?: string }).code === '23505';
+}
+
+/** Create several products for ONE client — the vendor-onboarding case.
+ *
+ *  `create_product` is a per-row endpoint with no idempotency key, so this
+ *  loops it the way the bulk stock screens loop theirs. It doesn't need a key:
+ *  UNIQUE (client_id, product_name) already makes a re-run a no-op, and that
+ *  same constraint is why a duplicate is reported as `skipped` rather than
+ *  failed — re-submitting after a partial batch should be safe and boring.
+ *
+ *  Sequential on purpose: the rows are typed by hand (a dozen at most) and
+ *  ordered output makes a partial result easy to read against the form.
+ *  Invalidates once at the end rather than per row. */
+export async function createProducts(
+  clientId: string,
+  items: ProductInput[],
+): Promise<BulkCreateProductsResult> {
+  const result: BulkCreateProductsResult = {
+    created: 0,
+    skipped: [],
+    failed: 0,
+    firstError: null,
+  };
+  for (const item of items) {
+    try {
+      const { error } = await supabase.rpc('create_product', {
+        p_client_id: clientId,
+        p_product_name: item.productName,
+        p_description: item.description as unknown as string,
+      });
+      if (error) throw error;
+      result.created += 1;
+    } catch (e) {
+      if (isDuplicateNameError(e)) {
+        result.skipped.push(item.productName);
+        continue;
+      }
+      result.failed += 1;
+      // errorMessage, not `e.message` — a PostgrestError is a plain object, so
+      // the usual instanceof/String fallback yields "[object Object]".
+      if (!result.firstError) result.firstError = errorMessage(e);
+    }
+  }
+  if (result.created > 0) invalidateProducts();
+  return result;
 }
 
 export async function updateProduct(

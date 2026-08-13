@@ -43,7 +43,7 @@ export default function ProductsList() {
           <Text style={styles.toggle}>{includeInactive ? 'Hide inactive' : 'Show inactive'}</Text>
         </TouchableOpacity>
         <Link href="/(admin)/catalog/products/new" asChild>
-          <Button title="New product" onPress={() => undefined} style={styles.newBtn} />
+          <Button title="Add products" onPress={() => undefined} style={styles.newBtn} />
         </Link>
       </View>
 

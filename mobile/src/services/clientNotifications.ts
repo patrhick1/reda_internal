@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { errorMessage } from '@/lib/errors';
 
 export type ClientNotification = {
   statusHistoryId: string;
@@ -73,7 +74,9 @@ export async function bulkMarkClientNotified(
         else counts.alreadyTagged += 1;
       } catch (e) {
         counts.failed += 1;
-        if (!counts.firstError) counts.firstError = e instanceof Error ? e.message : String(e);
+        // errorMessage, not `e.message` — the RPC rejects with a PostgrestError,
+        // a plain object, so instanceof/String would yield "[object Object]".
+        if (!counts.firstError) counts.firstError = errorMessage(e);
       }
     }
   }
