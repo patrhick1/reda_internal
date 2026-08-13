@@ -713,6 +713,17 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
 
   const visibleIds = useMemo(() => list.flatMap((d) => (d.id ? [d.id] : [])), [list]);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
+  // The location picker is a queue-building tool: once dispatch has chosen the
+  // areas, the next intended action is always a bulk operation on that entire
+  // result. Select the current result directly from the sheet instead of making
+  // the user close it, reveal the rows, and tap a second "Select all" button.
+  // Replace (rather than merge) the selection so hidden/stale rows can never be
+  // carried into the next bulk action.
+  const selectAllVisible = useCallback(() => {
+    if (visibleIds.length === 0) return;
+    setSelectMode(true);
+    setSelectedIds(new Set(visibleIds));
+  }, [visibleIds]);
   const toggleSelectAllVisible = useCallback(() => {
     setSelectMode(true);
     setSelectedIds((previous) => {
@@ -892,9 +903,11 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
           <LocationPicker
             selectedIds={locationIds}
             locations={locationOptions}
+            visibleOrderCount={visibleIds.length}
             loading={unassignedQ.loading}
             onToggle={toggleLocation}
             onClear={clearLocations}
+            onSelectAll={canBulkSelect ? selectAllVisible : undefined}
           />
         ) : null}
         {!selectMode && canBulkSelect && filter === 'unassigned' && visibleIds.length > 0 ? (
@@ -1866,20 +1879,24 @@ function ClientPicker({
 /** Unassigned-queue location narrower — MULTI-select. Options and counts come
  * from the rows already loaded by listUnassigned, so the picker includes
  * inactive or unmatched locations still present in the queue without another
- * request. Dispatch picks several areas (e.g. every Island location), taps Done,
- * then "Select all visible" → bulk-assign the lot to one rider (Uzo,
- * 2026-07-29). Empty selection = "All locations". */
+ * request. Dispatch picks several areas (e.g. every Island location), then the
+ * sheet selects the complete filtered result in one action for bulk assignment.
+ * Empty selection = "All locations". */
 function LocationPicker({
   selectedIds,
   locations,
+  visibleOrderCount,
   onToggle,
   onClear,
+  onSelectAll,
   loading,
 }: {
   selectedIds: ReadonlySet<string>;
   locations: LocationFilterOption[];
+  visibleOrderCount: number;
   onToggle: (id: string) => void;
   onClear: () => void;
+  onSelectAll?: () => void;
   loading: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -1899,15 +1916,13 @@ function LocationPicker({
           ? `Location: ${onlySelected.name} (${onlySelected.count})`
           : 'Location: 1 location'
         : `Location: ${count} locations`;
-  // Total orders across the chosen locations — shown on the Done button so the
-  // dispatcher sees how many rows they're about to reveal for bulk-assign.
-  const selectedTotal = locations.reduce(
-    (sum, location) => (selectedIds.has(location.id) ? sum + location.count : sum),
-    0,
-  );
   const close = () => {
     setOpen(false);
     setQ('');
+  };
+  const selectAllAndClose = () => {
+    onSelectAll?.();
+    close();
   };
 
   return (
@@ -2089,10 +2104,10 @@ function LocationPicker({
               }
             />
             <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
-              <Button full onPress={close}>
-                {count === 0
-                  ? 'Done'
-                  : `Show ${selectedTotal} ${selectedTotal === 1 ? 'order' : 'orders'}`}
+              <Button full onPress={selectAllAndClose} disabled={visibleOrderCount === 0}>
+                {visibleOrderCount === 0
+                  ? `No orders to ${onSelectAll ? 'select' : 'show'}`
+                  : `${onSelectAll ? 'Select all' : 'Show'} ${visibleOrderCount} ${visibleOrderCount === 1 ? 'order' : 'orders'}`}
               </Button>
             </View>
           </Pressable>
