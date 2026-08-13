@@ -73,18 +73,15 @@ export type ShareDeliveryLine = {
    *  it (when non-zero) so paid − delivery fee − POS fee reconciles to the row's
    *  remit and the footer total. */
   cashPosFee?: number | null;
-  /** [paidAndFee format] What the customer actually paid (= paid). Admin-only —
-   *  populated on the admin share path; the rep path omits it (its RPC strips
-   *  paid/fee), so the rep never produces this format. */
+  /** What the customer actually paid (= paid). Used by the default format's
+   *  payment note when it differs from the original total, and rendered as its
+   *  own line by the paidAndFee format. */
   paid?: number | null;
   /** [paidAndFee format] Reda's per-delivery delivery fee (= reda_fee / charged
    *  snapshot). Admin-only, same as `paid`. */
   redaFee?: number | null;
-  /** customer_price − paid (the rep RPC's `outstanding`; the admin path computes
-   *  it from its row). Non-zero → the share Note states the customer paid
-   *  less/extra (card 2026-07-28: 17,500 paid of 17,950 with no explanation).
-   *  Null when paid was never recorded — no claim is made. Safe on the rep path:
-   *  the difference alone cannot back out the Reda fee. */
+  /** customer_price − paid. Non-zero means the share Note should state the
+   *  actual amount paid. Null when paid was never recorded — no claim is made. */
   outstanding?: number | null;
 };
 
@@ -256,10 +253,10 @@ export type ClientShareFormat = 'default' | 'paidAndFee';
 // Per-client override for the "Share with client" report format. Only Karami
 // wants the per-delivery "Customer paid" + "Delivery fee" breakdown today; every
 // other client uses the default net-remit layout. Keyed by client id (stable
-// across renames). 'paidAndFee' reveals Reda's delivery fee, so it is ONLY ever
-// selected on the admin share path — reps must never see the fee (their RPC
-// strips paid/fee). To add a client: drop their id here (flip to a clients
-// column if this list ever grows).
+// across renames). 'paidAndFee' reveals Reda's delivery fee, so the rep RPC
+// returns that fee only for clients mapped here. To add a client, update this
+// map and the matching server-side allow-list (flip both to a clients column if
+// this list ever grows).
 const CLIENT_SHARE_FORMAT: Record<string, ClientShareFormat> = {
   '2acf7d84-3a5c-4532-b47c-568b7f4928f3': 'paidAndFee', // Karami
 };
@@ -338,7 +335,7 @@ export function buildClientShareMessage(input: {
       `Note: ${clientShareNote(
         r.clientRep,
         clientFacingDeliveryNote(
-          { paymentMethod: r.paymentMethod, outstanding: r.outstanding },
+          { paymentMethod: r.paymentMethod, paid: r.paid, outstanding: r.outstanding },
           r.note,
         ),
       )}`,

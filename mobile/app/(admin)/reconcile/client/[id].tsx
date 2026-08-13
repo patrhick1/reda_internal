@@ -93,8 +93,8 @@ export default function ClientReconcileDetail() {
           // For the paidAndFee format: what the customer paid + Reda's fee.
           paid: r.paid,
           redaFee: r.reda_fee,
-          // customer_price − paid, so the share Note can state a short/extra
-          // payment. Null when paid was never recorded (no claim made).
+          // customer_price − paid decides whether the share Note should state
+          // the actual payment. Null when paid was never recorded (no claim).
           outstanding: r.paid == null ? null : Number(r.customer_price ?? 0) - Number(r.paid),
           note:
             r.order_type === 'waybill'

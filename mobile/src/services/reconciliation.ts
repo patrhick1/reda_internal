@@ -132,10 +132,9 @@ export async function listClientRemitDetail(
 // ---------------------------------------------------------------------------
 // Rep-facing reconcile. Reps give clients delivered-updates but must not see
 // the Reda fee. These call the rep-safe RPCs (client_remit_summary_rep /
-// client_remit_detail_rep) which return ONLY client-facing figures — the fee,
-// cash POS fee, customer paid and customer price never leave the server, so
-// the Reda cut can't be seen or back-calculated on the device. `outstanding`
-// (customer balance) is client-facing and feeds the share Note.
+// client_remit_detail_rep) which return client-facing figures. The actual paid
+// amount is included because the rep must tell the client what the customer
+// paid; Reda's explicit fee remains server-gated to paidAndFee clients.
 // ---------------------------------------------------------------------------
 
 export type RepClientRemitRow = {
@@ -176,12 +175,11 @@ export type RepClientRemitDetailRow = {
   /** Pickup/waybill charge breakdown (the create_waybill note). Null for normal
    *  deliveries — the share report uses it only for waybill rows. Client-facing. */
   note: string | null;
-  /** [paidAndFee clients only — Karami] What the customer paid. The rep RPC
-   *  releases this ONLY for clients on the paidAndFee format; NULL (stripped) for
-   *  every other client, so the rep-fee-privacy boundary holds elsewhere. */
+  /** What the customer actually paid. Used in the client-facing Note whenever
+   *  it differs from the original order total. */
   paid?: number | null;
-  /** [paidAndFee clients only — Karami] Reda's delivery fee (reda_fee). Same
-   *  server-side gate as `paid` — NULL for all non-paidAndFee clients. */
+  /** [paidAndFee clients only — Karami] Reda's delivery fee (reda_fee).
+   *  NULL for all non-paidAndFee clients. */
   reda_fee?: number | null;
 };
 

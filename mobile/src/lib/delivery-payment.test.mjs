@@ -26,25 +26,28 @@ test('vendor-direct takes precedence over its by-construction outstanding', () =
   );
 });
 
-test('short payment is called out on a neutral note (card 2026-07-28)', () => {
+test('short payment states the amount actually paid on a neutral note', () => {
   // 17,950 agreed, 17,500 paid → outstanding 450.
   assert.equal(
-    clientFacingDeliveryNote({ paymentMethod: 'transfer', outstanding: 450 }, '—'),
-    'Customer paid ₦450 less',
+    clientFacingDeliveryNote({ paymentMethod: 'transfer', paid: 17_500, outstanding: 450 }, '—'),
+    'Customer paid ₦17,500',
   );
 });
 
-test('short payment composes with a meaningful note', () => {
+test('partial purchase states actual payment and quantity bought (card 2026-08-13)', () => {
   assert.equal(
-    clientFacingDeliveryNote({ paymentMethod: 'transfer', outstanding: 450 }, 'Delivered 1 of 2'),
-    'Customer paid ₦450 less · Delivered 1 of 2',
+    clientFacingDeliveryNote(
+      { paymentMethod: 'transfer', paid: 35_500, outstanding: 11_000 },
+      'Bought 3',
+    ),
+    'Customer paid ₦35,500 · Bought 3',
   );
 });
 
-test('extra payment is called out too', () => {
+test('extra payment also states the amount actually paid', () => {
   assert.equal(
-    clientFacingDeliveryNote({ paymentMethod: 'transfer', outstanding: -500 }, '—'),
-    'Customer paid ₦500 extra',
+    clientFacingDeliveryNote({ paymentMethod: 'transfer', paid: 18_450, outstanding: -500 }, '—'),
+    'Customer paid ₦18,450',
   );
 });
 
@@ -62,6 +65,10 @@ test('unrecorded paid makes no claim', () => {
     '—',
   );
   assert.equal(clientFacingDeliveryNote({ paymentMethod: 'transfer' }, 'Bought 1'), 'Bought 1');
+  assert.equal(
+    clientFacingDeliveryNote({ paymentMethod: 'transfer', outstanding: 450 }, 'Bought 1'),
+    'Bought 1',
+  );
 });
 
 test('vendor-direct displays the vendor-paid order value without a false shortfall', () => {

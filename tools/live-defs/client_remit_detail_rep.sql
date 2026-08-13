@@ -1,13 +1,12 @@
 -- Live mirror of public.client_remit_detail_rep (rep-safe client reconcile detail).
 -- Rep-facing passthrough over client_remit_detail.
 --
--- Strips Reda's cut (paid, reda_fee) for every client EXCEPT Karami, which is on
--- the paidAndFee share format and needs "Customer paid" + "Delivery fee" in the
--- rep's report. For Karami both are returned; for all other clients they come
--- back NULL, so the rep-fee-privacy boundary is unchanged. The gate is
--- server-side on the client id, so the app can never coax the fee out for anyone
--- else. Also surfaces the client-facing payment columns (payment_method, the
--- ₦500 cash POS pass-through, note) so the rep share message matches the admin one.
+-- Returns the actual customer payment for every client so the rep's share Note
+-- can say "Customer paid ₦X" instead of describing a partial purchase as money
+-- owed. Reda's explicit fee remains server-gated to Karami, which is on the
+-- paidAndFee share format. Also surfaces the client-facing payment columns
+-- (payment_method, the ₦500 cash POS pass-through, note) so the rep share
+-- message matches the admin one.
 -- Source of truth is the Cloud DB.
 --
 -- Signature grows by two columns (paid, reda_fee), so DROP + recreate.
@@ -31,9 +30,8 @@ AS $function$
     client_rep,
     order_type,
     note,
-    -- Karami only ('2acf7d84…' = Karami). NULL for every other client keeps
-    -- Reda's delivery fee hidden from reps.
-    case when p_client_id = '2acf7d84-3a5c-4532-b47c-568b7f4928f3' then paid end as paid,
+    paid,
+    -- Karami only ('2acf7d84…' = Karami). NULL for every other client.
     case when p_client_id = '2acf7d84-3a5c-4532-b47c-568b7f4928f3' then reda_fee end as reda_fee
   from public.client_remit_detail(p_client_id, p_from, p_to);
 $function$;

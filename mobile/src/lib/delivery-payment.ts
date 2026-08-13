@@ -7,14 +7,14 @@ function naira(amount: number): string {
   return `₦${amount.toLocaleString('en-NG', { maximumFractionDigits: 2 })}`;
 }
 
-/** Payment facts for annotating the client-facing note. `outstanding` is
- *  customer_price − paid — the one figure BOTH reconcile paths can supply.
- *  The rep RPC deliberately strips `paid` itself (paid − remit − cash_pos_fee
- *  would let a rep derive the Reda fee); the difference derives nothing, so the
- *  admin and rep share messages stay byte-identical without widening the rep's
- *  view. */
+/** Payment facts for annotating the client-facing note. `outstanding` is used
+ *  only to decide whether a payment note is needed; when it is, the note states
+ *  the amount the customer actually paid rather than framing the difference as
+ *  money still owed. */
 export type ClientNotePayment = {
   paymentMethod: string | null | undefined;
+  /** Amount actually collected from the customer. */
+  paid?: number | null;
   /** customer_price − paid. Null/undefined = paid never recorded (no claim). */
   outstanding?: number | null;
 };
@@ -25,8 +25,9 @@ export type ClientNotePayment = {
  *   note must say where the customer's payment went instead of leaving an
  *   unexplained negative remit. (Checked first: a vendor-direct row's
  *   outstanding is the whole order value by construction, not a mismatch.)
- * - Otherwise, a customer who paid less/more than the order total must be
- *   called out — the vendor sees the changed remit and needs to know why.
+ * - Otherwise, when the amount differs from the original order total, state
+ *   what the customer actually paid. This is neutral for partial purchases:
+ *   "Customer paid ₦35,500 · Bought 3", not "paid ₦11,000 less".
  */
 export function clientFacingDeliveryNote(payment: ClientNotePayment, note: string): string {
   if (payment.paymentMethod === 'vendor_direct') {
@@ -36,8 +37,9 @@ export function clientFacingDeliveryNote(payment: ClientNotePayment, note: strin
   }
   const diff = payment.outstanding == null ? 0 : Number(payment.outstanding);
   if (diff === 0) return note;
-  const mismatch =
-    diff > 0 ? `Customer paid ${naira(diff)} less` : `Customer paid ${naira(-diff)} extra`;
+  const paid = payment.paid == null ? null : Number(payment.paid);
+  if (paid == null || !Number.isFinite(paid)) return note;
+  const mismatch = `Customer paid ${naira(paid)}`;
   const trimmed = note.trim();
   if (!trimmed || trimmed === NEUTRAL_DELIVERY_NOTE) return mismatch;
   return `${mismatch} · ${trimmed}`;

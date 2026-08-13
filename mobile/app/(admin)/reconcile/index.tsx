@@ -62,6 +62,7 @@ import { downloadTextFile, downloadBinaryFile } from '@/lib/download';
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 type Tab = 'clients' | 'agents' | 'summary';
+type AgentRemitFilter = 'outstanding' | 'handed_over' | 'nothing_due' | 'all';
 
 // Stable empty map so a missing settlements query doesn't allocate a new Map
 // each render (which would churn the list props).
@@ -693,19 +694,79 @@ function AgentsList({
 }) {
   // Headline = total cash the riders owe Reda for the period (net of their own
   // delivery pay). This is collection-from-riders, NOT agent payroll.
-  const total = useMemo(
-    () => (state.data ?? []).reduce((s, r) => s + Number(r.total_remit), 0),
-    [state.data],
+  const [remitFilter, setRemitFilter] = useState<AgentRemitFilter>('outstanding');
+  const rows = state.data ?? [];
+  const { outstanding, handedOver, nothingDue } = useMemo(() => {
+    const outstandingRows: AgentEarningsRow[] = [];
+    const handedOverRows: AgentEarningsRow[] = [];
+    const nothingDueRows: AgentEarningsRow[] = [];
+
+    for (const row of state.data ?? []) {
+      if (settlements.has(`agent:${row.agent_id}`)) {
+        handedOverRows.push(row);
+      } else if (Number(row.total_remit) > 0) {
+        outstandingRows.push(row);
+      } else {
+        nothingDueRows.push(row);
+      }
+    }
+
+    return {
+      outstanding: outstandingRows,
+      handedOver: handedOverRows,
+      nothingDue: nothingDueRows,
+    };
+  }, [settlements, state.data]);
+  const visibleRows = !canSettle
+    ? rows
+    : remitFilter === 'outstanding'
+      ? outstanding
+      : remitFilter === 'handed_over'
+        ? handedOver
+        : remitFilter === 'nothing_due'
+          ? nothingDue
+          : rows;
+  const outstandingTotal = useMemo(
+    () => outstanding.reduce((sum, row) => sum + Number(row.total_remit), 0),
+    [outstanding],
   );
-  const count = (state.data ?? []).length;
+  const total = canSettle
+    ? outstandingTotal
+    : rows.reduce((sum, row) => sum + Number(row.total_remit), 0);
+  const count = rows.length;
   const deliveriesTotal = useMemo(
     () => (state.data ?? []).reduce((s, r) => s + Number(r.deliveries_count), 0),
     [state.data],
   );
+  const requestHandover = useCallback(
+    (item: AgentEarningsRow, note: string | null) => {
+      const message = `Confirm you received ${formatNaira(Number(item.total_remit))} from ${
+        item.agent_name
+      } for ${formatRangeLagos(eodDate, eodDate)}?`;
+      const confirm = () => onSettle(item.agent_id, note);
+
+      if (Platform.OS === 'web') {
+        if (window.confirm(message)) confirm();
+        return;
+      }
+
+      Alert.alert('Confirm handover', message, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Confirm received', onPress: confirm },
+      ]);
+    },
+    [eodDate, onSettle],
+  );
+  const filterOptions: { id: AgentRemitFilter; label: string; count: number }[] = [
+    { id: 'outstanding', label: 'Outstanding', count: outstanding.length },
+    { id: 'handed_over', label: 'Handed over', count: handedOver.length },
+    { id: 'nothing_due', label: 'Nothing due', count: nothingDue.length },
+    { id: 'all', label: 'All', count },
+  ];
 
   return (
     <FlatList
-      data={state.data ?? []}
+      data={visibleRows}
       keyExtractor={(r) => r.agent_id}
       contentContainerStyle={{ ...listContentStyle, gap: 8 }}
       refreshControl={
@@ -718,14 +779,22 @@ function AgentsList({
       ListHeaderComponent={
         <View style={{ marginBottom: 12 }}>
           <Card>
-            <Text style={kicker}>Total to collect from agents</Text>
+            <Text style={kicker}>
+              {canSettle ? 'Outstanding to collect' : 'Total to collect from agents'}
+            </Text>
             <Text
               style={{
                 fontFamily: fonts.extrabold,
                 fontSize: 36,
                 // Net can go negative (riders Reda owes outweigh those who owe Reda);
                 // don't render a negative total in success-green.
-                color: total >= 0 ? colors.success : colors.red,
+                color: canSettle
+                  ? total > 0
+                    ? colors.red
+                    : colors.success
+                  : total >= 0
+                    ? colors.success
+                    : colors.red,
                 letterSpacing: -1,
                 marginTop: 4,
               }}
@@ -740,9 +809,55 @@ function AgentsList({
                 marginTop: 2,
               }}
             >
-              {deliveriesTotal} deliveries · {count} {count === 1 ? 'agent' : 'agents'}
+              {canSettle
+                ? `${outstanding.length} ${outstanding.length === 1 ? 'agent' : 'agents'} outstanding · ${handedOver.length} handed over · ${nothingDue.length} nothing due`
+                : `${deliveriesTotal} deliveries · ${count} ${count === 1 ? 'agent' : 'agents'}`}
             </Text>
           </Card>
+          {canSettle && count > 0 && outstanding.length === 0 ? (
+            <View
+              style={{
+                backgroundColor: colors.successSoft,
+                borderColor: colors.success,
+                borderWidth: 1,
+                borderRadius: 14,
+                padding: 14,
+                marginTop: 8,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+              }}
+            >
+              <Icon name="check" size={20} color={colors.success} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.success }}>
+                  All handovers complete
+                </Text>
+                <Text
+                  style={{
+                    fontFamily: fonts.medium,
+                    fontSize: 12,
+                    color: colors.textSecondary,
+                    marginTop: 2,
+                  }}
+                >
+                  Every agent with money to remit is marked handed over.
+                </Text>
+              </View>
+            </View>
+          ) : null}
+          {canSettle ? (
+            <View style={{ marginHorizontal: -16, marginTop: 2 }}>
+              <FilterChips
+                options={filterOptions}
+                value={remitFilter}
+                onChange={(value) => {
+                  setOpenId(null);
+                  setRemitFilter(value);
+                }}
+              />
+            </View>
+          ) : null}
           <View style={{ marginTop: 8 }}>
             <Button variant="secondary" full icon="calendar" onPress={onRunEod}>
               {`${isWide ? 'Run EOD rollover' : 'Run EOD'} · ${eodDate}`}
@@ -759,11 +874,21 @@ function AgentsList({
           countLabel={`${item.deliveries_count} deliveries · qty ${item.total_quantity}`}
           amount={Number(item.total_remit)}
           amountLabel="To remit"
-          amountColor={Number(item.total_remit) >= 0 ? colors.success : colors.red}
+          amountColor={
+            canSettle
+              ? settlements.has(`agent:${item.agent_id}`)
+                ? colors.success
+                : Number(item.total_remit) > 0
+                  ? colors.red
+                  : colors.textSecondary
+              : Number(item.total_remit) >= 0
+                ? colors.success
+                : colors.red
+          }
           settlement={settlements.get(`agent:${item.agent_id}`) ?? null}
           canSettle={canSettle}
           settleLabel="Mark handed over"
-          onSettle={(note) => onSettle(item.agent_id, note)}
+          onSettle={(note) => requestHandover(item, note)}
           onVoid={onVoid}
           extra={[
             { label: 'Collected from customers', value: formatNaira(Number(item.total_collected)) },
@@ -779,6 +904,24 @@ function AgentsList({
           <View style={{ padding: 60, alignItems: 'center' }}>
             <ActivityIndicator color={colors.black} />
           </View>
+        ) : canSettle && remitFilter === 'outstanding' ? (
+          <Empty
+            icon="check"
+            title="No outstanding handovers"
+            sub="Every agent with money to remit is marked handed over."
+          />
+        ) : canSettle && remitFilter === 'handed_over' ? (
+          <Empty
+            icon="wallet"
+            title="No handovers recorded"
+            sub="Completed agent handovers will appear here."
+          />
+        ) : canSettle && remitFilter === 'nothing_due' ? (
+          <Empty
+            icon="users"
+            title="No agents in this category"
+            sub="Agents with zero or negative remit will appear here."
+          />
         ) : (
           <Empty
             icon="users"
@@ -1075,7 +1218,20 @@ function ExpandableRow({
                 color: hasDrift ? colors.warning : colors.success,
               }}
             >
-              {hasDrift ? '⚠ changed' : '✓ settled'}
+              {hasDrift ? '⚠ changed' : subjectKind === 'agent' ? '✓ handed over' : '✓ settled'}
+            </Text>
+          ) : subjectKind === 'agent' && canSettle ? (
+            <Text
+              style={{
+                fontFamily: fonts.bold,
+                fontSize: 10,
+                letterSpacing: 0.4,
+                textTransform: 'uppercase',
+                marginTop: 3,
+                color: amount > 0 ? colors.red : colors.textSecondary,
+              }}
+            >
+              {amount > 0 ? 'Outstanding' : 'Nothing due'}
             </Text>
           ) : null}
         </View>
@@ -1119,9 +1275,9 @@ function ExpandableRow({
               <Text
                 style={{ fontFamily: fonts.semibold, fontSize: 12, color: colors.textSecondary }}
               >
-                {`Settled ${formatNaira(settledAmount ?? 0)}${
-                  settlement.settled_by_name ? ` · ${settlement.settled_by_name}` : ''
-                }`}
+                {`${subjectKind === 'agent' ? 'Handed over' : 'Settled'} ${formatNaira(
+                  settledAmount ?? 0,
+                )}${settlement.settled_by_name ? ` · ${settlement.settled_by_name}` : ''}`}
               </Text>
               {settlement.note ? (
                 <Text
@@ -1176,7 +1332,7 @@ function ExpandableRow({
                 </View>
               ) : null}
             </View>
-          ) : canSettle && onSettle ? (
+          ) : canSettle && onSettle && (subjectKind !== 'agent' || amount > 0) ? (
             <View
               style={{
                 marginTop: 12,
@@ -1202,6 +1358,17 @@ function ExpandableRow({
                 {settleLabel ?? 'Mark settled'}
               </Button>
             </View>
+          ) : subjectKind === 'agent' && canSettle ? (
+            <Text
+              style={{
+                fontFamily: fonts.medium,
+                fontSize: 12,
+                color: colors.textSecondary,
+                marginTop: 12,
+              }}
+            >
+              No handover required for this day.
+            </Text>
           ) : null}
           {onActionPress ? (
             <View style={{ marginTop: 10 }}>
