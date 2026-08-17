@@ -78,7 +78,7 @@ export default function RepClientReconcileDetail() {
           // makes the Note state what the customer paid.
           outstanding: r.outstanding,
           note:
-            r.order_type === 'waybill'
+            r.order_type === 'waybill' || r.order_type === 'replacement'
               ? (r.note ?? '')
               : deriveDeliveryNote({
                   quantityOrdered: q.ordered,
@@ -176,17 +176,20 @@ function DeliveryRow({ row }: { row: RepClientRemitDetailRow }) {
   const customer = row.customer_name ?? 'Customer';
   // Itemized so a multi-product order reads "Antivirus Cleanser ×2, Gallant Max ×5"
   // instead of the legacy collapsed "Gallant Max · 7 units".
-  const products = remitProductsDisplay(remitRowProducts(row));
+  const products =
+    row.order_type === 'replacement'
+      ? row.note ?? 'Replacement service'
+      : remitProductsDisplay(remitRowProducts(row));
   const loc = row.location_name ?? '—';
   // Full display name so namesakes (e.g. "Mummy Jerry") stay distinguishable.
   const agent = row.agent_name ?? null;
   const date = formatDateLagos(row.scheduled_date);
   const remit = Number(row.remit ?? 0);
   const q = remitRowQuantities(row);
-  const note = deriveDeliveryNote({
-    quantityOrdered: q.ordered,
-    quantityDelivered: q.delivered,
-  });
+  const note =
+    row.order_type === 'replacement'
+      ? row.note ?? 'Replacement service'
+      : deriveDeliveryNote({ quantityOrdered: q.ordered, quantityDelivered: q.delivered });
   return (
     <Card>
       <View

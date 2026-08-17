@@ -29,6 +29,7 @@ export default function WarehouseHomeLayout() {
       <Stack.Screen name="count-history" options={{ headerShown: false }} />
       <Stack.Screen name="available" options={{ headerShown: false }} />
       <Stack.Screen name="stock-coverage" options={{ headerShown: false }} />
+      <Stack.Screen name="replacement-returns" options={{ headerShown: false }} />
       <Stack.Screen name="agents" options={{ headerShown: false }} />
       <Stack.Screen name="holder/[holderId]" options={{ headerShown: false }} />
       <Stack.Screen name="by-client" options={{ headerShown: false }} />

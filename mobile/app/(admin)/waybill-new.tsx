@@ -34,7 +34,9 @@ export default function NewWaybill() {
   const clientsQ = useClients();
 
   const [clientId, setClientId] = useState<string | null>(null);
-  const [orderType, setOrderType] = useState<'Pickup' | 'Waybill' | 'Failed delivery'>('Pickup');
+  const [orderType, setOrderType] = useState<
+    'Pickup' | 'Waybill' | 'Failed delivery' | 'Replacement'
+  >('Pickup');
   const [fare, setFare] = useState(''); // trip fare Reda paid (Uber / driver)
   const [fee, setFee] = useState(''); // fee Reda charges the client
   const [extras, setExtras] = useState<Extra[]>([]);
@@ -148,8 +150,15 @@ export default function NewWaybill() {
               { value: 'Pickup', label: 'Pickup' },
               { value: 'Waybill', label: 'Waybill' },
               { value: 'Failed delivery', label: 'Failed delivery' },
+              { value: 'Replacement', label: 'Replacement' },
             ]}
-            onChange={setOrderType}
+            onChange={(value) => {
+              if (value === 'Replacement') {
+                router.push('/(admin)/replacement-new');
+                return;
+              }
+              setOrderType(value);
+            }}
           />
 
           <Input

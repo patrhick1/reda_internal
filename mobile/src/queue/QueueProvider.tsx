@@ -58,6 +58,8 @@ const DELIVERY_JOB_KINDS: ReadonlySet<JobKind> = new Set<JobKind>([
   'flag_delivery',
   'return_delivery_leftover',
   'agent_change_delivery_location',
+  'record_replacement_attempt',
+  'complete_replacement',
 ]);
 
 // [Egress Phase 3] Queued job kinds that move STOCK. Adjustments/transfers and a
@@ -70,6 +72,7 @@ const STOCK_JOB_KINDS: ReadonlySet<JobKind> = new Set<JobKind>([
   'create_stock_transfer',
   'return_delivery_leftover',
   'change_delivery_status',
+  'complete_replacement',
 ]);
 
 export function QueueProvider({ children }: { children: ReactNode }) {

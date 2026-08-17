@@ -344,8 +344,13 @@ export function canBulkMarkDelivered(role: Role): boolean {
 export function canBulkDeliverRow(row: {
   current_status: string | null;
   location_id: string | null;
+  order_type?: string | null;
 }): boolean {
   if (row.location_id == null) return false;
+  // Pickup/waybill and replacement jobs each have their own atomic completion
+  // workflow. Sending either through generic bulk-delivered would bypass its
+  // accounting, stock and (for replacements) return-custody records.
+  if (row.order_type && row.order_type !== 'delivery') return false;
   // Non-terminal only: 'active' or 'soft' bucket. 'done'/'closed' rows are
   // already finished and have no valid transition to 'delivered'.
   const bucket = statusBucket(row.current_status);

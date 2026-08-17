@@ -295,6 +295,39 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
             product totals + per-agent breakdown so she can plan stock
             allocation for today. Replaces the agent-workload section Uzo
             said the dispatcher doesn't use. */}
+        <Card dense onPress={() => router.push('/(dispatcher)/replacement-new')}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <View
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: colors.surface,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Icon name="refresh" size={18} color={colors.black} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>
+                New replacement
+              </Text>
+              <Text
+                style={{
+                  fontFamily: fonts.medium,
+                  fontSize: 12,
+                  color: colors.textSecondary,
+                  marginTop: 2,
+                }}
+              >
+                Plan the trip, outgoing product, and returned-item instruction
+              </Text>
+            </View>
+            <Icon name="chevronRight" size={20} color={colors.textSecondary} />
+          </View>
+        </Card>
+
         <Card
           dense
           onPress={() => router.push(`${basePath}/available` as `${OpsBasePath}/available`)}
@@ -401,6 +434,7 @@ function bucketCounts(rows: DeliveryRow[]): {
 } {
   const groups = new Map<string, DeliveryRow[]>();
   for (const r of rows) {
+    if (r.order_type === 'replacement') continue;
     const key = r.sibling_group_key;
     let arr = groups.get(key);
     if (!arr) {

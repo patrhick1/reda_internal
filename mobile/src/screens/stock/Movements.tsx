@@ -63,6 +63,11 @@ export const KIND_CATEGORIES: KindCategory[] = [
   { id: 'transfers', label: 'Transfers', kinds: ['transfer'] },
   { id: 'delivered', label: 'Delivered', kinds: ['delivered', 'delivery_returned'] },
   {
+    id: 'replacements',
+    label: 'Replacements',
+    kinds: ['replacement_outbound', 'replacement_return_accepted'],
+  },
+  {
     id: 'adjustments',
     label: 'Adjustments',
     kinds: ['correction', 'loss', 'theft', 'damaged', 'found'],
@@ -587,6 +592,10 @@ export function iconFor(kind: MovementEventKind): IconName {
     case 'delivery_returned':
       // Stock coming back onto the shelf after a delivered order was reverted.
       return 'arrowDown';
+    case 'replacement_outbound':
+      return 'refresh';
+    case 'replacement_return_accepted':
+      return 'arrowDown';
     case 'correction':
     case 'found':
       return 'edit';
@@ -662,6 +671,14 @@ function subtitleFor(row: StockMovement, holderId: string): string {
       return row.customer_name ? `Delivered to ${row.customer_name}` : 'Delivered';
     case 'delivery_returned':
       return row.customer_name ? `Delivery reverted · ${row.customer_name}` : 'Delivery reverted';
+    case 'replacement_outbound':
+      return row.customer_name
+        ? `Replacement sent to ${row.customer_name}`
+        : 'Replacement product sent';
+    case 'replacement_return_accepted':
+      return row.customer_name
+        ? `Replacement return accepted · ${row.customer_name}`
+        : 'Replacement return accepted into stock';
     default:
       return row.event_kind;
   }

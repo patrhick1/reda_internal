@@ -34,7 +34,11 @@ import { colors, fonts } from '@/lib/theme';
  */
 type RangeKey = '7d' | '30d' | 'month' | 'custom';
 type MovementSummaryBasePath = '/(admin)' | '/(dispatcher)';
-type DeliveryDrillKind = 'delivered' | 'delivery_returned';
+type DeliveryDrillKind =
+  | 'delivered'
+  | 'delivery_returned'
+  | 'replacement_outbound'
+  | 'replacement_return_accepted';
 type DeliveryDrill = {
   kind: DeliveryDrillKind;
   rows: GlobalMovement[] | 'loading';
@@ -58,6 +62,8 @@ const STOCK_CHANGE_LINES: PeriodLine[] = [
   { key: 'received', label: 'Stock received' },
   { key: 'delivered', label: 'Delivered to customers' },
   { key: 'deliveryReversed', label: 'Delivery reversals' },
+  { key: 'replacementOutbound', label: 'Replacement products sent' },
+  { key: 'replacementReturns', label: 'Replacement returns accepted' },
   { key: 'adjustments', label: 'Adjustments' },
 ];
 
@@ -165,7 +171,13 @@ export function StockMovementSummaryScreen({ basePath }: { basePath: MovementSum
   // ---- Delivered / reversed-delivery drill sub-view -----------------------
   if (deliveryDrill !== null) {
     const { kind, rows } = deliveryDrill;
-    const isReversal = kind === 'delivery_returned';
+    const isReturn = kind === 'delivery_returned' || kind === 'replacement_return_accepted';
+    const titleByKind: Record<DeliveryDrillKind, string> = {
+      delivered: 'Delivered',
+      delivery_returned: 'Delivery reversals',
+      replacement_outbound: 'Replacement products sent',
+      replacement_return_accepted: 'Replacement returns accepted',
+    };
     const totalUnits =
       rows === 'loading'
         ? 0
@@ -173,7 +185,7 @@ export function StockMovementSummaryScreen({ basePath }: { basePath: MovementSum
     return (
       <ScrollView style={styles.flex} contentContainerStyle={styles.content}>
         <Text style={styles.h1}>
-          {isReversal ? 'Delivery reversals' : 'Delivered'} — {productName}
+          {titleByKind[kind]} — {productName}
         </Text>
         <Text style={styles.h1sub}>
           {formatDayMonthLagos(from)} → {formatDayMonthLagos(to)}
@@ -185,7 +197,7 @@ export function StockMovementSummaryScreen({ basePath }: { basePath: MovementSum
           </View>
         ) : rows.length === 0 ? (
           <Text style={styles.empty}>
-            {isReversal ? 'No delivery reversals in this range.' : 'No deliveries in this range.'}
+            No matching movements in this range.
           </Text>
         ) : (
           <View style={styles.card}>
@@ -212,7 +224,7 @@ export function StockMovementSummaryScreen({ basePath }: { basePath: MovementSum
                     {r.holder_name ? ` · ${r.holder_name}` : ''}
                   </Text>
                 </View>
-                <Text style={isReversal ? styles.varPos : styles.varNeg}>{r.quantity_delta}</Text>
+                <Text style={isReturn ? styles.varPos : styles.varNeg}>{r.quantity_delta}</Text>
               </Pressable>
             ))}
           </View>
@@ -327,6 +339,22 @@ export function StockMovementSummaryScreen({ basePath }: { basePath: MovementSum
                 variant="secondary"
                 style={styles.spacer}
                 onPress={() => openDeliveryDrill('delivery_returned')}
+              />
+            ) : null}
+            {grouped.total.replacementOutbound !== 0 ? (
+              <Button
+                title={`View replacement products sent (${Math.abs(grouped.total.replacementOutbound)} units)`}
+                variant="secondary"
+                style={styles.spacer}
+                onPress={() => openDeliveryDrill('replacement_outbound')}
+              />
+            ) : null}
+            {grouped.total.replacementReturns !== 0 ? (
+              <Button
+                title={`View replacement returns (${Math.abs(grouped.total.replacementReturns)} units)`}
+                variant="secondary"
+                style={styles.spacer}
+                onPress={() => openDeliveryDrill('replacement_return_accepted')}
               />
             ) : null}
           </View>

@@ -97,7 +97,7 @@ export default function ClientReconcileDetail() {
           // the actual payment. Null when paid was never recorded (no claim).
           outstanding: r.paid == null ? null : Number(r.customer_price ?? 0) - Number(r.paid),
           note:
-            r.order_type === 'waybill'
+            r.order_type === 'waybill' || r.order_type === 'replacement'
               ? (r.note ?? '')
               : deriveDeliveryNote({
                   quantityOrdered: q.ordered,
@@ -210,7 +210,10 @@ function DeliveryRow({ row }: { row: ClientRemitDetailRow }) {
   const customer = row.customer_name ?? 'Customer';
   // Itemized so a multi-product order reads "Antivirus Cleanser ×2, Gallant Max ×5"
   // instead of the legacy collapsed "Gallant Max · 7 units".
-  const products = remitProductsDisplay(remitRowProducts(row));
+  const products =
+    row.order_type === 'replacement'
+      ? row.note ?? 'Replacement service'
+      : remitProductsDisplay(remitRowProducts(row));
   const loc = row.location_name ?? '—';
   // Full display name so namesakes (e.g. "Mummy Jerry") stay distinguishable.
   const agent = row.agent_name ?? null;
@@ -289,12 +292,16 @@ function DeliveryRow({ row }: { row: ClientRemitDetailRow }) {
           gap: 4,
         }}
       >
-        {row.payment_method === 'vendor_direct' ? (
+        {row.order_type === 'replacement' ? (
+          <MicroRow label="Reda replacement fee" value={formatNaira(row.reda_fee)} />
+        ) : row.payment_method === 'vendor_direct' ? (
           <MicroRow label="Paid to vendor (direct)" value={formatNaira(row.customer_price)} />
         ) : (
           <MicroRow label="Customer paid" value={formatNaira(row.paid)} />
         )}
-        <MicroRow label="Reda fee" value={formatNaira(row.reda_fee)} />
+        {row.order_type !== 'replacement' ? (
+          <MicroRow label="Reda fee" value={formatNaira(row.reda_fee)} />
+        ) : null}
         {Number(row.cash_pos_fee ?? 0) > 0 ? (
           <MicroRow label="Cash POS fee" value={formatNaira(row.cash_pos_fee)} />
         ) : null}

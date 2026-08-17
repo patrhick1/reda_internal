@@ -232,6 +232,12 @@ export default function AdminHome() {
             onPress={() => router.push('/(admin)/waybill-new')}
           />
           <QuickAction
+            icon="refresh"
+            label="Replacement"
+            accent={colors.black}
+            onPress={() => router.push('/(admin)/replacement-new')}
+          />
+          <QuickAction
             icon="calendar"
             label="End of day"
             accent={colors.black}
@@ -409,6 +415,7 @@ function QuickAction({
 function summarize(rows: DeliveryRow[]) {
   const groups = new Map<string, DeliveryRow[]>();
   for (const r of rows) {
+    if (r.order_type === 'replacement') continue;
     const key = r.sibling_group_key;
     let arr = groups.get(key);
     if (!arr) {

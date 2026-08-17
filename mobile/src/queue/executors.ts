@@ -17,7 +17,10 @@ import type {
   Job,
   JobKind,
   ReturnDeliveryLeftoverArgs,
+  RecordReplacementAttemptArgs,
+  CompleteReplacementArgs,
 } from './types';
+import { rpcUntyped } from '@/lib/supabase';
 
 export type Executor = (clientUuid: string, args: unknown) => Promise<void>;
 
@@ -98,6 +101,34 @@ const EXECUTORS: Record<JobKind, Executor> = {
       p_delivery_id: args.deliveryId,
       p_location_id: args.toLocationId,
       p_reason: args.reason,
+    });
+    if (error) throw classifyRpcError(error);
+  },
+  async record_replacement_attempt(clientUuid, raw) {
+    const args = raw as RecordReplacementAttemptArgs;
+    const { error } = await rpcUntyped('record_replacement_attempt', {
+      p_client_uuid: clientUuid,
+      p_delivery_id: args.deliveryId,
+      p_outcome: args.outcome,
+      p_notes: args.notes,
+      p_next_attempt_date: args.nextAttemptDate,
+      p_client_charge: args.clientCharge,
+      p_agent_payment: args.agentPayment,
+    });
+    if (error) throw classifyRpcError(error);
+  },
+  async complete_replacement(clientUuid, raw) {
+    const args = raw as CompleteReplacementArgs;
+    const { error } = await rpcUntyped('complete_replacement', {
+      p_client_uuid: clientUuid,
+      p_delivery_id: args.deliveryId,
+      p_return_outcomes: args.returnOutcomes.map((item) => ({
+        return_item_id: item.returnItemId,
+        outcome: item.outcome,
+        quantity: item.quantity,
+        notes: item.notes,
+      })),
+      p_notes: args.notes,
     });
     if (error) throw classifyRpcError(error);
   },

@@ -9,7 +9,9 @@ export type MovementSummaryReason =
   | 'damaged'
   | 'found'
   | 'delivered'
-  | 'delivery_returned';
+  | 'delivery_returned'
+  | 'replacement_outbound'
+  | 'replacement_return_accepted';
 
 /**
  * One period/reason total from `stock_movement_summary`.
@@ -30,6 +32,8 @@ export type MovementPeriod = {
   received: number;
   delivered: number;
   deliveryReversed: number;
+  replacementOutbound: number;
+  replacementReturns: number;
   warehouseReturns: number;
   warehouseIssues: number;
   transfers: number;
@@ -44,6 +48,8 @@ const REASON_BUCKET: Record<MovementSummaryReason, MovementMetric> = {
   found: 'received',
   delivered: 'delivered',
   delivery_returned: 'deliveryReversed',
+  replacement_outbound: 'replacementOutbound',
+  replacement_return_accepted: 'replacementReturns',
   warehouse_return: 'warehouseReturns',
   warehouse_issue: 'warehouseIssues',
   transfer: 'transfers',
@@ -64,6 +70,8 @@ const emptyPeriod = (period_start: string): MovementPeriod => ({
   received: 0,
   delivered: 0,
   deliveryReversed: 0,
+  replacementOutbound: 0,
+  replacementReturns: 0,
   warehouseReturns: 0,
   warehouseIssues: 0,
   transfers: 0,

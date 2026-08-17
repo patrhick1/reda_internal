@@ -17,6 +17,8 @@ import type {
   CreateStockTransferArgs,
   FlagDeliveryArgs,
   ReturnDeliveryLeftoverArgs,
+  RecordReplacementAttemptArgs,
+  CompleteReplacementArgs,
 } from './types';
 
 // Each hook returns the queue job ID so callers (e.g. the delivery detail
@@ -79,6 +81,26 @@ export function useEnqueueAgentChangeLocation() {
   return useCallback(
     async (args: AgentChangeDeliveryLocationArgs, label: string): Promise<string> => {
       return await enqueue({ kind: 'agent_change_delivery_location', args, label });
+    },
+    [enqueue],
+  );
+}
+
+export function useEnqueueReplacementAttempt() {
+  const { enqueue } = useQueue();
+  return useCallback(
+    async (args: RecordReplacementAttemptArgs, label: string): Promise<string> => {
+      return await enqueue({ kind: 'record_replacement_attempt', args, label });
+    },
+    [enqueue],
+  );
+}
+
+export function useEnqueueCompleteReplacement() {
+  const { enqueue } = useQueue();
+  return useCallback(
+    async (args: CompleteReplacementArgs, label: string): Promise<string> => {
+      return await enqueue({ kind: 'complete_replacement', args, label });
     },
     [enqueue],
   );

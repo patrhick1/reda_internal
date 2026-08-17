@@ -94,6 +94,19 @@ test('holder-scoped summaries use the holder signed quantity', () => {
   assert.equal(total.net, 1);
 });
 
+test('replacement outbound and inspected returns stay separate from deliveries', () => {
+  const { total } = groupMovementSummary([
+    { period_start: '2026-08-17', reason: 'replacement_outbound', qty: -2 },
+    { period_start: '2026-08-18', reason: 'replacement_return_accepted', qty: 1 },
+  ]);
+
+  assert.equal(total.replacementOutbound, -2);
+  assert.equal(total.replacementReturns, 1);
+  assert.equal(total.delivered, 0);
+  assert.equal(total.received, 0);
+  assert.equal(total.net, -1);
+});
+
 test('old-RPC zero rows do not create misleading empty period cards', () => {
   const { periods, total } = groupMovementSummary(
     [{ period_start: '2026-07-18', reason: 'warehouse_return', qty: 0 }],

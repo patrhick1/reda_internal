@@ -163,10 +163,16 @@ export function StockOverview({ basePath }: { basePath: StockBasePath }) {
   // rep too (is_admin_or_dispatcher includes it), which is exactly the role set
   // canViewOthersStockHistory already describes.
   const showCountHistory = canViewOthersStockHistory(user.role);
+  const showReplacementReturns = user.role === 'admin' || user.role === 'dispatcher';
   // Overflow sheet only meaningful if there's ≥2 actions OR a non-transfer
   // action that wouldn't fit beside the primary Transfer button.
   const showOverflow =
-    showReceive || showAdjust || showGlobalHistory || showCount || showCountHistory;
+    showReceive ||
+    showAdjust ||
+    showGlobalHistory ||
+    showCount ||
+    showCountHistory ||
+    showReplacementReturns;
 
   // Responsive: 1-col on phones, 2 on tablets/narrow web, 3 on full web.
   // Key swap is required when numColumns changes on a FlatList (RN rule).
@@ -353,6 +359,19 @@ export function StockOverview({ basePath }: { basePath: StockBasePath }) {
           its permission helper returns true so the sheet is empty-safe. */}
       <Sheet open={overflowOpen} onClose={() => setOverflowOpen(false)} title="More actions">
         <View style={{ gap: 8 }}>
+          {showReplacementReturns ? (
+            <ActionRow
+              icon="package"
+              label="Replacement returns"
+              sub="Receive and inspect rider-held returns before they enter usable stock"
+              onPress={() => {
+                setOverflowOpen(false);
+                router.push(
+                  `${basePath}/stock/replacement-returns` as `${StockBasePath}/stock/replacement-returns`,
+                );
+              }}
+            />
+          ) : null}
           {showCount ? (
             <ActionRow
               icon="check"
@@ -659,7 +678,7 @@ function ActionRow({
   sub,
   onPress,
 }: {
-  icon: 'arrowDown' | 'edit' | 'history' | 'check';
+  icon: 'arrowDown' | 'edit' | 'history' | 'check' | 'package';
   label: string;
   sub: string;
   onPress: () => void;

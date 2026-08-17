@@ -13,14 +13,20 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
-import { useDeliveriesList, useAgentPostponed, useStockCoverage } from '@/hooks/queries';
+import {
+  useDeliveriesList,
+  useAgentPostponed,
+  useAgentOverdueReplacements,
+  useStockCoverage,
+} from '@/hooks/queries';
 import { type DeliveryRow } from '@/services/deliveries';
 import { type CoverageRow } from '@/services/stock-coverage';
 import { COMMITTED_STATUSES, SIGNAL_META, stockSignal, type StockSignal } from '@/lib/stock-signal';
 import { formatNaira, formatYmdShort } from '@/lib/format';
-import { formatTimeLagos } from '@/lib/date';
+import { formatTimeLagos, todayLagos } from '@/lib/date';
 import { errorMessage } from '@/lib/errors';
 import { getMyDepartureToday, setLeftWarehouse } from '@/services/agent-departures';
+import { getReplacementAgentPayTotal } from '@/services/reconciliation';
 import {
   Button,
   Card,
@@ -57,6 +63,7 @@ type Filter =
   | 'active'
   | 'available'
   | 'soft'
+  | 'overdue'
   | 'postponed'
   | 'done'
   | 'closed';
@@ -93,9 +100,21 @@ export default function AgentToday() {
     fetching: postponedFetching,
     refetchIfStale: refetchPostponedIfStale,
   } = useAgentPostponed(user.userId);
+  const {
+    data: overdueData,
+    loading: overdueLoading,
+    error: overdueError,
+    reload: reloadOverdue,
+    fetching: overdueFetching,
+    refetchIfStale: refetchOverdueIfStale,
+  } = useAgentOverdueReplacements(user.userId);
   // "Left the warehouse" state for today — drives the hero control and, once set,
   // lets ops (warehouse/dispatcher/rep) see this rider is on the road.
   const departureQ = useAsync(() => getMyDepartureToday(user.userId), [user.userId]);
+  const replacementPayQ = useAsync(
+    () => getReplacementAgentPayTotal(todayLagos(), todayLagos()),
+    [user.userId],
+  );
   // "Should I call?" coverage — one tiny cached RPC (~50 rows). Drives the
   // per-row stock warning; refreshed automatically via invalidateStock() when
   // stock moves or any order is confirmed (queue drain).
@@ -110,8 +129,10 @@ export default function AgentToday() {
     // only an aged one re-downloads. departure is a tiny scalar — force it.
     refetchIfStale();
     refetchPostponedIfStale();
+    refetchOverdueIfStale();
     coverageQ.refetchIfStale();
     departureQ.reload();
+    replacementPayQ.reload();
   });
 
   // Optimistic override so the toggle feels instant: undefined = trust the
@@ -215,11 +236,14 @@ export default function AgentToday() {
   // select mode active there would show a count the confirm sheet can't act on.
   // Drop out of select mode if the user switches into Postponed.
   useEffect(() => {
-    if (filter === 'postponed' && selectMode) exitSelect();
+    if ((filter === 'postponed' || filter === 'overdue') && selectMode) exitSelect();
   }, [filter, selectMode, exitSelect]);
 
   // Hero stats stay GLOBAL (whole day), independent of the active filter/search.
-  const stats = useMemo(() => summarize(data ?? []), [data]);
+  const stats = useMemo(
+    () => summarize(data ?? [], replacementPayQ.data ?? 0),
+    [data, replacementPayQ.data],
+  );
   const dateLabel = todayLagosLabel();
 
   // Apply the name search first so the segment counts reflect the slice on
@@ -265,6 +289,12 @@ export default function AgentToday() {
       ? rows.filter((d) => (d.customer_name ?? '').toLowerCase().includes(nameNeedle))
       : rows;
   }, [postponedData, nameNeedle]);
+  const overdueRows = useMemo(() => {
+    const rows = overdueData ?? [];
+    return nameNeedle
+      ? rows.filter((d) => (d.customer_name ?? '').toLowerCase().includes(nameNeedle))
+      : rows;
+  }, [overdueData, nameNeedle]);
 
   // Today's deliveries with an unread team reply waiting on this agent. Built
   // from the on-screen rows ∩ the shared unread map (agentUnreadCounts is already
@@ -275,7 +305,13 @@ export default function AgentToday() {
   );
 
   const list =
-    filter === 'postponed' ? postponedRows : filter === 'unread' ? unreadRows : buckets[filter];
+    filter === 'postponed'
+      ? postponedRows
+      : filter === 'overdue'
+        ? overdueRows
+        : filter === 'unread'
+          ? unreadRows
+          : buckets[filter];
   const filterOptions = [
     { id: 'all' as const, label: 'All', count: buckets.all.length },
     { id: 'unread' as const, label: 'Unread', count: unreadRows.length },
@@ -283,6 +319,7 @@ export default function AgentToday() {
     { id: 'active' as const, label: 'Active', count: buckets.active.length },
     { id: 'available' as const, label: 'Available', count: buckets.available.length },
     { id: 'soft' as const, label: 'Soft fail', count: buckets.soft.length },
+    { id: 'overdue' as const, label: 'Overdue replacements', count: overdueRows.length },
     { id: 'postponed' as const, label: 'Postponed', count: postponedRows.length },
     { id: 'done' as const, label: 'Done', count: buckets.done.length },
     { id: 'closed' as const, label: 'Closed', count: buckets.closed.length },
@@ -534,6 +571,7 @@ export default function AgentToday() {
           const selectable =
             canBulk &&
             filter !== 'postponed' &&
+            filter !== 'overdue' &&
             canBulkDeliverRow(item) &&
             !(itemId && pendingDeliveredIds.has(itemId));
           // "Should I call?" — silent unless calling would likely over-promise.
@@ -582,6 +620,10 @@ export default function AgentToday() {
             <SectionHeader>
               {`Postponed · ${list.length} ${list.length === 1 ? 'order' : 'orders'}`}
             </SectionHeader>
+          ) : filter === 'overdue' ? (
+            <SectionHeader>
+              {`Overdue replacements - ${list.length} ${list.length === 1 ? 'job' : 'jobs'}`}
+            </SectionHeader>
           ) : null
         }
         ListEmptyComponent={
@@ -604,6 +646,26 @@ export default function AgentToday() {
                 icon="calendar"
                 title="No postponed orders"
                 sub="Orders you postpone to a later date stay here until that day arrives — then they move back into Today."
+              />
+            )
+          ) : filter === 'overdue' ? (
+            overdueError ? (
+              <Empty icon="alert" title="Could not load" sub={overdueError} />
+            ) : overdueLoading ? (
+              <View style={{ padding: 60 }}>
+                <ActivityIndicator color={colors.black} />
+              </View>
+            ) : (overdueData?.length ?? 0) > 0 ? (
+              <Empty
+                icon="search"
+                title="Nothing matches"
+                sub={`No overdue replacement jobs matching "${nameQuery.trim()}".`}
+              />
+            ) : (
+              <Empty
+                icon="check"
+                title="No overdue replacements"
+                sub="Every replacement assigned before today has been handled or rescheduled."
               />
             )
           ) : error ? (
@@ -643,11 +705,17 @@ export default function AgentToday() {
         refreshControl={
           <RefreshControl
             refreshing={
-              filter === 'postponed' ? postponedFetching && !!postponedData : fetching && !!data
+              filter === 'postponed'
+                ? postponedFetching && !!postponedData
+                : filter === 'overdue'
+                  ? overdueFetching && !!overdueData
+                  : fetching && !!data
             }
             onRefresh={() => {
               reload();
               reloadPostponed();
+              reloadOverdue();
+              replacementPayQ.reload();
             }}
             tintColor={colors.black}
           />
@@ -758,6 +826,7 @@ const DeliveryCard = memo(function DeliveryCard({
 }) {
   const status = delivery.current_status ?? 'pending';
   const bucket = statusBucket(status);
+  const isReplacement = delivery.order_type === 'replacement';
   const isDone = status === 'delivered';
   const dimmed = isDone || (selectMode && !selectable);
   return (
@@ -900,7 +969,9 @@ const DeliveryCard = memo(function DeliveryCard({
                 letterSpacing: -0.2,
               }}
             >
-              {isDone && delivery.agent_payment_snapshot != null
+              {isReplacement
+                ? 'Replacement'
+                : isDone && delivery.agent_payment_snapshot != null
                 ? `+${formatNaira(delivery.agent_payment_snapshot)}`
                 : formatNaira(delivery.customer_price)}
             </Text>
@@ -918,17 +989,23 @@ function SeparatorH12() {
   return <View style={{ height: 12 }} />;
 }
 
-function summarize(rows: DeliveryRow[]): { earnedToday: number; delivered: number; total: number } {
+function summarize(
+  rows: DeliveryRow[],
+  replacementPay: number,
+): { earnedToday: number; delivered: number; total: number } {
   // agent_payment_snapshot is per-delivery, not per-unit. Do NOT multiply by quantity.
-  let earnedToday = 0;
+  // Replacement work has its own attempt accounting and must not distort the
+  // delivery completion fraction shown in this header.
+  const deliveries = rows.filter((row) => row.order_type !== 'replacement');
+  let earnedToday = replacementPay;
   let delivered = 0;
-  for (const d of rows) {
+  for (const d of deliveries) {
     if (d.current_status === 'delivered') {
       delivered++;
       earnedToday += Number(d.agent_payment_snapshot ?? 0);
     }
   }
-  return { earnedToday, delivered, total: rows.length };
+  return { earnedToday, delivered, total: deliveries.length };
 }
 
 function greeting(): string {

@@ -13,7 +13,9 @@ export type JobKind =
   | 'create_stock_adjustment'
   | 'create_stock_transfer'
   | 'return_delivery_leftover'
-  | 'agent_change_delivery_location';
+  | 'agent_change_delivery_location'
+  | 'record_replacement_attempt'
+  | 'complete_replacement';
 
 export type ChangeDeliveryStatusArgs = {
   deliveryId: string;
@@ -82,13 +84,46 @@ export type AgentChangeDeliveryLocationArgs = {
   reason: string;
 };
 
+/** An unsuccessful replacement visit. Kept in the offline queue because riders
+ * record this at the customer, under the same unreliable network conditions as
+ * ordinary status updates. */
+export type RecordReplacementAttemptArgs = {
+  deliveryId: string;
+  outcome:
+    | 'customer_unreachable'
+    | 'customer_postponed'
+    | 'details_incorrect'
+    | 'customer_rejected'
+    | 'cancelled'
+    | 'other';
+  notes: string | null;
+  nextAttemptDate: string | null;
+  clientCharge: number;
+  agentPayment: number;
+};
+
+/** Successful replacement visit. The server atomically moves outbound stock,
+ * records every returned item's custody, records the attempt and closes the job. */
+export type CompleteReplacementArgs = {
+  deliveryId: string;
+  returnOutcomes: {
+    returnItemId: string;
+    outcome: 'usable_collected' | 'damaged_collected' | 'left_with_customer' | 'discarded';
+    quantity: number;
+    notes: string | null;
+  }[];
+  notes: string | null;
+};
+
 export type JobArgs =
   | { kind: 'change_delivery_status'; args: ChangeDeliveryStatusArgs }
   | { kind: 'flag_delivery'; args: FlagDeliveryArgs }
   | { kind: 'create_stock_adjustment'; args: CreateStockAdjustmentArgs }
   | { kind: 'create_stock_transfer'; args: CreateStockTransferArgs }
   | { kind: 'return_delivery_leftover'; args: ReturnDeliveryLeftoverArgs }
-  | { kind: 'agent_change_delivery_location'; args: AgentChangeDeliveryLocationArgs };
+  | { kind: 'agent_change_delivery_location'; args: AgentChangeDeliveryLocationArgs }
+  | { kind: 'record_replacement_attempt'; args: RecordReplacementAttemptArgs }
+  | { kind: 'complete_replacement'; args: CompleteReplacementArgs };
 
 export type JobStatus = 'pending' | 'in_flight' | 'failed_retrying' | 'dead_letter';
 

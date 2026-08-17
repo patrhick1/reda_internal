@@ -1,4 +1,5 @@
 import { rpcUntyped, supabase } from '@/lib/supabase';
+import { ymdLagos } from '@/lib/date';
 
 // Phase 6.3 reconciliation RPCs. Types intentionally hand-written for now; will
 // regenerate via `npm run gen:types` once the SQL is applied. The @ts-expect-
@@ -84,19 +85,152 @@ export type ClientRemitDetailRow = {
   note: string | null;
 };
 
-export async function listClientRemit(from: string, to: string): Promise<ClientRemitRow[]> {
-  const { data, error } = await supabase.rpc('client_remit_summary', { p_from: from, p_to: to });
+type ReplacementFinancialRow = {
+  attempt_id: string;
+  delivery_id: string;
+  attempted_at: string;
+  client_id: string;
+  client_name: string;
+  customer_name: string;
+  outcome: string;
+  client_charge: number;
+  agent_payment: number;
+  margin: number;
+  agent_id: string | null;
+  agent_name: string | null;
+  notes: string | null;
+};
+
+type RepReplacementFinancialRow = {
+  attempt_id: string;
+  delivery_id: string;
+  attempted_at: string;
+  client_id: string;
+  client_name: string;
+  customer_name: string;
+  outcome: string;
+  remit: number;
+  agent_name: string | null;
+  notes: string | null;
+};
+
+type AgentReplacementFinancialRow = {
+  attempt_id: string;
+  delivery_id: string;
+  attempted_at: string;
+  agent_id: string;
+  agent_name: string | null;
+  agent_payment: number;
+};
+
+async function listReplacementFinancials(
+  from: string,
+  to: string,
+  clientId?: string,
+): Promise<ReplacementFinancialRow[]> {
+  const { data, error } = await rpcUntyped<ReplacementFinancialRow[]>(
+    'list_replacement_financials',
+    { p_from: from, p_to: to, p_client_id: clientId ?? null },
+  );
   if (error) throw error;
-  return (data ?? []) as ClientRemitRow[];
+  return data ?? [];
+}
+
+async function listRepReplacementFinancials(
+  from: string,
+  to: string,
+  clientId?: string,
+): Promise<RepReplacementFinancialRow[]> {
+  const { data, error } = await rpcUntyped<RepReplacementFinancialRow[]>(
+    'list_replacement_financials_rep',
+    { p_from: from, p_to: to, p_client_id: clientId ?? null },
+  );
+  if (error) throw error;
+  return data ?? [];
+}
+
+async function listReplacementAgentFinancials(
+  from: string,
+  to: string,
+): Promise<AgentReplacementFinancialRow[]> {
+  const { data, error } = await rpcUntyped<AgentReplacementFinancialRow[]>(
+    'list_replacement_agent_financials',
+    { p_from: from, p_to: to },
+  );
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function getReplacementAgentPayTotal(from: string, to: string): Promise<number> {
+  const rows = await listReplacementAgentFinancials(from, to);
+  return rows.reduce((sum, row) => sum + Number(row.agent_payment ?? 0), 0);
+}
+
+export async function listClientRemit(from: string, to: string): Promise<ClientRemitRow[]> {
+  const [{ data, error }, replacementRows] = await Promise.all([
+    supabase.rpc('client_remit_summary', { p_from: from, p_to: to }),
+    listReplacementFinancials(from, to),
+  ]);
+  if (error) throw error;
+  const rows = ((data ?? []) as ClientRemitRow[]).map((row) => ({ ...row }));
+  const byClient = new Map(rows.map((row) => [row.client_id, row]));
+  for (const replacement of replacementRows) {
+    let row = byClient.get(replacement.client_id);
+    if (!row) {
+      row = {
+        client_id: replacement.client_id,
+        client_name: replacement.client_name,
+        deliveries_count: 0,
+        total_quantity: 0,
+        total_customer_price: 0,
+        total_paid: 0,
+        outstanding: 0,
+        total_reda_fee: 0,
+        total_cash_pos_fee: 0,
+        total_remit: 0,
+      };
+      rows.push(row);
+      byClient.set(row.client_id, row);
+    }
+    row.deliveries_count += 1;
+    row.total_reda_fee += Number(replacement.client_charge ?? 0);
+    row.total_remit -= Number(replacement.client_charge ?? 0);
+  }
+  return [...byClient.values()];
 }
 
 export async function listAgentEarningsSummary(
   from: string,
   to: string,
 ): Promise<AgentEarningsRow[]> {
-  const { data, error } = await supabase.rpc('agent_earnings_summary', { p_from: from, p_to: to });
+  const [{ data, error }, replacementRows] = await Promise.all([
+    supabase.rpc('agent_earnings_summary', { p_from: from, p_to: to }),
+    listReplacementAgentFinancials(from, to),
+  ]);
   if (error) throw error;
-  return (data ?? []) as AgentEarningsRow[];
+  const rows = ((data ?? []) as AgentEarningsRow[]).map((row) => ({ ...row }));
+  const byAgent = new Map(rows.map((row) => [row.agent_id, row]));
+  for (const replacement of replacementRows) {
+    if (!replacement.agent_id || Number(replacement.agent_payment ?? 0) === 0) continue;
+    let row = byAgent.get(replacement.agent_id);
+    if (!row) {
+      row = {
+        agent_id: replacement.agent_id,
+        agent_name: replacement.agent_name ?? 'Agent',
+        deliveries_count: 0,
+        total_quantity: 0,
+        total_earnings: 0,
+        total_collected: 0,
+        total_remit: 0,
+      };
+      rows.push(row);
+      byAgent.set(row.agent_id, row);
+    }
+    row.deliveries_count += 1;
+    row.total_earnings += Number(replacement.agent_payment);
+    row.total_remit -= Number(replacement.agent_payment);
+  }
+  return [...byAgent.values()];
 }
 
 /** Total operational cost of delivered pickup/waybill records for the period.
@@ -120,13 +254,40 @@ export async function listClientRemitDetail(
   from: string,
   to: string,
 ): Promise<ClientRemitDetailRow[]> {
-  const { data, error } = await supabase.rpc('client_remit_detail', {
-    p_client_id: clientId,
-    p_from: from,
-    p_to: to,
-  });
+  const [{ data, error }, replacements] = await Promise.all([
+    supabase.rpc('client_remit_detail', {
+      p_client_id: clientId,
+      p_from: from,
+      p_to: to,
+    }),
+    listReplacementFinancials(from, to, clientId),
+  ]);
   if (error) throw error;
-  return (data ?? []) as ClientRemitDetailRow[];
+  const deliveryRows = (data ?? []) as ClientRemitDetailRow[];
+  const replacementRows: ClientRemitDetailRow[] = replacements.map((row) => ({
+    delivery_id: `${row.delivery_id}:${row.attempt_id}`,
+    order_type: 'replacement',
+    scheduled_date: ymdLagos(row.attempted_at) ?? row.attempted_at.slice(0, 10),
+    customer_name: row.customer_name,
+    customer_phone: null,
+    client_rep: null,
+    product_name: 'Replacement service',
+    location_name: null,
+    products: [],
+    quantity_ordered: 0,
+    quantity_delivered: 0,
+    customer_price: 0,
+    paid: 0,
+    payment_method: null,
+    reda_fee: Number(row.client_charge ?? 0),
+    cash_pos_fee: 0,
+    remit: -Number(row.client_charge ?? 0),
+    agent_name: row.agent_name,
+    note: row.notes ?? (row.outcome === 'completed' ? 'Replacement completed' : 'Replacement attempt'),
+  }));
+  return [...deliveryRows, ...replacementRows].sort((a, b) =>
+    a.scheduled_date < b.scheduled_date ? 1 : a.scheduled_date > b.scheduled_date ? -1 : 0,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -184,12 +345,30 @@ export type RepClientRemitDetailRow = {
 };
 
 export async function listRepClientRemit(from: string, to: string): Promise<RepClientRemitRow[]> {
-  const { data, error } = await supabase.rpc('client_remit_summary_rep', {
-    p_from: from,
-    p_to: to,
-  });
+  const [{ data, error }, replacements] = await Promise.all([
+    supabase.rpc('client_remit_summary_rep', { p_from: from, p_to: to }),
+    listRepReplacementFinancials(from, to),
+  ]);
   if (error) throw error;
-  return (data ?? []) as RepClientRemitRow[];
+  const rows = ((data ?? []) as RepClientRemitRow[]).map((row) => ({ ...row }));
+  const byClient = new Map(rows.map((row) => [row.client_id, row]));
+  for (const replacement of replacements) {
+    let row = byClient.get(replacement.client_id);
+    if (!row) {
+      row = {
+        client_id: replacement.client_id,
+        client_name: replacement.client_name,
+        deliveries_count: 0,
+        total_quantity: 0,
+        total_remit: 0,
+      };
+      rows.push(row);
+      byClient.set(row.client_id, row);
+    }
+    row.deliveries_count += 1;
+    row.total_remit += Number(replacement.remit ?? 0);
+  }
+  return [...byClient.values()];
 }
 
 export async function listRepClientRemitDetail(
@@ -197,13 +376,39 @@ export async function listRepClientRemitDetail(
   from: string,
   to: string,
 ): Promise<RepClientRemitDetailRow[]> {
-  const { data, error } = await supabase.rpc('client_remit_detail_rep', {
-    p_client_id: clientId,
-    p_from: from,
-    p_to: to,
-  });
+  const [{ data, error }, replacements] = await Promise.all([
+    supabase.rpc('client_remit_detail_rep', {
+      p_client_id: clientId,
+      p_from: from,
+      p_to: to,
+    }),
+    listRepReplacementFinancials(from, to, clientId),
+  ]);
   if (error) throw error;
-  return (data ?? []) as RepClientRemitDetailRow[];
+  const deliveryRows = (data ?? []) as RepClientRemitDetailRow[];
+  const replacementRows: RepClientRemitDetailRow[] = replacements.map((row) => ({
+    delivery_id: `${row.delivery_id}:${row.attempt_id}`,
+    order_type: 'replacement',
+    scheduled_date: ymdLagos(row.attempted_at) ?? row.attempted_at.slice(0, 10),
+    customer_name: row.customer_name,
+    customer_phone: null,
+    client_rep: null,
+    product_name: 'Replacement service',
+    location_name: null,
+    quantity_ordered: 0,
+    quantity_delivered: 0,
+    products: [],
+    outstanding: 0,
+    remit: Number(row.remit ?? 0),
+    agent_name: row.agent_name,
+    payment_method: null,
+    cash_pos_fee: 0,
+    note: row.notes ?? (row.outcome === 'completed' ? 'Replacement completed' : 'Replacement attempt'),
+    paid: 0,
+  }));
+  return [...deliveryRows, ...replacementRows].sort((a, b) =>
+    a.scheduled_date < b.scheduled_date ? 1 : a.scheduled_date > b.scheduled_date ? -1 : 0,
+  );
 }
 
 /** The full end-of-day operation (same as the nightly cron): releases postponed

@@ -53,6 +53,10 @@ import { ChainDivider } from '@/components/delivery/ChainDivider';
 import { BotRawMessageCard } from '@/components/delivery/BotRawMessageCard';
 import { DeliveryInstructionsCard } from '@/components/delivery/DeliveryInstructionsCard';
 import { useQueue } from '@/queue/QueueProvider';
+import { getReplacementDetails } from '@/services/replacements';
+import { ReplacementSummaryCard } from '@/components/replacement/ReplacementSummaryCard';
+import { ReplacementAttemptSheet } from '@/components/replacement/ReplacementAttemptSheet';
+import { ReplacementCompleteSheet } from '@/components/replacement/ReplacementCompleteSheet';
 
 export default function AgentDeliveryDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -61,6 +65,13 @@ export default function AgentDeliveryDetail() {
   const user = useCurrentUser();
 
   const deliveryQ = useAsync(() => getDelivery(user.role, id), [user.role, id]);
+  const replacementQ = useAsync(
+    () =>
+      deliveryQ.data?.order_type === 'replacement'
+        ? getReplacementDetails(id)
+        : Promise.resolve(null),
+    [id, deliveryQ.data?.order_type],
+  );
   const historyQ = useAsync(() => listDeliveryHistoryChain(id), [id]);
   // Per-status "client notified" tags (who on the ops team told the vendor, and
   // when) keyed by status_history_id. Same source the ops detail uses; RLS lets
@@ -79,6 +90,8 @@ export default function AgentDeliveryDetail() {
   const [flagOpen, setFlagOpen] = useState(false);
   const [handoffOpen, setHandoffOpen] = useState(false);
   const [zoneOpen, setZoneOpen] = useState(false);
+  const [replacementAttemptOpen, setReplacementAttemptOpen] = useState(false);
+  const [replacementCompleteOpen, setReplacementCompleteOpen] = useState(false);
 
   // Team-lead handoff: load this agent's sub-agents on mount so we know
   // whether to render the "Hand off" button on the action bar. Returns []
@@ -107,6 +120,7 @@ export default function AgentDeliveryDetail() {
     handoffQ.reload();
     notifQ.reload();
     coverageQ.refetchIfStale();
+    if (deliveryQ.data?.order_type === 'replacement') replacementQ.reload();
   });
 
   useEffect(() => {
@@ -197,6 +211,7 @@ export default function AgentDeliveryDetail() {
   // realized after the fact). Other terminals (cancelled/rolled_over/…) are out.
   const canChangeZone = status === 'delivered' || !isTerminal;
   const isDelivered = status === 'delivered';
+  const isReplacement = d.order_type === 'replacement';
   const firstName = (d.customer_name ?? 'customer').split(/\s+/)[0]!;
   // customer_price is per-delivery, not per-unit. Do NOT multiply by quantity.
   const expectedTotal = Number(d.customer_price ?? 0);
@@ -212,10 +227,13 @@ export default function AgentDeliveryDetail() {
     setOptimistic({ status: newStatus, jobId });
     setMarkOpen(false);
     setUpdateOpen(false);
+    setReplacementAttemptOpen(false);
+    setReplacementCompleteOpen(false);
     deliveryQ.reload();
     historyQ.reload();
     handoffQ.reload();
     notifQ.reload();
+    if (isReplacement) replacementQ.reload();
   };
 
   // FlagDeliverySheet hits an RPC synchronously (not queued), so the next
@@ -542,7 +560,7 @@ export default function AgentDeliveryDetail() {
               )}
             </View>
             <View style={{ alignItems: 'flex-end' }}>
-              <Text style={kicker}>To collect</Text>
+              <Text style={kicker}>{isReplacement ? 'Job type' : 'To collect'}</Text>
               <Text
                 style={{
                   fontFamily: fonts.extrabold,
@@ -552,7 +570,7 @@ export default function AgentDeliveryDetail() {
                   marginTop: 2,
                 }}
               >
-                {formatNaira(expectedTotal)}
+                {isReplacement ? 'Replacement' : formatNaira(expectedTotal)}
               </Text>
             </View>
           </View>
@@ -615,6 +633,15 @@ export default function AgentDeliveryDetail() {
             </View>
           ) : null}
         </Card>
+
+        {isReplacement ? (
+          <ReplacementSummaryCard
+            details={replacementQ.data}
+            loading={replacementQ.loading}
+            error={replacementQ.error}
+            showFinancials={false}
+          />
+        ) : null}
 
         {/* One-tap team page. Rings every active admin/dispatcher/rep
             phone; first accepter wins server-side. The row is linked to
@@ -765,9 +792,11 @@ export default function AgentDeliveryDetail() {
               variant="secondary"
               full
               style={{ paddingHorizontal: 14 }}
-              onPress={() => setUpdateOpen(true)}
+              onPress={() =>
+                isReplacement ? setReplacementAttemptOpen(true) : setUpdateOpen(true)
+              }
             >
-              Update status
+              {isReplacement ? 'Attempt unsuccessful' : 'Update status'}
             </Button>
           </View>
           {!isTerminal ? (
@@ -776,9 +805,11 @@ export default function AgentDeliveryDetail() {
                 variant="emphasis"
                 full
                 style={{ paddingHorizontal: 14 }}
-                onPress={() => setMarkOpen(true)}
+                onPress={() =>
+                  isReplacement ? setReplacementCompleteOpen(true) : setMarkOpen(true)
+                }
               >
-                Mark delivered
+                {isReplacement ? 'Complete replacement' : 'Mark delivered'}
               </Button>
             </View>
           ) : null}
@@ -786,11 +817,26 @@ export default function AgentDeliveryDetail() {
       </View>
 
       <MarkDeliveredSheet
-        open={markOpen}
+        open={markOpen && !isReplacement}
         delivery={d}
         onClose={() => setMarkOpen(false)}
         onConfirmed={onCommitted}
         hidePosFeeNote
+      />
+      <ReplacementAttemptSheet
+        open={replacementAttemptOpen}
+        deliveryId={d.id ?? ''}
+        customerName={d.customer_name ?? null}
+        onClose={() => setReplacementAttemptOpen(false)}
+        onCommitted={onCommitted}
+      />
+      <ReplacementCompleteSheet
+        open={replacementCompleteOpen}
+        deliveryId={d.id ?? ''}
+        customerName={d.customer_name ?? null}
+        details={replacementQ.data}
+        onClose={() => setReplacementCompleteOpen(false)}
+        onCommitted={onCommitted}
       />
       <ChangeDeliveryZoneSheet
         open={zoneOpen}

@@ -89,6 +89,11 @@ import { DeleteDeliverySheet } from '@/components/sheets/DeleteDeliverySheet';
 import { MessageThread } from '@/components/delivery/MessageThread';
 import { listSubAgents } from '@/services/users';
 import { useQueue } from '@/queue/QueueProvider';
+import { getReplacementDetails, type ReplacementAttempt } from '@/services/replacements';
+import { ReplacementSummaryCard } from '@/components/replacement/ReplacementSummaryCard';
+import { ReplacementAttemptSheet } from '@/components/replacement/ReplacementAttemptSheet';
+import { ReplacementCompleteSheet } from '@/components/replacement/ReplacementCompleteSheet';
+import { ReplacementFeeSheet } from '@/components/replacement/ReplacementFeeSheet';
 
 export function DeliveryDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -97,6 +102,13 @@ export function DeliveryDetail() {
   const insets = useSafeAreaInsets();
 
   const deliveryQ = useAsync(() => getDelivery(user.role, id), [user.role, id]);
+  const replacementQ = useAsync(
+    () =>
+      deliveryQ.data?.order_type === 'replacement'
+        ? getReplacementDetails(id)
+        : Promise.resolve(null),
+    [id, deliveryQ.data?.order_type],
+  );
   const historyQ = useAsync(() => listDeliveryHistoryChain(id), [id]);
   const defsQ = useStatusDefs();
   const notifQ = useAsync(() => listClientNotificationsForDelivery(id), [id]);
@@ -116,6 +128,11 @@ export function DeliveryDetail() {
   const [editRedaChargeOpen, setEditRedaChargeOpen] = useState(false);
   const [revertOpen, setRevertOpen] = useState(false);
   const [editWaybillOpen, setEditWaybillOpen] = useState(false);
+  const [replacementAttemptOpen, setReplacementAttemptOpen] = useState(false);
+  const [replacementCompleteOpen, setReplacementCompleteOpen] = useState(false);
+  const [replacementFeeAttempt, setReplacementFeeAttempt] = useState<ReplacementAttempt | null>(
+    null,
+  );
   const [callBusy, setCallBusy] = useState(false);
   // Optimistic status + (when queued) the job ID to watch. The veil clears
   // when EITHER the server-confirmed status matches (direct-RPC paths) OR
@@ -141,6 +158,7 @@ export function DeliveryDetail() {
     deliveryQ.reload();
     historyQ.reload();
     notifQ.reload();
+    if (deliveryQ.data?.order_type === 'replacement') replacementQ.reload();
   });
 
   // Realtime: when a teammate marks a status-history row as "client
@@ -344,6 +362,7 @@ export function DeliveryDetail() {
   const showMargin = canSeeMargin(user.role);
   // Waybill/pickup: a money-only order with no product, customer, or address.
   const isWaybill = d.order_type === 'waybill';
+  const isReplacement = d.order_type === 'replacement';
   const showAgentPayment =
     user.role === 'admin' || (user.role === 'agent' && d.assigned_agent_id === user.userId);
 
@@ -356,8 +375,11 @@ export function DeliveryDetail() {
     setOptimistic({ status: newStatus, jobId });
     setMarkOpen(false);
     setUpdateOpen(false);
+    setReplacementAttemptOpen(false);
+    setReplacementCompleteOpen(false);
     deliveryQ.reload();
     historyQ.reload();
+    if (isReplacement) replacementQ.reload();
   };
 
   const onHandoffCommitted = () => {
@@ -772,7 +794,9 @@ export function DeliveryDetail() {
               )}
             </View>
             <View style={{ alignItems: 'flex-end' }}>
-              <Text style={kicker}>{isWaybill ? 'Charge client' : 'To collect'}</Text>
+              <Text style={kicker}>
+                {isWaybill ? 'Charge client' : isReplacement ? 'Job type' : 'To collect'}
+              </Text>
               <Text
                 style={{
                   fontFamily: fonts.extrabold,
@@ -782,7 +806,9 @@ export function DeliveryDetail() {
                   marginTop: 2,
                 }}
               >
-                {formatNaira(isWaybill ? Number(charged ?? 0) : expectedTotal)}
+                {isReplacement
+                  ? 'Replacement'
+                  : formatNaira(isWaybill ? Number(charged ?? 0) : expectedTotal)}
               </Text>
             </View>
           </View>
@@ -847,13 +873,21 @@ export function DeliveryDetail() {
           <View style={{ marginTop: 12, gap: 4 }}>
             {showCharged ? (
               <MoneyRow
-                label={isWaybill ? 'Client charge' : 'Reda charge'}
+                label={
+                  isWaybill
+                    ? 'Client charge'
+                    : isReplacement
+                      ? 'Client charges recorded'
+                      : 'Reda charge'
+                }
                 value={formatNaira(charged != null ? Number(charged) : null)}
                 actionLabel={
-                  mayCorrectRedaCharge && !isWaybill && redaChargeQ.data ? 'Edit' : undefined
+                  mayCorrectRedaCharge && !isWaybill && !isReplacement && redaChargeQ.data
+                    ? 'Edit'
+                    : undefined
                 }
                 onAction={
-                  mayCorrectRedaCharge && !isWaybill && redaChargeQ.data
+                  mayCorrectRedaCharge && !isWaybill && !isReplacement && redaChargeQ.data
                     ? () => setEditRedaChargeOpen(true)
                     : undefined
                 }
@@ -861,7 +895,9 @@ export function DeliveryDetail() {
             ) : null}
             {showAgentPayment ? (
               <MoneyRow
-                label={isWaybill ? 'Reda paid out' : 'Agent earns'}
+                label={
+                  isWaybill ? 'Reda paid out' : isReplacement ? 'Rider pay recorded' : 'Agent earns'
+                }
                 value={formatNaira(
                   d.agent_payment_snapshot != null ? Number(d.agent_payment_snapshot) : null,
                 )}
@@ -913,6 +949,18 @@ export function DeliveryDetail() {
             </View>
           ) : null}
         </Card>
+
+        {isReplacement ? (
+          <ReplacementSummaryCard
+            details={replacementQ.data}
+            loading={replacementQ.loading}
+            error={replacementQ.error}
+            showFinancials={user.role === 'admin'}
+            onEditAttemptFees={
+              user.role === 'admin' ? (attempt) => setReplacementFeeAttempt(attempt) : undefined
+            }
+          />
+        ) : null}
 
         {/* Vendor + Assignment */}
         <Card>
@@ -1089,9 +1137,11 @@ export function DeliveryDetail() {
                 variant="secondary"
                 full
                 style={{ paddingHorizontal: 14 }}
-                onPress={() => setUpdateOpen(true)}
+                onPress={() =>
+                  isReplacement ? setReplacementAttemptOpen(true) : setUpdateOpen(true)
+                }
               >
-                Update status
+                {isReplacement ? 'Attempt unsuccessful' : 'Update status'}
               </Button>
             </View>
             {!isTerminal ? (
@@ -1101,9 +1151,11 @@ export function DeliveryDetail() {
                   full
                   icon="check"
                   style={{ paddingHorizontal: 14 }}
-                  onPress={() => setMarkOpen(true)}
+                  onPress={() =>
+                    isReplacement ? setReplacementCompleteOpen(true) : setMarkOpen(true)
+                  }
                 >
-                  Mark delivered
+                  {isReplacement ? 'Complete replacement' : 'Mark delivered'}
                 </Button>
               </View>
             ) : null}
@@ -1112,10 +1164,32 @@ export function DeliveryDetail() {
       ) : null}
 
       <MarkDeliveredSheet
-        open={markOpen}
+        open={markOpen && !isReplacement}
         delivery={d}
         onClose={() => setMarkOpen(false)}
         onConfirmed={onCommitted}
+      />
+      <ReplacementAttemptSheet
+        open={replacementAttemptOpen}
+        deliveryId={d.id ?? ''}
+        customerName={d.customer_name ?? null}
+        onClose={() => setReplacementAttemptOpen(false)}
+        onCommitted={onCommitted}
+      />
+      <ReplacementCompleteSheet
+        open={replacementCompleteOpen}
+        deliveryId={d.id ?? ''}
+        customerName={d.customer_name ?? null}
+        details={replacementQ.data}
+        onClose={() => setReplacementCompleteOpen(false)}
+        onCommitted={onCommitted}
+      />
+      <ReplacementFeeSheet
+        attempt={replacementFeeAttempt}
+        onClose={() => setReplacementFeeAttempt(null)}
+        onSaved={async () => {
+          await Promise.all([replacementQ.reload(), deliveryQ.reload()]);
+        }}
       />
       <UpdateStatusSheet
         open={updateOpen}

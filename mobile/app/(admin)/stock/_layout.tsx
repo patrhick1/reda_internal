@@ -21,6 +21,7 @@ export default function AdminStockLayout() {
       <Stack.Screen name="holder/[holderId]" options={{ headerShown: false }} />
       <Stack.Screen name="movements/[holderId]" options={{ headerShown: false }} />
       <Stack.Screen name="all-movements" options={{ headerShown: false }} />
+      <Stack.Screen name="replacement-returns" options={{ headerShown: false }} />
       <Stack.Screen name="movements-client/[id]" options={{ headerShown: false }} />
     </Stack>
   );

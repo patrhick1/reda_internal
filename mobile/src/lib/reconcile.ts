@@ -303,14 +303,14 @@ export function buildClientShareMessage(input: {
   const format = input.format ?? 'default';
   const showPhone = input.showPhone ?? false;
   const blocks = input.rows.map((r) => {
-    if (r.orderType === 'waybill') {
+    if (r.orderType === 'waybill' || r.orderType === 'replacement') {
       // Uzo's format: the charge-side breakdown only (type fee + each pickup
       // extra), printed verbatim from the stored note — no header or total.
       // Fall back to a single "<type> ₦total" line if the note is missing.
       const breakdown = (r.note ?? '').trim();
       return (
         breakdown ||
-        `${r.customerName ?? 'Pickup / Waybill'} ${formatNaira(Math.abs(Number(r.remit ?? 0)))}`
+        `${r.customerName ?? (r.orderType === 'replacement' ? 'Replacement' : 'Pickup / Waybill')} ${formatNaira(Math.abs(Number(r.remit ?? 0)))}`
       );
     }
     const lines = [`Name: ${r.customerName ?? 'Customer'}`];
@@ -345,13 +345,13 @@ export function buildClientShareMessage(input: {
 
   const byProduct = new Map<string, number>();
   for (const r of input.rows) {
-    if (r.orderType === 'waybill') continue;
+    if (r.orderType === 'waybill' || r.orderType === 'replacement') continue;
     for (const p of r.products) byProduct.set(p.name, (byProduct.get(p.name) ?? 0) + p.qty);
   }
   const productLines = [...byProduct.entries()].map(([name, qty]) => `${name}: ${qty}`);
   const totalRemit = input.rows.reduce((s, r) => s + Number(r.remit ?? 0), 0);
   const waybillCharges = input.rows
-    .filter((r) => r.orderType === 'waybill')
+    .filter((r) => r.orderType === 'waybill' || r.orderType === 'replacement')
     .reduce((s, r) => s + Math.abs(Number(r.remit ?? 0)), 0);
   const hasWaybill = waybillCharges > 0;
   const balanceLine = !hasWaybill

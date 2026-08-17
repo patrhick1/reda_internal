@@ -95,6 +95,11 @@ export const STATUS_META: Record<
   picked_up: { label: 'Picked up', tone: 'blue', desc: 'Customer collected order' },
   waybilled: { label: 'Waybilled', tone: 'blue', desc: 'Shipped via waybill' },
   delivered: { label: 'Delivered', tone: 'green', desc: 'Done' },
+  replacement_completed: {
+    label: 'Replacement completed',
+    tone: 'green',
+    desc: 'Replacement handed over; return custody recorded',
+  },
   cancelled: { label: 'Customer Cancelled', tone: 'gray', desc: 'Customer cancelled the order' },
   agent_cancelled: {
     label: 'Not my delivery',
@@ -224,6 +229,10 @@ export const STATUS_GROUPS: Record<'active' | 'soft' | 'done' | 'closed', string
     // not editable, excluded from rollover. Still hidden from the status picker.
     'picked_up',
     'waybilled',
+    // Kept outside `done`: dashboard delivery-rate figures use that bucket and
+    // a replacement is service recovery, not another successfully delivered
+    // customer order.
+    'replacement_completed',
   ],
 };
 
@@ -243,7 +252,11 @@ export const TERMINAL_STATUSES = new Set<string>([...STATUS_GROUPS.done, ...STAT
  *  separately). Rep is excluded by design. Reverting `rolled_over` is
  *  still unimplemented — EOD machinery owns that lifecycle. SQL anchor:
  *  scripts/revert-delivered.sql. */
-export const FINAL_STATUSES = new Set<string>(['delivered', 'rolled_over']);
+export const FINAL_STATUSES = new Set<string>([
+  'delivered',
+  'replacement_completed',
+  'rolled_over',
+]);
 
 /** Statuses that should never appear in any user-driven status picker — the
  *  system still uses them (rolled_over via EOD, unserious via the 3-strike
@@ -259,6 +272,7 @@ export const STATUS_HIDDEN_FROM_PICKER = new Set<string>([
   'deferred_to_client',
   'picked_up',
   'waybilled',
+  'replacement_completed',
   // 'Not my delivery' (agent_cancelled) retired from the picker (Uzo, 2026-06-20):
   // an agent who can't take an order now flags "Not my route" instead, and an
   // admin/dispatcher reassigns it — the order stays alive rather than being
@@ -358,6 +372,7 @@ const NOTIFY_EXEMPT_STATUSES = new Set<string>([
   'unserious',
   'picked_up',
   'waybilled',
+  'replacement_completed',
 ]);
 
 /** True when the delivery's LATEST status change is one the client should be told

@@ -79,7 +79,7 @@ export type ProductCandidateGroup = {
 export type DeliveryFieldsFormProps = {
   initial?: DeliveryFormInitial;
   /** Hide fields not relevant to this flow. */
-  hideFields?: readonly ('scheduledDate' | 'assignedAgent')[];
+  hideFields?: readonly ('customerPrice' | 'scheduledDate' | 'assignedAgent')[];
   /** Product candidates from the bot's parse_result; rendered as tappable
    *  chips above the product picker. Tapping a chip selects both client +
    *  product. Pass null when there's no ambiguity to surface. */
@@ -685,19 +685,21 @@ export function DeliveryFieldsForm({
 
       {/* Numbers */}
       <Card>
-        <View style={{ flexDirection: 'row', gap: 12 }}>
-          <View style={{ flex: 1 }}>
-            <Input
-              label="Customer price (₦) — order total"
-              value={state.customerPrice == null ? '' : String(state.customerPrice)}
-              onChange={(v) => patch({ customerPrice: v === '' ? null : Number(v) })}
-              keyboardType="numeric"
-            />
+        {!hide.has('customerPrice') ? (
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <View style={{ flex: 1 }}>
+              <Input
+                label="Customer price (₦) — order total"
+                value={state.customerPrice == null ? '' : String(state.customerPrice)}
+                onChange={(v) => patch({ customerPrice: v === '' ? null : Number(v) })}
+                keyboardType="numeric"
+              />
+            </View>
           </View>
-        </View>
+        ) : null}
         {!hide.has('scheduledDate') ? (
           <>
-            <View style={{ height: 16 }} />
+            {!hide.has('customerPrice') ? <View style={{ height: 16 }} /> : null}
             <DateField
               label="Scheduled date"
               value={state.scheduledDate}

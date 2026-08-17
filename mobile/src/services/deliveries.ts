@@ -545,6 +545,27 @@ export async function listAgentPostponed(userId: string): Promise<DeliveryRow[]>
   })) as DeliveryRow[];
 }
 
+/** Open replacement jobs assigned before today must not disappear from the
+ * rider's work queue. Normal deliveries are copied forward by EOD rollover,
+ * but replacements deliberately are not: copying one would split its attempt
+ * and return-custody ledger across two delivery ids. Keep the original job
+ * visible instead until it is attempted, rescheduled, cancelled or completed. */
+export async function listAgentOverdueReplacements(userId: string): Promise<DeliveryRow[]> {
+  const { data, error } = await supabase
+    .from('deliveries_safe')
+    .select(`${LIST_COLUMNS}, ${LIST_JOIN_FRAGMENT}`)
+    .eq('assigned_agent_id', userId)
+    .eq('order_type', 'replacement')
+    .lt('scheduled_date', todayLagos())
+    .not('current_status', 'in', `(${[...TERMINAL_STATUSES].join(',')})`)
+    .order('scheduled_date', { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    ...attachJoins(row as unknown as JoinShape & object),
+    items: [] as DeliveryItem[],
+  })) as DeliveryRow[];
+}
+
 /** The ops-wide twin of listAgentPostponed: every delivery currently in
  *  'postponed', across ALL dates, ordered by the date it was postponed TO
  *  (soonest first). Unlike the date-scoped deliveries list, this answers "show
@@ -610,7 +631,7 @@ export async function listNegativeMarginDeliveries(): Promise<DeliveryRow[]> {
     .lt('margin', 0)
     // Waybills/pickups are intentionally margin-negative (Reda subsidises the
     // trip) — they are not mistakes to correct, so keep them out of the review.
-    .neq('order_type', 'waybill')
+    .eq('order_type', 'delivery')
     .order('created_at', { ascending: false })
     // Safety cap — negative-margin rows should be rare; a large result set
     // signals a systemic problem (e.g. a bad rate card) worth surfacing rather
@@ -631,7 +652,7 @@ export async function countNegativeMarginDeliveries(): Promise<number> {
     .from('deliveries_admin')
     .select('id', { count: 'exact', head: true })
     .lt('margin', 0)
-    .neq('order_type', 'waybill');
+    .eq('order_type', 'delivery');
   if (error) throw error;
   return count ?? 0;
 }

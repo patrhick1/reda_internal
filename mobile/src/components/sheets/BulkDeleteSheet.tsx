@@ -48,7 +48,13 @@ export function BulkDeleteSheet({
     setSubmitting(true);
     setError(null);
     try {
-      const ids = selected.map((d) => d.id).filter((id): id is string => !!id);
+      // Do not send terminal rows to the RPC. Besides avoiding needless work,
+      // this keeps replacement_completed away from the generic delete path;
+      // its stock/custody ledger requires an explicit reversal, not deletion.
+      const ids = selected
+        .filter((d) => canDeleteDeliveryByStatus(d.current_status))
+        .map((d) => d.id)
+        .filter((id): id is string => !!id);
       const counts = await bulkDeleteDeliveries(ids, reason.trim());
       reset();
       onDeleted(counts);
