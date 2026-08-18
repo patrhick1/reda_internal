@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -58,6 +58,7 @@ import { buildKudaPayoutXlsx, type KudaPayoutRow } from '@/lib/kuda-export';
 import { kudaCodeForBankName } from '@/lib/kuda-banks';
 import { useClients } from '@/hooks/queries';
 import { downloadTextFile, downloadBinaryFile } from '@/lib/download';
+import { BulkAgentHandoverSheet } from '@/components/sheets/BulkAgentHandoverSheet';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -149,6 +150,17 @@ export default function AdminReconcile() {
       }
     },
     [to, settlementsQ, notify],
+  );
+
+  const handleBulkAgentSettled = useCallback(
+    (count: number, amount: number) => {
+      settlementsQ.reload();
+      notify(
+        'Handovers recorded',
+        `${count} ${count === 1 ? 'agent' : 'agents'} · ${formatNaira(amount)} received.`,
+      );
+    },
+    [settlementsQ, notify],
   );
 
   const handleVoid = useCallback(
@@ -497,6 +509,7 @@ export default function AdminReconcile() {
           eodDate={to}
           onRunEod={onRunEod}
           onSettle={(id, note) => handleSettle('agent', id, note)}
+          onBulkSettled={handleBulkAgentSettled}
           onVoid={handleVoid}
         />
       ) : (
@@ -679,6 +692,7 @@ function AgentsList({
   eodDate,
   onRunEod,
   onSettle,
+  onBulkSettled,
   onVoid,
 }: {
   state: ReturnType<typeof useAsync<AgentEarningsRow[]>>;
@@ -690,11 +704,15 @@ function AgentsList({
   eodDate: string;
   onRunEod: () => void;
   onSettle: (subjectId: string, note: string | null) => void;
+  onBulkSettled: (count: number, amount: number) => void;
   onVoid: (settlementId: string) => void;
 }) {
   // Headline = total cash the riders owe Reda for the period (net of their own
   // delivery pay). This is collection-from-riders, NOT agent payroll.
   const [remitFilter, setRemitFilter] = useState<AgentRemitFilter>('outstanding');
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [bulkSheetOpen, setBulkSheetOpen] = useState(false);
   const rows = state.data ?? [];
   const { outstanding, handedOver, nothingDue } = useMemo(() => {
     const outstandingRows: AgentEarningsRow[] = [];
@@ -730,6 +748,60 @@ function AgentsList({
     () => outstanding.reduce((sum, row) => sum + Number(row.total_remit), 0),
     [outstanding],
   );
+  const selectedRows = useMemo(
+    () => outstanding.filter((row) => selectedIds.has(row.agent_id)),
+    [outstanding, selectedIds],
+  );
+  const selectedTotal = useMemo(
+    () => selectedRows.reduce((sum, row) => sum + Number(row.total_remit), 0),
+    [selectedRows],
+  );
+  const allOutstandingSelected =
+    outstanding.length > 0 && outstanding.every((row) => selectedIds.has(row.agent_id));
+
+  // A focus refresh or another admin can settle a rider while selection mode is
+  // open. Prune anything that is no longer outstanding before confirmation.
+  useEffect(() => {
+    if (!selectMode) return;
+    const eligible = new Set(outstanding.map((row) => row.agent_id));
+    setSelectedIds((previous) => {
+      const next = new Set([...previous].filter((id) => eligible.has(id)));
+      if (next.size === previous.size && [...next].every((id) => previous.has(id))) {
+        return previous;
+      }
+      return next;
+    });
+  }, [outstanding, selectMode]);
+
+  const enterSelect = useCallback(
+    (seedId?: string) => {
+      setOpenId(null);
+      setRemitFilter('outstanding');
+      setSelectMode(true);
+      setSelectedIds(seedId ? new Set([seedId]) : new Set());
+    },
+    [setOpenId],
+  );
+  const exitSelect = useCallback(() => {
+    setBulkSheetOpen(false);
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  }, []);
+  const toggleSelected = useCallback((agentId: string) => {
+    setSelectedIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(agentId)) next.delete(agentId);
+      else next.add(agentId);
+      return next;
+    });
+  }, []);
+  const toggleAllOutstanding = useCallback(() => {
+    setSelectedIds((previous) =>
+      outstanding.length > 0 && outstanding.every((row) => previous.has(row.agent_id))
+        ? new Set()
+        : new Set(outstanding.map((row) => row.agent_id)),
+    );
+  }, [outstanding]);
   const total = canSettle
     ? outstandingTotal
     : rows.reduce((sum, row) => sum + Number(row.total_remit), 0);
@@ -765,172 +837,274 @@ function AgentsList({
   ];
 
   return (
-    <FlatList
-      data={visibleRows}
-      keyExtractor={(r) => r.agent_id}
-      contentContainerStyle={{ ...listContentStyle, gap: 8 }}
-      refreshControl={
-        <RefreshControl
-          refreshing={state.loading && !!state.data}
-          onRefresh={state.reload}
-          tintColor={colors.black}
-        />
-      }
-      ListHeaderComponent={
-        <View style={{ marginBottom: 12 }}>
-          <Card>
-            <Text style={kicker}>
-              {canSettle ? 'Outstanding to collect' : 'Total to collect from agents'}
-            </Text>
-            <Text
-              style={{
-                fontFamily: fonts.extrabold,
-                fontSize: 36,
-                // Net can go negative (riders Reda owes outweigh those who owe Reda);
-                // don't render a negative total in success-green.
-                color: canSettle
-                  ? total > 0
-                    ? colors.red
-                    : colors.success
-                  : total >= 0
-                    ? colors.success
-                    : colors.red,
-                letterSpacing: -1,
-                marginTop: 4,
-              }}
-            >
-              {formatNaira(total)}
-            </Text>
-            <Text
-              style={{
-                fontFamily: fonts.medium,
-                fontSize: 13,
-                color: colors.textSecondary,
-                marginTop: 2,
-              }}
-            >
-              {canSettle
-                ? `${outstanding.length} ${outstanding.length === 1 ? 'agent' : 'agents'} outstanding · ${handedOver.length} handed over · ${nothingDue.length} nothing due`
-                : `${deliveriesTotal} deliveries · ${count} ${count === 1 ? 'agent' : 'agents'}`}
-            </Text>
-          </Card>
-          {canSettle && count > 0 && outstanding.length === 0 ? (
-            <View
-              style={{
-                backgroundColor: colors.successSoft,
-                borderColor: colors.success,
-                borderWidth: 1,
-                borderRadius: 14,
-                padding: 14,
-                marginTop: 8,
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 10,
-              }}
-            >
-              <Icon name="check" size={20} color={colors.success} />
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.success }}>
-                  All handovers complete
-                </Text>
-                <Text
-                  style={{
-                    fontFamily: fonts.medium,
-                    fontSize: 12,
-                    color: colors.textSecondary,
-                    marginTop: 2,
+    <View style={{ flex: 1 }}>
+      <FlatList
+        data={visibleRows}
+        keyExtractor={(r) => r.agent_id}
+        contentContainerStyle={{
+          ...listContentStyle,
+          gap: 8,
+          paddingBottom: selectMode ? 150 : listContentStyle.paddingBottom,
+        }}
+        refreshControl={
+          <RefreshControl
+            refreshing={state.loading && !!state.data}
+            onRefresh={state.reload}
+            tintColor={colors.black}
+          />
+        }
+        ListHeaderComponent={
+          <View style={{ marginBottom: 12 }}>
+            <Card>
+              <Text style={kicker}>
+                {canSettle ? 'Outstanding to collect' : 'Total to collect from agents'}
+              </Text>
+              <Text
+                style={{
+                  fontFamily: fonts.extrabold,
+                  fontSize: 36,
+                  // Net can go negative (riders Reda owes outweigh those who owe Reda);
+                  // don't render a negative total in success-green.
+                  color: canSettle
+                    ? total > 0
+                      ? colors.red
+                      : colors.success
+                    : total >= 0
+                      ? colors.success
+                      : colors.red,
+                  letterSpacing: -1,
+                  marginTop: 4,
+                }}
+              >
+                {formatNaira(total)}
+              </Text>
+              <Text
+                style={{
+                  fontFamily: fonts.medium,
+                  fontSize: 13,
+                  color: colors.textSecondary,
+                  marginTop: 2,
+                }}
+              >
+                {canSettle
+                  ? `${outstanding.length} ${outstanding.length === 1 ? 'agent' : 'agents'} outstanding · ${handedOver.length} handed over · ${nothingDue.length} nothing due`
+                  : `${deliveriesTotal} deliveries · ${count} ${count === 1 ? 'agent' : 'agents'}`}
+              </Text>
+            </Card>
+            {canSettle && outstanding.length > 0 && !selectMode ? (
+              <View style={{ marginTop: 8 }}>
+                <Button variant="secondary" full icon="check" onPress={() => enterSelect()}>
+                  Select handovers
+                </Button>
+              </View>
+            ) : null}
+            {canSettle && count > 0 && outstanding.length === 0 ? (
+              <View
+                style={{
+                  backgroundColor: colors.successSoft,
+                  borderColor: colors.success,
+                  borderWidth: 1,
+                  borderRadius: 14,
+                  padding: 14,
+                  marginTop: 8,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 10,
+                }}
+              >
+                <Icon name="check" size={20} color={colors.success} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.success }}>
+                    All handovers complete
+                  </Text>
+                  <Text
+                    style={{
+                      fontFamily: fonts.medium,
+                      fontSize: 12,
+                      color: colors.textSecondary,
+                      marginTop: 2,
+                    }}
+                  >
+                    Every agent with money to remit is marked handed over.
+                  </Text>
+                </View>
+              </View>
+            ) : null}
+            {canSettle ? (
+              <View style={{ marginHorizontal: -16, marginTop: 2 }}>
+                <FilterChips
+                  options={filterOptions}
+                  value={remitFilter}
+                  onChange={(value) => {
+                    exitSelect();
+                    setOpenId(null);
+                    setRemitFilter(value);
                   }}
-                >
-                  Every agent with money to remit is marked handed over.
+                />
+              </View>
+            ) : null}
+            {!selectMode ? (
+              <View style={{ marginTop: 8 }}>
+                <Button variant="secondary" full icon="calendar" onPress={onRunEod}>
+                  {`${isWide ? 'Run EOD rollover' : 'Run EOD'} · ${eodDate}`}
+                </Button>
+              </View>
+            ) : null}
+          </View>
+        }
+        renderItem={({ item }) => {
+          const selectable =
+            canSettle && Number(item.total_remit) > 0 && !settlements.has(`agent:${item.agent_id}`);
+          return (
+            <ExpandableRow
+              isOpen={!selectMode && openId === item.agent_id}
+              onToggle={() => {
+                if (selectMode) {
+                  if (selectable) toggleSelected(item.agent_id);
+                  return;
+                }
+                setOpenId(openId === item.agent_id ? null : item.agent_id);
+              }}
+              onLongPress={
+                selectable
+                  ? () => {
+                      if (selectMode) toggleSelected(item.agent_id);
+                      else enterSelect(item.agent_id);
+                    }
+                  : undefined
+              }
+              selectionMode={selectMode}
+              selectable={selectable}
+              selected={selectedIds.has(item.agent_id)}
+              subjectKind="agent"
+              name={item.agent_name}
+              countLabel={`${item.deliveries_count} deliveries · qty ${item.total_quantity}`}
+              amount={Number(item.total_remit)}
+              amountLabel="To remit"
+              amountColor={
+                canSettle
+                  ? settlements.has(`agent:${item.agent_id}`)
+                    ? colors.success
+                    : Number(item.total_remit) > 0
+                      ? colors.red
+                      : colors.textSecondary
+                  : Number(item.total_remit) >= 0
+                    ? colors.success
+                    : colors.red
+              }
+              settlement={settlements.get(`agent:${item.agent_id}`) ?? null}
+              canSettle={canSettle}
+              settleLabel="Mark handed over"
+              onSettle={(note) => requestHandover(item, note)}
+              onVoid={onVoid}
+              extra={[
+                {
+                  label: 'Collected from customers',
+                  value: formatNaira(Number(item.total_collected)),
+                },
+                { label: 'Rider pay (kept)', value: formatNaira(Number(item.total_earnings)) },
+                { label: 'To remit to Reda', value: formatNaira(Number(item.total_remit)) },
+              ]}
+            />
+          );
+        }}
+        ListEmptyComponent={
+          state.error ? (
+            <Empty icon="alert" title="Could not load" sub={state.error} />
+          ) : state.loading ? (
+            <View style={{ padding: 60, alignItems: 'center' }}>
+              <ActivityIndicator color={colors.black} />
+            </View>
+          ) : canSettle && remitFilter === 'outstanding' ? (
+            <Empty
+              icon="check"
+              title="No outstanding handovers"
+              sub="Every agent with money to remit is marked handed over."
+            />
+          ) : canSettle && remitFilter === 'handed_over' ? (
+            <Empty
+              icon="wallet"
+              title="No handovers recorded"
+              sub="Completed agent handovers will appear here."
+            />
+          ) : canSettle && remitFilter === 'nothing_due' ? (
+            <Empty
+              icon="users"
+              title="No agents in this category"
+              sub="Agents with zero or negative remit will appear here."
+            />
+          ) : (
+            <Empty
+              icon="users"
+              title="Nothing to collect"
+              sub="No delivered rows in this date range."
+            />
+          )
+        }
+      />
+
+      {selectMode ? (
+        <View
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: colors.white,
+            borderTopWidth: 1,
+            borderTopColor: colors.border,
+            paddingHorizontal: 16,
+            paddingVertical: 12,
+          }}
+        >
+          <View style={{ ...pageWidthStyle, gap: 8 }}>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.black }}>
+                  {`${selectedRows.length} selected`}
+                </Text>
+                <Text style={{ fontFamily: fonts.extrabold, fontSize: 15, color: colors.black }}>
+                  {formatNaira(selectedTotal)}
                 </Text>
               </View>
+              <Button variant="ghost" size="sm" onPress={toggleAllOutstanding}>
+                {allOutstandingSelected ? 'Clear selection' : 'Select all'}
+              </Button>
             </View>
-          ) : null}
-          {canSettle ? (
-            <View style={{ marginHorizontal: -16, marginTop: 2 }}>
-              <FilterChips
-                options={filterOptions}
-                value={remitFilter}
-                onChange={(value) => {
-                  setOpenId(null);
-                  setRemitFilter(value);
-                }}
-              />
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Button variant="secondary" size="sm" onPress={exitSelect}>
+                Cancel
+              </Button>
+              <View style={{ flex: 1 }}>
+                <Button
+                  variant="emphasis"
+                  size="sm"
+                  full
+                  icon="check"
+                  onPress={() => setBulkSheetOpen(true)}
+                  disabled={selectedRows.length === 0}
+                >
+                  {selectedRows.length === 0
+                    ? 'Choose agents'
+                    : `Review ${selectedRows.length} handovers`}
+                </Button>
+              </View>
             </View>
-          ) : null}
-          <View style={{ marginTop: 8 }}>
-            <Button variant="secondary" full icon="calendar" onPress={onRunEod}>
-              {`${isWide ? 'Run EOD rollover' : 'Run EOD'} · ${eodDate}`}
-            </Button>
           </View>
         </View>
-      }
-      renderItem={({ item }) => (
-        <ExpandableRow
-          isOpen={openId === item.agent_id}
-          onToggle={() => setOpenId(openId === item.agent_id ? null : item.agent_id)}
-          subjectKind="agent"
-          name={item.agent_name}
-          countLabel={`${item.deliveries_count} deliveries · qty ${item.total_quantity}`}
-          amount={Number(item.total_remit)}
-          amountLabel="To remit"
-          amountColor={
-            canSettle
-              ? settlements.has(`agent:${item.agent_id}`)
-                ? colors.success
-                : Number(item.total_remit) > 0
-                  ? colors.red
-                  : colors.textSecondary
-              : Number(item.total_remit) >= 0
-                ? colors.success
-                : colors.red
-          }
-          settlement={settlements.get(`agent:${item.agent_id}`) ?? null}
-          canSettle={canSettle}
-          settleLabel="Mark handed over"
-          onSettle={(note) => requestHandover(item, note)}
-          onVoid={onVoid}
-          extra={[
-            { label: 'Collected from customers', value: formatNaira(Number(item.total_collected)) },
-            { label: 'Rider pay (kept)', value: formatNaira(Number(item.total_earnings)) },
-            { label: 'To remit to Reda', value: formatNaira(Number(item.total_remit)) },
-          ]}
-        />
-      )}
-      ListEmptyComponent={
-        state.error ? (
-          <Empty icon="alert" title="Could not load" sub={state.error} />
-        ) : state.loading ? (
-          <View style={{ padding: 60, alignItems: 'center' }}>
-            <ActivityIndicator color={colors.black} />
-          </View>
-        ) : canSettle && remitFilter === 'outstanding' ? (
-          <Empty
-            icon="check"
-            title="No outstanding handovers"
-            sub="Every agent with money to remit is marked handed over."
-          />
-        ) : canSettle && remitFilter === 'handed_over' ? (
-          <Empty
-            icon="wallet"
-            title="No handovers recorded"
-            sub="Completed agent handovers will appear here."
-          />
-        ) : canSettle && remitFilter === 'nothing_due' ? (
-          <Empty
-            icon="users"
-            title="No agents in this category"
-            sub="Agents with zero or negative remit will appear here."
-          />
-        ) : (
-          <Empty
-            icon="users"
-            title="Nothing to collect"
-            sub="No delivered rows in this date range."
-          />
-        )
-      }
-    />
+      ) : null}
+
+      <BulkAgentHandoverSheet
+        open={bulkSheetOpen}
+        selected={selectedRows}
+        periodDate={eodDate}
+        onClose={() => setBulkSheetOpen(false)}
+        onConfirmed={(result) => {
+          exitSelect();
+          onBulkSettled(result.settled_count, Number(result.expected_amount));
+        }}
+      />
+    </View>
   );
 }
 
@@ -1109,6 +1283,9 @@ function ExpandableRow({
   settleLabel,
   onSettle,
   onVoid,
+  selectionMode = false,
+  selectable = true,
+  selected = false,
 }: {
   isOpen: boolean;
   onToggle: () => void;
@@ -1126,6 +1303,9 @@ function ExpandableRow({
   settleLabel?: string;
   onSettle?: (note: string | null) => void;
   onVoid?: (settlementId: string) => void;
+  selectionMode?: boolean;
+  selectable?: boolean;
+  selected?: boolean;
 }) {
   const [note, setNote] = useState('');
   // amount = the live remit figure. Drift = live − the amount frozen at settle.
@@ -1133,10 +1313,14 @@ function ExpandableRow({
   const drift = settledAmount != null ? amount - settledAmount : 0;
   const hasDrift = settledAmount != null && Math.abs(drift) > 0.005;
   return (
-    <Card dense style={{ padding: 0 }}>
+    <Card dense style={{ padding: 0, opacity: selectionMode && !selectable ? 0.5 : 1 }}>
       <Pressable
         onPress={onToggle}
         onLongPress={onLongPress}
+        accessibilityRole={selectionMode ? 'checkbox' : 'button'}
+        accessibilityState={
+          selectionMode ? { checked: selected, disabled: !selectable } : undefined
+        }
         style={({ pressed }) => [
           {
             padding: 14,
@@ -1147,6 +1331,22 @@ function ExpandableRow({
           pressed && { opacity: 0.92 },
         ]}
       >
+        {selectionMode ? (
+          <View
+            style={{
+              width: 22,
+              height: 22,
+              borderRadius: 6,
+              borderWidth: 2,
+              borderColor: !selectable ? colors.border : selected ? colors.black : colors.border,
+              backgroundColor: selected ? colors.black : 'transparent',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            {selected ? <Icon name="check" size={14} color={colors.white} /> : null}
+          </View>
+        ) : null}
         {subjectKind === 'agent' ? (
           <Avatar user={{ display_name: name }} size={36} />
         ) : (
@@ -1235,9 +1435,11 @@ function ExpandableRow({
             </Text>
           ) : null}
         </View>
-        <View style={{ transform: [{ rotate: isOpen ? '90deg' : '0deg' }] }}>
-          <Icon name="chevronRight" size={18} color={colors.textSecondary} />
-        </View>
+        {!selectionMode ? (
+          <View style={{ transform: [{ rotate: isOpen ? '90deg' : '0deg' }] }}>
+            <Icon name="chevronRight" size={18} color={colors.textSecondary} />
+          </View>
+        ) : null}
       </Pressable>
       {isOpen ? (
         <View

@@ -538,6 +538,17 @@ export type SettlementRow = {
   note: string | null;
 };
 
+export type BulkSettleAgentsResult = {
+  batch_id: string;
+  settled_count: number;
+  expected_amount: number;
+  settlements: {
+    agent_id: string;
+    settlement_id: string;
+    expected_amount: number;
+  }[];
+};
+
 /** Freeze one (subject, day). Admin only. Returns the settlement id. */
 export async function settlePeriod(
   subjectType: SubjectType,
@@ -553,6 +564,27 @@ export async function settlePeriod(
   });
   if (error) throw error;
   return data as string;
+}
+
+/**
+ * Freeze several agent-day handovers in one atomic, idempotent database action.
+ * The caller must keep the same requestId when retrying an ambiguous response.
+ */
+export async function bulkSettleAgents(
+  agentIds: string[],
+  periodDate: string,
+  note: string | null,
+  requestId: string,
+): Promise<BulkSettleAgentsResult> {
+  const { data, error } = await rpcUntyped<BulkSettleAgentsResult>('bulk_settle_agents', {
+    p_request_id: requestId,
+    p_agent_ids: agentIds,
+    p_period_date: periodDate,
+    p_note: note,
+  });
+  if (error) throw error;
+  if (!data) throw new Error('Bulk handover returned no result');
+  return data;
 }
 
 /** Soft-undo a settlement (admin only, reason required). */
