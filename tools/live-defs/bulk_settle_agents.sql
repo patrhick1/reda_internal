@@ -187,7 +187,9 @@ begin
 end;
 $function$;
 
-revoke all on function public.bulk_settle_agents(uuid, uuid[], date, text) from public;
+-- Self-hosted Supabase grants new functions to anon through default
+-- privileges, so revoke both the implicit PUBLIC grant and anon explicitly.
+revoke all on function public.bulk_settle_agents(uuid, uuid[], date, text) from public, anon;
 grant execute on function public.bulk_settle_agents(uuid, uuid[], date, text) to authenticated;
 
 commit;
