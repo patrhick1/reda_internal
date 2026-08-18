@@ -5,7 +5,7 @@ import { dayRatePct, weekdayShort, pooledRatePct, rateColor, type RateDay } from
 
 const TRACK_H = 60;
 
-/** Home "Delivery rate" strip: last N days as bars, today drawn hollow to signal
+/** Home "Delivery rate" strip: last N working days as bars, today drawn hollow to signal
  *  it's still in progress ("so far"). Tap → full history. Data comes from
  *  getDeliveryRateHistory; the parent passes the window and today's ISO date. */
 export function RateTrendCard({

@@ -1,5 +1,6 @@
 import { rpcUntyped, supabase } from '@/lib/supabase';
 import { ymdLagos } from '@/lib/date';
+import { isRedaWorkingDay } from '@/lib/rate-trend';
 
 // Phase 6.3 reconciliation RPCs. Types intentionally hand-written for now; will
 // regenerate via `npm run gen:types` once the SQL is applied. The @ts-expect-
@@ -510,11 +511,13 @@ export async function getDeliveryRateHistory(
   if (to) args.p_to = to;
   const { data, error } = await rpcUntyped<RateHistoryDay[]>('delivery_rate_history', args);
   if (error) throw error;
-  return (data ?? []).map((r) => ({
-    day: r.day,
-    delivered: r.delivered ?? 0,
-    available: r.available ?? 0,
-  }));
+  return (data ?? [])
+    .map((r) => ({
+      day: r.day,
+      delivered: r.delivered ?? 0,
+      available: r.available ?? 0,
+    }))
+    .filter((r) => isRedaWorkingDay(r.day));
 }
 
 // ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-// Pure helpers for the delivery-rate trend (home 7-day strip + history screen).
+// Pure helpers for the delivery-rate trend (home 7-working-day strip + history screen).
 // Kept framework-free so both surfaces compute rates and labels identically.
 
 export type RateDay = { day: string; delivered: number; available: number };
@@ -25,6 +25,24 @@ export function addDays(iso: string, n: number): string {
   const d = new Date(`${iso}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
+}
+
+/** Reda operates Monday-Saturday. Sunday is never a rateable working day and
+ *  should not occupy a slot in either the home trend or rate history. */
+export function isRedaWorkingDay(iso: string): boolean {
+  return new Date(`${iso}T12:00:00Z`).getUTCDay() !== 0;
+}
+
+/** Inclusive start date for the latest `count` Reda working days ending at
+ *  `iso`. The calendar range can be longer because Sundays are skipped. */
+export function workingDayWindowStart(iso: string, count: number): string {
+  let cursor = iso;
+  let included = 0;
+  while (included < count) {
+    if (isRedaWorkingDay(cursor)) included += 1;
+    if (included < count) cursor = addDays(cursor, -1);
+  }
+  return cursor;
 }
 
 /** One day's rate as an integer percent, or null when the day had no available
