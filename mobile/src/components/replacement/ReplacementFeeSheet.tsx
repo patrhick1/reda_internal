@@ -2,10 +2,7 @@ import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { Banner, Button, Input, Sheet } from '@/components/ui';
 import { errorMessage } from '@/lib/errors';
-import {
-  updateReplacementAttemptFees,
-  type ReplacementAttempt,
-} from '@/services/replacements';
+import { updateReplacementAttemptFees, type ReplacementAttempt } from '@/services/replacements';
 
 function amount(value: string): number {
   const parsed = Number(value.replace(/[,₦\s]/g, ''));

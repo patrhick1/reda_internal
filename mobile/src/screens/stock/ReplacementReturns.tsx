@@ -128,14 +128,20 @@ export function ReplacementReturnsScreen() {
         }
         ListEmptyComponent={
           rowsQ.loading && !rowsQ.data ? (
-            <View style={{ padding: 60 }}><ActivityIndicator color={colors.black} /></View>
+            <View style={{ padding: 60 }}>
+              <ActivityIndicator color={colors.black} />
+            </View>
           ) : rowsQ.error ? (
-            <Banner tone="error" icon="alert">{rowsQ.error}</Banner>
+            <Banner tone="error" icon="alert">
+              {rowsQ.error}
+            </Banner>
           ) : (
             <Empty
               icon="check"
               title={query ? 'No matching returns' : 'No returns waiting'}
-              sub={query ? 'Try a different search.' : 'Collected replacement items will appear here.'}
+              sub={
+                query ? 'Try a different search.' : 'Collected replacement items will appear here.'
+              }
             />
           )
         }
@@ -144,9 +150,15 @@ export function ReplacementReturnsScreen() {
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 10 }}>
               <View style={{ flex: 1 }}>
                 <Text style={customer}>{item.customer_name}</Text>
-                <Text style={product}>{item.product_name} · Qty {item.quantity}</Text>
-                <Text style={meta}>{item.client_name} · with {item.rider_name ?? 'rider'}</Text>
-                <Text style={address} numberOfLines={2}>{item.raw_address}</Text>
+                <Text style={product}>
+                  {item.product_name} · Qty {item.quantity}
+                </Text>
+                <Text style={meta}>
+                  {item.client_name} · with {item.rider_name ?? 'rider'}
+                </Text>
+                <Text style={address} numberOfLines={2}>
+                  {item.raw_address}
+                </Text>
               </View>
               <StatusPill
                 status={item.reported_condition === 'usable' ? 'available' : 'failed_delivery'}
@@ -163,7 +175,9 @@ export function ReplacementReturnsScreen() {
         subtitle={selected ? `${selected.product_name} · ${selected.customer_name}` : undefined}
         footer={
           <View style={{ flexDirection: 'row', gap: 8 }}>
-            <Button variant="secondary" onPress={close} disabled={submitting}>Cancel</Button>
+            <Button variant="secondary" onPress={close} disabled={submitting}>
+              Cancel
+            </Button>
             <Button full variant="emphasis" onPress={submit} disabled={submitting || !disposition}>
               {submitting ? 'Saving…' : 'Confirm custody'}
             </Button>
@@ -173,18 +187,21 @@ export function ReplacementReturnsScreen() {
         <View style={{ padding: 20, gap: 16 }}>
           {selected?.reported_condition === 'damaged' ? (
             <Banner tone="warn" icon="alert" title="Reported damaged">
-              This item cannot be added to usable stock. Hold it separately for the vendor, reject it,
-              or record that it was returned to the vendor.
+              This item cannot be added to usable stock. Hold it separately for the vendor, reject
+              it, or record that it was returned to the vendor.
             </Banner>
           ) : (
             <Banner tone="info" icon="eye" title="Inspect it yourself">
-              The rider reported it as usable. Confirm the physical condition before adding it to stock.
+              The rider reported it as usable. Confirm the physical condition before adding it to
+              stock.
             </Banner>
           )}
           <Select
             label="Warehouse decision"
             value={disposition}
-            options={(Object.entries(DISPOSITION_LABELS) as [ReplacementReturnDisposition, string][])
+            options={(
+              Object.entries(DISPOSITION_LABELS) as [ReplacementReturnDisposition, string][]
+            )
               .filter(([value]) => value !== 'accept_to_stock' || canAccept)
               .map(([value, label]) => ({ value, label }))}
             onChange={setDisposition}
@@ -207,7 +224,11 @@ export function ReplacementReturnsScreen() {
             multiline
             placeholder="Condition seen, storage location, or vendor instruction"
           />
-          {error ? <Banner tone="error" icon="alert">{error}</Banner> : null}
+          {error ? (
+            <Banner tone="error" icon="alert">
+              {error}
+            </Banner>
+          ) : null}
         </View>
       </Sheet>
     </View>
@@ -217,4 +238,10 @@ export function ReplacementReturnsScreen() {
 const customer = { fontFamily: fonts.bold, fontSize: 15, color: colors.black };
 const product = { fontFamily: fonts.semibold, fontSize: 13, color: colors.black, marginTop: 4 };
 const meta = { fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary, marginTop: 3 };
-const address = { fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary, marginTop: 5, lineHeight: 17 };
+const address = {
+  fontFamily: fonts.medium,
+  fontSize: 12,
+  color: colors.textSecondary,
+  marginTop: 5,
+  lineHeight: 17,
+};

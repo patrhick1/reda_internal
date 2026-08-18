@@ -972,8 +972,8 @@ const DeliveryCard = memo(function DeliveryCard({
               {isReplacement
                 ? 'Replacement'
                 : isDone && delivery.agent_payment_snapshot != null
-                ? `+${formatNaira(delivery.agent_payment_snapshot)}`
-                : formatNaira(delivery.customer_price)}
+                  ? `+${formatNaira(delivery.agent_payment_snapshot)}`
+                  : formatNaira(delivery.customer_price)}
             </Text>
           </View>
         </View>

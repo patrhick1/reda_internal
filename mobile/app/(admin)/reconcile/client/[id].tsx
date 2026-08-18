@@ -212,7 +212,7 @@ function DeliveryRow({ row }: { row: ClientRemitDetailRow }) {
   // instead of the legacy collapsed "Gallant Max · 7 units".
   const products =
     row.order_type === 'replacement'
-      ? row.note ?? 'Replacement service'
+      ? (row.note ?? 'Replacement service')
       : remitProductsDisplay(remitRowProducts(row));
   const loc = row.location_name ?? '—';
   // Full display name so namesakes (e.g. "Mummy Jerry") stay distinguishable.

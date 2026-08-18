@@ -7,10 +7,7 @@ import { errorMessage } from '@/lib/errors';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { canSeeCharged } from '@/lib/permissions';
 import { useEnqueueReplacementAttempt } from '@/queue/mutations';
-import {
-  ATTEMPT_OUTCOME_LABELS,
-  type ReplacementAttemptOutcome,
-} from '@/services/replacements';
+import { ATTEMPT_OUTCOME_LABELS, type ReplacementAttemptOutcome } from '@/services/replacements';
 
 function todayLagos(): string {
   return new Date(Date.now() + 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -110,7 +107,9 @@ export function ReplacementAttemptSheet({
       subtitle={customerName ?? undefined}
       footer={
         <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Button variant="secondary" onPress={onClose} disabled={submitting}>Cancel</Button>
+          <Button variant="secondary" onPress={onClose} disabled={submitting}>
+            Cancel
+          </Button>
           <Button full variant="emphasis" onPress={submit} disabled={submitting || !outcome}>
             {submitting ? 'Saving…' : 'Record attempt'}
           </Button>
@@ -135,11 +134,19 @@ export function ReplacementAttemptSheet({
         {needsDate ? (
           <View style={{ gap: 8 }}>
             <Text style={fieldLabel}>Next attempt date</Text>
-            <CalendarPicker value={nextDate || null} onSelect={setNextDate} minExclusiveYmd={todayLagos()} />
+            <CalendarPicker
+              value={nextDate || null}
+              onSelect={setNextDate}
+              minExclusiveYmd={todayLagos()}
+            />
           </View>
         ) : null}
         <Input
-          label={outcome === 'details_incorrect' || outcome === 'other' ? 'What went wrong? (required)' : 'Notes'}
+          label={
+            outcome === 'details_incorrect' || outcome === 'other'
+              ? 'What went wrong? (required)'
+              : 'Notes'
+          }
           value={notes}
           onChange={setNotes}
           multiline
@@ -149,14 +156,28 @@ export function ReplacementAttemptSheet({
           <View style={{ gap: 12 }}>
             <Text style={fieldLabel}>Attempt fee (usually ₦0)</Text>
             {canRecordClientCharge ? (
-              <Input label="Charge client (₦)" value={clientCharge} onChange={setClientCharge} keyboardType="numeric" />
+              <Input
+                label="Charge client (₦)"
+                value={clientCharge}
+                onChange={setClientCharge}
+                keyboardType="numeric"
+              />
             ) : null}
             {canRecordPay ? (
-              <Input label="Pay rider (₦)" value={agentPayment} onChange={setAgentPayment} keyboardType="numeric" />
+              <Input
+                label="Pay rider (₦)"
+                value={agentPayment}
+                onChange={setAgentPayment}
+                keyboardType="numeric"
+              />
             ) : null}
           </View>
         ) : null}
-        {error ? <Banner tone="error" icon="alert">{error}</Banner> : null}
+        {error ? (
+          <Banner tone="error" icon="alert">
+            {error}
+          </Banner>
+        ) : null}
       </View>
     </Sheet>
   );

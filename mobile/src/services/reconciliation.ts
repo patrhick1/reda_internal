@@ -283,7 +283,8 @@ export async function listClientRemitDetail(
     cash_pos_fee: 0,
     remit: -Number(row.client_charge ?? 0),
     agent_name: row.agent_name,
-    note: row.notes ?? (row.outcome === 'completed' ? 'Replacement completed' : 'Replacement attempt'),
+    note:
+      row.notes ?? (row.outcome === 'completed' ? 'Replacement completed' : 'Replacement attempt'),
   }));
   return [...deliveryRows, ...replacementRows].sort((a, b) =>
     a.scheduled_date < b.scheduled_date ? 1 : a.scheduled_date > b.scheduled_date ? -1 : 0,
@@ -403,7 +404,8 @@ export async function listRepClientRemitDetail(
     agent_name: row.agent_name,
     payment_method: null,
     cash_pos_fee: 0,
-    note: row.notes ?? (row.outcome === 'completed' ? 'Replacement completed' : 'Replacement attempt'),
+    note:
+      row.notes ?? (row.outcome === 'completed' ? 'Replacement completed' : 'Replacement attempt'),
     paid: 0,
   }));
   return [...deliveryRows, ...replacementRows].sort((a, b) =>

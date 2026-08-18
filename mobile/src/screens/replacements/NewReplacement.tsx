@@ -112,9 +112,14 @@ export function NewReplacement({ basePath }: { basePath: '/(admin)' | '/(dispatc
     .map((line) => line.productCatalogId)
     .filter((id): id is string => !!id);
   const hasDuplicateReturns = new Set(returnProductIds).size !== returnProductIds.length;
-  const validReturns = !hasDuplicateReturns && returns.every(
-    (line) => !!line.productCatalogId && Number.isInteger(Number(line.quantity)) && Number(line.quantity) > 0,
-  );
+  const validReturns =
+    !hasDuplicateReturns &&
+    returns.every(
+      (line) =>
+        !!line.productCatalogId &&
+        Number.isInteger(Number(line.quantity)) &&
+        Number(line.quantity) > 0,
+    );
   const isValid = formValidation.isValid && !!reason && validReturns;
 
   function updateReturn(id: number, patch: Partial<ReturnLine>) {
@@ -176,14 +181,18 @@ export function NewReplacement({ basePath }: { basePath: '/(admin)' | '/(dispatc
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={{ flex: 1, backgroundColor: colors.surface }}
     >
-      <AppBar title="New replacement" subtitle="Plan the trip and returned item" onBack={() => router.back()} />
+      <AppBar
+        title="New replacement"
+        subtitle="Plan the trip and returned item"
+        onBack={() => router.back()}
+      />
       <ScrollView
         contentContainerStyle={{ padding: 16, paddingBottom: 40, gap: 14 }}
         keyboardShouldPersistTaps="handled"
       >
         <Banner tone="info" icon="refresh">
-          The outgoing product leaves the rider&apos;s stock when the replacement succeeds. A returned
-          product stays in rider custody until warehouse receives and inspects it.
+          The outgoing product leaves the rider&apos;s stock when the replacement succeeds. A
+          returned product stays in rider custody until warehouse receives and inspects it.
         </Banner>
 
         <DeliveryFieldsForm
@@ -214,7 +223,9 @@ export function NewReplacement({ basePath }: { basePath: '/(admin)' | '/(dispatc
         </Card>
 
         <Card style={{ gap: 12 }}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <View
+            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
+          >
             <View style={{ flex: 1 }}>
               <Text style={kicker}>Product expected back</Text>
               <Text style={helper}>Record what the rider may collect from the customer.</Text>
@@ -270,8 +281,8 @@ export function NewReplacement({ basePath }: { basePath: '/(admin)' | '/(dispatc
         <Card style={{ gap: 12 }}>
           <Text style={kicker}>Replacement trip fee</Text>
           <Text style={helper}>
-            These apply only when the replacement succeeds. A failed attempt can be charged separately
-            when the rider records it.
+            These apply only when the replacement succeeds. A failed attempt can be charged
+            separately when the rider records it.
           </Text>
           {showClientCharge ? (
             <Input
@@ -297,9 +308,19 @@ export function NewReplacement({ basePath }: { basePath: '/(admin)' | '/(dispatc
               : 'Select a product and positive quantity for every expected return.'}
           </Banner>
         ) : null}
-        {error ? <Banner tone="error" icon="alert">{error}</Banner> : null}
+        {error ? (
+          <Banner tone="error" icon="alert">
+            {error}
+          </Banner>
+        ) : null}
 
-        <Button full variant="emphasis" icon="check" onPress={submit} disabled={!isValid || submitting}>
+        <Button
+          full
+          variant="emphasis"
+          icon="check"
+          onPress={submit}
+          disabled={!isValid || submitting}
+        >
           {submitting ? 'Creating…' : 'Create replacement'}
         </Button>
       </ScrollView>

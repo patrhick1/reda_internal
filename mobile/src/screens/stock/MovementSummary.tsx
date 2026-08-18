@@ -196,9 +196,7 @@ export function StockMovementSummaryScreen({ basePath }: { basePath: MovementSum
             <ActivityIndicator color={colors.black} />
           </View>
         ) : rows.length === 0 ? (
-          <Text style={styles.empty}>
-            No matching movements in this range.
-          </Text>
+          <Text style={styles.empty}>No matching movements in this range.</Text>
         ) : (
           <View style={styles.card}>
             {rows.map((r, i) => (

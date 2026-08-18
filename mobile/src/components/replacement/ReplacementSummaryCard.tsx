@@ -44,9 +44,13 @@ export function ReplacementSummaryCard({
       {loading && !details ? (
         <ActivityIndicator color={colors.black} />
       ) : error ? (
-        <Banner tone="error" icon="alert">{error}</Banner>
+        <Banner tone="error" icon="alert">
+          {error}
+        </Banner>
       ) : !details ? (
-        <Banner tone="warn" icon="alert">Replacement details are unavailable.</Banner>
+        <Banner tone="warn" icon="alert">
+          Replacement details are unavailable.
+        </Banner>
       ) : (
         <>
           <View style={section}>

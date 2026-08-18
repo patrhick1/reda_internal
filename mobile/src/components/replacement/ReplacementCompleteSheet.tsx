@@ -69,7 +69,10 @@ export function ReplacementCompleteSheet({
         setError(`Return quantity for ${item.product_name} must be 0–${item.quantity_expected}.`);
         return;
       }
-      if ((draft.outcome === 'usable_collected' || draft.outcome === 'damaged_collected') && qty <= 0) {
+      if (
+        (draft.outcome === 'usable_collected' || draft.outcome === 'damaged_collected') &&
+        qty <= 0
+      ) {
         setError(`Enter how many ${item.product_name} were collected.`);
         return;
       }
@@ -109,8 +112,16 @@ export function ReplacementCompleteSheet({
       subtitle={customerName ?? undefined}
       footer={
         <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Button variant="secondary" onPress={onClose} disabled={submitting}>Cancel</Button>
-          <Button full variant="emphasis" icon="check" onPress={submit} disabled={submitting || !details}>
+          <Button variant="secondary" onPress={onClose} disabled={submitting}>
+            Cancel
+          </Button>
+          <Button
+            full
+            variant="emphasis"
+            icon="check"
+            onPress={submit}
+            disabled={submitting || !details}
+          >
             {submitting ? 'Saving…' : 'Confirm exchange'}
           </Button>
         </View>
@@ -118,14 +129,16 @@ export function ReplacementCompleteSheet({
     >
       <View style={{ padding: 20, gap: 16 }}>
         <Banner tone="warn" icon="alert" title="Returned goods are not stock yet">
-          Anything collected stays with the rider. Warehouse must receive and inspect it before a usable
-          item is added to stock. Damaged items are never added to usable stock.
+          Anything collected stays with the rider. Warehouse must receive and inspect it before a
+          usable item is added to stock. Damaged items are never added to usable stock.
         </Banner>
         {(details?.returns ?? []).map((item) => {
           const draft = drafts[item.id];
           return (
             <View key={item.id} style={itemCard}>
-              <Text style={itemName}>{item.product_name} · expected {item.quantity_expected}</Text>
+              <Text style={itemName}>
+                {item.product_name} · expected {item.quantity_expected}
+              </Text>
               <Text style={instruction}>{RETURN_INSTRUCTION_LABELS[item.vendor_instruction]}</Text>
               <Select
                 label="What happened to the old product?"
@@ -153,7 +166,11 @@ export function ReplacementCompleteSheet({
           );
         })}
         <Input label="Completion note" value={notes} onChange={setNotes} multiline />
-        {error ? <Banner tone="error" icon="alert">{error}</Banner> : null}
+        {error ? (
+          <Banner tone="error" icon="alert">
+            {error}
+          </Banner>
+        ) : null}
       </View>
     </Sheet>
   );
@@ -161,4 +178,9 @@ export function ReplacementCompleteSheet({
 
 const itemCard = { gap: 10, padding: 12, borderRadius: 12, backgroundColor: colors.surface };
 const itemName = { fontFamily: fonts.bold, fontSize: 14, color: colors.black };
-const instruction = { fontFamily: fonts.medium, fontSize: 12, color: colors.warningDark, lineHeight: 17 };
+const instruction = {
+  fontFamily: fonts.medium,
+  fontSize: 12,
+  color: colors.warningDark,
+  lineHeight: 17,
+};

@@ -10,10 +10,7 @@ export type ReplacementReason =
   | 'wrong_product_delivered'
   | 'other';
 
-export type ReturnInstruction =
-  | 'ask_if_damaged'
-  | 'collect_and_hold'
-  | 'do_not_collect_damaged';
+export type ReturnInstruction = 'ask_if_damaged' | 'collect_and_hold' | 'do_not_collect_damaged';
 
 export type ReplacementItemInput = {
   productCatalogId: string;
@@ -165,9 +162,7 @@ export async function getReplacementDetails(
 }
 
 export async function listReplacementReturns(): Promise<ReplacementReturnQueueRow[]> {
-  const { data, error } = await rpcUntyped<ReplacementReturnQueueRow[]>(
-    'list_replacement_returns',
-  );
+  const { data, error } = await rpcUntyped<ReplacementReturnQueueRow[]>('list_replacement_returns');
   if (error) throw error;
   return data ?? [];
 }

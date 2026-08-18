@@ -387,9 +387,7 @@ export function useAgentPostponed(userId: string): DeliveryListResult<DeliveryRo
   return { ...asAsync(q), fetching: q.isFetching, refetchIfStale: () => refetchIfStale(queryKey) };
 }
 
-export function useAgentOverdueReplacements(
-  userId: string,
-): DeliveryListResult<DeliveryRow[]> {
+export function useAgentOverdueReplacements(userId: string): DeliveryListResult<DeliveryRow[]> {
   const uid = useUid();
   const queryKey = ['deliveries', uid, 'agent-overdue-replacements', userId];
   const q = useQuery({
