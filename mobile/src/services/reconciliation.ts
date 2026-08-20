@@ -25,7 +25,71 @@ export type ClientRemitRow = {
   total_cash_pos_fee: number;
   /** What Reda owes the client = paid − Reda fee − cash POS fee. */
   total_remit: number;
+  /** Running-balance fields. `total_remit` remains the selected period's raw
+   * activity so Summary margin math is unchanged. */
+  balance_tracking: boolean;
+  balance_effective_date: string | null;
+  configured_opening_balance: number | null;
+  balance_before_period: number;
+  period_activity: number;
+  payouts_in_period: number;
+  current_balance: number;
 };
+
+export type ClientAccountBalance = {
+  client_id: string;
+  is_initialized: boolean;
+  effective_date: string | null;
+  configured_opening_balance: number | null;
+  balance_before_period: number;
+  period_activity: number;
+  payouts_in_period: number;
+  current_balance: number;
+};
+
+type ClientBalanceFields = Pick<
+  ClientRemitRow,
+  | 'balance_tracking'
+  | 'balance_effective_date'
+  | 'configured_opening_balance'
+  | 'balance_before_period'
+  | 'period_activity'
+  | 'payouts_in_period'
+  | 'current_balance'
+>;
+
+function emptyClientBalance(): ClientBalanceFields {
+  return {
+    balance_tracking: false,
+    balance_effective_date: null,
+    configured_opening_balance: null,
+    balance_before_period: 0,
+    period_activity: 0,
+    payouts_in_period: 0,
+    current_balance: 0,
+  };
+}
+
+export async function listClientAccountBalances(
+  from: string,
+  to: string,
+): Promise<ClientAccountBalance[]> {
+  const { data, error } = await rpcUntyped<ClientAccountBalance[]>('client_account_balances', {
+    p_from: from,
+    p_to: to,
+  });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function getClientAccountBalance(
+  clientId: string,
+  from: string,
+  to: string,
+): Promise<ClientAccountBalance | null> {
+  const rows = await listClientAccountBalances(from, to);
+  return rows.find((row) => row.client_id === clientId) ?? null;
+}
 
 export type AgentEarningsRow = {
   agent_id: string;
@@ -168,12 +232,16 @@ export async function getReplacementAgentPayTotal(from: string, to: string): Pro
 }
 
 export async function listClientRemit(from: string, to: string): Promise<ClientRemitRow[]> {
-  const [{ data, error }, replacementRows] = await Promise.all([
+  const [{ data, error }, replacementRows, balances] = await Promise.all([
     supabase.rpc('client_remit_summary', { p_from: from, p_to: to }),
     listReplacementFinancials(from, to),
+    listClientAccountBalances(from, to),
   ]);
   if (error) throw error;
-  const rows = ((data ?? []) as ClientRemitRow[]).map((row) => ({ ...row }));
+  const rows = ((data ?? []) as ClientRemitRow[]).map((row) => ({
+    ...row,
+    ...emptyClientBalance(),
+  }));
   const byClient = new Map(rows.map((row) => [row.client_id, row]));
   for (const replacement of replacementRows) {
     let row = byClient.get(replacement.client_id);
@@ -189,6 +257,7 @@ export async function listClientRemit(from: string, to: string): Promise<ClientR
         total_reda_fee: 0,
         total_cash_pos_fee: 0,
         total_remit: 0,
+        ...emptyClientBalance(),
       };
       rows.push(row);
       byClient.set(row.client_id, row);
@@ -196,6 +265,18 @@ export async function listClientRemit(from: string, to: string): Promise<ClientR
     row.deliveries_count += 1;
     row.total_reda_fee += Number(replacement.client_charge ?? 0);
     row.total_remit -= Number(replacement.client_charge ?? 0);
+  }
+  const balanceByClient = new Map(balances.map((balance) => [balance.client_id, balance]));
+  for (const row of rows) {
+    const balance = balanceByClient.get(row.client_id);
+    if (!balance) continue;
+    row.balance_tracking = balance.is_initialized;
+    row.balance_effective_date = balance.effective_date;
+    row.configured_opening_balance = balance.configured_opening_balance;
+    row.balance_before_period = Number(balance.balance_before_period ?? 0);
+    row.period_activity = Number(balance.period_activity ?? 0);
+    row.payouts_in_period = Number(balance.payouts_in_period ?? 0);
+    row.current_balance = Number(balance.current_balance ?? 0);
   }
   return [...byClient.values()];
 }
@@ -307,6 +388,12 @@ export type RepClientRemitRow = {
   total_quantity: number;
   /** What Reda owes the client (sum of net remit). */
   total_remit: number;
+  balance_tracking: boolean;
+  balance_effective_date: string | null;
+  balance_before_period: number;
+  period_activity: number;
+  payouts_in_period: number;
+  current_balance: number;
 };
 
 export type RepClientRemitDetailRow = {
@@ -347,12 +434,21 @@ export type RepClientRemitDetailRow = {
 };
 
 export async function listRepClientRemit(from: string, to: string): Promise<RepClientRemitRow[]> {
-  const [{ data, error }, replacements] = await Promise.all([
+  const [{ data, error }, replacements, balances] = await Promise.all([
     supabase.rpc('client_remit_summary_rep', { p_from: from, p_to: to }),
     listRepReplacementFinancials(from, to),
+    listClientAccountBalances(from, to),
   ]);
   if (error) throw error;
-  const rows = ((data ?? []) as RepClientRemitRow[]).map((row) => ({ ...row }));
+  const rows: RepClientRemitRow[] = ((data ?? []) as RepClientRemitRow[]).map((row) => ({
+    ...row,
+    balance_tracking: false,
+    balance_effective_date: null,
+    balance_before_period: 0,
+    period_activity: 0,
+    payouts_in_period: 0,
+    current_balance: 0,
+  }));
   const byClient = new Map(rows.map((row) => [row.client_id, row]));
   for (const replacement of replacements) {
     let row = byClient.get(replacement.client_id);
@@ -363,12 +459,29 @@ export async function listRepClientRemit(from: string, to: string): Promise<RepC
         deliveries_count: 0,
         total_quantity: 0,
         total_remit: 0,
+        balance_tracking: false,
+        balance_effective_date: null,
+        balance_before_period: 0,
+        period_activity: 0,
+        payouts_in_period: 0,
+        current_balance: 0,
       };
       rows.push(row);
       byClient.set(row.client_id, row);
     }
     row.deliveries_count += 1;
     row.total_remit += Number(replacement.remit ?? 0);
+  }
+  const balanceByClient = new Map(balances.map((balance) => [balance.client_id, balance]));
+  for (const row of rows) {
+    const balance = balanceByClient.get(row.client_id);
+    if (!balance) continue;
+    row.balance_tracking = balance.is_initialized;
+    row.balance_effective_date = balance.effective_date;
+    row.balance_before_period = Number(balance.balance_before_period ?? 0);
+    row.period_activity = Number(balance.period_activity ?? 0);
+    row.payouts_in_period = Number(balance.payouts_in_period ?? 0);
+    row.current_balance = Number(balance.current_balance ?? 0);
   }
   return [...byClient.values()];
 }
@@ -542,6 +655,79 @@ export type SettlementRow = {
   settled_by_name: string | null;
   note: string | null;
 };
+
+export type ClientPayoutRow = {
+  payout_id: string;
+  payout_date: string;
+  amount: number;
+  paid_at: string;
+  paid_by_name: string | null;
+  note: string | null;
+};
+
+/** Establish the signed balance at the start of an effective date. Positive
+ * means Reda owes the client; negative means the client owes Reda. */
+export async function setClientBalanceOpening(input: {
+  requestUuid: string;
+  clientId: string;
+  effectiveDate: string;
+  openingBalance: number;
+  note: string | null;
+}): Promise<string> {
+  const { data, error } = await rpcUntyped<string>('set_client_balance_opening', {
+    p_request_uuid: input.requestUuid,
+    p_client_id: input.clientId,
+    p_effective_date: input.effectiveDate,
+    p_opening_balance: input.openingBalance,
+    p_note: input.note,
+  });
+  if (error) throw error;
+  if (!data) throw new Error('Balance setup returned no result');
+  return data;
+}
+
+/** Record an actual bank payout. Amount may be less than the available balance;
+ * the remainder carries forward automatically. */
+export async function recordClientPayout(input: {
+  clientUuid: string;
+  clientId: string;
+  payoutDate: string;
+  amount: number;
+  note: string | null;
+}): Promise<string> {
+  const { data, error } = await rpcUntyped<string>('record_client_payout', {
+    p_client_uuid: input.clientUuid,
+    p_client_id: input.clientId,
+    p_payout_date: input.payoutDate,
+    p_amount: input.amount,
+    p_note: input.note,
+  });
+  if (error) throw error;
+  if (!data) throw new Error('Payout returned no result');
+  return data;
+}
+
+export async function listClientPayouts(
+  clientId: string,
+  from: string,
+  to: string,
+): Promise<ClientPayoutRow[]> {
+  const { data, error } = await rpcUntyped<ClientPayoutRow[]>('list_client_payouts', {
+    p_client_id: clientId,
+    p_from: from,
+    p_to: to,
+  });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function voidClientPayout(payoutId: string, reason: string): Promise<void> {
+  const { error } = await rpcUntyped('void_client_payout', {
+    p_payout_id: payoutId,
+    p_reason: reason,
+  });
+  if (error) throw error;
+}
 
 export type BulkSettleAgentsResult = {
   batch_id: string;

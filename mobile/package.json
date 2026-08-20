@@ -15,6 +15,7 @@
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,json,md}\"",
     "test:delivery-payment": "node --experimental-strip-types --test src/lib/delivery-payment.test.mjs",
+    "test:client-balance": "node --experimental-strip-types --test src/lib/client-balance.test.mjs",
     "test:stock-summary": "node --experimental-strip-types --test src/services/stock-movement-summary.test.mjs",
     "build:runbook": "node tools/build-runbook.mjs",
     "check:runbook": "node tools/build-runbook.mjs --check"

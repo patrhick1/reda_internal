@@ -299,6 +299,14 @@ export function buildClientShareMessage(input: {
    *  reconcile against their own records by phone — e.g. Afaking). Composes with
    *  any format. Defaults to false. */
   showPhone?: boolean;
+  /** Optional running-balance context. When present, the footer distinguishes
+   * this report's activity from the actual amount currently payable. */
+  account?: {
+    balanceBeforePeriod: number;
+    periodActivity: number;
+    payoutsInPeriod: number;
+    currentBalance: number;
+  } | null;
 }): string {
   const format = input.format ?? 'default';
   const showPhone = input.showPhone ?? false;
@@ -354,11 +362,17 @@ export function buildClientShareMessage(input: {
     .filter((r) => r.orderType === 'waybill' || r.orderType === 'replacement')
     .reduce((s, r) => s + Math.abs(Number(r.remit ?? 0)), 0);
   const hasWaybill = waybillCharges > 0;
-  const balanceLine = !hasWaybill
-    ? `To Remit: ${formatNaira(totalRemit)}`
-    : totalRemit >= 0
-      ? `Reda remits client: ${formatNaira(totalRemit)}`
-      : `Client owes Reda: ${formatNaira(Math.abs(totalRemit))}`;
+  const accountBalance = input.account?.currentBalance;
+  const finalBalance = accountBalance ?? totalRemit;
+  const balanceLine = input.account
+    ? finalBalance >= 0
+      ? `Reda remits client: ${formatNaira(finalBalance)}`
+      : `Client owes Reda: ${formatNaira(Math.abs(finalBalance))}`
+    : !hasWaybill
+      ? `To Remit: ${formatNaira(totalRemit)}`
+      : totalRemit >= 0
+        ? `Reda remits client: ${formatNaira(totalRemit)}`
+        : `Client owes Reda: ${formatNaira(Math.abs(totalRemit))}`;
 
   const header = `Reda Logistics — ${input.clientName}\nDelivered Update\n${input.rangeLabel}`;
   const body = input.rows.length === 0 ? '(no deliveries in this range)' : blocks.join('\n\n');
@@ -369,6 +383,15 @@ export function buildClientShareMessage(input: {
     // in the body above (there's only ever one, if any) — restating the amount
     // here just makes the charge conspicuous, which clients dislike. The final
     // balanceLine already nets it out, so we don't repeat it.
+    ...(input.account
+      ? [
+          `Previous balance: ${formatNaira(input.account.balanceBeforePeriod)}`,
+          `Activity this period: ${formatNaira(input.account.periodActivity)}`,
+          ...(input.account.payoutsInPeriod > 0
+            ? [`Already paid this period: ${formatNaira(input.account.payoutsInPeriod)}`]
+            : []),
+        ]
+      : []),
     balanceLine,
   ].join('\n');
 

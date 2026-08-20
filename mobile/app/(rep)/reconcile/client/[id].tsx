@@ -3,7 +3,12 @@ import { ActivityIndicator, FlatList, RefreshControl, Share, Text, View } from '
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
-import { listRepClientRemitDetail, type RepClientRemitDetailRow } from '@/services/reconciliation';
+import {
+  getClientAccountBalance,
+  listRepClientRemitDetail,
+  type ClientAccountBalance,
+  type RepClientRemitDetailRow,
+} from '@/services/reconciliation';
 import { AppBar, Button, Card, Empty } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 import { formatNaira } from '@/lib/format';
@@ -36,9 +41,16 @@ export default function RepClientReconcileDetail() {
     () => (rangeValid ? listRepClientRemitDetail(id, from, to) : Promise.resolve([])),
     [id, from, to, rangeValid],
   );
+  const accountQ = useAsync<ClientAccountBalance | null>(
+    () => (rangeValid ? getClientAccountBalance(id, from, to) : Promise.resolve(null)),
+    [id, from, to, rangeValid],
+  );
 
   useReloadOnFocus(() => {
-    if (rangeValid) detailQ.reload();
+    if (rangeValid) {
+      detailQ.reload();
+      accountQ.reload();
+    }
   });
 
   const rows = useMemo(() => detailQ.data ?? [], [detailQ.data]);
@@ -51,6 +63,8 @@ export default function RepClientReconcileDetail() {
 
   const rangeLabel = formatRangeLagos(from, to);
   const clientName = name ?? 'Client';
+  const account = accountQ.data?.is_initialized ? accountQ.data : null;
+  const displayedRemit = account ? Number(account.current_balance) : totals.remit;
 
   const onShare = useCallback(async () => {
     const message = buildClientShareMessage({
@@ -62,6 +76,14 @@ export default function RepClientReconcileDetail() {
       format: clientShareFormat(id),
       // Per-client: include the customer phone per row (e.g. Afaking Nig Ltd).
       showPhone: clientShareShowsPhone(id),
+      account: account
+        ? {
+            balanceBeforePeriod: Number(account.balance_before_period),
+            periodActivity: Number(account.period_activity),
+            payoutsInPeriod: Number(account.payouts_in_period),
+            currentBalance: Number(account.current_balance),
+          }
+        : null,
       rows: rows.map((r) => {
         const q = remitRowQuantities(r);
         return {
@@ -94,7 +116,7 @@ export default function RepClientReconcileDetail() {
     } catch {
       /* user cancelled */
     }
-  }, [clientName, rangeLabel, rows, id]);
+  }, [clientName, rangeLabel, rows, id, account]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -120,10 +142,10 @@ export default function RepClientReconcileDetail() {
                 fontSize: 32,
                 letterSpacing: -1,
                 marginTop: 4,
-                color: totals.remit >= 0 ? colors.success : colors.red,
+                color: displayedRemit >= 0 ? colors.success : colors.red,
               }}
             >
-              {formatNaira(totals.remit)}
+              {formatNaira(displayedRemit)}
             </Text>
             <Text
               style={{
@@ -133,7 +155,9 @@ export default function RepClientReconcileDetail() {
                 marginTop: 4,
               }}
             >
-              {totals.count} {totals.count === 1 ? 'delivery' : 'deliveries'}
+              {account
+                ? `Running balance · ${formatNaira(account.period_activity)} activity in range`
+                : `${totals.count} ${totals.count === 1 ? 'delivery' : 'deliveries'}`}
             </Text>
           </Card>
         }
@@ -164,7 +188,13 @@ export default function RepClientReconcileDetail() {
           backgroundColor: colors.white,
         }}
       >
-        <Button variant="emphasis" full icon="share" onPress={onShare} disabled={rows.length === 0}>
+        <Button
+          variant="emphasis"
+          full
+          icon="share"
+          onPress={onShare}
+          disabled={rows.length === 0 && !account}
+        >
           Share with client
         </Button>
       </View>

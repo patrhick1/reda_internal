@@ -1,13 +1,31 @@
 import { useCallback, useMemo } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, Share, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Platform,
+  RefreshControl,
+  Share,
+  Text,
+  View,
+} from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
-import { listClientRemitDetail, type ClientRemitDetailRow } from '@/services/reconciliation';
+import {
+  getClientAccountBalance,
+  listClientRemitDetail,
+  listClientPayouts,
+  voidClientPayout,
+  type ClientAccountBalance,
+  type ClientPayoutRow,
+  type ClientRemitDetailRow,
+} from '@/services/reconciliation';
 import { AppBar, Button, Card, Empty } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 import { formatNaira } from '@/lib/format';
 import { formatDateLagos, formatRangeLagos, isYmd } from '@/lib/date';
+import { errorMessage } from '@/lib/errors';
 import {
   buildClientShareMessage,
   clientShareFormat,
@@ -34,10 +52,20 @@ export default function ClientReconcileDetail() {
     () => (rangeValid ? listClientRemitDetail(id, from, to) : Promise.resolve([])),
     [id, from, to, rangeValid],
   );
+  const accountQ = useAsync<ClientAccountBalance | null>(
+    () => (rangeValid ? getClientAccountBalance(id, from, to) : Promise.resolve(null)),
+    [id, from, to, rangeValid],
+  );
+  const payoutsQ = useAsync<ClientPayoutRow[]>(
+    () => (rangeValid ? listClientPayouts(id, from, to) : Promise.resolve([])),
+    [id, from, to, rangeValid],
+  );
 
   useReloadOnFocus(() => {
     if (!rangeValid) return;
     detailQ.reload();
+    accountQ.reload();
+    payoutsQ.reload();
   });
 
   const rows = useMemo(() => detailQ.data ?? [], [detailQ.data]);
@@ -69,6 +97,34 @@ export default function ClientReconcileDetail() {
 
   const rangeLabel = formatRangeLagos(from, to);
   const clientName = name ?? 'Client';
+  const account = accountQ.data?.is_initialized ? accountQ.data : null;
+  const displayedRemit = account ? Number(account.current_balance) : totals.remit;
+
+  const onVoidPayout = useCallback(
+    (payout: ClientPayoutRow) => {
+      const run = async () => {
+        try {
+          await voidClientPayout(payout.payout_id, 'voided from client reconciliation report');
+          payoutsQ.reload();
+          accountQ.reload();
+        } catch (e) {
+          const message = errorMessage(e);
+          if (Platform.OS === 'web') window.alert(`Could not void payout\n\n${message}`);
+          else Alert.alert('Could not void payout', message);
+        }
+      };
+      const message = `Void the ${formatNaira(payout.amount)} payout? The audit record will be kept and the amount will return to the client's balance.`;
+      if (Platform.OS === 'web') {
+        if (window.confirm(message)) run();
+      } else {
+        Alert.alert('Void payout?', message, [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Void payout', style: 'destructive', onPress: run },
+        ]);
+      }
+    },
+    [accountQ, payoutsQ],
+  );
 
   const onShare = useCallback(async () => {
     // Per-delivery blocks + Total in Uzo's preferred shape, built by the shared
@@ -81,6 +137,14 @@ export default function ClientReconcileDetail() {
       format: clientShareFormat(id),
       // Per-client: include the customer phone per row (e.g. Afaking Nig Ltd).
       showPhone: clientShareShowsPhone(id),
+      account: account
+        ? {
+            balanceBeforePeriod: Number(account.balance_before_period),
+            periodActivity: Number(account.period_activity),
+            payoutsInPeriod: Number(account.payouts_in_period),
+            currentBalance: Number(account.current_balance),
+          }
+        : null,
       rows: rows.map((r) => {
         const q = remitRowQuantities(r);
         return {
@@ -114,7 +178,7 @@ export default function ClientReconcileDetail() {
     } catch {
       /* user cancelled */
     }
-  }, [clientName, rangeLabel, rows, id]);
+  }, [clientName, rangeLabel, rows, id, account]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -140,10 +204,10 @@ export default function ClientReconcileDetail() {
                 fontSize: 32,
                 letterSpacing: -1,
                 marginTop: 4,
-                color: totals.remit >= 0 ? colors.success : colors.red,
+                color: displayedRemit >= 0 ? colors.success : colors.red,
               }}
             >
-              {formatNaira(totals.remit)}
+              {formatNaira(displayedRemit)}
             </Text>
             <Text
               style={{
@@ -153,11 +217,29 @@ export default function ClientReconcileDetail() {
                 marginTop: 4,
               }}
             >
-              {totals.count} {totals.count === 1 ? 'delivery' : 'deliveries'} · paid − Reda fee −
-              cash POS fee
+              {account
+                ? 'Running balance through this period'
+                : `${totals.count} ${totals.count === 1 ? 'delivery' : 'deliveries'} · paid − Reda fee − cash POS fee`}
             </Text>
 
             <View style={{ marginTop: 14, gap: 6 }}>
+              {account ? (
+                <>
+                  <SmallRow
+                    label="Balance entering range"
+                    value={formatNaira(account.balance_before_period)}
+                  />
+                  <SmallRow
+                    label="Activity in range"
+                    value={formatNaira(account.period_activity)}
+                  />
+                  <SmallRow
+                    label="Payouts in range"
+                    value={formatNaira(account.payouts_in_period)}
+                  />
+                  <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 4 }} />
+                </>
+              ) : null}
               <SmallRow label="Customer paid" value={formatNaira(totals.paid)} />
               {totals.paidToVendor > 0 ? (
                 <SmallRow
@@ -172,6 +254,50 @@ export default function ClientReconcileDetail() {
           </Card>
         }
         renderItem={({ item }) => <DeliveryRow row={item} />}
+        ListFooterComponent={
+          (payoutsQ.data?.length ?? 0) > 0 ? (
+            <View style={{ marginTop: 10, gap: 8 }}>
+              <Text style={kicker}>Payouts recorded in this range</Text>
+              {payoutsQ.data?.map((payout) => (
+                <Card key={payout.payout_id} dense>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 12,
+                    }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>
+                        {formatNaira(payout.amount)} · {formatDateLagos(payout.payout_date)}
+                      </Text>
+                      <Text
+                        style={{
+                          fontFamily: fonts.medium,
+                          fontSize: 12,
+                          color: colors.textSecondary,
+                          marginTop: 2,
+                        }}
+                      >
+                        {[payout.paid_by_name, payout.note].filter(Boolean).join(' · ') ||
+                          'No reference'}
+                      </Text>
+                    </View>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      icon="x"
+                      onPress={() => onVoidPayout(payout)}
+                    >
+                      Void
+                    </Button>
+                  </View>
+                </Card>
+              ))}
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
           detailQ.error ? (
             <Empty icon="alert" title="Could not load" sub={detailQ.error} />
@@ -198,7 +324,13 @@ export default function ClientReconcileDetail() {
           backgroundColor: colors.white,
         }}
       >
-        <Button variant="emphasis" full icon="share" onPress={onShare} disabled={rows.length === 0}>
+        <Button
+          variant="emphasis"
+          full
+          icon="share"
+          onPress={onShare}
+          disabled={rows.length === 0 && !account}
+        >
           Share with client
         </Button>
       </View>

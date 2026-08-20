@@ -59,6 +59,15 @@ import { kudaCodeForBankName } from '@/lib/kuda-banks';
 import { useClients } from '@/hooks/queries';
 import { downloadTextFile, downloadBinaryFile } from '@/lib/download';
 import { BulkAgentHandoverSheet } from '@/components/sheets/BulkAgentHandoverSheet';
+import {
+  ClientBalanceOpeningSheet,
+  ClientPayoutSheet,
+} from '@/components/sheets/ClientBalanceSheets';
+import {
+  clientAmountPayable,
+  clientBalanceDirection,
+  displayedClientBalance,
+} from '@/lib/client-balance';
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
@@ -84,6 +93,8 @@ export default function AdminReconcile() {
   // from/to, never this.
   const [preset, setPreset] = useState<Preset>('today');
   const [openId, setOpenId] = useState<string | null>(null);
+  const [openingClient, setOpeningClient] = useState<ClientRemitRow | null>(null);
+  const [payoutClient, setPayoutClient] = useState<ClientRemitRow | null>(null);
 
   // Gate the RPC fires behind YMD validation: the From/To Inputs call
   // setFrom/setTo on every keystroke, and the underlying RPCs take `date`
@@ -266,9 +277,9 @@ export default function AdminReconcile() {
     let selfCollect = 0; // vendors owed but with no bank details — collect on their own
     let alreadySettled = 0;
     for (const r of remit) {
-      const amount = Number(r.total_remit);
+      const amount = clientAmountPayable(r);
       if (!(amount > 0)) continue; // only positive remits get paid out
-      if (settled.has(`client:${r.client_id}`)) {
+      if (!r.balance_tracking && settled.has(`client:${r.client_id}`)) {
         alreadySettled += 1; // already transferred — exclude to avoid double-pay
         continue;
       }
@@ -348,9 +359,9 @@ export default function AdminReconcile() {
     let selfCollect = 0; // vendors owed but with no bank details — collect on their own
     let alreadySettled = 0;
     for (const r of remit) {
-      const amount = Number(r.total_remit);
+      const amount = clientAmountPayable(r);
       if (!(amount > 0)) continue; // only positive remits get paid out
-      if (settled.has(`client:${r.client_id}`)) {
+      if (!r.balance_tracking && settled.has(`client:${r.client_id}`)) {
         alreadySettled += 1; // already transferred — exclude to avoid double-pay
         continue;
       }
@@ -491,6 +502,8 @@ export default function AdminReconcile() {
           onRunEod={onRunEod}
           onSettle={(id, note) => handleSettle('client', id, note)}
           onVoid={handleVoid}
+          onStartBalance={setOpeningClient}
+          onRecordPayout={setPayoutClient}
           onOpenClient={(c) =>
             router.push({
               pathname: '/(admin)/reconcile/client/[id]',
@@ -528,6 +541,35 @@ export default function AdminReconcile() {
           onRunEod={onRunEod}
         />
       )}
+      <ClientBalanceOpeningSheet
+        open={openingClient != null}
+        clientId={openingClient?.client_id ?? null}
+        clientName={openingClient?.client_name ?? null}
+        defaultDate={to}
+        existingBalance={openingClient?.configured_opening_balance}
+        onClose={() => setOpeningClient(null)}
+        onSaved={() => {
+          setOpeningClient(null);
+          clientsQ.reload();
+          notify(
+            'Balance tracking started',
+            'Future charges and remittances will now carry forward.',
+          );
+        }}
+      />
+      <ClientPayoutSheet
+        open={payoutClient != null}
+        clientId={payoutClient?.client_id ?? null}
+        clientName={payoutClient?.client_name ?? null}
+        payoutDate={to}
+        availableBalance={payoutClient ? clientAmountPayable(payoutClient) : 0}
+        onClose={() => setPayoutClient(null)}
+        onSaved={(amount) => {
+          setPayoutClient(null);
+          clientsQ.reload();
+          notify('Payout recorded', `${formatNaira(amount)} sent and deducted from the balance.`);
+        }}
+      />
     </View>
   );
 }
@@ -547,6 +589,8 @@ function ClientsList({
   onRunEod,
   onSettle,
   onVoid,
+  onStartBalance,
+  onRecordPayout,
 }: {
   state: ReturnType<typeof useAsync<ClientRemitRow[]>>;
   openId: string | null;
@@ -563,10 +607,18 @@ function ClientsList({
   onRunEod: () => void;
   onSettle: (subjectId: string, note: string | null) => void;
   onVoid: (settlementId: string) => void;
+  onStartBalance: (client: ClientRemitRow) => void;
+  onRecordPayout: (client: ClientRemitRow) => void;
 }) {
-  // Headline = total Reda owes back to clients across the period.
+  // A negative balance from one client must never reduce another client's bank
+  // payout, so headline payable is the sum of positive balances only.
   const totalRemit = useMemo(
-    () => (state.data ?? []).reduce((s, r) => s + Number(r.total_remit), 0),
+    () => (state.data ?? []).reduce((s, r) => s + clientAmountPayable(r), 0),
+    [state.data],
+  );
+  const clientsOweReda = useMemo(
+    () =>
+      (state.data ?? []).reduce((sum, row) => sum + Math.max(0, -displayedClientBalance(row)), 0),
     [state.data],
   );
   // Count the clients we actually remit to this period — not the full roster.
@@ -574,7 +626,7 @@ function ClientsList({
   // shown as ₦0 rows), so `.length` would report the whole catalog. A client is
   // "to remit to" when Reda owes them money (positive net remit).
   const count = useMemo(
-    () => (state.data ?? []).filter((r) => Number(r.total_remit) > 0).length,
+    () => (state.data ?? []).filter((r) => clientAmountPayable(r) > 0).length,
     [state.data],
   );
   const deliveriesTotal = useMemo(
@@ -597,7 +649,7 @@ function ClientsList({
       ListHeaderComponent={
         <View style={{ marginBottom: 12 }}>
           <Card style={{ marginBottom: showDownload && onDownloadCsv ? 10 : 0 }}>
-            <Text style={kicker}>Total remit owed</Text>
+            <Text style={kicker}>Total payable to clients</Text>
             <Text
               style={{
                 fontFamily: fonts.extrabold,
@@ -619,6 +671,18 @@ function ClientsList({
             >
               {deliveriesTotal} deliveries · {count} {count === 1 ? 'client' : 'clients'}
             </Text>
+            {clientsOweReda > 0 ? (
+              <Text
+                style={{
+                  fontFamily: fonts.bold,
+                  fontSize: 12,
+                  color: colors.red,
+                  marginTop: 6,
+                }}
+              >
+                Clients owing Reda: {formatNaira(clientsOweReda)} · carried forward
+              </Text>
+            ) : null}
           </Card>
           {showDownload && onDownloadCsv ? (
             <Button variant="secondary" full icon="share" onPress={onDownloadCsv}>
@@ -648,15 +712,34 @@ function ClientsList({
           subjectKind="client"
           name={item.client_name}
           countLabel={`${item.deliveries_count} deliveries · qty ${item.total_quantity}`}
-          amount={Number(item.total_remit)}
-          amountLabel="Remit"
-          amountColor={Number(item.total_remit) >= 0 ? colors.success : colors.red}
-          settlement={settlements.get(`client:${item.client_id}`) ?? null}
-          canSettle={canSettle}
+          amount={displayedClientBalance(item)}
+          amountLabel={item.balance_tracking ? 'Balance' : 'Period remit'}
+          amountColor={displayedClientBalance(item) >= 0 ? colors.success : colors.red}
+          settlement={
+            item.balance_tracking ? null : (settlements.get(`client:${item.client_id}`) ?? null)
+          }
+          canSettle={canSettle && !item.balance_tracking}
           settleLabel="Mark transferred"
           onSettle={(note) => onSettle(item.client_id, note)}
           onVoid={onVoid}
+          clientBalance={{
+            tracked: item.balance_tracking,
+            direction: clientBalanceDirection(item),
+            canManage: canSettle,
+            onStart: () => onStartBalance(item),
+            onPayout: () => onRecordPayout(item),
+          }}
           extra={[
+            ...(item.balance_tracking
+              ? [
+                  {
+                    label: 'Balance entering range',
+                    value: formatNaira(item.balance_before_period),
+                  },
+                  { label: 'Activity in range', value: formatNaira(item.period_activity) },
+                  { label: 'Payouts in range', value: formatNaira(item.payouts_in_period) },
+                ]
+              : []),
             { label: 'Customer paid', value: formatNaira(item.total_paid) },
             { label: 'Reda fee', value: formatNaira(item.total_reda_fee) },
             { label: 'Cash POS fee', value: formatNaira(item.total_cash_pos_fee) },
@@ -1283,6 +1366,7 @@ function ExpandableRow({
   settleLabel,
   onSettle,
   onVoid,
+  clientBalance,
   selectionMode = false,
   selectable = true,
   selected = false,
@@ -1303,6 +1387,13 @@ function ExpandableRow({
   settleLabel?: string;
   onSettle?: (note: string | null) => void;
   onVoid?: (settlementId: string) => void;
+  clientBalance?: {
+    tracked: boolean;
+    direction: 'reda_owes_client' | 'client_owes_reda' | 'clear';
+    canManage: boolean;
+    onStart: () => void;
+    onPayout: () => void;
+  };
   selectionMode?: boolean;
   selectable?: boolean;
   selected?: boolean;
@@ -1534,7 +1625,7 @@ function ExpandableRow({
                 </View>
               ) : null}
             </View>
-          ) : canSettle && onSettle && (subjectKind !== 'agent' || amount > 0) ? (
+          ) : canSettle && onSettle && amount > 0 ? (
             <View
               style={{
                 marginTop: 12,
@@ -1571,6 +1662,68 @@ function ExpandableRow({
             >
               No handover required for this day.
             </Text>
+          ) : null}
+          {clientBalance ? (
+            <View
+              style={{
+                marginTop: 12,
+                paddingTop: 12,
+                borderTopWidth: 1,
+                borderTopColor: colors.border,
+                gap: 10,
+              }}
+            >
+              {!clientBalance.tracked ? (
+                <>
+                  <Text
+                    style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary }}
+                  >
+                    Balance tracking has not started. This row currently shows only the selected
+                    date range.
+                  </Text>
+                  {clientBalance.canManage ? (
+                    <Button variant="secondary" full icon="wallet" onPress={clientBalance.onStart}>
+                      Start balance tracking
+                    </Button>
+                  ) : null}
+                </>
+              ) : clientBalance.direction === 'reda_owes_client' ? (
+                <>
+                  <Text
+                    style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary }}
+                  >
+                    This payable amount already includes earlier charges, remittances and payouts.
+                  </Text>
+                  {clientBalance.canManage ? (
+                    <Button variant="emphasis" full icon="cash" onPress={clientBalance.onPayout}>
+                      Record payout
+                    </Button>
+                  ) : null}
+                </>
+              ) : clientBalance.direction === 'client_owes_reda' ? (
+                <View style={{ backgroundColor: colors.redSoft, borderRadius: 10, padding: 10 }}>
+                  <Text style={{ fontFamily: fonts.bold, fontSize: 12, color: colors.red }}>
+                    Client owes Reda — no transfer required
+                  </Text>
+                  <Text
+                    style={{
+                      fontFamily: fonts.medium,
+                      fontSize: 12,
+                      color: colors.red,
+                      marginTop: 2,
+                    }}
+                  >
+                    This amount will be deducted automatically from the next positive remittance.
+                  </Text>
+                </View>
+              ) : (
+                <Text
+                  style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary }}
+                >
+                  Balance is clear — no transfer required.
+                </Text>
+              )}
+            </View>
           ) : null}
           {onActionPress ? (
             <View style={{ marginTop: 10 }}>

@@ -9,6 +9,7 @@ import { colors, fonts } from '@/lib/theme';
 import { formatNaira } from '@/lib/format';
 import { formatRangeLagos, isYmd, todayLagos } from '@/lib/date';
 import { presetRange, type Preset } from '@/lib/reconcile';
+import { displayedClientBalance } from '@/lib/client-balance';
 
 // Rep-facing reconcile: a client-only, fee-free view so reps can send clients
 // their delivered-updates. Deliberately omits the admin reconcile's By-agent /
@@ -124,6 +125,7 @@ export default function RepReconcile() {
 }
 
 function ClientRow({ row, onPress }: { row: RepClientRemitRow; onPress: () => void }) {
+  const balance = displayedClientBalance(row);
   return (
     <Card dense style={{ padding: 0 }}>
       <Pressable
@@ -166,11 +168,11 @@ function ClientRow({ row, onPress }: { row: RepClientRemitRow; onPress: () => vo
             style={{
               fontFamily: fonts.extrabold,
               fontSize: 16,
-              color: Number(row.total_remit) >= 0 ? colors.success : colors.red,
+              color: balance >= 0 ? colors.success : colors.red,
               letterSpacing: -0.2,
             }}
           >
-            {formatNaira(Number(row.total_remit))}
+            {formatNaira(balance)}
           </Text>
           <Text
             style={{
@@ -182,7 +184,7 @@ function ClientRow({ row, onPress }: { row: RepClientRemitRow; onPress: () => vo
               marginTop: 2,
             }}
           >
-            To remit
+            {row.balance_tracking ? 'Balance' : 'To remit'}
           </Text>
         </View>
         <Icon name="chevronRight" size={18} color={colors.textSecondary} />
