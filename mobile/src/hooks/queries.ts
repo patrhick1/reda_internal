@@ -17,12 +17,15 @@ import { useAuth } from '@/hooks/useAuth';
 import {
   listStatusDefs,
   listDeliveries,
+  listFailedDeliveryOutcomes,
   listUnassigned,
   listPostponed,
   listAgentPostponed,
   listAgentOverdueReplacements,
   type DeliveryStatusDef,
   type DeliveryRow,
+  type FailedDeliveryFilters,
+  type FailedDeliveryRow,
   type ListFilters,
 } from '@/services/deliveries';
 import { listUsers, type AppUser } from '@/services/users';
@@ -279,6 +282,34 @@ export function usePostponedDeliveries(
   const q = useQuery({
     queryKey,
     queryFn: () => listPostponed(role),
+    staleTime: DELIVERIES_STALE,
+    enabled: opts.enabled ?? true,
+  });
+  return { ...asAsync(q), fetching: q.isFetching, refetchIfStale: () => refetchIfStale(queryKey) };
+}
+
+/** Failed logical orders for an explicit terminal-event range. Kept disabled
+ * until the Failed chip is open so the normal delivery screen pays no extra
+ * query or egress cost. */
+export function useFailedDeliveryOutcomes(
+  filters: FailedDeliveryFilters,
+  opts: { enabled?: boolean } = {},
+): DeliveryListResult<FailedDeliveryRow[]> {
+  const uid = useUid();
+  const queryKey = [
+    'deliveries',
+    uid,
+    'failed-outcomes',
+    filters.from,
+    filters.to,
+    filters.kind,
+    filters.agentId ?? 'all-agents',
+    filters.clientId ?? 'all-clients',
+    filters.search ?? '',
+  ];
+  const q = useQuery({
+    queryKey,
+    queryFn: () => listFailedDeliveryOutcomes(filters),
     staleTime: DELIVERIES_STALE,
     enabled: opts.enabled ?? true,
   });

@@ -440,6 +440,29 @@ export type ListFilters = {
   search?: string | null;
 };
 
+export type FailedDeliveryKind = 'attempted' | 'auto_closed';
+
+/** A failed logical order returned by list_failed_delivery_outcomes. It keeps
+ * the compact DeliveryRow contract so the shared list can open the existing
+ * detail/history screen, and adds the terminal event that made it a failure. */
+export type FailedDeliveryRow = DeliveryRow & {
+  failure_kind: FailedDeliveryKind;
+  failure_status: string;
+  failure_reason: string;
+  failed_at: string;
+};
+
+export type FailedDeliveryFilters = {
+  from: string;
+  to: string;
+  kind: FailedDeliveryKind;
+  agentId?: string | null;
+  clientId?: string | null;
+  search?: string | null;
+};
+
+export const FAILED_DELIVERIES_LIMIT = 500;
+
 /** Cap on server-side search results. Searching by name/phone yields few rows;
  *  the cap protects against a too-broad term loading thousands. */
 export const SEARCH_LIMIT = 100;
@@ -516,6 +539,30 @@ export async function listDeliveries(
     const y = b.activity_at ?? b.created_at ?? '';
     return x < y ? 1 : x > y ? -1 : 0; // most-recent activity first
   });
+}
+
+/** Ops-only, on-demand failure list. Unlike the normal date list, this is
+ * scoped by the Lagos date of the terminal EVENT and grouped server-side so a
+ * raced order appears once. The RPC also keeps automated client-policy closures
+ * separate from genuine attempted failures. */
+export async function listFailedDeliveryOutcomes(
+  filters: FailedDeliveryFilters,
+): Promise<FailedDeliveryRow[]> {
+  const search = filters.search ? sanitizeSearch(filters.search) : '';
+  const { data, error } = await rpcUntyped<Array<Omit<FailedDeliveryRow, 'items'>>>(
+    'list_failed_delivery_outcomes',
+    {
+      p_from: filters.from,
+      p_to: filters.to,
+      p_kind: filters.kind,
+      p_agent_id: filters.agentId ?? null,
+      p_client_id: filters.clientId ?? null,
+      p_search: search.length >= 2 ? search : null,
+      p_limit: FAILED_DELIVERIES_LIMIT,
+    },
+  );
+  if (error) throw error;
+  return (data ?? []).map((row) => ({ ...row, items: [] as DeliveryItem[] }));
 }
 
 /** The agent's own orders that were postponed to a FUTURE date. Postponing moves

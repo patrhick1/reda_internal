@@ -18,6 +18,7 @@ import { useCurrentUser } from '@/hooks/useAuth';
 import {
   useClients,
   useDeliveriesList,
+  useFailedDeliveryOutcomes,
   useOpsUnread,
   usePostponedDeliveries,
   useUnassignedDeliveries,
@@ -25,9 +26,11 @@ import {
 } from '@/hooks/queries';
 import {
   rolledFromLabel,
+  FAILED_DELIVERIES_LIMIT,
   SEARCH_LIMIT,
   ALL_DATES_LIMIT,
   type DeliveryRow,
+  type FailedDeliveryRow,
 } from '@/services/deliveries';
 import { listActiveFollowups, type ActiveFollowup } from '@/services/followups';
 import { useSupabaseChannel } from '@/hooks/useSupabaseChannel';
@@ -70,7 +73,15 @@ import {
   STATUS_GROUPS,
   STATUS_META,
 } from '@/lib/theme';
-import { todayLagos, yesterdayLagos, ymdLagos, isYmd } from '@/lib/date';
+import {
+  daysAgoLagos,
+  formatDateTimeLagos,
+  formatRangeLagos,
+  todayLagos,
+  yesterdayLagos,
+  ymdLagos,
+  isYmd,
+} from '@/lib/date';
 
 const SOFT_STATUSES = new Set<string>(STATUS_GROUPS.soft);
 // Stable empty map so rows don't see a fresh object (→ re-render) before the
@@ -115,11 +126,14 @@ const FILTER_IDS_LIST = [
   'soft',
   'postponed',
   'done',
+  'failed',
   'unassigned',
 ] as const;
 type Filter = (typeof FILTER_IDS_LIST)[number];
 const FILTER_IDS = new Set<string>(FILTER_IDS_LIST);
 type DatePreset = 'today' | 'yesterday' | 'custom' | 'all';
+type FailedDatePreset = 'today' | 'yesterday' | 'last7' | 'last30' | 'custom';
+type FailedKindFilter = 'attempted' | 'auto_closed';
 
 export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   const user = useCurrentUser();
@@ -134,6 +148,13 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   // Persists across preset toggles so switching today → yesterday → custom
   // doesn't blank the value the user already typed.
   const [customDate, setCustomDate] = useState<string>(todayLagos());
+  // Failed outcomes are event history, so they use an explicit bounded range
+  // rather than the normal list's scheduled-date selector. Seven days gives a
+  // useful operational default without adding a query to the regular screen.
+  const [failedDatePreset, setFailedDatePreset] = useState<FailedDatePreset>('last7');
+  const [failedCustomFrom, setFailedCustomFrom] = useState<string>(daysAgoLagos(6));
+  const [failedCustomTo, setFailedCustomTo] = useState<string>(todayLagos());
+  const [failedKind, setFailedKind] = useState<FailedKindFilter>('attempted');
   // null = "All agents". Agents see only their own deliveries server-side,
   // so the picker stays hidden for them — narrowing has no work to do.
   const [agentId, setAgentId] = useState<string | null>(null);
@@ -224,6 +245,30 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     }
   }, [datePreset, customDate, debouncedNeedle]);
 
+  const failedRange = useMemo(() => {
+    switch (failedDatePreset) {
+      case 'today': {
+        const day = todayLagos();
+        return { from: day, to: day, valid: true };
+      }
+      case 'yesterday': {
+        const day = yesterdayLagos();
+        return { from: day, to: day, valid: true };
+      }
+      case 'last7':
+        return { from: daysAgoLagos(6), to: todayLagos(), valid: true };
+      case 'last30':
+        return { from: daysAgoLagos(29), to: todayLagos(), valid: true };
+      case 'custom':
+        return {
+          from: failedCustomFrom,
+          to: failedCustomTo,
+          valid:
+            isYmd(failedCustomFrom) && isYmd(failedCustomTo) && failedCustomFrom <= failedCustomTo,
+        };
+    }
+  }, [failedDatePreset, failedCustomFrom, failedCustomTo]);
+
   // Cached delivery list (audit Phase 2.4): keyed by role + the normalized
   // filter, so detail→back within staleTime is a cache hit and each date/search
   // scope keeps its own entry. `fetching` drives the pull-to-refresh spinner;
@@ -275,6 +320,21 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   // never shows terminal rows (both enforced server-side in listUnassigned).
   // Ops-wide (RLS-scoped); empty for agents.
   const unassignedQ = useUnassignedDeliveries(user.role, { enabled: canSeeClaims });
+
+  // Dedicated server query: only mounted while Failed is selected. Agent,
+  // client and search are sent to the RPC so a 30-day audit never downloads a
+  // broad result just to throw most rows away on-device.
+  const failedQ = useFailedDeliveryOutcomes(
+    {
+      from: failedRange.from,
+      to: failedRange.to,
+      kind: failedKind,
+      agentId,
+      clientId,
+      search: debouncedNeedle || null,
+    },
+    { enabled: canSeeClaims && filter === 'failed' && failedRange.valid },
+  );
 
   // Roster for the agent picker. Cached ['users'] hook (audit Phase 2.4b) — one
   // shared fetch across every screen, invalidated by user mutations; skipped for
@@ -416,6 +476,14 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     // overlays still force-refresh so their pills stay live — cheap now that
     // unread is the grouped RPC (~1 row, Phase 4.1) and followups is uncached
     // but small; both are realtime-backed anyway.
+    if (filter === 'failed') {
+      failedQ.refetchIfStale();
+      if (canSeeClaims) {
+        followupsQ.reload();
+        unreadQ.reload();
+      }
+      return;
+    }
     refetchIfStale();
     if (canSeeClaims) {
       followupsQ.reload();
@@ -430,7 +498,19 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   // changes underneath the action bar.
   useEffect(() => {
     exitSelect();
-  }, [filter, datePreset, customDate, agentId, clientId, nameNeedle, exitSelect]);
+  }, [
+    filter,
+    datePreset,
+    customDate,
+    failedDatePreset,
+    failedCustomFrom,
+    failedCustomTo,
+    failedKind,
+    agentId,
+    clientId,
+    nameNeedle,
+    exitSelect,
+  ]);
 
   // Realtime: keep the per-row claimer avatar pill live for the ops set.
   // Mirrors FollowupClaimBanner's per-delivery sub but unfiltered at the
@@ -725,6 +805,8 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     [allRows, unreadByDelivery],
   );
 
+  const failedRows = failedQ.data ?? [];
+
   const list =
     filter === 'postponed'
       ? postponedRows
@@ -736,7 +818,9 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
             ? allRows
             : filter === 'unassigned'
               ? (unassignedSorted ?? unassignedRows)
-              : buckets[filter];
+              : filter === 'failed'
+                ? failedRows
+                : buckets[filter];
 
   const visibleIds = useMemo(() => list.flatMap((d) => (d.id ? [d.id] : [])), [list]);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
@@ -782,6 +866,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     { id: 'soft' as const, label: 'Soft fail', count: buckets.soft.length },
     { id: 'postponed' as const, label: 'Postponed', count: postponedRows.length },
     { id: 'done' as const, label: 'Done', count: buckets.done.length },
+    { id: 'failed' as const, label: 'Failed' },
     { id: 'unassigned' as const, label: 'Unassigned', count: unassignedRows.length },
   ];
 
@@ -819,7 +904,13 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
       ) : (
         <AppBar
           title="Deliveries"
-          subtitle={nameNeedle ? 'Searching all dates' : subtitleFor(datePreset, customDate)}
+          subtitle={
+            filter === 'failed'
+              ? failedRangeSubtitle(failedDatePreset, failedRange.from, failedRange.to)
+              : nameNeedle
+                ? 'Searching all dates'
+                : subtitleFor(datePreset, customDate)
+          }
         />
       )}
       <View
@@ -831,14 +922,45 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         }}
       >
         <FilterChips
-          options={DATE_OPTIONS}
-          value={datePreset}
+          options={filter === 'failed' ? FAILED_DATE_OPTIONS : DATE_OPTIONS}
+          value={filter === 'failed' ? failedDatePreset : datePreset}
           onChange={(v) => {
             exitSelect();
-            setDatePreset(v as DatePreset);
+            if (filter === 'failed') setFailedDatePreset(v as FailedDatePreset);
+            else setDatePreset(v as DatePreset);
           }}
         />
-        {datePreset === 'custom' ? (
+        {filter === 'failed' && failedDatePreset === 'custom' ? (
+          <View
+            style={{
+              paddingHorizontal: 16,
+              paddingBottom: 8,
+              flexDirection: 'row',
+              gap: 8,
+            }}
+          >
+            <View style={{ flex: 1 }}>
+              <DateField
+                label="From"
+                value={failedCustomFrom}
+                onChange={(value) => {
+                  exitSelect();
+                  setFailedCustomFrom(value);
+                }}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <DateField
+                label="To"
+                value={failedCustomTo}
+                onChange={(value) => {
+                  exitSelect();
+                  setFailedCustomTo(value);
+                }}
+              />
+            </View>
+          </View>
+        ) : filter !== 'failed' && datePreset === 'custom' ? (
           <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
             <DateField
               label="Date"
@@ -858,6 +980,37 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
             setFilter(value);
           }}
         />
+        {filter === 'failed' ? (
+          <View>
+            <Text
+              style={{
+                paddingHorizontal: 16,
+                paddingTop: 2,
+                fontFamily: fonts.bold,
+                fontSize: 10,
+                letterSpacing: 0.8,
+                textTransform: 'uppercase',
+                color: colors.textSecondary,
+              }}
+            >
+              Outcome type
+            </Text>
+            <FilterChips
+              options={[
+                {
+                  id: 'attempted',
+                  label: 'Attempted',
+                },
+                {
+                  id: 'auto_closed',
+                  label: 'Auto-closed',
+                },
+              ]}
+              value={failedKind}
+              onChange={setFailedKind}
+            />
+          </View>
+        ) : null}
         {showListFilters ? (
           <View style={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 4 }}>
             <Input
@@ -867,7 +1020,11 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
                 exitSelect();
                 setNameQuery(value);
               }}
-              placeholder="Search name or phone (all dates)"
+              placeholder={
+                filter === 'failed'
+                  ? 'Search failed orders by name or phone'
+                  : 'Search name or phone (all dates)'
+              }
               autoCapitalize="none"
               autoCorrect={false}
               rightAdornment={
@@ -886,7 +1043,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
                 ) : null
               }
             />
-            {nameNeedle && (data?.length ?? 0) >= SEARCH_LIMIT ? (
+            {filter !== 'failed' && nameNeedle && (data?.length ?? 0) >= SEARCH_LIMIT ? (
               <Text
                 style={{
                   fontFamily: fonts.medium,
@@ -964,6 +1121,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
               ) : null}
               <DeliveryListRow
                 delivery={item}
+                failure={filter === 'failed' ? (item as FailedDeliveryRow) : undefined}
                 followup={claim}
                 showClient={showClient}
                 unreadCount={itemId ? (unreadByDelivery.get(itemId) ?? 0) : 0}
@@ -983,7 +1141,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
                   });
                 }}
                 onLongPress={
-                  canBulkSelect && itemId
+                  canBulkSelect && filter !== 'failed' && itemId
                     ? () => {
                         if (!selectMode) enterSelect(itemId);
                         else toggleSelected(itemId);
@@ -998,13 +1156,19 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         refreshControl={
           <RefreshControl
             refreshing={
-              filter === 'postponed'
-                ? postponedQ.fetching && !!postponedQ.data
-                : filter === 'unassigned'
-                  ? unassignedQ.fetching && !!unassignedQ.data
-                  : fetching && !!data
+              filter === 'failed'
+                ? failedQ.fetching && !!failedQ.data
+                : filter === 'postponed'
+                  ? postponedQ.fetching && !!postponedQ.data
+                  : filter === 'unassigned'
+                    ? unassignedQ.fetching && !!unassignedQ.data
+                    : fetching && !!data
             }
             onRefresh={() => {
+              if (filter === 'failed') {
+                failedQ.reload();
+                return;
+              }
               reload();
               postponedQ.reload();
               unassignedQ.reload();
@@ -1022,14 +1186,27 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         maxToRenderPerBatch={8}
         removeClippedSubviews
         ListFooterComponent={
-          // "All dates" is capped to the most recent ALL_DATES_LIMIT rows to keep
+          filter === 'failed' && (failedQ.data?.length ?? 0) >= FAILED_DELIVERIES_LIMIT ? (
+            <Text
+              style={{
+                textAlign: 'center',
+                color: colors.textSecondary,
+                fontFamily: fonts.medium,
+                fontSize: 12,
+                paddingVertical: 16,
+              }}
+            >
+              Showing the {FAILED_DELIVERIES_LIMIT} most recent. Narrow the date range to see older
+              records.
+            </Text>
+          ) : // "All dates" is capped to the most recent ALL_DATES_LIMIT rows to keep
           // egress down; tell the user how to reach older orders. Only relevant to
           // the date-scoped filters (Postponed/Unassigned run their own uncapped,
           // small cross-date queries).
           datePreset === 'all' &&
-          filter !== 'postponed' &&
-          filter !== 'unassigned' &&
-          (data?.length ?? 0) >= ALL_DATES_LIMIT ? (
+            filter !== 'postponed' &&
+            filter !== 'unassigned' &&
+            (data?.length ?? 0) >= ALL_DATES_LIMIT ? (
             <Text
               style={{
                 textAlign: 'center',
@@ -1045,7 +1222,31 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
           ) : null
         }
         ListEmptyComponent={
-          filter === 'postponed' ? (
+          filter === 'failed' ? (
+            !failedRange.valid ? (
+              <Empty
+                icon="calendar"
+                title="Check the date range"
+                sub="Enter valid From and To dates, with From no later than To."
+              />
+            ) : failedQ.error ? (
+              <Empty icon="alert" title="Could not load failed deliveries" sub={failedQ.error} />
+            ) : failedQ.loading ? (
+              <View style={{ padding: 60, alignItems: 'center' }}>
+                <ActivityIndicator color={colors.black} />
+              </View>
+            ) : (
+              <Empty
+                icon="check"
+                title={failedKind === 'attempted' ? 'No attempted failures' : 'Nothing here'}
+                sub={
+                  failedKind === 'attempted'
+                    ? 'No confirmed orders ended unsuccessfully in this range. Auto-closed policy records are kept in their own tab.'
+                    : 'No failed-delivery records match this range and the active filters.'
+                }
+              />
+            )
+          ) : filter === 'postponed' ? (
             postponedQ.error ? (
               <Empty icon="alert" title="Could not load" sub={postponedQ.error} />
             ) : postponedQ.loading ? (
@@ -1296,6 +1497,7 @@ function GroupHeaderRow({
 // renderItem closures on filter switches.
 const DeliveryListRow = memo(function DeliveryListRow({
   delivery,
+  failure,
   onPress,
   onLongPress,
   followup,
@@ -1305,6 +1507,7 @@ const DeliveryListRow = memo(function DeliveryListRow({
   selected,
 }: {
   delivery: DeliveryRow;
+  failure?: FailedDeliveryRow;
   onPress: () => void;
   onLongPress?: () => void;
   followup?: ActiveFollowup;
@@ -1444,6 +1647,61 @@ const DeliveryListRow = memo(function DeliveryListRow({
               <Text style={{ color: colors.red, fontFamily: fonts.bold }}>Unmatched</Text>
             ) : null}
           </Text>
+          {failure ? (
+            <View
+              style={{
+                marginTop: 7,
+                padding: 9,
+                borderRadius: 10,
+                backgroundColor:
+                  failure.failure_kind === 'attempted' ? colors.redSoft : colors.warningSoft,
+                gap: 3,
+              }}
+            >
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 8,
+                }}
+              >
+                <Text
+                  style={{
+                    fontFamily: fonts.bold,
+                    fontSize: 10,
+                    letterSpacing: 0.5,
+                    textTransform: 'uppercase',
+                    color: failure.failure_kind === 'attempted' ? colors.red : colors.warningDark,
+                  }}
+                >
+                  {failure.failure_kind === 'attempted' ? 'Attempted' : 'Auto-closed'} ·{' '}
+                  {STATUS_META[failure.failure_status]?.label ?? failure.failure_status}
+                </Text>
+                <Text
+                  style={{
+                    fontFamily: fonts.medium,
+                    fontSize: 10,
+                    color: colors.textSecondary,
+                  }}
+                >
+                  {formatDateTimeLagos(failure.failed_at)}
+                </Text>
+              </View>
+              <Text
+                numberOfLines={2}
+                style={{ fontFamily: fonts.semibold, fontSize: 12, color: colors.black }}
+              >
+                {failure.failure_reason}
+              </Text>
+              <Text
+                numberOfLines={1}
+                style={{ fontFamily: fonts.medium, fontSize: 11, color: colors.textSecondary }}
+              >
+                {failure.raw_address?.trim() || failure.location_name || 'Address not provided'}
+              </Text>
+            </View>
+          ) : null}
           {carriedLabel ? (
             <View
               accessibilityLabel={`Carried over — ${carriedLabel}`}
@@ -1571,6 +1829,31 @@ const DATE_OPTIONS = [
   { id: 'custom', label: 'Custom' },
   { id: 'all', label: 'All dates' },
 ];
+
+const FAILED_DATE_OPTIONS = [
+  { id: 'today', label: 'Today' },
+  { id: 'yesterday', label: 'Yesterday' },
+  { id: 'last7', label: 'Last 7 days' },
+  { id: 'last30', label: 'Last 30 days' },
+  { id: 'custom', label: 'Custom' },
+];
+
+function failedRangeSubtitle(preset: FailedDatePreset, from: string, to: string): string {
+  switch (preset) {
+    case 'today':
+      return 'Failed today';
+    case 'yesterday':
+      return 'Failed yesterday';
+    case 'last7':
+      return 'Failures in the last 7 days';
+    case 'last30':
+      return 'Failures in the last 30 days';
+    case 'custom':
+      return isYmd(from) && isYmd(to) && from <= to
+        ? `Failures · ${formatRangeLagos(from, to)}`
+        : 'Choose a valid failure range';
+  }
+}
 
 function subtitleFor(preset: DatePreset, customDate: string): string {
   switch (preset) {
