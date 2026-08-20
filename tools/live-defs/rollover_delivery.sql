@@ -109,8 +109,14 @@ begin
   );
 
   if v_old.location_id is not null then
-    select charged, agent_payment into v_rate_charged, v_rate_agent_payment
-    from public.current_rate_for_location(v_old.location_id);
+    -- Re-price the new day through the same client-aware source of truth used by
+    -- create/edit/location-correction. Calling current_rate_for_location here
+    -- used to bypass clients.max_charge_per_delivery on rollover children.
+    -- The child is intentionally unassigned, so pass NULL for the agent: any
+    -- future rider bonus is applied when an agent/location edit re-snapshots it.
+    select er.charged, er.agent_payment
+      into v_rate_charged, v_rate_agent_payment
+      from public.effective_rate(v_old.location_id, v_old.client_id, null) er;
   end if;
   v_charged       := coalesce(v_rate_charged,       v_old.charged_snapshot);
   v_agent_payment := coalesce(v_rate_agent_payment, v_old.agent_payment_snapshot);
@@ -195,4 +201,4 @@ begin
 
   return v_new_id;
 end;
-$function$
+$function$;
