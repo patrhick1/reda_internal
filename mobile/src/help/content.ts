@@ -34,7 +34,7 @@ const ADMIN = [
     icon: 'plus',
     body: `When an agent or customer messages you a delivery that the bot can't handle:
 
-1. Tap **Home → New delivery** (the red square in Quick Actions), or **Deliveries → +** (the floating red button).
+1. Tap **Home → New delivery** in Quick Actions.
 2. Fill in the customer name, phone, address.
 3. Tap the client chip (e.g. *Aernings*) → tap the product.
 4. Set quantity + customer price.
@@ -322,7 +322,7 @@ If someone else is already fixing the same row, you'll see *"<Name> is fixing th
     id: 'new-delivery',
     title: 'Create a delivery manually',
     icon: 'plus',
-    body: `From **Deliveries → +** or from a Review item:
+    body: `From **Home → Create** or from a Review item:
 
 1. Customer name, phone, address.
 2. Pick the client chip → pick the product.

@@ -216,7 +216,7 @@ export function canRecordStockCount(role: Role): boolean {
  *  (resolve_inbound_to_delivery), which is anchored by canResolveReview — the
  *  server keeps is_admin_or_dispatcher() on create_delivery so that path keeps
  *  working without a second RPC. This helper gates ONLY the manual New-delivery
- *  entry points (List FAB, dashboard FAB, /deliveries/new route). */
+ *  entry points (dashboard action and /deliveries/new route). */
 export function canCreateDelivery(role: Role): boolean {
   return role === 'admin' || role === 'dispatcher';
 }

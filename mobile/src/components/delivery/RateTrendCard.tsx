@@ -5,8 +5,8 @@ import { dayRatePct, weekdayShort, pooledRatePct, rateColor, type RateDay } from
 
 const TRACK_H = 60;
 
-/** Home "Delivery rate" strip: last N working days as bars, today drawn hollow to signal
- *  it's still in progress ("so far"). Tap → full history. Data comes from
+/** Home "Delivery rate" strip: the Monday-Saturday batch as bars, today drawn
+ *  hollow to signal it's still in progress ("so far"). Tap → full history. Data comes from
  *  getDeliveryRateHistory; the parent passes the window and today's ISO date. */
 export function RateTrendCard({
   days,
@@ -29,7 +29,7 @@ export function RateTrendCard({
         <View>
           <Text style={kicker}>Delivery rate</Text>
           <Text style={{ fontFamily: fonts.medium, fontSize: 11, color: colors.textTertiary }}>
-            {settled.length > 0 ? `${settled.length}-day avg ${avg ?? '—'}%` : 'Last 7 days'}
+            {settled.length > 0 ? `${settled.length}-day avg ${avg ?? '—'}%` : 'Mon–Sat batch'}
           </Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
@@ -42,7 +42,7 @@ export function RateTrendCard({
 
       <View style={{ marginTop: 16, flexDirection: 'row', alignItems: 'flex-end', gap: 6 }}>
         {loading && days.length === 0
-          ? Array.from({ length: 7 }).map((_, i) => <BarSkeleton key={i} />)
+          ? Array.from({ length: 6 }).map((_, i) => <BarSkeleton key={i} />)
           : days.map((d) => <Bar key={d.day} day={d} isToday={d.day === today} />)}
         {!loading && days.length === 0 ? (
           <Text style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textTertiary }}>

@@ -41,7 +41,6 @@ import {
   canBulkChangeStatus,
   canBulkDeleteDeliveries,
   canBulkMarkClientNotified,
-  canCreateDelivery,
   canFilterDeliveriesList,
   canSeeClientName,
 } from '@/lib/permissions';
@@ -53,7 +52,6 @@ import {
   Card,
   DateField,
   Empty,
-  FAB,
   FilterChips,
   Icon,
   Input,
@@ -1299,20 +1297,6 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
           )
         }
       />
-      {!selectMode && canCreateDelivery(user.role) ? (
-        <FAB
-          icon="plus"
-          label="Create"
-          onPress={() =>
-            router.push(
-              `${basePath}/deliveries/new` as
-                | `/(admin)/deliveries/new`
-                | `/(dispatcher)/deliveries/new`,
-            )
-          }
-        />
-      ) : null}
-
       {selectMode ? (
         <View
           style={{

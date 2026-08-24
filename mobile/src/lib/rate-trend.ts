@@ -45,6 +45,18 @@ export function workingDayWindowStart(iso: string, count: number): string {
   return cursor;
 }
 
+/** The active Reda delivery-rate batch. Reda works Monday-Saturday: during the
+ *  week the range runs from Monday through today; on Sunday it points to the
+ *  just-completed Monday-Saturday batch instead of reaching into the previous
+ *  week. */
+export function redaWorkBatchRange(iso: string): { from: string; to: string } {
+  const weekday = new Date(`${iso}T12:00:00Z`).getUTCDay();
+  if (weekday === 0) {
+    return { from: addDays(iso, -6), to: addDays(iso, -1) };
+  }
+  return { from: addDays(iso, -(weekday - 1)), to: iso };
+}
+
 /** One day's rate as an integer percent, or null when the day had no available
  *  orders (denominator 0 — nothing to rate). */
 export function dayRatePct(d: Pick<RateDay, 'delivered' | 'available'>): number | null {
