@@ -17,7 +17,7 @@ import { RecentActivityCard } from '@/components/delivery/RecentActivityCard';
 import { RateTrendCard } from '@/components/delivery/RateTrendCard';
 import { colors, fonts, statusBucket, isAssignedActive } from '@/lib/theme';
 import { todayLagos } from '@/lib/date';
-import { rateColor, redaWorkBatchRange } from '@/lib/rate-trend';
+import { rateColor, workingDayWindowStart } from '@/lib/rate-trend';
 import { type IconName } from '@/components/ui';
 
 function todayHeaderDate(): string {
@@ -47,14 +47,12 @@ export default function AdminHome() {
   // never convinced don't tank it. See getTodayDeliveryRate /
   // scripts/today-delivery-rate.sql.
   const rateQ = useAsync(() => getTodayDeliveryRate(), []);
-  // Reda's current Monday-Saturday delivery batch (tap → full history). On
-  // Sunday, show the six-day batch that just closed instead of pulling in the
-  // previous Saturday as a seventh bar.
+  // Latest six working days for the home trend strip (tap → full history).
+  // Sunday is skipped, but each working day remains its own daily bar.
   const today = todayLagos();
-  const trendBatch = redaWorkBatchRange(today);
   const trendQ = useAsync(
-    () => getDeliveryRateHistory(trendBatch.from, trendBatch.to),
-    [trendBatch.from, trendBatch.to],
+    () => getDeliveryRateHistory(workingDayWindowStart(today, 6), today),
+    [today],
   );
   // Stock coverage — products whose fleet on-hand can't cover today's open
   // demand. Drives the "Needs attention" row; cached under ['stock'] so stock
@@ -149,7 +147,7 @@ export default function AdminHome() {
           </View>
         </Card>
 
-        {/* Delivery-rate trend — Monday-Saturday batch, tap for 30-day history. */}
+        {/* Delivery-rate trend — six daily bars, tap for the 30-day history. */}
         <RateTrendCard
           days={trendQ.data ?? []}
           today={today}

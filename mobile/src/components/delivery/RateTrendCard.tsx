@@ -5,8 +5,8 @@ import { dayRatePct, weekdayShort, pooledRatePct, rateColor, type RateDay } from
 
 const TRACK_H = 60;
 
-/** Home "Delivery rate" strip: the Monday-Saturday batch as bars, today drawn
- *  hollow to signal it's still in progress ("so far"). Tap → full history. Data comes from
+/** Home "Delivery rate" strip: the latest six working days as individual bars.
+ *  Today is drawn hollow to signal it's still in progress. Tap → full history. Data comes from
  *  getDeliveryRateHistory; the parent passes the window and today's ISO date. */
 export function RateTrendCard({
   days,
@@ -19,9 +19,9 @@ export function RateTrendCard({
   loading: boolean;
   onPress: () => void;
 }) {
-  // Settled days only (exclude today's partial) for the at-a-glance average.
-  const settled = days.filter((d) => d.day !== today);
-  const avg = pooledRatePct(settled).pct;
+  // The headline represents the same six-day window shown by the bars,
+  // including today's live rate when today is present.
+  const avg = pooledRatePct(days).pct;
 
   return (
     <Card onPress={onPress} style={{ backgroundColor: colors.black, padding: 16 }}>
@@ -29,7 +29,7 @@ export function RateTrendCard({
         <View>
           <Text style={kicker}>Delivery rate</Text>
           <Text style={{ fontFamily: fonts.medium, fontSize: 11, color: colors.textTertiary }}>
-            {settled.length > 0 ? `${settled.length}-day avg ${avg ?? '—'}%` : 'Mon–Sat batch'}
+            {days.length > 0 ? `6-day avg ${avg ?? '—'}%` : 'Last 6 working days'}
           </Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>

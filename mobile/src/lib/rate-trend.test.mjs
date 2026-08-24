@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { isRedaWorkingDay, redaWorkBatchRange, workingDayWindowStart } from './rate-trend.ts';
+import { isRedaWorkingDay, workingDayWindowStart } from './rate-trend.ts';
 
 test('Sunday is excluded from Reda working days', () => {
   assert.equal(isRedaWorkingDay('2026-08-16'), false);
@@ -9,31 +9,14 @@ test('Sunday is excluded from Reda working days', () => {
   assert.equal(isRedaWorkingDay('2026-08-18'), true);
 });
 
-test('seven-day home window pulls in the previous working day instead of Sunday', () => {
-  assert.equal(workingDayWindowStart('2026-08-18', 7), '2026-08-11');
+test('six-day home window keeps six separate working days', () => {
+  assert.equal(workingDayWindowStart('2026-08-18', 6), '2026-08-12');
 });
 
-test('a Sunday endpoint still finds the previous seven working days', () => {
-  assert.equal(workingDayWindowStart('2026-08-16', 7), '2026-08-08');
+test('Monday shows the prior Tuesday-Saturday plus today as six daily bars', () => {
+  assert.equal(workingDayWindowStart('2026-08-24', 6), '2026-08-18');
 });
 
-test('Monday starts a new Reda delivery-rate batch', () => {
-  assert.deepEqual(redaWorkBatchRange('2026-08-24'), {
-    from: '2026-08-24',
-    to: '2026-08-24',
-  });
-});
-
-test('Saturday closes the Monday-Saturday delivery-rate batch', () => {
-  assert.deepEqual(redaWorkBatchRange('2026-08-29'), {
-    from: '2026-08-24',
-    to: '2026-08-29',
-  });
-});
-
-test('Sunday keeps the just-completed Monday-Saturday batch', () => {
-  assert.deepEqual(redaWorkBatchRange('2026-08-30'), {
-    from: '2026-08-24',
-    to: '2026-08-29',
-  });
+test('a Sunday endpoint still finds the previous six working days', () => {
+  assert.equal(workingDayWindowStart('2026-08-16', 6), '2026-08-10');
 });
