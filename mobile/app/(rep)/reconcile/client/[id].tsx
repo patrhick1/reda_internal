@@ -70,6 +70,7 @@ export default function RepClientReconcileDetail() {
     const message = buildClientShareMessage({
       clientName,
       rangeLabel,
+      singleDay: from === to,
       // Per-client layout (Karami → paid + delivery fee). For Karami the rep RPC
       // releases paid/reda_fee; for every other client they arrive null and the
       // default net-remit layout is used, so the fee stays hidden from reps.
@@ -116,7 +117,7 @@ export default function RepClientReconcileDetail() {
     } catch {
       /* user cancelled */
     }
-  }, [clientName, rangeLabel, rows, id, account]);
+  }, [clientName, rangeLabel, from, to, rows, id, account]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>

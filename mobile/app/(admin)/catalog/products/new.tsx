@@ -297,5 +297,5 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   rowError: { color: '#a02d1b', fontSize: 12, marginTop: -8, marginBottom: 8 },
-  addRow: { marginTop: 12 },
+  addRow: { marginTop: 12, marginBottom: 12 },
 });

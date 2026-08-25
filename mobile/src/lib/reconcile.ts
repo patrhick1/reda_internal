@@ -138,7 +138,8 @@ export function remitProductsDisplay(products: ShareProduct[]): string {
 
 /** Per-delivery product lines for the share message. Keeps the familiar
  *  "Product: X / Qty: N" pair for single-product orders (the common case) and
- *  switches to a bulleted "Products:" list when there's more than one. */
+ *  uses compact, unbulleted lines when there's more than one. WhatsApp can
+ *  visually nest the following remit line when these are Markdown bullets. */
 function shareProductLines(products: ShareProduct[]): string[] {
   // Single product (the common case) keeps the familiar two-line shape. `products`
   // is always non-empty in practice (remitRowProducts guarantees ≥1), but guard
@@ -147,7 +148,7 @@ function shareProductLines(products: ShareProduct[]): string[] {
     const p = products[0];
     return p ? [`Product: ${p.name}`, `Qty: ${p.qty}`] : ['Product: —'];
   }
-  return ['Products:', ...products.map((p) => `- ${p.name} ×${p.qty}`)];
+  return ['Products:', ...products.map((p) => `${p.name} ×${p.qty}`)];
 }
 
 /** Prefix a delivery Note with the client's rep when one was captured.
@@ -290,6 +291,9 @@ export function clientShareShowsPhone(clientId: string | null | undefined): bool
 export function buildClientShareMessage(input: {
   clientName: string;
   rangeLabel: string;
+  /** Whether this is one day's update. Controls "Today's remittance" versus
+   *  the multi-day "Remittance this period" label. Defaults to one day. */
+  singleDay?: boolean;
   rows: ShareDeliveryLine[];
   /** Per-delivery layout. 'default' shows the net "To Remit"; 'paidAndFee' shows
    *  "Customer paid" + "Delivery fee" (Karami). Admin-only — see
@@ -376,6 +380,7 @@ export function buildClientShareMessage(input: {
 
   const header = `Reda Logistics — ${input.clientName}\nDelivered Update\n${input.rangeLabel}`;
   const body = input.rows.length === 0 ? '(no deliveries in this range)' : blocks.join('\n\n');
+  const singleDay = input.singleDay ?? true;
   const totalBlock = [
     'Total',
     ...productLines,
@@ -385,15 +390,17 @@ export function buildClientShareMessage(input: {
     // balanceLine already nets it out, so we don't repeat it.
     ...(input.account
       ? [
+          `${singleDay ? "Today's remittance" : 'Remittance this period'}: ${formatNaira(input.account.periodActivity)}`,
           `Previous balance: ${formatNaira(input.account.balanceBeforePeriod)}`,
-          `Activity this period: ${formatNaira(input.account.periodActivity)}`,
           ...(input.account.payoutsInPeriod > 0
-            ? [`Already paid this period: ${formatNaira(input.account.payoutsInPeriod)}`]
+            ? [
+                `${singleDay ? 'Already paid today' : 'Already paid this period'}: ${formatNaira(input.account.payoutsInPeriod)}`,
+              ]
             : []),
         ]
       : []),
     balanceLine,
   ].join('\n');
 
-  return `${header}\n\n${body}\n\n\n${totalBlock}\n\n\nThank you for choosing REDA 🥂`;
+  return `${header}\n\n${body}\n\n${totalBlock}\n\nThank you for choosing REDA`;
 }

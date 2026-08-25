@@ -132,6 +132,7 @@ export default function ClientReconcileDetail() {
     const message = buildClientShareMessage({
       clientName,
       rangeLabel,
+      singleDay: from === to,
       // Per-client layout (Karami gets the paid + delivery-fee breakdown). Admin
       // path only — this exposes the Reda fee, which reps must never see.
       format: clientShareFormat(id),
@@ -178,7 +179,7 @@ export default function ClientReconcileDetail() {
     } catch {
       /* user cancelled */
     }
-  }, [clientName, rangeLabel, rows, id, account]);
+  }, [clientName, rangeLabel, from, to, rows, id, account]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
