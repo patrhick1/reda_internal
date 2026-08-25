@@ -22,7 +22,9 @@ create table if not exists public.client_balance_openings (
   opening_balance numeric not null default 0,
   note text,
   setup_request_uuid text not null unique,
-  set_by uuid not null references public.users(id),
+  -- Null means the opening was created automatically by the system cutover or
+  -- the new-client trigger. Admin-configured openings retain their actor.
+  set_by uuid references public.users(id),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -57,8 +59,59 @@ create index if not exists replacement_attempts_ledger_activity
 
 alter table public.client_balance_openings enable row level security;
 alter table public.client_payouts enable row level security;
+-- Older installations required an admin actor. Automatic initialization is a
+-- system action, so make the audit actor optional before backfilling.
+alter table public.client_balance_openings alter column set_by drop not null;
 revoke all on public.client_balance_openings from anon, authenticated;
 revoke all on public.client_payouts from anon, authenticated;
+
+-- Balance tracking is automatic for every client. August 24, 2026 is the
+-- ledger cutover: earlier financial activity remains in the legacy books, while
+-- activity from this date onward carries until it is paid out. Existing manual
+-- openings are deliberately preserved.
+insert into public.client_balance_openings(
+  client_id, effective_date, opening_balance, note, setup_request_uuid, set_by
+)
+select
+  c.id,
+  greatest(
+    date '2026-08-24',
+    (coalesce(c.created_at, now()) at time zone 'Africa/Lagos')::date
+  ),
+  0,
+  'Automatically enabled at the client balance ledger cutover',
+  'auto:' || c.id::text,
+  null
+from public.clients c
+on conflict (client_id) do nothing;
+
+create or replace function public.tg_auto_initialize_client_balance()
+returns trigger
+language plpgsql security definer set search_path = 'public', 'auth'
+as $function$
+begin
+  insert into public.client_balance_openings(
+    client_id, effective_date, opening_balance, note, setup_request_uuid, set_by
+  ) values (
+    new.id,
+    greatest(
+      date '2026-08-24',
+      (coalesce(new.created_at, now()) at time zone 'Africa/Lagos')::date
+    ),
+    0,
+    'Automatically enabled when the client was created',
+    'auto:' || new.id::text,
+    null
+  )
+  on conflict (client_id) do nothing;
+  return new;
+end;
+$function$;
+
+drop trigger if exists clients_auto_initialize_balance on public.clients;
+create trigger clients_auto_initialize_balance
+after insert on public.clients
+for each row execute function public.tg_auto_initialize_client_balance();
 
 -- A single normalized stream is the source of truth for the running balance.
 -- Replacement delivery envelopes never reach `delivered`; the explicit filter

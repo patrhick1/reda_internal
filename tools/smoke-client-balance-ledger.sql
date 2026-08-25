@@ -5,6 +5,19 @@
 
 begin;
 
+do $$
+declare v_missing integer;
+begin
+  select count(*) into v_missing
+    from public.clients c
+    left join public.client_balance_openings o on o.client_id = c.id
+   where o.client_id is null;
+  if v_missing <> 0 then
+    raise exception 'automatic balance tracking missing for % clients', v_missing;
+  end if;
+  raise notice 'PASS: every existing client has balance tracking enabled';
+end $$;
+
 select id as test_admin_id from public.users
  where role = 'admin' and is_active
  order by created_at limit 1 \gset
