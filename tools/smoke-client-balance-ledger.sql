@@ -23,6 +23,9 @@ select id as test_admin_id from public.users
  order by created_at limit 1 \gset
 select id as test_client_id from public.clients
  order by is_active desc, created_at limit 1 \gset
+insert into public.clients(name)
+values ('__client_balance_rollover_smoke__')
+returning id as rollover_client_id \gset
 
 select set_config(
   'request.jwt.claims',
@@ -31,6 +34,53 @@ select set_config(
 );
 select set_config('x.test_client_id', :'test_client_id', true);
 set local role authenticated;
+select set_config('x.rollover_client_id', :'rollover_client_id', true);
+
+-- A positive daily balance is assumed paid through the external Kuda batch and
+-- must not enter the next day. A negative balance must enter the next day.
+select public.set_client_balance_opening(
+  'smoke-rollover-positive',
+  :'rollover_client_id'::uuid,
+  (now() at time zone 'Africa/Lagos')::date - 1,
+  1000,
+  'rollback-only positive reset smoke'
+);
+
+do $$
+declare v_before numeric; v_current numeric;
+begin
+  select balance_before_period, current_balance into v_before, v_current
+    from public.client_account_balances(
+      (now() at time zone 'Africa/Lagos')::date,
+      (now() at time zone 'Africa/Lagos')::date
+    ) where client_id = current_setting('x.rollover_client_id')::uuid;
+  if v_before <> 0 or v_current <> 0 then
+    raise exception 'positive rollover expected 0/0, got %/%', v_before, v_current;
+  end if;
+  raise notice 'PASS: positive daily balance resets after the Kuda payout day';
+end $$;
+
+select public.set_client_balance_opening(
+  'smoke-rollover-negative',
+  :'rollover_client_id'::uuid,
+  (now() at time zone 'Africa/Lagos')::date - 1,
+  -2000,
+  'rollback-only negative rollover smoke'
+);
+
+do $$
+declare v_before numeric; v_current numeric;
+begin
+  select balance_before_period, current_balance into v_before, v_current
+    from public.client_account_balances(
+      (now() at time zone 'Africa/Lagos')::date,
+      (now() at time zone 'Africa/Lagos')::date
+    ) where client_id = current_setting('x.rollover_client_id')::uuid;
+  if v_before <> -2000 or v_current <> -2000 then
+    raise exception 'negative rollover expected -2000/-2000, got %/%', v_before, v_current;
+  end if;
+  raise notice 'PASS: negative daily balance carries into the next day';
+end $$;
 
 -- First configure zero, then use the security-definer balance RPC to normalize
 -- for any production activity/legacy payout already on the chosen client/day.
