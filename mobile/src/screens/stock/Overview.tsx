@@ -385,6 +385,17 @@ export function StockOverview({ basePath }: { basePath: StockBasePath }) {
           ) : null}
           {showCountHistory ? (
             <ActionRow
+              icon="check"
+              label="Weekly agent counts"
+              sub="See who has submitted their Saturday count and who is remaining"
+              onPress={() => {
+                setOverflowOpen(false);
+                router.push(`${basePath}/stock/weekly-counts`);
+              }}
+            />
+          ) : null}
+          {showCountHistory ? (
+            <ActionRow
               icon="history"
               label="Count history"
               sub="Past counts and what was off — report only"

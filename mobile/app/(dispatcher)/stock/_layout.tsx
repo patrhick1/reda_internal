@@ -18,6 +18,7 @@ export default function DispatcherStockLayout() {
       <Stack.Screen name="transfer" options={{ title: 'New transfer' }} />
       <Stack.Screen name="count" options={{ title: 'Count stock' }} />
       <Stack.Screen name="count-history" options={{ headerShown: false }} />
+      <Stack.Screen name="weekly-counts" options={{ headerShown: false }} />
       <Stack.Screen name="movement-summary" options={{ title: 'Movement summary' }} />
       <Stack.Screen name="holder/[holderId]" options={{ headerShown: false }} />
       <Stack.Screen name="movements/[holderId]" options={{ headerShown: false }} />

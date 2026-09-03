@@ -30,7 +30,7 @@ import {
 import { useCurrentUser } from '@/hooks/useAuth';
 import { useProducts, useUsers } from '@/hooks/queries';
 import { canCorrectStock } from '@/lib/permissions';
-import { lagosDayKey, lagosDayLabel, relativeTime } from '@/lib/date';
+import { lagosDayKey, lagosDayLabel, relativeTime, formatDateLagos } from '@/lib/date';
 import { AppBar, Button, Card, Empty, Icon, SectionHeader } from '@/components/ui';
 import { Select } from '@/components/Select';
 import { VarianceRow } from '@/components/stock/VarianceRow';
@@ -38,29 +38,36 @@ import { colors, fonts } from '@/lib/theme';
 
 const PAGE_SIZE = 30;
 
-export type CountHistoryBasePath = '/(admin)' | '/(dispatcher)' | '/(warehouse)';
+export type CountHistoryBasePath = '/(admin)' | '/(dispatcher)' | '/(warehouse)' | '/(agent)';
 
 export type CountHistoryProps = {
   basePath: CountHistoryBasePath;
   /** Pre-select a holder — set when arriving from a holder's detail screen. */
   initialHolderId?: string | null;
+  weekEnding?: string | null;
 };
 
 /** The Movements screen sits at a different depth per route group — warehouse
  *  has no `/stock` segment. Mirrors movementsRoute() in HolderDetail.tsx. */
 function movementsRoute(basePath: CountHistoryBasePath) {
+  if (basePath === '/(agent)') return '/(agent)/movements' as const;
   if (basePath === '/(warehouse)') return '/(warehouse)/movements/[holderId]' as const;
   if (basePath === '/(admin)') return '/(admin)/stock/movements/[holderId]' as const;
   return '/(dispatcher)/stock/movements/[holderId]' as const;
 }
 
-export function CountHistory({ basePath, initialHolderId = null }: CountHistoryProps) {
+export function CountHistory({
+  basePath,
+  initialHolderId = null,
+  weekEnding = null,
+}: CountHistoryProps) {
   const router = useRouter();
   const user = useCurrentUser();
-  const usersQ = useUsers();
+  const ownOnly = basePath === '/(agent)';
+  const usersQ = useUsers({ enabled: !ownOnly, includeInactive: true });
   // includeInactive: a run may reference a product retired since it was counted.
   // Without this those rows would render nameless.
-  const productsQ = useProducts({ includeInactive: true });
+  const productsQ = useProducts({ includeInactive: true, enabled: !ownOnly });
 
   const [rows, setRows] = useState<StockCountBatch[]>([]);
   const [cursor, setCursor] = useState<StockCountCursor>(null);
@@ -68,6 +75,7 @@ export function CountHistory({ basePath, initialHolderId = null }: CountHistoryP
   const [error, setError] = useState<string | null>(null);
   const [endOfHistory, setEndOfHistory] = useState(false);
   const [holderId, setHolderId] = useState<string | null>(initialHolderId);
+  const effectiveHolderId = ownOnly ? user.userId : holderId;
 
   // Expanded run + its lazily-fetched rows, keyed by batch so collapsing and
   // re-opening doesn't refetch.
@@ -99,8 +107,14 @@ export function CountHistory({ basePath, initialHolderId = null }: CountHistoryP
     const req = ++reqRef.current;
     setLoading(true);
     setError(null);
+    setRows([]);
+    setExpanded(null);
+    setItems({});
     try {
-      const page = await listStockCountBatches(null, PAGE_SIZE, { holderId });
+      const page = await listStockCountBatches(null, PAGE_SIZE, {
+        holderId: effectiveHolderId,
+        weekEnding,
+      });
       if (reqRef.current !== req) return;
       setRows(page);
       setCursor(nextBatchCursor(page, PAGE_SIZE));
@@ -111,7 +125,7 @@ export function CountHistory({ basePath, initialHolderId = null }: CountHistoryP
     } finally {
       if (reqRef.current === req) setLoading(false);
     }
-  }, [holderId]);
+  }, [effectiveHolderId, weekEnding]);
 
   const loadOlder = useCallback(async () => {
     if (!cursor || loading || endOfHistory) return;
@@ -119,7 +133,10 @@ export function CountHistory({ basePath, initialHolderId = null }: CountHistoryP
     setLoading(true);
     setError(null);
     try {
-      const page = await listStockCountBatches(cursor, PAGE_SIZE, { holderId });
+      const page = await listStockCountBatches(cursor, PAGE_SIZE, {
+        holderId: effectiveHolderId,
+        weekEnding,
+      });
       if (reqRef.current !== req) return;
       setRows((prev) => [...prev, ...page]);
       setCursor(nextBatchCursor(page, PAGE_SIZE));
@@ -130,7 +147,7 @@ export function CountHistory({ basePath, initialHolderId = null }: CountHistoryP
     } finally {
       if (reqRef.current === req) setLoading(false);
     }
-  }, [cursor, loading, endOfHistory, holderId]);
+  }, [cursor, loading, endOfHistory, effectiveHolderId, weekEnding]);
 
   useFocusEffect(
     useCallback(() => {
@@ -191,24 +208,34 @@ export function CountHistory({ basePath, initialHolderId = null }: CountHistoryP
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
-      <AppBar title="Count history" onBack={() => router.back()} />
+      <AppBar
+        title="Count history"
+        onBack={() => (ownOnly ? router.replace('/(agent)/stock') : router.back())}
+      />
 
-      <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
-        <Select
-          label="Holder"
-          value={holderId}
-          options={holderOptions}
-          onChange={setHolderId}
-          placeholder="All holders"
-          searchable
-          searchPlaceholder="Search agent or warehouse…"
-        />
-        {holderId ? (
-          <Pressable onPress={() => setHolderId(null)} style={{ paddingBottom: 8 }}>
-            <Text style={styles.clearLink}>Show all holders</Text>
-          </Pressable>
-        ) : null}
-      </View>
+      {weekEnding ? (
+        <Text style={{ padding: 16, fontFamily: fonts.medium }}>
+          Weekly counts · Saturday, {formatDateLagos(weekEnding)}
+        </Text>
+      ) : null}
+      {!ownOnly ? (
+        <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
+          <Select
+            label="Holder"
+            value={holderId}
+            options={holderOptions}
+            onChange={setHolderId}
+            placeholder="All holders"
+            searchable
+            searchPlaceholder="Search agent or warehouse…"
+          />
+          {holderId ? (
+            <Pressable onPress={() => setHolderId(null)} style={{ paddingBottom: 8 }}>
+              <Text style={styles.clearLink}>Show all holders</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
 
       <SectionList
         style={{ flex: 1 }}
@@ -219,8 +246,8 @@ export function CountHistory({ basePath, initialHolderId = null }: CountHistoryP
         renderItem={({ item }) => (
           <BatchCard
             batch={item}
-            holderName={nameOf(item.holder_id)}
-            actorName={nameOf(item.counted_by)}
+            holderName={item.holder_name ?? nameOf(item.holder_id)}
+            actorName={item.counted_by_name ?? nameOf(item.counted_by)}
             expanded={expanded === item.batch_id}
             loadingItems={itemsLoading === item.batch_id}
             rows={items[item.batch_id]}
@@ -324,19 +351,31 @@ function BatchCard({
         </View>
         <View style={{ alignItems: 'flex-end' }}>
           <Text style={[styles.tally, clean ? styles.tallyOk : styles.tallyOff]}>
-            {clean ? 'All match' : `${batch.off_count} off`}
+            {batch.week_ending && batch.items_count === 0
+              ? 'No stock confirmed'
+              : clean
+                ? 'All match'
+                : `${batch.off_count} off`}
           </Text>
           <Text style={styles.meta}>{batch.items_count} counted</Text>
         </View>
         <Icon name={expanded ? 'chevronUp' : 'chevronDown'} size={18} color={colors.textTertiary} />
       </Pressable>
 
+      {batch.week_ending ? (
+        <Text style={styles.meta}>
+          Weekly self-count · Saturday, {formatDateLagos(batch.week_ending)}
+          {lagosDayKey(batch.counted_at) > batch.week_ending ? ' · Late' : ''}
+        </Text>
+      ) : null}
       {batch.note ? <Text style={styles.note}>{batch.note}</Text> : null}
 
       {expanded ? (
         <View style={{ marginTop: 8 }}>
           {loadingItems ? (
             <Text style={styles.meta}>Loading…</Text>
+          ) : batch.items_count === 0 && batch.week_ending ? (
+            <Text style={styles.meta}>Agent confirmed they physically held no stock.</Text>
           ) : !rows || rows.length === 0 ? (
             <Text style={styles.meta}>Couldn&apos;t load the counted products.</Text>
           ) : (
@@ -344,7 +383,7 @@ function BatchCard({
               {rows.map((r, i) => (
                 <View key={r.id}>
                   <VarianceRow
-                    productName={productName(r.product_catalog_id)}
+                    productName={r.product_name ?? productName(r.product_catalog_id)}
                     expected={r.expected_qty}
                     counted={r.counted_qty}
                     variance={r.variance}

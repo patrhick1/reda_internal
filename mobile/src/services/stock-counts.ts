@@ -1,10 +1,9 @@
 // Stock counts — a physical-count log for reconciliation. REPORT-ONLY: recording
 // a count never changes the stock ledger; it stores what was counted vs what the
-// app expected (current_stock) and the variance. Reads go straight to the
-// `stock_counts` table (RLS gates ops + warehouse); the write goes through the
-// `record_stock_count` RPC (SECURITY DEFINER — computes expected server-side and
-// enforces permission). Neither is in database.gen.ts, so handles are cast, as in
-// services/available-orders.ts.
+// app expected (current_stock) and the variance. History RPCs return scoped,
+// named batches and detail; the recent-count lookup also uses table RLS.
+// Operations counts use record_stock_count; complete agent self-counts use
+// record_agent_stock_count. Both calculate expected quantities server-side.
 import { rpcUntyped, supabase } from '@/lib/supabase';
 import { queryClient } from '@/lib/query';
 
@@ -52,6 +51,7 @@ export type StockCountRow = {
   counted_by: string | null;
   counted_at: string;
   note: string | null;
+  product_name?: string;
 };
 
 /** Record a count run for a holder. Report-only: stores counted vs expected +
@@ -79,8 +79,8 @@ export async function recordStockCount(
 
 /** One count RUN — the shape the history feed lists. `items_count` is how many
  *  products were counted; `off_count` how many of those had a non-zero variance.
- *  Ids are resolved to names client-side against the cached users/products
- *  queries rather than joined server-side, which keeps the feed small. */
+ *  Names come from the RPC so agents need not download a staff directory.
+ *  week_ending is present only for complete weekly agent self-counts. */
 export type StockCountBatch = {
   batch_id: string;
   holder_id: string;
@@ -89,6 +89,9 @@ export type StockCountBatch = {
   note: string | null;
   items_count: number;
   off_count: number;
+  holder_name: string | null;
+  counted_by_name: string | null;
+  week_ending: string | null;
 };
 
 /** Keyset cursor for {@link listStockCountBatches} — the last row of the page
@@ -106,7 +109,7 @@ export function nextBatchCursor(page: StockCountBatch[], pageSize: number): Stoc
 /** [Egress] One page of count runs, newest first — one row per RUN, not per
  *  product. Grouping client-side instead would mean shipping every counted row
  *  ever recorded (a warehouse count is ~150 rows) just to render a summary
- *  line, so the grouping happens in `list_stock_count_batches`. The per-product
+ *  line, so the grouping happens in `list_stock_count_batches_v2`. The per-product
  *  rows are fetched only for the one run a user expands, via
  *  {@link listCountsForBatch}.
  *
@@ -115,13 +118,14 @@ export function nextBatchCursor(page: StockCountBatch[], pageSize: number): Stoc
 export async function listStockCountBatches(
   cursor: StockCountCursor,
   limit = 30,
-  opts: { holderId?: string | null } = {},
+  opts: { holderId?: string | null; weekEnding?: string | null } = {},
 ): Promise<StockCountBatch[]> {
-  const { data, error } = await rpcUntyped<StockCountBatch[]>('list_stock_count_batches', {
+  const { data, error } = await rpcUntyped<StockCountBatch[]>('list_stock_count_batches_v2', {
     p_limit: limit,
     p_cursor_at: cursor?.counted_at ?? null,
     p_cursor_batch: cursor?.batch_id ?? null,
     p_holder_id: opts.holderId ?? null,
+    p_week_ending: opts.weekEnding ?? null,
   });
   if (error) throw error;
   return data ?? [];
@@ -130,15 +134,75 @@ export async function listStockCountBatches(
 /** The per-product rows of ONE count run, for the expanded card. Scoped on
  *  batch_id so opening a run never pulls anyone else's. */
 export async function listCountsForBatch(batchId: string): Promise<StockCountRow[]> {
-  const { data, error } = await (supabase as unknown as UntypedFrom)
-    .from('stock_counts')
-    .select(
-      'id, batch_id, holder_id, product_catalog_id, expected_qty, counted_qty, variance, counted_by, counted_at, note',
-    )
-    .eq('batch_id', batchId)
-    .order('counted_at', { ascending: false });
+  const { data, error } = await rpcUntyped<StockCountRow[]>('list_stock_count_items', {
+    p_batch_id: batchId,
+  });
   if (error) throw error;
   return (data ?? []) as StockCountRow[];
+}
+
+export type AgentCountReceipt = StockCountResult & {
+  week_ending: string;
+  items: Array<{
+    product_catalog_id: string;
+    product_name: string;
+    expected_qty: number;
+    counted_qty: number;
+    variance: number;
+  }>;
+};
+
+export async function recordAgentStockCount(input: {
+  batchId: string;
+  weekEnding: string;
+  items: StockCountItem[];
+  expected: Record<string, number>;
+  note: string;
+  noStock: boolean;
+}): Promise<AgentCountReceipt> {
+  const { data, error } = await rpcUntyped<AgentCountReceipt>('record_agent_stock_count', {
+    p_batch_id: input.batchId,
+    p_week_ending: input.weekEnding,
+    p_items: input.items.map((i) => ({
+      product_catalog_id: i.productCatalogId,
+      counted_qty: i.countedQty,
+    })),
+    p_expected: input.expected,
+    p_note: input.note || null,
+    p_no_stock: input.noStock,
+  });
+  if (error) throw error;
+  if (!data) throw new Error('No count receipt returned. Retry your submission.');
+  invalidateStockCounts();
+  return data;
+}
+
+export type WeeklyAgentCount = {
+  agent_id: string;
+  agent_name: string;
+  batch_id: string | null;
+  counted_at: string | null;
+  items_count: number | null;
+  off_count: number | null;
+  is_late: boolean;
+};
+
+export async function listWeeklyAgentCounts(weekEnding: string): Promise<WeeklyAgentCount[]> {
+  const { data, error } = await rpcUntyped<WeeklyAgentCount[]>('list_weekly_agent_stock_counts', {
+    p_week_ending: weekEnding,
+  });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function listAgentCountProducts(): Promise<
+  Array<{ id: string; product_name: string }>
+> {
+  const { data, error } = await rpcUntyped<Array<{ id: string; product_name: string }>>(
+    'list_agent_count_products',
+  );
+  if (error) throw error;
+  return data ?? [];
 }
 
 /** Recent count rows for a holder, newest first — powers the counts history and

@@ -12,13 +12,21 @@ import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { listHolderStock, type StockMatrixRow } from '@/services/stock';
-import { AppBar, Card, Empty, Icon } from '@/components/ui';
+import { AppBar, Button, Card, Empty, Icon } from '@/components/ui';
+import { listStockCountBatches } from '@/services/stock-counts';
+import { stockCountWeek } from '@/lib/stock-count-week';
+import { todayLagos, formatDateLagos } from '@/lib/date';
 import { colors, fonts } from '@/lib/theme';
 import { isLow, isNegative } from '@/lib/stock-helpers';
 
 export default function AgentStock() {
   const user = useCurrentUser();
   const router = useRouter();
+  const week = stockCountWeek(todayLagos());
+  const weeklyQ = useAsync(
+    () => listStockCountBatches(null, 1, { holderId: user.userId, weekEnding: week }),
+    [user.userId, week],
+  );
   // Own holdings only — scoped server-side to this rider (listHolderStock adds
   // `agent_id = userId`). Pulling the whole current_stock matrix and filtering
   // client-side would ship every holder's stock + the staff roster to the
@@ -27,7 +35,10 @@ export default function AgentStock() {
     () => listHolderStock(user.userId),
     [user.userId],
   );
-  useReloadOnFocus(reload);
+  useReloadOnFocus(() => {
+    reload();
+    weeklyQ.reload();
+  });
 
   const totals = useMemo(() => {
     const rows = data ?? [];
@@ -47,6 +58,36 @@ export default function AgentStock() {
         }
       />
       <FlatList
+        ListHeaderComponent={
+          <Card style={{ marginBottom: 14 }}>
+            <Text style={{ fontFamily: fonts.bold, fontSize: 16 }}>Weekly stock count</Text>
+            <Text
+              style={{ fontFamily: fonts.medium, color: colors.textSecondary, marginVertical: 8 }}
+            >
+              Saturday, {formatDateLagos(week)} ·{' '}
+              {weeklyQ.loading
+                ? 'Checking…'
+                : weeklyQ.error
+                  ? 'Could not check submission'
+                  : weeklyQ.data?.length
+                    ? (weeklyQ.data[0]?.off_count ?? 0) > 0
+                      ? 'Submitted · differences reported'
+                      : 'Submitted · all match'
+                    : 'Awaiting your count'}
+            </Text>
+            <Button full onPress={() => router.push('/(agent)/count')}>
+              {weeklyQ.data?.length ? 'Count again' : 'Count my stock'}
+            </Button>
+            <Button
+              full
+              variant="secondary"
+              style={{ marginTop: 8 }}
+              onPress={() => router.push('/(agent)/count-history')}
+            >
+              Count history
+            </Button>
+          </Card>
+        }
         data={data ?? []}
         keyExtractor={(r) => r.product_catalog_id}
         renderItem={({ item }) => <StockRow row={item} />}
@@ -55,7 +96,10 @@ export default function AgentStock() {
         refreshControl={
           <RefreshControl
             refreshing={loading && !!data}
-            onRefresh={reload}
+            onRefresh={() => {
+              reload();
+              weeklyQ.reload();
+            }}
             tintColor={colors.black}
           />
         }

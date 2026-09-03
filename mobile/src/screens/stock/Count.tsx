@@ -18,11 +18,16 @@ import { useCurrentUser } from '@/hooks/useAuth';
 import { isWarehousePlace } from '@/services/users';
 import { useLastCount, useUsers } from '@/hooks/queries';
 import { listHolderStock, type StockMatrixRow } from '@/services/stock';
-import { recordStockCount } from '@/services/stock-counts';
+import {
+  recordStockCount,
+  recordAgentStockCount,
+  listAgentCountProducts,
+} from '@/services/stock-counts';
 import { resolveWarehouseHolder } from '@/lib/stock-helpers';
 import { newClientUuid } from '@/lib/uuid';
 import { errorMessage } from '@/lib/errors';
-import { relativeTime } from '@/lib/date';
+import { relativeTime, todayLagos, formatDateLagos } from '@/lib/date';
+import { stockCountWeek } from '@/lib/stock-count-week';
 import { colors, fonts } from '@/lib/theme';
 
 /**
@@ -40,8 +45,10 @@ import { colors, fonts } from '@/lib/theme';
  *                        deliberately out of scope: record_stock_count's
  *                        warehouse branch only admits
  *                        `p_holder_id = coalesce(warehouse_id, self)`.
+ *   agent              — self only; complete weekly counts use a dedicated RPC
+ *                        that validates coverage and the stock snapshot.
  */
-export type StockCountScreenProps = { scope: 'admin' | 'dispatcher' | 'warehouse' };
+export type StockCountScreenProps = { scope: 'admin' | 'dispatcher' | 'warehouse' | 'agent' };
 
 type OffRow = { name: string; expected: number; counted: number; variance: number };
 
@@ -57,6 +64,7 @@ type RowFilter = 'all' | 'todo' | 'off';
 /** The Movements screen sits at a different depth per route group — warehouse
  *  has no `/stock` segment. Mirrors movementsRoute() in HolderDetail.tsx. */
 function movementsRoute(scope: StockCountScreenProps['scope']) {
+  if (scope === 'agent') return '/(agent)/movements' as const;
   if (scope === 'warehouse') return '/(warehouse)/movements/[holderId]' as const;
   if (scope === 'admin') return '/(admin)/stock/movements/[holderId]' as const;
   return '/(dispatcher)/stock/movements/[holderId]' as const;
@@ -64,8 +72,17 @@ function movementsRoute(scope: StockCountScreenProps['scope']) {
 
 export function StockCountScreen({ scope }: StockCountScreenProps) {
   const isWarehouseScope = scope === 'warehouse';
+  const isAgentScope = scope === 'agent';
   const currentUser = useCurrentUser();
-  const usersQ = useUsers();
+  const usersQ = useUsers({ enabled: !isAgentScope });
+  const [weekEnding, setWeekEnding] = useState(() => stockCountWeek(todayLagos()));
+  const [noStock, setNoStock] = useState(false);
+  const [showAddProduct, setShowAddProduct] = useState(false);
+  const [extraProducts, setExtraProducts] = useState<StockMatrixRow[]>([]);
+  const extraQ = useAsync(
+    () => (isAgentScope && showAddProduct ? listAgentCountProducts() : Promise.resolve([])),
+    [isAgentScope, showAddProduct],
+  );
 
   const [pickedHolderId, setPickedHolderId] = useState<string | null>(null);
   const [counted, setCounted] = useState<Record<string, string>>({});
@@ -111,11 +128,13 @@ export function StockCountScreen({ scope }: StockCountScreenProps) {
     ],
   );
   const holderError = warehouseHolder && !warehouseHolder.ok ? warehouseHolder.reason : null;
-  const holderId = isWarehouseScope
-    ? warehouseHolder?.ok
-      ? warehouseHolder.holderId
-      : null
-    : pickedHolderId;
+  const holderId = isAgentScope
+    ? currentUser.userId
+    : isWarehouseScope
+      ? warehouseHolder?.ok
+        ? warehouseHolder.holderId
+        : null
+      : pickedHolderId;
 
   const stockQ = useAsync(
     () => (holderId ? listHolderStock(holderId) : Promise.resolve([] as StockMatrixRow[])),
@@ -144,8 +163,14 @@ export function StockCountScreen({ scope }: StockCountScreenProps) {
   const holderIsWarehouse = selectedHolder ? isWarehousePlace(selectedHolder) : false;
 
   const products = useMemo(
-    () => (stockQ.data ?? []).slice().sort((a, b) => a.product_name.localeCompare(b.product_name)),
-    [stockQ.data],
+    () =>
+      [
+        ...(stockQ.data ?? []),
+        ...extraProducts.filter(
+          (p) => !stockQ.data?.some((s) => s.product_catalog_id === p.product_catalog_id),
+        ),
+      ].sort((a, b) => a.product_name.localeCompare(b.product_name)),
+    [stockQ.data, extraProducts],
   );
 
   // Per-row parse: blank = "not counted"; digits = a physical count (0 allowed).
@@ -198,11 +223,15 @@ export function StockCountScreen({ scope }: StockCountScreenProps) {
     setQuery('');
     setRowFilter('all');
     setFilterSnapshot(null);
+    setNoStock(false);
+    setExtraProducts([]);
+    setShowAddProduct(false);
   }
 
   const lastCountAt = lastCountQ.data?.[0]?.counted_at ?? null;
 
   async function handleSave() {
+    if (saving) return;
     setError(null);
     if (holderError) {
       setError(holderError);
@@ -216,12 +245,51 @@ export function StockCountScreen({ scope }: StockCountScreenProps) {
       productCatalogId: r.p.product_catalog_id,
       countedQty: r.counted as number,
     }));
-    if (items.length === 0) {
+    if (
+      isAgentScope &&
+      (stockQ.loading ||
+        stockQ.error ||
+        !stockQ.data ||
+        todoCount > 0 ||
+        (items.length === 0 && !noStock))
+    ) {
+      setError('Count every product, or confirm that you hold no stock.');
+      return;
+    }
+    if (items.length === 0 && !isAgentScope) {
       setError('Enter at least one counted quantity');
       return;
     }
     setSaving(true);
     try {
+      if (isAgentScope) {
+        const receipt = await recordAgentStockCount({
+          batchId,
+          weekEnding,
+          items,
+          expected: Object.fromEntries(
+            (stockQ.data ?? [])
+              .filter((p) => p.quantity_on_hand !== 0)
+              .map((p) => [p.product_catalog_id, p.quantity_on_hand]),
+          ),
+          note: note.trim(),
+          noStock,
+        });
+        setWeekEnding(receipt.week_ending);
+        setResult({
+          total: receipt.recorded,
+          matched: receipt.matched,
+          offs: receipt.items
+            .filter((p) => p.variance !== 0)
+            .map((p) => ({
+              name: p.product_name,
+              expected: p.expected_qty,
+              counted: p.counted_qty,
+              variance: p.variance,
+            })),
+        });
+        return;
+      }
       await recordStockCount(batchId, holderId, items, note.trim() || null);
       const offs: OffRow[] = countedRows
         .filter((r) => r.variance !== 0)
@@ -242,11 +310,14 @@ export function StockCountScreen({ scope }: StockCountScreenProps) {
   /** Reset for a fresh run — including a new batch id, so the next count is its
    *  own row in the history rather than a silent no-op against the last one. */
   function startAnotherRun() {
+    setError(null);
     setResult(null);
     setNote('');
     resetListState();
     setBatchId(newClientUuid());
-    if (!isWarehouseScope) setPickedHolderId(null);
+    setWeekEnding(stockCountWeek(todayLagos()));
+    if (isAgentScope) stockQ.reload();
+    if (!isWarehouseScope && !isAgentScope) setPickedHolderId(null);
   }
 
   if (usersQ.loading && !usersQ.data) {
@@ -265,12 +336,15 @@ export function StockCountScreen({ scope }: StockCountScreenProps) {
         <View style={[styles.banner, offs.length === 0 ? styles.bannerOk : styles.bannerWarn]}>
           <Text style={styles.bannerTitle}>
             {offs.length === 0
-              ? `All ${matched} counted ${matched === 1 ? 'product' : 'products'} match ✓`
+              ? total === 0
+                ? 'No-stock confirmation submitted ✓'
+                : `All ${matched} counted ${matched === 1 ? 'product' : 'products'} match ✓`
               : `${offs.length} of ${total} ${offs.length === 1 ? 'product is' : 'products are'} off`}
           </Text>
           <Text style={styles.bannerSub}>
-            Count recorded — this did not change any stock. To fix a variance, re-count first, then
-            make a deliberate Adjustment.
+            {isAgentScope
+              ? `Weekly count submitted for ${formatDateLagos(weekEnding)}. Your count is saved for you and operations. Differences can be investigated without changing your stock.`
+              : 'Count recorded — this did not change any stock. To fix a variance, re-count first, then make a deliberate Adjustment.'}
           </Text>
         </View>
 
@@ -301,12 +375,16 @@ export function StockCountScreen({ scope }: StockCountScreenProps) {
         <Button
           // Warehouse scope only ever counts its own shelf, so the reset is a
           // fresh run on the same place rather than a different holder.
-          title={isWarehouseScope ? 'Start another count' : 'Count another holder'}
+          title={isWarehouseScope || isAgentScope ? 'Start another count' : 'Count another holder'}
           variant="secondary"
           style={styles.spacer}
           onPress={startAnotherRun}
         />
-        <Button title="Done" style={styles.spacer} onPress={() => router.back()} />
+        <Button
+          title="Done"
+          style={styles.spacer}
+          onPress={() => (isAgentScope ? router.replace('/(agent)/stock') : router.back())}
+        />
       </ScrollView>
     );
   }
@@ -318,7 +396,16 @@ export function StockCountScreen({ scope }: StockCountScreenProps) {
       contentContainerStyle={styles.content}
       keyboardShouldPersistTaps="handled"
     >
-      {isWarehouseScope ? (
+      {isAgentScope ? (
+        <View style={styles.lockedHolderBox}>
+          <Text style={styles.lockedHolderLabel}>My weekly stock count</Text>
+          <Text style={styles.lockedHolderValue}>Saturday, {formatDateLagos(weekEnding)}</Text>
+          <Text style={styles.hint}>
+            Count all your products. Enter 0 for missing stock; leave products blank until counted.
+            Submissions after Saturday are marked late.
+          </Text>
+        </View>
+      ) : isWarehouseScope ? (
         <View style={styles.lockedHolderBox}>
           <Text style={styles.lockedHolderLabel}>Counting stock for</Text>
           {holderError ? (
@@ -356,14 +443,29 @@ export function StockCountScreen({ scope }: StockCountScreenProps) {
       ) : null}
 
       {holderId ? (
-        stockQ.loading && !stockQ.data ? (
+        stockQ.error ? (
+          <Text style={styles.errorText}>{stockQ.error}</Text>
+        ) : stockQ.loading ? (
           <View style={styles.centerPad}>
             <ActivityIndicator color={colors.black} />
           </View>
         ) : products.length === 0 ? (
-          <Text style={styles.empty}>
-            This holder currently holds no stock in the app. Nothing to count.
-          </Text>
+          <View>
+            <Text style={styles.empty}>
+              {isAgentScope
+                ? 'The app shows no stock. Check your physical stock before confirming.'
+                : 'This holder currently holds no stock in the app. Nothing to count.'}
+            </Text>
+            {isAgentScope ? (
+              <Button
+                title={
+                  noStock ? '✓ I physically hold no stock' : 'Confirm I physically hold no stock'
+                }
+                variant="secondary"
+                onPress={() => setNoStock(!noStock)}
+              />
+            ) : null}
+          </View>
         ) : (
           <>
             <Text style={styles.sectionLabel}>Enter what you physically counted</Text>
@@ -473,6 +575,62 @@ export function StockCountScreen({ scope }: StockCountScreenProps) {
         )
       ) : null}
 
+      {isAgentScope && !stockQ.loading && !stockQ.error ? (
+        <View style={styles.spacer}>
+          <Button
+            title="Found a product missing from this list?"
+            variant="secondary"
+            onPress={() => setShowAddProduct(!showAddProduct)}
+          />
+          {showAddProduct ? (
+            <Select
+              label="Add physical stock"
+              value={null}
+              searchable
+              options={(extraQ.data ?? [])
+                .filter((p) => !products.some((s) => s.product_catalog_id === p.id))
+                .map((p) => ({ value: p.id, label: p.product_name }))}
+              onChange={(id) => {
+                const p = extraQ.data?.find((item) => item.id === id);
+                if (!p) return;
+                setExtraProducts((prev) => [
+                  ...prev,
+                  {
+                    user_id: currentUser.userId,
+                    user_email: currentUser.email,
+                    user_display_name: currentUser.displayName,
+                    user_role: 'agent',
+                    product_catalog_id: p.id,
+                    product_name: p.product_name,
+                    client_id: '',
+                    client_name: '',
+                    is_active: true,
+                    quantity_on_hand: 0,
+                  },
+                ]);
+                setNoStock(false);
+                selectFilter('all');
+                setQuery('');
+                setShowAddProduct(false);
+              }}
+            />
+          ) : null}
+          {extraQ.loading && showAddProduct ? <ActivityIndicator /> : null}
+          {extraQ.error && showAddProduct ? (
+            <Text style={styles.errorText}>{extraQ.error}</Text>
+          ) : null}
+        </View>
+      ) : null}
+      {isAgentScope ? (
+        <Button
+          title="Reload stock and restart count"
+          variant="secondary"
+          style={styles.spacer}
+          disabled={saving || stockQ.loading}
+          onPress={startAnotherRun}
+        />
+      ) : null}
+
       {error ? (
         <View style={styles.errorBox}>
           <Text style={styles.errorText}>{error}</Text>
@@ -480,17 +638,27 @@ export function StockCountScreen({ scope }: StockCountScreenProps) {
       ) : null}
 
       <Button
-        title="Save count"
+        title={isAgentScope ? 'Submit weekly count' : 'Save count'}
         onPress={handleSave}
         loading={saving}
-        disabled={!holderId || countedRows.length === 0}
+        disabled={
+          !holderId ||
+          saving ||
+          (isAgentScope
+            ? stockQ.loading ||
+              !!stockQ.error ||
+              !stockQ.data ||
+              todoCount > 0 ||
+              (rows.length === 0 && !noStock)
+            : countedRows.length === 0)
+        }
       />
       <Text style={styles.saveNote}>Recording a count won&apos;t change the app&apos;s stock.</Text>
       <Button
         title="Cancel"
         variant="secondary"
         style={styles.spacer}
-        onPress={() => router.back()}
+        onPress={() => (isAgentScope ? router.replace('/(agent)/stock') : router.back())}
       />
     </ScrollView>
   );
