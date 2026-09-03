@@ -155,6 +155,7 @@ The list shows non-completed deliveries first, sorted by **most recent status ch
 - *Needs Review* — the bot couldn't figure out the address or the product. **Tap any row** to open the fix screen: everything the bot already read is pre-filled, you just pick the missing piece (usually a location, sometimes the right client when two carry the same product). Tap **Create delivery** and the order is in. Tap **Discard** instead with a reason (Spam / Duplicate / Not a real order) if it shouldn't become a delivery.
 - *Shadow* — what the bot would have created if we had let it. Useful to check it's reading messages correctly before we let it create deliveries on its own.
 - *Errors* — the bot couldn't read the message, or the phone lost signal. Usually a one-off; tap to see what went wrong.
+- *Blocked* — the customer's number is on the **blacklist** (Catalog → Blacklist, or the blacklist icon on a delivery). The order was refused and no rider was sent. Tell the vendor. If the number was listed by mistake, remove it from the blacklist and tap **Re-run** on the row.
 
 If someone else is already fixing the same row, you'll see *"<Name> is fixing this"* with a **Take over** button — only use Take over if you're sure they've stopped.`,
   },
@@ -315,6 +316,7 @@ const DISPATCHER = [
 - *Needs Review* — the bot couldn't figure out the address or the product. **Tap any row** to open the fix screen with the original message at the top and a pre-filled form below. Usually you just need to pick a location, or (when two clients carry the same product) pick the right client from the chips at the top. Tap **Create delivery** and the order is in. Tap **Discard** if it's spam, a duplicate, or not a real order.
 - *Shadow* — what the bot would have created. A good place to check that it's reading messages correctly before we let it create deliveries on its own.
 - *Errors* — the bot couldn't read the message, or the phone lost signal. Usually a one-off; ignore unless the same row fails twice.
+- *Blocked* — the customer's number is on the blacklist, so the order was refused and no rider was sent. Tell the vendor. Managers can blacklist a number from the icon on any delivery, and remove one the same way.
 
 If someone else is already fixing the same row, you'll see *"<Name> is fixing this"* with a **Take over** button — only use Take over if you're sure they've stopped.`,
   },

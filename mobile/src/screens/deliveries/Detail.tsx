@@ -63,6 +63,8 @@ import {
   canSeeCharged,
   canSeeMargin,
   canUpdateStatus,
+  canManageBlacklist,
+  canViewBlacklist,
   isOps,
 } from '@/lib/permissions';
 import {
@@ -86,6 +88,9 @@ import { EditWaybillSheet } from '@/components/sheets/EditWaybillSheet';
 import { UpdateStatusSheet } from '@/components/sheets/UpdateStatusSheet';
 import { HandoffToSubAgentSheet } from '@/components/sheets/HandoffToSubAgentSheet';
 import { DeleteDeliverySheet } from '@/components/sheets/DeleteDeliverySheet';
+import { BlacklistNumberSheet } from '@/components/sheets/BlacklistNumberSheet';
+import { RemoveBlacklistSheet } from '@/components/sheets/RemoveBlacklistSheet';
+import { checkCustomerBlacklist } from '@/services/blacklist';
 import { MessageThread } from '@/components/delivery/MessageThread';
 import { listSubAgents } from '@/services/users';
 import { useQueue } from '@/queue/QueueProvider';
@@ -118,8 +123,22 @@ export function DeliveryDetail() {
     [mayCorrectRedaCharge, id],
   );
   const canMarkNotified = canMarkClientNotified(user.role);
+  // Customer blacklist marker. Ops-only (the RPC gates too); keyed on the
+  // numbers so a reload after add/remove re-checks this same delivery.
+  const mayViewBlacklist = canViewBlacklist(user.role);
+  const blacklistPhone = deliveryQ.data?.customer_phone ?? null;
+  const blacklistPhoneAlt = deliveryQ.data?.customer_phone_alt ?? null;
+  const blacklistQ = useAsync(
+    () =>
+      mayViewBlacklist && blacklistPhone
+        ? checkCustomerBlacklist(blacklistPhone, blacklistPhoneAlt)
+        : Promise.resolve(null),
+    [mayViewBlacklist, blacklistPhone, blacklistPhoneAlt],
+  );
 
   const [markOpen, setMarkOpen] = useState(false);
+  const [blacklistOpen, setBlacklistOpen] = useState(false);
+  const [unblacklistOpen, setUnblacklistOpen] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
   const [handoffOpen, setHandoffOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -452,6 +471,25 @@ export function DeliveryDetail() {
                 <Icon name="edit" size={22} color={colors.black} />
               </TouchableOpacity>
             ) : null}
+            {canManageBlacklist(user.role) && d.customer_phone ? (
+              <TouchableOpacity
+                onPress={() =>
+                  blacklistQ.data ? setUnblacklistOpen(true) : setBlacklistOpen(true)
+                }
+                hitSlop={8}
+                style={{ padding: 4 }}
+                accessibilityLabel={
+                  blacklistQ.data ? 'Remove number from blacklist' : 'Blacklist this number'
+                }
+                accessibilityRole="button"
+              >
+                <Icon
+                  name="phoneOff"
+                  size={22}
+                  color={blacklistQ.data ? colors.red : colors.black}
+                />
+              </TouchableOpacity>
+            ) : null}
             {canDeleteDelivery(user.role) && (canDeleteDeliveryByStatus(status) || isWaybill) ? (
               <TouchableOpacity
                 onPress={() => setDeleteOpen(true)}
@@ -523,6 +561,27 @@ export function DeliveryDetail() {
                 >
                   Alt: {d.customer_phone_alt}
                 </Text>
+              ) : null}
+              {blacklistQ.data ? (
+                <View
+                  style={{
+                    marginTop: 8,
+                    alignSelf: 'flex-start',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 6,
+                    backgroundColor: colors.redSoft,
+                    borderRadius: 999,
+                    paddingHorizontal: 10,
+                    paddingVertical: 4,
+                  }}
+                >
+                  <Icon name="phoneOff" size={12} color={colors.red} />
+                  <Text style={{ fontFamily: fonts.bold, fontSize: 11, color: colors.red }}>
+                    Blacklisted{blacklistQ.data.matched_on === 'alt' ? ' (alt number)' : ''} ·{' '}
+                    {blacklistQ.data.reason}
+                  </Text>
+                </View>
               ) : null}
             </View>
             <StatusPill status={status} />
@@ -1289,6 +1348,26 @@ export function DeliveryDetail() {
                 ? '/(rep)/deliveries'
                 : '/(admin)/deliveries';
           router.replace(base as `/${string}`);
+        }}
+      />
+      <BlacklistNumberSheet
+        open={blacklistOpen}
+        initialPhone={d.customer_phone ?? ''}
+        customerName={d.customer_name ?? undefined}
+        sourceDeliveryId={d.id}
+        onClose={() => setBlacklistOpen(false)}
+        onAdded={() => {
+          setBlacklistOpen(false);
+          blacklistQ.reload();
+        }}
+      />
+      <RemoveBlacklistSheet
+        open={unblacklistOpen}
+        entry={blacklistQ.data}
+        onClose={() => setUnblacklistOpen(false)}
+        onRemoved={() => {
+          setUnblacklistOpen(false);
+          blacklistQ.reload();
         }}
       />
     </View>

@@ -1,5 +1,6 @@
--- requeue_failed_inbound as live on the box, captured 2026-09-03 before it was
--- widened to also re-run 'blocked' rows (customer blacklist).
+-- requeue_failed_inbound as live on the box after the customer blacklist change (2026-09-03).
+-- Diff vs the pre-change capture (commit cfcb15e) is the blacklist assert only;
+-- see supabase/migrations/20260903231500_customer_blacklist.sql.
 
 CREATE OR REPLACE FUNCTION public.requeue_failed_inbound(p_ids uuid[])
  RETURNS integer
@@ -17,7 +18,7 @@ begin
 
   for v_id in
     select id from public.bot_inbound_messages
-    where id = any(p_ids) and status = 'error'
+    where id = any(p_ids) and status in ('error', 'blocked')
   loop
     -- Reset to the pre-parse state so the idempotency guard (status='queued')
     -- lets bot-parse-message process it again.

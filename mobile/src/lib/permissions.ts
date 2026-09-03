@@ -485,3 +485,17 @@ export function canMarkClientNotified(role: Role): boolean {
 export function canBulkMarkClientNotified(role: Role): boolean {
   return isOps(role);
 }
+
+/** Customer blacklist — add or remove numbers whose orders are refused.
+ *  Managers only (admin + dispatcher), mirroring the server's is_manager()
+ *  gate on add_customer_blacklist / remove_customer_blacklist. */
+export function canManageBlacklist(role: Role): boolean {
+  return isManager(role);
+}
+
+/** See blacklist entries and the "Blacklisted" marker on a delivery. All ops
+ *  roles. Server anchor: is_admin_or_dispatcher() on check_customer_blacklist
+ *  / list_customer_blacklist and the customer_blacklist select policy. */
+export function canViewBlacklist(role: Role): boolean {
+  return isOps(role);
+}

@@ -18,10 +18,11 @@ import { errorMessage } from '@/lib/errors';
 import { reviewReason } from './reviewReason';
 import { HINTS } from '@/hints/registry';
 
-type Tab = 'needs_review' | 'shadow_only' | 'error' | 'all';
+type Tab = 'needs_review' | 'blocked' | 'shadow_only' | 'error' | 'all';
 
 const TABS: { key: Tab; label: string; status: InboundStatus | 'all' }[] = [
   { key: 'needs_review', label: 'Needs Review', status: 'needs_review' },
+  { key: 'blocked', label: 'Blocked', status: 'blocked' },
   { key: 'shadow_only', label: 'Shadow', status: 'shadow_only' },
   { key: 'error', label: 'Errors', status: 'error' },
   { key: 'all', label: 'All', status: 'all' },
@@ -35,6 +36,7 @@ const INBOUND_PILL_TONE: Record<InboundStatus, { label: string; bg: string; fg: 
   created_delivery: { label: 'delivery created', bg: colors.successSoft, fg: colors.successDark },
   duplicate: { label: 'duplicate', bg: colors.closedSoft, fg: colors.closed },
   error: { label: 'error', bg: colors.redSoft, fg: colors.red },
+  blocked: { label: 'blocked', bg: colors.redSoft, fg: colors.red },
 };
 
 export function NeedsReviewScreen() {
@@ -123,7 +125,14 @@ export function NeedsReviewScreen() {
           <InboundCard
             row={item}
             onNavigate={onRowPress(item) ?? undefined}
-            onRetry={item.status === 'error' && canFix ? () => handleRetry(item.id) : undefined}
+            onRetry={
+              (item.status === 'error' || item.status === 'blocked') && canFix
+                ? () => handleRetry(item.id)
+                : undefined
+            }
+            retryLabel={
+              item.status === 'blocked' ? 'Re-run (after removing from blacklist)' : undefined
+            }
           />
         )}
         ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
@@ -162,7 +171,9 @@ export function NeedsReviewScreen() {
               sub={
                 tab === 'needs_review'
                   ? "Nothing in the queue. When the bot can't figure out an address or product, the row lands here for you to fix."
-                  : 'Nothing in this view right now.'
+                  : tab === 'blocked'
+                    ? 'No refused orders. When a blacklisted number places an order, it lands here instead of reaching a rider — tell the vendor, and remove the number from Catalog › Blacklist if it was listed by mistake.'
+                    : 'Nothing in this view right now.'
               }
             />
           )
@@ -188,11 +199,14 @@ function InboundCard({
   row,
   onNavigate,
   onRetry,
+  retryLabel,
 }: {
   row: BotInboundRow;
   onNavigate?: () => void;
-  /** Present on error rows for admins/dispatchers — re-queues this message. */
+  /** Present on error/blocked rows for admins/dispatchers — re-queues this message. */
   onRetry?: () => Promise<void>;
+  /** Overrides the retry button's idle label (blocked rows say why to retry). */
+  retryLabel?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [retrying, setRetrying] = useState(false);
@@ -209,7 +223,9 @@ function InboundCard({
       ? reviewReason(row)
       : row.status === 'error'
         ? 'Parse failed'
-        : null;
+        : row.status === 'blocked'
+          ? 'Blocked — customer number is blacklisted'
+          : null;
 
   return (
     <Card onPress={onNavigate ?? (() => setExpanded((e) => !e))}>
@@ -334,7 +350,12 @@ function InboundCard({
             value={address?.matched_location_id ? `${address.confidence} confidence` : 'no match'}
           />
           {row.delivery_id ? <DetailRow label="Delivery" value={row.delivery_id} /> : null}
-          {row.error_text ? <DetailRow label="Error" value={row.error_text} /> : null}
+          {row.error_text ? (
+            <DetailRow
+              label={row.status === 'blocked' ? 'Blocked' : 'Error'}
+              value={row.error_text}
+            />
+          ) : null}
         </View>
       ) : null}
       {row.error_text && !expanded ? (
@@ -390,7 +411,11 @@ function InboundCard({
               color: requeued ? colors.success : colors.black,
             }}
           >
-            {requeued ? 'Re-queued — reprocessing…' : retrying ? 'Re-queuing…' : 'Retry extraction'}
+            {requeued
+              ? 'Re-queued — reprocessing…'
+              : retrying
+                ? 'Re-queuing…'
+                : (retryLabel ?? 'Retry extraction')}
           </Text>
         </Pressable>
       ) : null}

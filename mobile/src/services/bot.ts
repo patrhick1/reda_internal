@@ -7,7 +7,9 @@ export type InboundStatus =
   | 'needs_review'
   | 'created_delivery'
   | 'duplicate'
-  | 'error';
+  | 'error'
+  /** Customer number is on the blacklist: refused, no delivery, no rider. */
+  | 'blocked';
 
 export type BotInboundRow = {
   id: string;

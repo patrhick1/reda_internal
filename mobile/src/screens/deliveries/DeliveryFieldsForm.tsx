@@ -5,7 +5,8 @@ import { useAsync } from '@/hooks/useAsync';
 import { listActiveProductsByClient, type Product } from '@/services/products';
 import { useClients, useLocations } from '@/hooks/queries';
 import { listUsers, type AppUser } from '@/services/users';
-import { getAgentProductsStock } from '@/services/deliveries';
+import { getAgentProductsStock, normalizePhoneForGrouping } from '@/services/deliveries';
+import { checkCustomerBlacklist, type BlacklistHit } from '@/services/blacklist';
 import { Avatar, Banner, Card, DateField, Empty, Input } from '@/components/ui';
 import { Select } from '@/components/Select';
 import { colors, fonts } from '@/lib/theme';
@@ -230,6 +231,33 @@ export function DeliveryFieldsForm({
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [productsError, setProductsError] = useState<string | null>(null);
 
+  // Courtesy blacklist check while the operator types. The server refuses a
+  // listed number on save regardless; this just says so before they finish.
+  const [blacklistHit, setBlacklistHit] = useState<BlacklistHit | null>(null);
+  useEffect(() => {
+    const phoneKey = normalizePhoneForGrouping(state.customerPhone);
+    const altKey = normalizePhoneForGrouping(state.customerPhoneAlt);
+    const worthChecking = (phoneKey?.length ?? 0) >= 7 || (altKey?.length ?? 0) >= 7;
+    if (!worthChecking) {
+      setBlacklistHit(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      checkCustomerBlacklist(state.customerPhone, state.customerPhoneAlt || null)
+        .then((hit) => {
+          if (!cancelled) setBlacklistHit(hit);
+        })
+        .catch(() => {
+          /* courtesy only — a failed check never blocks typing */
+        });
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [state.customerPhone, state.customerPhoneAlt]);
+
   // Refetch the product list whenever the client changes. Clear the product
   // selection if the new client doesn't have the previously-selected product.
   useEffect(() => {
@@ -446,6 +474,14 @@ export function DeliveryFieldsForm({
           autoCapitalize="none"
           placeholder="Backup number, if any"
         />
+        {blacklistHit ? (
+          <>
+            <View style={{ height: 12 }} />
+            <Banner tone="error" icon="phoneOff" title="Blacklisted number">
+              {`${blacklistHit.phone_display}${blacklistHit.matched_on === 'alt' ? ' (the alternative number)' : ''} was blacklisted${blacklistHit.added_by_name ? ` by ${blacklistHit.added_by_name}` : ''}: ${blacklistHit.reason}. Saving this delivery will be refused.`}
+            </Banner>
+          </>
+        ) : null}
         <View style={{ height: 16 }} />
         <Input
           label="Address"

@@ -33,6 +33,8 @@ export default function CatalogLayout() {
       <Stack.Screen name="rates/index" options={{ title: 'Rate card' }} />
       <Stack.Screen name="rates/[locationId]" options={{ title: 'Rate' }} />
 
+      <Stack.Screen name="blacklist/index" options={{ title: 'Blacklist' }} />
+
       <Stack.Screen name="users/index" options={{ title: 'Users' }} />
       <Stack.Screen name="users/new" options={{ title: 'New user', presentation: 'modal' }} />
       <Stack.Screen name="users/[id]" options={{ title: 'Edit user' }} />

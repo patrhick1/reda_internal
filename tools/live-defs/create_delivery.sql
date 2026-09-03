@@ -1,6 +1,6 @@
--- create_delivery as live on the box, captured 2026-09-03 before the customer
--- blacklist guard was added (supabase/migrations/20260903231500_customer_blacklist.sql).
--- The tracked copy had drifted to the pre-Feature A signature; this is the real one.
+-- create_delivery as live on the box after the customer blacklist change (2026-09-03).
+-- Diff vs the pre-change capture (commit cfcb15e) is the blacklist assert only;
+-- see supabase/migrations/20260903231500_customer_blacklist.sql.
 
 CREATE OR REPLACE FUNCTION public.create_delivery(p_client_uuid text, p_client_id uuid, p_product_catalog_id uuid, p_customer_name text, p_customer_phone text, p_raw_address text, p_quantity_ordered integer, p_customer_price numeric, p_location_id uuid DEFAULT NULL::uuid, p_scheduled_date date DEFAULT CURRENT_DATE, p_assigned_agent_id uuid DEFAULT NULL::uuid, p_created_via text DEFAULT 'manual'::text, p_bot_raw_message text DEFAULT NULL::text, p_customer_phone_alt text DEFAULT NULL::text, p_items jsonb DEFAULT NULL::jsonb, p_delivery_instructions text DEFAULT NULL::text, p_client_rep text DEFAULT NULL::text)
  RETURNS uuid
@@ -50,6 +50,9 @@ begin
   if p_created_via not in ('manual', 'bot') then
     raise exception 'invalid created_via' using errcode = '23514';
   end if;
+
+  -- Customer blacklist: refuse before anything is written (structured P0001).
+  perform public._assert_customer_not_blacklisted(p_customer_phone, p_customer_phone_alt);
 
   p_scheduled_date := public._effective_scheduled_date(p_scheduled_date, p_created_via);
   v_bumped := (p_scheduled_date is distinct from v_original_date);

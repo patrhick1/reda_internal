@@ -17,6 +17,9 @@
 //        - enable_bot_pipeline=false OR bot_shadow_mode=true → 'shadow_only'
 //        - fully resolved → bot_create_delivery → 'created_delivery'
 //        - anything missing → 'needs_review'
+//        - customer number on the blacklist → 'blocked' (no delivery, no rider;
+//          create_delivery refuses with hint.kind='blacklisted', and rows that
+//          would otherwise wait in needs_review are pre-checked here)
 //   6. mark_inbound_processed updates the row atomically.
 //
 // Deploy:  supabase functions deploy bot-parse-message
@@ -420,6 +423,35 @@ function normalizePhone(p: string | null | undefined): string | null {
   if (!p) return null;
   const digits = p.replace(/[^\d+]/g, '');
   return digits.length >= 10 ? digits : null;
+}
+
+// Mirrors public._norm_phone: digits only, drop the 234 country code, drop a
+// leading 0 — so "+234 803…", "0803…" and "803…" share one blacklist key.
+function phoneKey(p: string | null | undefined): string | null {
+  if (!p) return null;
+  let d = p.replace(/\D/g, '');
+  if (d.startsWith('234')) d = d.slice(3);
+  if (d.startsWith('0')) d = d.slice(1);
+  return d || null;
+}
+
+// File a refused order as `blocked`. parse_result keeps the full parse (so the
+// Blocked tab still shows vendor + product) plus which entry matched; the
+// entry's block count in the app is derived from these rows.
+async function markBlocked(
+  supabase: any,
+  inboundId: string,
+  parseResult: Record<string, unknown>,
+  hit: { entry_id: string; phone: string | null; reason: string | null },
+): Promise<void> {
+  const { error } = await supabase.rpc('mark_inbound_processed', {
+    p_inbound_id:  inboundId,
+    p_status:      'blocked',
+    p_parse:       { ...parseResult, blacklist: hit },
+    p_delivery_id: null,
+    p_error:       `Blocked: ${hit.phone ?? 'customer number'} is blacklisted — ${hit.reason ?? 'no reason recorded'}`,
+  });
+  if (error) console.error('mark blocked failed', error);
 }
 
 // Bowan's structured template carries the real order quantity in an explicit
@@ -878,6 +910,25 @@ Deno.serve(async (req) => {
   }
 
   if (!haveAllFields) {
+    // Customer blacklist pre-check, so a listed number never sits in Needs
+    // Review waiting for someone to fix the address on an order that must not
+    // go out. The authoritative gate is inside create_delivery (step 6).
+    const blacklistKeys = [phoneKey(customerPhoneRaw), phoneKey(customerPhoneAltRaw)]
+      .filter((k): k is string => !!k);
+    if (blacklistKeys.length > 0) {
+      const { data: hit } = await supabase
+        .from('customer_blacklist')
+        .select('id, phone_display, reason')
+        .is('removed_at', null)
+        .in('phone_normalized', blacklistKeys)
+        .limit(1)
+        .maybeSingle();
+      if (hit) {
+        await markBlocked(supabase, inboundId, parseResult,
+          { entry_id: hit.id, phone: hit.phone_display, reason: hit.reason });
+        return new Response('blocked', { status: 200 });
+      }
+    }
     await supabase.rpc('mark_inbound_processed', {
       p_inbound_id:  inboundId,
       p_status:      'needs_review',
@@ -934,6 +985,20 @@ Deno.serve(async (req) => {
         p_error:       null,
       });
       return new Response(JSON.stringify({ delivery_id: hint.existing_delivery_id, duplicate: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+
+    // Customer blacklist: create_delivery refused (see the migration). Not an
+    // error — file it as blocked so ops see it and can tell the vendor.
+    if (hint?.kind === 'blacklisted' && typeof hint.entry_id === 'string') {
+      await markBlocked(supabase, inboundId, parseResult, {
+        entry_id: hint.entry_id,
+        phone:    typeof hint.phone === 'string' ? hint.phone : null,
+        reason:   typeof hint.reason === 'string' ? hint.reason : null,
+      });
+      return new Response(JSON.stringify({ blocked: true, entry_id: hint.entry_id }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       });

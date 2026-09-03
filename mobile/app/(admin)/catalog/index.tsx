@@ -11,7 +11,8 @@ const SECTIONS: {
     | '/(admin)/catalog/locations'
     | '/(admin)/catalog/products'
     | '/(admin)/catalog/rates'
-    | '/(admin)/catalog/users';
+    | '/(admin)/catalog/users'
+    | '/(admin)/catalog/blacklist';
   icon: IconName;
   title: string;
   sub: string;
@@ -45,6 +46,12 @@ const SECTIONS: {
     icon: 'user',
     title: 'Users',
     sub: 'Admins, dispatchers, agents, warehouse',
+  },
+  {
+    href: '/(admin)/catalog/blacklist',
+    icon: 'phoneOff',
+    title: 'Blacklist',
+    sub: 'Customer numbers whose orders are refused',
   },
 ];
 
