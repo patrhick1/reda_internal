@@ -41,6 +41,7 @@ import {
   canBulkChangeStatus,
   canBulkDeleteDeliveries,
   canBulkMarkClientNotified,
+  canBulkUnassignDelivery,
   canFilterDeliveriesList,
   canSeeClientName,
 } from '@/lib/permissions';
@@ -61,7 +62,9 @@ import { BulkAssignSheet } from '@/components/sheets/BulkAssignSheet';
 import { BulkStatusSheet } from '@/components/sheets/BulkStatusSheet';
 import { BulkDeleteSheet } from '@/components/sheets/BulkDeleteSheet';
 import { BulkNotifySheet } from '@/components/sheets/BulkNotifySheet';
+import { BulkUnassignSheet } from '@/components/sheets/BulkUnassignSheet';
 import type { BulkNotifyCounts } from '@/services/clientNotifications';
+import type { BulkUnassignResult } from '@/services/deliveries';
 import {
   colors,
   fonts,
@@ -201,10 +204,15 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   // Tagging "client notified" in bulk is the rep's main list action, and it's
   // the first bulk action reps can reach — select mode used to be manager-only.
   const canBulkNotify = canBulkMarkClientNotified(user.role);
-  const canBulkSelect = canBulkAssign || canBulkStatus || canBulkDelete || canBulkNotify;
+  // Unassign is Assign's opposite (send back to the queue) and sits beside it
+  // in the action bar; same manager audience.
+  const canBulkUnassign = canBulkUnassignDelivery(user.role);
+  const canBulkSelect =
+    canBulkAssign || canBulkStatus || canBulkDelete || canBulkNotify || canBulkUnassign;
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set());
   const [bulkSheetOpen, setBulkSheetOpen] = useState(false);
+  const [bulkUnassignSheetOpen, setBulkUnassignSheetOpen] = useState(false);
   const [bulkStatusSheetOpen, setBulkStatusSheetOpen] = useState(false);
   const [bulkDeleteSheetOpen, setBulkDeleteSheetOpen] = useState(false);
   const [bulkNotifySheetOpen, setBulkNotifySheetOpen] = useState(false);
@@ -403,6 +411,32 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         if (typeof window !== 'undefined') window.alert(msg);
       } else {
         Alert.alert('Done', msg);
+      }
+    },
+    [exitSelect, reload, postponedQ, unassignedQ],
+  );
+  const onBulkUnassigned = useCallback(
+    (result: BulkUnassignResult) => {
+      setBulkUnassignSheetOpen(false);
+      exitSelect();
+      setLocationIds(EMPTY_LOCATION_IDS);
+      reload();
+      postponedQ.reload();
+      unassignedQ.reload();
+      // Say who lost what and why anything stayed put — a skip here is a
+      // closed or already-queued row, which is information, not a failure.
+      const who = result.agents.map((a) => `${a.agent_name ?? 'an agent'} ${a.count}`).join(', ');
+      const parts = [
+        `Unassigned ${result.unassigned_count}${who ? ` (${who})` : ''}.`,
+        result.skipped_count > 0
+          ? `Skipped ${result.skipped_count}: ${[...new Set(result.skipped.map((s) => s.why))].join(', ')}.`
+          : null,
+      ].filter(Boolean);
+      const msg = parts.join('\n');
+      if (Platform.OS === 'web') {
+        if (typeof window !== 'undefined') window.alert(msg);
+      } else {
+        Alert.alert('Back in the queue', msg);
       }
     },
     [exitSelect, reload, postponedQ, unassignedQ],
@@ -1375,15 +1409,35 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
               (bulk notify), so this has to be gated — an unguarded Assign would
               open a sheet whose RPC refuses them. */}
           {canBulkAssign ? (
-            <Button
-              variant="emphasis"
-              full
-              icon="check"
-              onPress={() => setBulkSheetOpen(true)}
-              disabled={selectedRows.length === 0}
-            >
-              {`Assign ${selectedRows.length}`}
-            </Button>
+            // Routing row: the two opposite moves side by side. Assign keeps
+            // the emphasis; Unassign is the quieter twin that sends rows back
+            // to the queue.
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {canBulkUnassign ? (
+                <View style={{ flex: 1 }}>
+                  <Button
+                    variant="secondary"
+                    full
+                    onPress={() => setBulkUnassignSheetOpen(true)}
+                    disabled={selectedRows.length === 0}
+                    accessibilityLabel={`Unassign ${selectedRows.length} selected`}
+                  >
+                    {`Unassign ${selectedRows.length}`}
+                  </Button>
+                </View>
+              ) : null}
+              <View style={{ flex: 1 }}>
+                <Button
+                  variant="emphasis"
+                  full
+                  icon="check"
+                  onPress={() => setBulkSheetOpen(true)}
+                  disabled={selectedRows.length === 0}
+                >
+                  {`Assign ${selectedRows.length}`}
+                </Button>
+              </View>
+            </View>
           ) : canBulkNotify ? (
             <Button
               variant="emphasis"
@@ -1404,6 +1458,12 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         agents={bulkAssignTargets}
         onClose={() => setBulkSheetOpen(false)}
         onAssigned={onBulkAssigned}
+      />
+      <BulkUnassignSheet
+        open={bulkUnassignSheetOpen}
+        selected={selectedRows}
+        onClose={() => setBulkUnassignSheetOpen(false)}
+        onUnassigned={onBulkUnassigned}
       />
       <BulkStatusSheet
         open={bulkStatusSheetOpen}

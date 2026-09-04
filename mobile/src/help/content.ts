@@ -341,6 +341,7 @@ If someone else is already fixing the same row, you'll see *"<Name> is fixing th
 - Tap **Re-assign** → pick the new agent → confirm.
 - If the new agent doesn't have the product on them, the app does **not** block you. Instead it tells the agent to pick up from the warehouse, and tells the admin so we can make sure that happens.
 - Agents only see deliveries assigned to them. Admins, dispatchers, and reps see everything.
+- **Several at once:** in the **Deliveries** list, long-press a row to start selecting, tap more rows or **Select all visible**, then **Assign** to move them to one agent or **Unassign** to send them back to the queue. Filter by agent first to grab everything on one rider's list. The rider gets a single notification for the whole batch.
 
 ### Claim a customer follow-up
 

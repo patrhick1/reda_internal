@@ -499,3 +499,11 @@ export function canManageBlacklist(role: Role): boolean {
 export function canViewBlacklist(role: Role): boolean {
   return isOps(role);
 }
+
+/** Bulk-unassign N selected deliveries back to the Unassigned queue. Same
+ *  audience as the single unassign (managers) and as bulk assign — this is a
+ *  routing decision for the ops team that runs dispatch.
+ *  Server anchor: bulk_unassign_deliveries → unassign_delivery gate on is_manager(). */
+export function canBulkUnassignDelivery(role: Role): boolean {
+  return isManager(role);
+}

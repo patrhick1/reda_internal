@@ -1492,3 +1492,38 @@ export async function revertLocationChange(changeId: string, reason: string): Pr
   if (error) throw error;
   invalidateDeliveries();
 }
+
+/** Result of one bulk unassign batch. `skipped` names each row that stayed put
+ *  and why (closed, already in the queue, deleted, not found); `agents` is who
+ *  lost how many rows — the same riders the server just sent ONE summary
+ *  push each. */
+export type BulkUnassignResult = {
+  unassigned_count: number;
+  skipped_count: number;
+  skipped: { delivery_id: string; customer_name: string | null; why: string }[];
+  agents: { agent_id: string; agent_name: string | null; count: number }[];
+};
+
+/** Manager bulk unassign — sends the selected rows back to the Unassigned
+ *  queue. The server loops the single unassign_delivery per row (same gates,
+ *  same audit, reason + batch tag) and reports skips instead of failing the
+ *  batch. Idempotent: re-running the same ids skips them all and pushes nobody. */
+export async function bulkUnassignDeliveries(
+  deliveryIds: string[],
+  reason: string,
+  clientUuid: string,
+): Promise<BulkUnassignResult> {
+  const { data, error } = await rpcUntyped<BulkUnassignResult>('bulk_unassign_deliveries', {
+    p_client_uuid: clientUuid,
+    p_delivery_ids: deliveryIds,
+    p_reason: reason,
+  });
+  if (error) throw error;
+  invalidateDeliveries();
+  return {
+    unassigned_count: data?.unassigned_count ?? 0,
+    skipped_count: data?.skipped_count ?? 0,
+    skipped: data?.skipped ?? [],
+    agents: data?.agents ?? [],
+  };
+}
