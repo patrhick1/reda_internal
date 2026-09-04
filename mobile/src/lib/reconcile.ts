@@ -274,6 +274,7 @@ export function clientShareFormat(clientId: string | null | undefined): ClientSh
 // Keyed by client id (stable across renames). To add a client: drop their id here.
 const CLIENT_SHARE_PHONE: Set<string> = new Set([
   '8e250591-864e-479d-a4da-e85b30794be9', // Afaking Nig Ltd
+  'bf10eeca-fa09-47db-9596-a78ffba455fb', // Dentora
 ]);
 
 /** Whether a client's share message should include the customer phone per row. */
