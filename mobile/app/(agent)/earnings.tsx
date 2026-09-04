@@ -22,7 +22,11 @@ export default function AgentEarnings() {
   // u.id = auth.uid(), so this returns a single row — the caller's own — with
   // today's collected / earnings / remit aggregated. (Only `today` is needed
   // here; the week/month buckets are computed separately in bucketize.)
-  const today = useMemo(() => lagosWeekRange().today, []);
+  // Do not memoize this date for the lifetime of the tab. Expo keeps tabs
+  // mounted, so a screen opened before Lagos midnight can still be mounted the
+  // next day. The earnings reload sets loading and re-renders; recomputing here
+  // changes the dependency below and replaces the stale day request.
+  const today = lagosWeekRange().today;
   const remitQ = useAsync(() => listAgentEarningsSummary(today, today), [today]);
 
   useReloadOnFocus(() => {
