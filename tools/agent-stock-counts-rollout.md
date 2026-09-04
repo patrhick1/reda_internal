@@ -55,7 +55,23 @@ there are no test submission headers left, and the test agent still has zero
 inventory rows. Temporary test sessions were signed out. Counts did not adjust
 inventory.
 
-**The database is live; this frontend build has not been published.**
+Published on **3 September 2026** from commit
+`0833f76affeab2a771b8bc201adeff3a514b6516`:
+
+- Web: Vercel production deployment `CfGbtQc2KyRP3TwAp5YQXvfkQPvq` succeeded.
+  `https://app.redalogisticss.com` serves the stock-count bundle with HTTP 200;
+  the sign-in screen loads successfully. GitHub CI and security checks passed.
+- EAS: preview branch/channel, runtime `1.1.1`, Android and iOS update group
+  `9c4f0d68-5bad-4d71-9685-91ca1afdbf23`. Both preview manifest endpoints were
+  verified to serve the new update IDs after publication.
+- Built from an isolated checkout so concurrent blacklist work was excluded.
+  Bundles were checked for the live API URL, public key and stock-count RPCs.
+  EAS has no server-side preview variables configured; the release used the
+  preview environment values from `mobile/eas.json`, with a clean Metro cache,
+  then uploaded the verified bundles using `--skip-bundler`.
+
+Existing preview installations on runtime `1.1.1` receive the update on relaunch;
+no new native dependencies or APK rebuild were required.
 
 ## Reproduce checks
 
