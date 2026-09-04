@@ -403,5 +403,5 @@ export function buildClientShareMessage(input: {
     balanceLine,
   ].join('\n');
 
-  return `${header}\n\n${body}\n\n${totalBlock}\n\nThank you for choosing REDA`;
+  return `${header}\n\n${body}\n\n${totalBlock}\n\nThank you for choosing REDA 🥂`;
 }

@@ -58,7 +58,7 @@ export default function RootLayout() {
   if (!fontsLoaded) {
     return (
       <SafeAreaProvider>
-        <StatusBar style="auto" />
+        <StatusBar style="light" />
         <View
           style={{
             flex: 1,
@@ -74,7 +74,7 @@ export default function RootLayout() {
   }
   return (
     <SafeAreaProvider>
-      <StatusBar style="auto" />
+      <StatusBar style="dark" />
       <ErrorBoundary>
         {/* QueryClientProvider wraps the app so every screen shares one cache.
             The client is a module singleton, so sign-out (useAuth) can clear it
