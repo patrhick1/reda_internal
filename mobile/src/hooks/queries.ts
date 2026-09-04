@@ -40,6 +40,7 @@ import {
 } from '@/services/products';
 import { listCurrentStock, type StockMatrixRow } from '@/services/stock';
 import { stockCoverageToday, type CoverageRow } from '@/services/stock-coverage';
+import { stockRestockSignal, type RestockRow } from '@/services/stock-restock';
 import { listCountsForHolder, type StockCountRow } from '@/services/stock-counts';
 
 /** The subset of useAsync's return shape that consumers rely on. */
@@ -351,6 +352,27 @@ export function useStockCoverage(
     queryKey,
     queryFn: () => stockCoverageToday(),
     staleTime: DELIVERIES_STALE,
+    enabled: opts.enabled ?? true,
+  });
+  return { ...asAsync(q), fetching: q.isFetching, refetchIfStale: () => refetchIfStale(queryKey) };
+}
+
+/** Days-of-cover restock list. Shares the ['stock'] key prefix with coverage
+ *  and the matrix, so a receive / transfer / adjustment refreshes it through
+ *  the same invalidateStock() choke point — a bulk intake should clear the
+ *  product off the reorder list without a manual pull.
+ *
+ *  Not agent-callable server-side (it carries vendor names), so any caller that
+ *  might mount for an agent must pass `enabled: false`. */
+export function useRestockSignal(
+  opts: { enabled?: boolean } = {},
+): DeliveryListResult<RestockRow[]> {
+  const uid = useUid();
+  const queryKey = ['stock', uid, 'restock'];
+  const q = useQuery({
+    queryKey,
+    queryFn: () => stockRestockSignal(),
+    staleTime: REFERENCE_STALE,
     enabled: opts.enabled ?? true,
   });
   return { ...asAsync(q), fetching: q.isFetching, refetchIfStale: () => refetchIfStale(queryKey) };

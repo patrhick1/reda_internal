@@ -11,7 +11,7 @@ import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
-import { useStockCoverage } from '@/hooks/queries';
+import { useStockCoverage, useRestockSignal } from '@/hooks/queries';
 import { listHolderStock, type StockMatrixRow } from '@/services/stock';
 import { listAvailableOrders } from '@/services/available-orders';
 import { AppBar, Button, Card, Empty, FilterChips, Icon, Input, Sheet } from '@/components/ui';
@@ -24,6 +24,7 @@ import {
   canViewOthersStockHistory,
 } from '@/lib/permissions';
 import { getHolderStats, isLow, isNegative } from '@/lib/stock-helpers';
+import { restockStats } from '@/services/stock-restock';
 
 type ProductFilter = 'all' | 'low' | 'negative';
 
@@ -44,13 +45,18 @@ export default function WarehouseHome() {
   // Demand-aware coverage for the "Stock coverage" card — warehouse is the
   // persona who fixes shortages, so the check lives on their home.
   const coverageQ = useStockCoverage();
+  // What to reorder, ranked by how long the shelf lasts at recent selling
+  // speed — the warehouse is the persona that acts on it.
+  const restockQ = useRestockSignal();
 
   useReloadOnFocus(() => {
     stockQ.reload();
     availableQ.reload();
     coverageQ.refetchIfStale();
+    restockQ.refetchIfStale();
   });
 
+  const restock = useMemo(() => restockStats(restockQ.data ?? []), [restockQ.data]);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<ProductFilter>('all');
   const [overflowOpen, setOverflowOpen] = useState(false);
@@ -245,6 +251,59 @@ export default function WarehouseHome() {
                     {availableRows.length === 0
                       ? 'Nothing confirmed yet today'
                       : `${availableUnits} ${availableUnits === 1 ? 'unit' : 'units'} across ${availableAgents} ${availableAgents === 1 ? 'agent' : 'agents'}`}
+                  </Text>
+                </View>
+                <Icon name="chevronRight" size={20} color={colors.textSecondary} />
+              </View>
+            </Card>
+
+            {/* Restock — days of cover, the "what do we order?" list. Sits
+                above coverage because ordering has a lead time; coverage is
+                about today. */}
+            <Card dense onPress={() => router.push('/(warehouse)/restock')}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 20,
+                    backgroundColor:
+                      restock.urgent > 0
+                        ? colors.redSoft
+                        : restock.total > 0
+                          ? colors.warningSoft
+                          : colors.surface,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Icon
+                    name="warehouse"
+                    size={18}
+                    color={
+                      restock.urgent > 0
+                        ? colors.red
+                        : restock.total > 0
+                          ? colors.warningDark
+                          : colors.black
+                    }
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>
+                    Restock
+                  </Text>
+                  <Text
+                    style={{
+                      fontFamily: fonts.medium,
+                      fontSize: 12,
+                      color: restock.urgent > 0 ? colors.red : colors.textSecondary,
+                      marginTop: 2,
+                    }}
+                  >
+                    {restock.total === 0
+                      ? 'Everything has more than 3 days of stock'
+                      : `${restock.total} to order${restock.urgent > 0 ? ` · ${restock.urgent} urgent` : ''} — ${restock.topName} first`}
                   </Text>
                 </View>
                 <Icon name="chevronRight" size={20} color={colors.textSecondary} />

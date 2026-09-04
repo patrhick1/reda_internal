@@ -7,11 +7,12 @@ import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { usePendingLocationChangesCount } from '@/hooks/usePendingLocationChangesCount';
-import { useDeliveriesList, useStockCoverage } from '@/hooks/queries';
+import { useDeliveriesList, useStockCoverage, useRestockSignal } from '@/hooks/queries';
 import { type DeliveryRow } from '@/services/deliveries';
 import { countNeedsReview } from '@/services/bot';
 import { listAvailableOrders } from '@/services/available-orders';
 import { listOpenIssuesForOps } from '@/services/delivery-messages';
+import { restockStats } from '@/services/stock-restock';
 import { AppBar, Card, FAB, Icon } from '@/components/ui';
 import { IssuesAttentionBlock } from '@/components/delivery/IssuesAttentionBlock';
 import { colors, fonts, statusBucket } from '@/lib/theme';
@@ -45,6 +46,10 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
   // enabled guard keeps any other role that ever mounts this screen from
   // fetching data it won't render.
   const coverageQ = useStockCoverage({ enabled: user.role === 'dispatcher' });
+  // Restock list — dispatcher-only for the same reason as coverage, and the
+  // RPC refuses non-ops callers anyway. Coverage is "today"; this is "will the
+  // warehouse last until the next delivery arrives".
+  const restockQ = useRestockSignal({ enabled: user.role === 'dispatcher' });
 
   useReloadOnFocus(() => {
     deliveriesQ.refetchIfStale();
@@ -52,6 +57,7 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
     availableQ.reload();
     issuesQ.reload();
     coverageQ.refetchIfStale();
+    restockQ.refetchIfStale();
   });
 
   const deliveries = useMemo(() => deliveriesQ.data ?? [], [deliveriesQ.data]);
@@ -75,6 +81,8 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
     const short = (coverageQ.data ?? []).filter((r) => r.on_hand_total < r.qty_open);
     return { count: short.length, ordersAffected: short.reduce((s, r) => s + r.orders_open, 0) };
   }, [coverageQ.data]);
+
+  const restock = useMemo(() => restockStats(restockQ.data ?? []), [restockQ.data]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -246,6 +254,51 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
                   }}
                 >
                   Agent delivered elsewhere — raises their pay
+                </Text>
+              </View>
+              <Icon name="chevronRight" size={18} color={colors.textSecondary} />
+            </View>
+          </Card>
+        ) : null}
+
+        {/* Restock (dispatcher only): what to order, ranked by how long the
+            warehouse lasts at recent selling speed. Distinct from coverage
+            below — a product can cover today and still run dry before a
+            restock lands. */}
+        {user.role === 'dispatcher' && restock.total > 0 ? (
+          <Card dense onPress={() => router.push('/(dispatcher)/restock')}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <View
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 12,
+                  backgroundColor: restock.urgent > 0 ? colors.redSoft : colors.warningSoft,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Icon
+                  name="warehouse"
+                  size={20}
+                  color={restock.urgent > 0 ? colors.red : colors.warningDark}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>
+                  {`${restock.total} ${restock.total === 1 ? 'product needs' : 'products need'} reordering`}
+                </Text>
+                <Text
+                  style={{
+                    fontFamily: fonts.medium,
+                    fontSize: 12,
+                    color: colors.textSecondary,
+                    marginTop: 2,
+                  }}
+                >
+                  {restock.urgent > 0
+                    ? `${restock.urgent} out or gone today — ${restock.topName} first`
+                    : `Under 3 days of stock — ${restock.topName} first`}
                 </Text>
               </View>
               <Icon name="chevronRight" size={18} color={colors.textSecondary} />

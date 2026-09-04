@@ -137,6 +137,16 @@ export function OpsTabsLayout() {
             }}
           />
           <Tabs.Screen
+            name="restock"
+            options={{
+              title: 'Restock',
+              tabBarIcon: ({ color, focused }) => (
+                <Icon name="warehouse" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
+              ),
+              href: null,
+            }}
+          />
+          <Tabs.Screen
             name="replacement-new"
             options={{
               title: 'New replacement',

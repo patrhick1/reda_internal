@@ -8,8 +8,9 @@ import { usePendingLocationChangesCount } from '@/hooks/usePendingLocationChange
 import { countNegativeMarginDeliveries, type DeliveryRow } from '@/services/deliveries';
 import { getTodayDeliveryRate, getDeliveryRateHistory } from '@/services/reconciliation';
 import { countNeedsReview } from '@/services/bot';
-import { useUsers, useDeliveriesList, useStockCoverage } from '@/hooks/queries';
+import { useUsers, useDeliveriesList, useStockCoverage, useRestockSignal } from '@/hooks/queries';
 import { listOpenIssuesForOps } from '@/services/delivery-messages';
+import { restockStats } from '@/services/stock-restock';
 import { AppBar, Card, Icon, SectionHeader } from '@/components/ui';
 import { AgentWorkloadCard } from '@/components/delivery/AgentWorkloadCard';
 import { IssuesAttentionBlock } from '@/components/delivery/IssuesAttentionBlock';
@@ -58,6 +59,11 @@ export default function AdminHome() {
   // demand. Drives the "Needs attention" row; cached under ['stock'] so stock
   // moves and confirmations auto-refresh it.
   const coverageQ = useStockCoverage();
+  // Restock is the OTHER stock question. Coverage asks whether today's booked
+  // orders can be served; this asks whether the warehouse will last until more
+  // arrives. A product can pass the first and fail the second — that gap is
+  // exactly what went unreported when the Water Filter ran dry (2026-09-01).
+  const restockQ = useRestockSignal();
 
   useReloadOnFocus(() => {
     todayQ.refetchIfStale();
@@ -67,6 +73,7 @@ export default function AdminHome() {
     rateQ.reload();
     trendQ.reload();
     coverageQ.refetchIfStale();
+    restockQ.refetchIfStale();
   });
 
   const stats = useMemo(() => summarize(todayQ.data ?? []), [todayQ.data]);
@@ -89,6 +96,7 @@ export default function AdminHome() {
     const short = (coverageQ.data ?? []).filter((r) => r.on_hand_total < r.qty_open);
     return { count: short.length, ordersAffected: short.reduce((s, r) => s + r.orders_open, 0) };
   }, [coverageQ.data]);
+  const restock = useMemo(() => restockStats(restockQ.data ?? []), [restockQ.data]);
   const agents = useMemo(
     () => (usersQ.data ?? []).filter((u) => u.role === 'agent' && u.is_active),
     [usersQ.data],
@@ -160,7 +168,8 @@ export default function AdminHome() {
         openIssues.length > 0 ||
         pendingZoneCount > 0 ||
         negMarginCount > 0 ||
-        shortStock.count > 0 ? (
+        shortStock.count > 0 ||
+        restock.total > 0 ? (
           <>
             <SectionHeader>Needs attention</SectionHeader>
             <View style={{ gap: 8 }}>
@@ -203,6 +212,20 @@ export default function AdminHome() {
                   title={`${negMarginCount} negative-margin ${negMarginCount === 1 ? 'order' : 'orders'}`}
                   sub="Reda pays the agent more than it collects — correct the charges"
                   onPress={() => router.push('/(admin)/negative-margin')}
+                />
+              ) : null}
+              {restock.total > 0 ? (
+                <AttentionRow
+                  icon="warehouse"
+                  iconBg={restock.urgent > 0 ? colors.redSoft : colors.warningSoft}
+                  iconColor={restock.urgent > 0 ? colors.red : colors.warningDark}
+                  title={`${restock.total} ${restock.total === 1 ? 'product needs' : 'products need'} reordering`}
+                  sub={
+                    restock.urgent > 0
+                      ? `${restock.urgent} out or gone today — ${restock.topName} first`
+                      : `Under 3 days of stock left — ${restock.topName} first`
+                  }
+                  onPress={() => router.push('/(admin)/restock')}
                 />
               ) : null}
               {shortStock.count > 0 ? (
