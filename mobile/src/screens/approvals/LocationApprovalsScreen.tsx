@@ -335,16 +335,6 @@ function ChangeCard({
           {`Agent pay ${formatNaira(payFrom)} → ${formatNaira(payTo)}`}
           {payDelta !== 0 ? ` (${payDelta > 0 ? '+' : ''}${formatNaira(payDelta)})` : ''}
         </Text>
-        <Text
-          style={{
-            fontFamily: fonts.medium,
-            fontSize: 12,
-            color: colors.textSecondary,
-            marginTop: 2,
-          }}
-        >
-          {`Reda charge ${formatNaira(Number(row.from_charged ?? 0))} → ${formatNaira(Number(row.to_charged ?? 0))}`}
-        </Text>
         {row.state === 'pending' ? (
           <Text
             style={{
