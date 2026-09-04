@@ -1,4 +1,5 @@
 import { rpcUntyped } from '@/lib/supabase';
+import { DEFAULT_LEAD_DAYS, type RestockTier } from '@/lib/restock-signal';
 
 /** How many days of stock a product has left, from the `stock_restock_signal`
  *  RPC (supabase/migrations/20260904090000_stock_restock_signal.sql).
@@ -23,23 +24,22 @@ export type RestockRow = {
   warehouse_qty: number;
   /** Units shipped in the window (reason='delivered'). */
   units_out: number;
+  /** Quantity on today's open (non-terminal) orders. Used as a FLOOR under the
+   *  rate when the shelf is empty or nothing shipped all window — being out of
+   *  stock stops sales, so shipments alone would let the product go quiet
+   *  exactly when it has been unavailable longest. */
+  qty_open: number;
   /** Selling days the rate is averaged over — Sundays excluded (they have
    *  never traded), and capped to the product's own age if it is newer than
    *  the window. */
   selling_days: number;
-  /** units_out / selling_days. */
+  /** Effective selling speed: units_out / selling_days, floored by qty_open in
+   *  the out-of-stock case above. */
   rate_per_day: number;
   /** warehouse_qty / rate_per_day. 0 when the shelf is empty. */
   days_cover: number;
   tier: RestockTier;
 };
-
-/** `out`      — nothing on the shelf while the product is still selling.
- *  `critical` — under a day of cover.
- *  `reorder`  — under the replenishment lead time: order now or it runs dry
- *               before the delivery lands.
- *  `ok`       — silent. */
-export type RestockTier = 'out' | 'critical' | 'reorder' | 'ok';
 
 /** Products needing action, worst first. `ok` rows are returned too so the
  *  screen can offer an "All" view without a second call; every caller that
@@ -53,25 +53,6 @@ export async function stockRestockSignal(opts: { leadDays?: number } = {}): Prom
   return data ?? [];
 }
 
-/** Days it takes a restock to reach the warehouse. Uzo (2026-09-04): 2-5 days
- *  in practice, plan on 3. This is the whole meaning of the `reorder` tier —
- *  cover shorter than this and the product runs out before more arrives — so
- *  it belongs in one place, named, rather than as a bare 3 in a call site. */
-export const DEFAULT_LEAD_DAYS = 3;
-
-/** The rows worth acting on, in the order they should be worked. */
-export function needsRestock(rows: RestockRow[]): RestockRow[] {
-  return rows.filter((r) => r.tier !== 'ok');
-}
-
-/** Headline counts for the dashboard attention rows. `urgent` is the subset
- *  that cannot wait for the next order run. */
-export function restockStats(rows: RestockRow[]): {
-  total: number;
-  urgent: number;
-  topName: string | null;
-} {
-  const acting = needsRestock(rows);
-  const urgent = acting.filter((r) => r.tier === 'out' || r.tier === 'critical').length;
-  return { total: acting.length, urgent, topName: acting[0]?.product_name ?? null };
-}
+/** Re-exported so a caller that only needs the row type imports one module.
+ *  All pure logic lives in lib/restock-signal.ts (framework-free, unit-tested). */
+export { DEFAULT_LEAD_DAYS } from '@/lib/restock-signal';

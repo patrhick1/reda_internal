@@ -23,8 +23,15 @@ import {
   canRecordStockCount,
   canViewOthersStockHistory,
 } from '@/lib/permissions';
-import { getHolderStats, isLow, isNegative } from '@/lib/stock-helpers';
-import { restockStats } from '@/services/stock-restock';
+import { getHolderStats, isNegative } from '@/lib/stock-helpers';
+import {
+  coverByProduct,
+  coverLabel,
+  isLowOnCover,
+  isUrgentCover,
+  withOutOfStock,
+  type CoverLike,
+} from '@/lib/restock-signal';
 
 type ProductFilter = 'all' | 'low' | 'negative';
 
@@ -56,35 +63,62 @@ export default function WarehouseHome() {
     restockQ.refetchIfStale();
   });
 
-  const restock = useMemo(() => restockStats(restockQ.data ?? []), [restockQ.data]);
+  // "Low" on this list now means "less than a restock cycle of stock left",
+  // not "3 or fewer units". A flat count can't tell 1 unit of a monthly seller
+  // (24 days of cover) from 34 units of one shipping 20 a day (under two).
+  const coverMap = useMemo(() => coverByProduct(restockQ.data), [restockQ.data]);
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<ProductFilter>('all');
   const [overflowOpen, setOverflowOpen] = useState(false);
 
   const allRows = useMemo(() => stockQ.data ?? [], [stockQ.data]);
+  // Products the warehouse is OUT of have no current_stock row at all, so they
+  // would never reach this list — see withOutOfStock. They are the ones that
+  // most need showing.
   const holderRows = useMemo(
-    () => allRows.filter((r) => r.user_id === holderId),
-    [allRows, holderId],
+    () =>
+      withOutOfStock(
+        allRows.filter((r) => r.user_id === holderId),
+        restockQ.data,
+        { id: holderId, role: 'warehouse', displayName: user.displayName },
+      ),
+    [allRows, holderId, restockQ.data, user.displayName],
   );
   const stats = useMemo(() => getHolderStats(allRows, holderId), [allRows, holderId]);
+  const coverStats = useMemo(() => {
+    let low = 0;
+    let urgent = 0;
+    for (const r of holderRows) {
+      const c = coverMap.get(r.product_catalog_id);
+      if (isLowOnCover(c)) low += 1;
+      if (isUrgentCover(c)) urgent += 1;
+    }
+    return { low, urgent };
+  }, [holderRows, coverMap]);
 
   const visibleRows = useMemo(() => {
     const q = query.trim().toLowerCase();
     return holderRows
       .filter((r) => {
-        if (filter === 'low' && !isLow(r.quantity_on_hand)) return false;
+        if (filter === 'low' && !isLowOnCover(coverMap.get(r.product_catalog_id))) return false;
         if (filter === 'negative' && !isNegative(r.quantity_on_hand)) return false;
         if (!q) return true;
         return r.product_name.toLowerCase().includes(q) || r.client_name.toLowerCase().includes(q);
       })
       .sort((a, b) => {
-        const aBad = isNegative(a.quantity_on_hand) ? -2 : isLow(a.quantity_on_hand) ? -1 : 0;
-        const bBad = isNegative(b.quantity_on_hand) ? -2 : isLow(b.quantity_on_hand) ? -1 : 0;
+        const ca = coverMap.get(a.product_catalog_id);
+        const cb = coverMap.get(b.product_catalog_id);
+        const rank = (r: StockMatrixRow, c: CoverLike | undefined) =>
+          isNegative(r.quantity_on_hand) ? -2 : isLowOnCover(c) ? -1 : 0;
+        const aBad = rank(a, ca);
+        const bBad = rank(b, cb);
         if (aBad !== bBad) return aBad - bBad;
-        if (aBad < 0) return a.quantity_on_hand - b.quantity_on_hand;
+        if (aBad === -2) return a.quantity_on_hand - b.quantity_on_hand;
+        // Worst cover first — days left, not units left.
+        if (aBad === -1) return (ca?.days_cover ?? 0) - (cb?.days_cover ?? 0);
         return a.product_name.localeCompare(b.product_name);
       });
-  }, [holderRows, query, filter]);
+  }, [holderRows, query, filter, coverMap]);
 
   // Products whose fleet stock can't cover today's open demand.
   const shortStock = useMemo(() => {
@@ -161,8 +195,8 @@ export default function WarehouseHome() {
                 <HeroStat label="Units" value={String(stats.totalUnits)} accent={colors.white} />
                 <HeroStat
                   label="Low"
-                  value={String(stats.lowCount)}
-                  accent={colors.warning}
+                  value={String(coverStats.low)}
+                  accent={coverStats.urgent > 0 ? colors.red : colors.warning}
                   onPress={() => setFilter((f) => (f === 'low' ? 'all' : 'low'))}
                 />
                 <HeroStat
@@ -251,59 +285,6 @@ export default function WarehouseHome() {
                     {availableRows.length === 0
                       ? 'Nothing confirmed yet today'
                       : `${availableUnits} ${availableUnits === 1 ? 'unit' : 'units'} across ${availableAgents} ${availableAgents === 1 ? 'agent' : 'agents'}`}
-                  </Text>
-                </View>
-                <Icon name="chevronRight" size={20} color={colors.textSecondary} />
-              </View>
-            </Card>
-
-            {/* Restock — days of cover, the "what do we order?" list. Sits
-                above coverage because ordering has a lead time; coverage is
-                about today. */}
-            <Card dense onPress={() => router.push('/(warehouse)/restock')}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <View
-                  style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 20,
-                    backgroundColor:
-                      restock.urgent > 0
-                        ? colors.redSoft
-                        : restock.total > 0
-                          ? colors.warningSoft
-                          : colors.surface,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Icon
-                    name="warehouse"
-                    size={18}
-                    color={
-                      restock.urgent > 0
-                        ? colors.red
-                        : restock.total > 0
-                          ? colors.warningDark
-                          : colors.black
-                    }
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>
-                    Restock
-                  </Text>
-                  <Text
-                    style={{
-                      fontFamily: fonts.medium,
-                      fontSize: 12,
-                      color: restock.urgent > 0 ? colors.red : colors.textSecondary,
-                      marginTop: 2,
-                    }}
-                  >
-                    {restock.total === 0
-                      ? 'Everything has more than 3 days of stock'
-                      : `${restock.total} to order${restock.urgent > 0 ? ` · ${restock.urgent} urgent` : ''} — ${restock.topName} first`}
                   </Text>
                 </View>
                 <Icon name="chevronRight" size={20} color={colors.textSecondary} />
@@ -459,7 +440,7 @@ export default function WarehouseHome() {
               value={filter}
               options={[
                 { id: 'all', label: 'All', count: holderRows.length },
-                { id: 'low', label: 'Low', count: stats.lowCount },
+                { id: 'low', label: 'Low', count: coverStats.low },
                 { id: 'negative', label: 'Negative', count: stats.negativeCount },
               ]}
               onChange={setFilter}
@@ -468,7 +449,7 @@ export default function WarehouseHome() {
         }
         renderItem={({ item }) => (
           <View style={{ paddingHorizontal: 16 }}>
-            <ProductRow row={item} />
+            <ProductRow row={item} cover={coverMap.get(item.product_catalog_id)} />
           </View>
         )}
         ItemSeparatorComponent={() => <View style={{ height: 6 }} />}
@@ -590,9 +571,11 @@ function HeroStat({
   );
 }
 
-function ProductRow({ row }: { row: StockMatrixRow }) {
+function ProductRow({ row, cover }: { row: StockMatrixRow; cover?: CoverLike }) {
   const negative = isNegative(row.quantity_on_hand);
-  const low = isLow(row.quantity_on_hand);
+  const low = isLowOnCover(cover);
+  const urgent = isUrgentCover(cover);
+  const daysLeft = coverLabel(cover);
   return (
     <Card dense>
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -613,6 +596,7 @@ function ProductRow({ row }: { row: StockMatrixRow }) {
             numberOfLines={1}
           >
             {row.client_name}
+            {low && daysLeft ? ` · ${daysLeft}` : ''}
           </Text>
         </View>
         <Text
@@ -620,7 +604,7 @@ function ProductRow({ row }: { row: StockMatrixRow }) {
             fontFamily: fonts.extrabold,
             fontSize: 20,
             letterSpacing: -0.4,
-            color: negative ? colors.red : low ? colors.warningDark : colors.black,
+            color: negative || urgent ? colors.red : low ? colors.warningDark : colors.black,
           }}
         >
           {row.quantity_on_hand}

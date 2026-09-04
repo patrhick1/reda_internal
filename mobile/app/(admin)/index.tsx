@@ -10,7 +10,8 @@ import { getTodayDeliveryRate, getDeliveryRateHistory } from '@/services/reconci
 import { countNeedsReview } from '@/services/bot';
 import { useUsers, useDeliveriesList, useStockCoverage, useRestockSignal } from '@/hooks/queries';
 import { listOpenIssuesForOps } from '@/services/delivery-messages';
-import { restockStats } from '@/services/stock-restock';
+import { restockStats } from '@/lib/restock-signal';
+import { isWarehousePlace } from '@/services/users';
 import { AppBar, Card, Icon, SectionHeader } from '@/components/ui';
 import { AgentWorkloadCard } from '@/components/delivery/AgentWorkloadCard';
 import { IssuesAttentionBlock } from '@/components/delivery/IssuesAttentionBlock';
@@ -97,6 +98,13 @@ export default function AdminHome() {
     return { count: short.length, ordersAffected: short.reduce((s, r) => s + r.orders_open, 0) };
   }, [coverageQ.data]);
   const restock = useMemo(() => restockStats(restockQ.data ?? []), [restockQ.data]);
+  // The list itself is the warehouse holder's product page under Stock — the
+  // same low-stock view ops already use, now ranked by days of cover. No
+  // separate screen: one place where "what's low" is answered.
+  const warehousePlaceId = useMemo(
+    () => (usersQ.data ?? []).find((u) => u.is_active && isWarehousePlace(u))?.id ?? null,
+    [usersQ.data],
+  );
   const agents = useMemo(
     () => (usersQ.data ?? []).filter((u) => u.role === 'agent' && u.is_active),
     [usersQ.data],
@@ -225,7 +233,14 @@ export default function AdminHome() {
                       ? `${restock.urgent} out or gone today — ${restock.topName} first`
                       : `Under 3 days of stock left — ${restock.topName} first`
                   }
-                  onPress={() => router.push('/(admin)/restock')}
+                  onPress={() =>
+                    warehousePlaceId
+                      ? router.push({
+                          pathname: '/(admin)/stock/holder/[holderId]',
+                          params: { holderId: warehousePlaceId },
+                        })
+                      : router.push('/(admin)/stock')
+                  }
                 />
               ) : null}
               {shortStock.count > 0 ? (

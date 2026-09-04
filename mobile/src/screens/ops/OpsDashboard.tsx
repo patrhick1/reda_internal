@@ -7,12 +7,13 @@ import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { usePendingLocationChangesCount } from '@/hooks/usePendingLocationChangesCount';
-import { useDeliveriesList, useStockCoverage, useRestockSignal } from '@/hooks/queries';
+import { useDeliveriesList, useStockCoverage, useRestockSignal, useUsers } from '@/hooks/queries';
 import { type DeliveryRow } from '@/services/deliveries';
 import { countNeedsReview } from '@/services/bot';
 import { listAvailableOrders } from '@/services/available-orders';
 import { listOpenIssuesForOps } from '@/services/delivery-messages';
-import { restockStats } from '@/services/stock-restock';
+import { restockStats } from '@/lib/restock-signal';
+import { isWarehousePlace } from '@/services/users';
 import { AppBar, Card, FAB, Icon } from '@/components/ui';
 import { IssuesAttentionBlock } from '@/components/delivery/IssuesAttentionBlock';
 import { colors, fonts, statusBucket } from '@/lib/theme';
@@ -46,6 +47,7 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
   // enabled guard keeps any other role that ever mounts this screen from
   // fetching data it won't render.
   const coverageQ = useStockCoverage({ enabled: user.role === 'dispatcher' });
+  const usersQ = useUsers({ enabled: user.role === 'dispatcher' });
   // Restock list — dispatcher-only for the same reason as coverage, and the
   // RPC refuses non-ops callers anyway. Coverage is "today"; this is "will the
   // warehouse last until the next delivery arrives".
@@ -83,6 +85,13 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
   }, [coverageQ.data]);
 
   const restock = useMemo(() => restockStats(restockQ.data ?? []), [restockQ.data]);
+  // Deep-links to the warehouse holder's product list under Stock — the
+  // existing low-stock view, now ranked by days of cover rather than a flat
+  // unit count. Deliberately not a separate screen.
+  const warehousePlaceId = useMemo(
+    () => (usersQ.data ?? []).find((u) => u.is_active && isWarehousePlace(u))?.id ?? null,
+    [usersQ.data],
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -266,7 +275,17 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
             below — a product can cover today and still run dry before a
             restock lands. */}
         {user.role === 'dispatcher' && restock.total > 0 ? (
-          <Card dense onPress={() => router.push('/(dispatcher)/restock')}>
+          <Card
+            dense
+            onPress={() =>
+              warehousePlaceId
+                ? router.push({
+                    pathname: '/(dispatcher)/stock/holder/[holderId]',
+                    params: { holderId: warehousePlaceId },
+                  })
+                : router.push('/(dispatcher)/stock')
+            }
+          >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
               <View
                 style={{

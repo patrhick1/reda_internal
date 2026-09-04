@@ -1,9 +1,60 @@
-CREATE OR REPLACE FUNCTION public.stock_restock_signal(p_window_days integer DEFAULT 28, p_lead_days numeric DEFAULT 3)
- RETURNS TABLE(product_catalog_id uuid, product_name text, client_name text, warehouse_qty integer, units_out integer, selling_days integer, qty_open integer, rate_per_day numeric, days_cover numeric, tier text)
- LANGUAGE plpgsql
- STABLE SECURITY DEFINER
- SET search_path TO 'public', 'auth'
-AS $function$
+-- Restock signal, part 2: stop a product going quiet BECAUSE it is out of stock.
+--
+-- The first version measured selling speed from units that actually shipped
+-- (stock_adjustments.reason = 'delivered'). That is self-silencing: you cannot
+-- ship what you do not have, so an empty shelf records zero sales, and as the
+-- 28-day window rolls forward the product's measured rate decays to nothing and
+-- it drops off the reorder list entirely — quietest exactly when it has been
+-- out longest. Oud Al Layl is the live example: 241 units shipped last month,
+-- shelf empty today, and on the old maths it would fade out within four weeks.
+--
+-- Fix: where fulfilment is not a fair measure of demand, fall back to demand.
+-- Today's open (non-terminal) orders act as a FLOOR under the rate, but ONLY
+-- for products that are out of stock or shipped nothing all window:
+--
+--     rate = shipped rate, except when the shelf is empty or nothing shipped,
+--            where it is greatest(shipped rate, today's open quantity)
+--
+-- Narrow on purpose. Open orders are a snapshot of the whole open book, not one
+-- day's demand, so applying them as a rate to a healthy product inflates it —
+-- Celimax Retinal ships 1.6/day but had 6 orders open, which read as 6/day and
+-- moved it a whole tier. That product's problem is real and immediate, and
+-- stock_coverage_today already reports it; restock answers the slower question
+-- and must not duplicate the fast one.
+--
+-- Products with open orders but NO shipments in the window now enter the list
+-- at all (a full outer join replaces the shipments-only base). That is the
+-- chronically-out case the first version could not see.
+--
+-- Demand matches stock_coverage_today's definition exactly — same scheduled
+-- date, same non-terminal filter, same delivery_items-with-legacy-fallback
+-- quantity — so the two surfaces can never disagree about what is open today.
+begin;
+
+-- Return type gains qty_open, so the old signature has to go first.
+drop function if exists public.stock_restock_signal(int, numeric);
+
+create or replace function public.stock_restock_signal(
+  p_window_days int     default 28,
+  p_lead_days   numeric default 3
+)
+returns table (
+  product_catalog_id uuid,
+  product_name       text,
+  client_name        text,
+  warehouse_qty      int,
+  units_out          int,
+  selling_days       int,
+  qty_open           int,
+  rate_per_day       numeric,
+  days_cover         numeric,
+  tier               text
+)
+language plpgsql
+stable
+security definer
+set search_path to 'public', 'auth'
+as $fn$
 declare
   v_today  date := (now() at time zone 'Africa/Lagos')::date;
   v_window int  := greatest(least(coalesce(p_window_days, 28), 90), 7);
@@ -138,6 +189,22 @@ begin
    -- alphabetically.
    order by r.wqty::numeric / r.rate asc, r.rate desc, r.pname;
 end;
-$function$
-;
+$fn$;
 
+-- Default privileges on this box hand EXECUTE to anon/authenticated/service_role
+-- for every new public function, so naming the roles explicitly is required —
+-- `revoke from public` alone would leave it callable by anon.
+revoke all on function public.stock_restock_signal(int, numeric)
+  from public, anon, authenticated, service_role;
+grant execute on function public.stock_restock_signal(int, numeric)
+  to authenticated, service_role;
+
+comment on function public.stock_restock_signal(int, numeric) is
+  'Days-of-cover restock signal: warehouse stock divided by units shipped per '
+  'selling day (Sundays excluded), floored by today''s open order quantity so a '
+  'product cannot go quiet just because being out of stock stopped its sales. '
+  'Tiers out/critical/reorder/ok, where reorder = cover shorter than the '
+  'replenishment lead time. Ops + warehouse only (carries vendor names).';
+
+notify pgrst, 'reload schema';
+commit;

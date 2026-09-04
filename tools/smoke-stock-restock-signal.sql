@@ -35,6 +35,23 @@ select (select count(*) from public.stock_restock_signal(28, 3) where tier <> 'o
        (select count(*) from public.stock_restock_signal(28, 7) where tier <> 'ok')
        >= (select count(*) from public.stock_restock_signal(28, 3) where tier <> 'ok') as monotonic_ok;
 
+\echo '=== 3b. demand floor: only out-of-stock / never-shipped rows may be floored ==='
+-- An in-stock seller's rate must equal its trailing rate exactly. If the floor
+-- leaked onto healthy products it would inflate them a whole tier (Celimax
+-- Retinal: 1.6/day trailing, 6 orders open).
+select count(*) as in_stock_rows_wrongly_floored
+  from public.stock_restock_signal()
+ where warehouse_qty > 0
+   and units_out > 0
+   and rate_per_day <> round(units_out::numeric / selling_days, 2);
+
+\echo '=== 3c. demand floor: an empty shelf with orders waiting must be rated by demand ==='
+select product_name, warehouse_qty, units_out, qty_open, rate_per_day, tier
+  from public.stock_restock_signal()
+ where warehouse_qty <= 0 and qty_open > 0
+ order by rate_per_day desc;
+-- These are the rows the shipped-only version would have let fade to silence.
+
 \echo '=== 4. the flat 1-3 unit rule this replaces: how many of those are actually fine ==='
 select count(*) filter (where warehouse_qty between 1 and 3 and tier = 'ok') as old_rule_false_alarms,
        count(*) filter (where warehouse_qty > 3 and tier <> 'ok')            as old_rule_misses

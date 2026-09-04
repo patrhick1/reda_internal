@@ -28,7 +28,6 @@ export default function WarehouseHomeLayout() {
       {/* These carry their own AppBar / nested stack. */}
       <Stack.Screen name="count-history" options={{ headerShown: false }} />
       <Stack.Screen name="available" options={{ headerShown: false }} />
-      <Stack.Screen name="restock" options={{ headerShown: false }} />
       <Stack.Screen name="stock-coverage" options={{ headerShown: false }} />
       <Stack.Screen name="replacement-returns" options={{ headerShown: false }} />
       <Stack.Screen name="agents" options={{ headerShown: false }} />

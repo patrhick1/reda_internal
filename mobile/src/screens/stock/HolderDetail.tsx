@@ -8,14 +8,22 @@
 // enhancement could add horizontal swipe-pager UX on mobile only — left
 // as tech debt; the codebase doesn't have a carousel primitive yet, and
 // the arrow-button flow is keyboard-accessible on web (Tab + Enter).
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { listHolderStock, listStockHolderIds, type StockMatrixRow } from '@/services/stock';
 import { isWarehousePlace, type AppUser } from '@/services/users';
-import { useLastCount, useUsers } from '@/hooks/queries';
+import { useLastCount, useRestockSignal, useUsers } from '@/hooks/queries';
+import {
+  coverByProduct,
+  coverLabel,
+  isLowOnCover,
+  isUrgentCover,
+  withOutOfStock,
+  type CoverLike,
+} from '@/lib/restock-signal';
 import { AppBar, Card, Empty, FilterChips, Icon, Input } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 import { relativeTime } from '@/lib/date';
@@ -44,6 +52,26 @@ export function HolderDetail({
   const holderStockQ = useAsync(() => listHolderStock(holderId), [holderId]);
   const holderIdsQ = useAsync(() => listStockHolderIds(), []);
   const usersQ = useUsers({ includeInactive: true });
+  // Days-of-cover applies to the WAREHOUSE's shelf only — the signal measures
+  // warehouse stock against selling speed, so a rider's two units are not the
+  // same object. Riders keep the flat "3 or fewer" read, which is the right
+  // question for a day's round.
+  const holderIsWarehousePlace = useMemo(() => {
+    const u = (usersQ.data ?? []).find((x) => x.id === holderId);
+    return !!u && isWarehousePlace(u);
+  }, [usersQ.data, holderId]);
+  const restockQ = useRestockSignal({ enabled: holderIsWarehousePlace });
+  const coverMap = useMemo(
+    () => (holderIsWarehousePlace ? coverByProduct(restockQ.data) : new Map<string, CoverLike>()),
+    [holderIsWarehousePlace, restockQ.data],
+  );
+  const lowOf = useCallback(
+    (r: StockMatrixRow) =>
+      holderIsWarehousePlace
+        ? isLowOnCover(coverMap.get(r.product_catalog_id))
+        : isLow(r.quantity_on_hand),
+    [holderIsWarehousePlace, coverMap],
+  );
 
   useReloadOnFocus(() => {
     holderStockQ.reload();
@@ -54,7 +82,18 @@ export function HolderDetail({
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<ProductFilter>('all');
 
-  const holderRows = useMemo(() => holderStockQ.data ?? [], [holderStockQ.data]);
+  // A product the warehouse is OUT of has no current_stock row (the view drops
+  // zero balances), so it would silently miss this list — see withOutOfStock.
+  const holderRows = useMemo(
+    () =>
+      holderIsWarehousePlace
+        ? withOutOfStock(holderStockQ.data ?? [], restockQ.data, {
+            id: holderId,
+            role: 'warehouse',
+          })
+        : (holderStockQ.data ?? []),
+    [holderStockQ.data, holderIsWarehousePlace, restockQ.data, holderId],
+  );
 
   // "Last counted …" reference, tappable through to that holder's history.
   // Counts are readable by ops + warehouse alike (stock_counts RLS), and all
@@ -85,13 +124,16 @@ export function HolderDetail({
     () => getHolderStats(holderRows, holderId),
     [holderRows, holderId],
   );
+  // The LOW headline has to agree with the chip and the list, so it is counted
+  // with the same predicate rather than read off getHolderStats' flat tally.
+  const lowCount = useMemo(() => holderRows.filter(lowOf).length, [holderRows, lowOf]);
 
   // Filter the product rows in scope down to what matches search + chip.
   const visibleRows = useMemo(() => {
     const q = query.trim().toLowerCase();
     return holderRows
       .filter((r) => {
-        if (filter === 'low' && !isLow(r.quantity_on_hand)) return false;
+        if (filter === 'low' && !lowOf(r)) return false;
         if (filter === 'negative' && !isNegative(r.quantity_on_hand)) return false;
         if (!q) return true;
         return r.product_name.toLowerCase().includes(q) || r.client_name.toLowerCase().includes(q);
@@ -99,13 +141,20 @@ export function HolderDetail({
       .sort((a, b) => {
         // Worst-first within visible: negative (most-negative first), then
         // low (smallest first), then healthy (alpha).
-        const aBad = isNegative(a.quantity_on_hand) ? -2 : isLow(a.quantity_on_hand) ? -1 : 0;
-        const bBad = isNegative(b.quantity_on_hand) ? -2 : isLow(b.quantity_on_hand) ? -1 : 0;
+        const aBad = isNegative(a.quantity_on_hand) ? -2 : lowOf(a) ? -1 : 0;
+        const bBad = isNegative(b.quantity_on_hand) ? -2 : lowOf(b) ? -1 : 0;
         if (aBad !== bBad) return aBad - bBad;
-        if (aBad < 0) return a.quantity_on_hand - b.quantity_on_hand;
+        if (aBad === -2) return a.quantity_on_hand - b.quantity_on_hand;
+        if (aBad === -1 && holderIsWarehousePlace) {
+          return (
+            (coverMap.get(a.product_catalog_id)?.days_cover ?? 0) -
+            (coverMap.get(b.product_catalog_id)?.days_cover ?? 0)
+          );
+        }
+        if (aBad === -1) return a.quantity_on_hand - b.quantity_on_hand;
         return a.product_name.localeCompare(b.product_name);
       });
-  }, [holderRows, query, filter]);
+  }, [holderRows, query, filter, lowOf, holderIsWarehousePlace, coverMap]);
 
   const loading = holderStockQ.loading || usersQ.loading;
   const error = holderStockQ.error || usersQ.error;
@@ -208,7 +257,7 @@ export function HolderDetail({
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 18 }}>
                 <Stat label="Units" value={stats.totalUnits} />
                 <Stat label="Products" value={stats.productCount} />
-                <Stat label="Low" value={stats.lowCount} tone="warning" />
+                <Stat label="Low" value={lowCount} tone="warning" />
                 <Stat label="Negative" value={stats.negativeCount} tone="red" />
               </View>
             </Card>
@@ -239,7 +288,7 @@ export function HolderDetail({
               value={filter}
               options={[
                 { id: 'all', label: 'All', count: holderRows.length },
-                { id: 'low', label: 'Low', count: stats.lowCount },
+                { id: 'low', label: 'Low', count: lowCount },
                 { id: 'negative', label: 'Negative', count: stats.negativeCount },
               ]}
               onChange={setFilter}
@@ -265,7 +314,7 @@ export function HolderDetail({
         }
         renderItem={({ item }) => (
           <View style={{ paddingHorizontal: 16 }}>
-            <ProductRow row={item} />
+            <ProductRow row={item} cover={coverMap.get(item.product_catalog_id)} />
           </View>
         )}
         ItemSeparatorComponent={() => <View style={{ height: 6 }} />}
@@ -334,9 +383,11 @@ function Stat({
 
 // --- Product row -------------------------------------------------------------
 
-function ProductRow({ row }: { row: StockMatrixRow }) {
+function ProductRow({ row, cover }: { row: StockMatrixRow; cover?: CoverLike }) {
   const negative = isNegative(row.quantity_on_hand);
-  const low = isLow(row.quantity_on_hand);
+  const low = cover ? isLowOnCover(cover) : isLow(row.quantity_on_hand);
+  const urgent = isUrgentCover(cover);
+  const daysLeft = coverLabel(cover);
   return (
     <Card dense>
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -357,6 +408,7 @@ function ProductRow({ row }: { row: StockMatrixRow }) {
             numberOfLines={1}
           >
             {row.client_name}
+            {low && daysLeft ? ` · ${daysLeft}` : ''}
           </Text>
         </View>
         <Text
@@ -364,7 +416,7 @@ function ProductRow({ row }: { row: StockMatrixRow }) {
             fontFamily: fonts.extrabold,
             fontSize: 20,
             letterSpacing: -0.4,
-            color: negative ? colors.red : low ? colors.warningDark : colors.black,
+            color: negative || urgent ? colors.red : low ? colors.warningDark : colors.black,
           }}
         >
           {row.quantity_on_hand}
