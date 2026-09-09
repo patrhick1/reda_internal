@@ -29,9 +29,9 @@ begin
  select id into attempt from replacement_attempts where delivery_id=test_id;
  if (select count(*) from replacement_attempts where delivery_id=test_id)<>1 then raise exception 'Replay duplicated attempt'; end if;
  if (select count(*) from stock_adjustments where delivery_id=test_id and reason='replacement_outbound')<>1 then raise exception 'Replay duplicated stock'; end if;
- if (select amount from client_financial_activity where entry_id=attempt)<>-1200 then raise exception 'Partial payment ledger'; end if;
+ if (select amount from client_financial_activity where entry_id=attempt)<>-1700 then raise exception 'Partial payment ledger (cash carries the 500 POS fee)'; end if;
  if not exists(select 1 from list_replacement_financials_v2(day,day) where attempt_id=attempt and customer_paid=1800) then raise exception 'Admin report'; end if;
- if not exists(select 1 from list_replacement_financials_rep_v2(day,day) where attempt_id=attempt and remit=-1200) then raise exception 'Rep report'; end if;
+ if not exists(select 1 from list_replacement_financials_rep_v2(day,day) where attempt_id=attempt and remit=-1700) then raise exception 'Rep report'; end if;
  if not exists(select 1 from list_replacement_agent_financials_v2(day,day) where attempt_id=attempt and customer_paid=1800 and payment_received_by='rider') then raise exception 'Rider report'; end if;
 
  settlement:=settle_period('agent',rider,day,'Rollback rider cash');

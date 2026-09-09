@@ -83,6 +83,8 @@ export type ReplacementAttempt = {
   customer_paid: number;
   payment_method: string | null;
   payment_received_by: string | null;
+  /** Reda's ₦500 POS fee on a cash payment, deducted from the client's remit. */
+  cash_pos_fee: number;
   id: string;
   outcome: ReplacementAttemptOutcome | 'completed';
   status_after: string;

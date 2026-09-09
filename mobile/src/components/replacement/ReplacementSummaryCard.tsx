@@ -111,9 +111,14 @@ export function ReplacementSummaryCard({
                       : ATTEMPT_OUTCOME_LABELS[attempt.outcome]}
                   </Text>
                   <Text style={note}>
-                    Customer paid {formatNaira(attempt.customer_paid ?? 0)}
+                    {attempt.payment_method === 'vendor_direct'
+                      ? 'Customer paid the vendor directly'
+                      : `Customer paid ${formatNaira(attempt.customer_paid ?? 0)}`}
                     {attempt.customer_paid > 0
-                      ? ` · ${attempt.payment_method} · received by ${attempt.payment_received_by === 'rider' ? 'rider' : 'REDA'}`
+                      ? ` · ${attempt.payment_method === 'cash' ? 'cash' : 'transfer'} · received by ${attempt.payment_received_by === 'rider' ? 'rider' : 'REDA'}`
+                      : ''}
+                    {Number(attempt.cash_pos_fee ?? 0) > 0
+                      ? ` · ${formatNaira(attempt.cash_pos_fee)} POS fee`
                       : ''}
                   </Text>
                   {attempt.notes ? <Text style={note}>{attempt.notes}</Text> : null}

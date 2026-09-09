@@ -154,6 +154,7 @@ type ReplacementFinancialRow = {
   customer_paid: number;
   payment_method: string | null;
   payment_received_by: string | null;
+  cash_pos_fee: number;
   attempt_id: string;
   delivery_id: string;
   attempted_at: string;
@@ -173,6 +174,7 @@ type RepReplacementFinancialRow = {
   customer_paid: number;
   payment_method: string | null;
   payment_received_by: string | null;
+  cash_pos_fee: number;
   attempt_id: string;
   delivery_id: string;
   attempted_at: string;
@@ -274,8 +276,13 @@ export async function listClientRemit(from: string, to: string): Promise<ClientR
     row.deliveries_count += 1;
     row.total_reda_fee += Number(replacement.client_charge ?? 0);
     row.total_paid += Number(replacement.customer_paid ?? 0);
+    // Cash carries Reda's ₦500 POS fee, deducted from the client's remit
+    // exactly as on a cash delivery.
+    row.total_cash_pos_fee += Number(replacement.cash_pos_fee ?? 0);
     row.total_remit +=
-      Number(replacement.customer_paid ?? 0) - Number(replacement.client_charge ?? 0);
+      Number(replacement.customer_paid ?? 0) -
+      Number(replacement.client_charge ?? 0) -
+      Number(replacement.cash_pos_fee ?? 0);
   }
   const balanceByClient = new Map(balances.map((balance) => [balance.client_id, balance]));
   for (const row of rows) {
@@ -376,8 +383,11 @@ export async function listClientRemitDetail(
     paid: Number(row.customer_paid ?? 0),
     payment_method: row.payment_method,
     reda_fee: Number(row.client_charge ?? 0),
-    cash_pos_fee: 0,
-    remit: Number(row.customer_paid ?? 0) - Number(row.client_charge ?? 0),
+    cash_pos_fee: Number(row.cash_pos_fee ?? 0),
+    remit:
+      Number(row.customer_paid ?? 0) -
+      Number(row.client_charge ?? 0) -
+      Number(row.cash_pos_fee ?? 0),
     agent_name: row.agent_name,
     note:
       row.notes ?? (row.outcome === 'completed' ? 'Replacement completed' : 'Replacement attempt'),
@@ -531,7 +541,7 @@ export async function listRepClientRemitDetail(
     remit: Number(row.remit ?? 0),
     agent_name: row.agent_name,
     payment_method: row.payment_method,
-    cash_pos_fee: 0,
+    cash_pos_fee: Number(row.cash_pos_fee ?? 0),
     note:
       row.notes ?? (row.outcome === 'completed' ? 'Replacement completed' : 'Replacement attempt'),
     paid: Number(row.customer_paid ?? 0),
