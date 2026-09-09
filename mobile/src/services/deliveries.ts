@@ -840,6 +840,11 @@ export type CreateDeliveryInput = {
   /** [Feature A] The full line-item set. When omitted, the server derives a
    *  1-item array from productCatalogId/quantityOrdered (old callers unaffected). */
   items?: DeliveryItemInput[];
+  /** The original WhatsApp text when the order came in through the bot and
+   *  is being created from Needs Review. The server stores it on the delivery
+   *  (warehouse packing reads it there) and derives the sibling fingerprint
+   *  from it, exactly as for bot-created orders. Omit for hand-typed orders. */
+  botRawMessage?: string | null;
 };
 
 /** Maps a DeliveryItemInput[] to the p_items jsonb shape the RPCs expect. */
@@ -867,6 +872,7 @@ export async function createDelivery(input: CreateDeliveryInput): Promise<string
     p_scheduled_date: input.scheduledDate,
     p_assigned_agent_id: input.assignedAgentId as unknown as string,
     p_created_via: 'manual',
+    p_bot_raw_message: input.botRawMessage ?? undefined,
     p_delivery_instructions: input.deliveryInstructions ?? undefined,
     p_items: toItemsJsonb(input.items) as unknown as undefined, // [Feature A]
   });

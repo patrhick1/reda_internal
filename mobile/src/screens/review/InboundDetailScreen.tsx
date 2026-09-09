@@ -250,6 +250,8 @@ export default function InboundDetailScreen() {
         assignedAgentId: state.assignedAgentId,
         customerPhoneAlt: state.customerPhoneAlt.trim() || null,
         items: completeLines(state.items),
+        // Keep the WhatsApp message on the delivery — the warehouse packs from it.
+        botRawMessage: row?.raw_text ?? null,
       });
       await resolveInboundToDelivery(row!.id, newId);
       // Server also drops the lock; release defensively in case of net hiccup.
