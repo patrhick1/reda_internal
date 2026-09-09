@@ -1,3 +1,9 @@
+import { useCurrentUser } from '@/hooks/useAuth';
+import {
+  ReplacementPaymentFields,
+  emptyReplacementPayment,
+  parseReplacementPayment,
+} from './ReplacementPaymentFields';
 import { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 import { Banner, Button, Input, Sheet } from '@/components/ui';
@@ -29,6 +35,8 @@ export function ReplacementCompleteSheet({
   onClose: () => void;
   onCommitted: (status: string, jobId: string) => void;
 }) {
+  const user = useCurrentUser();
+  const [payment, setPayment] = useState(emptyReplacementPayment);
   const enqueue = useEnqueueCompleteReplacement();
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [notes, setNotes] = useState('');
@@ -46,6 +54,7 @@ export function ReplacementCompleteSheet({
       ),
     );
     setNotes('');
+    setPayment(emptyReplacementPayment());
     setError(null);
   }, [open, details]);
 
@@ -83,6 +92,7 @@ export function ReplacementCompleteSheet({
       const jobId = await enqueue(
         {
           deliveryId,
+          ...parseReplacementPayment(payment),
           returnOutcomes: details.returns.map((item) => {
             const draft = drafts[item.id]!;
             return {
@@ -165,6 +175,11 @@ export function ReplacementCompleteSheet({
             </View>
           );
         })}
+        <ReplacementPaymentFields
+          value={payment}
+          onChange={setPayment}
+          riderOnly={user.role === 'agent'}
+        />
         <Input label="Completion note" value={notes} onChange={setNotes} multiline />
         {error ? (
           <Banner tone="error" icon="alert">

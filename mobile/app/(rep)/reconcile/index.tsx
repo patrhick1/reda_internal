@@ -1,3 +1,4 @@
+import { useFinancialRevision } from '@/lib/financial-refresh';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -26,10 +27,11 @@ export default function RepReconcile() {
 
   // YMD gate before firing the date-typed RPC — same reason as admin reconcile:
   // typing a partial date otherwise hits PostgREST with 22007 invalid-date.
+  const financialRevision = useFinancialRevision();
   const rangeValid = isYmd(from) && isYmd(to);
   const clientsQ = useAsync(
     () => (rangeValid ? listRepClientRemit(from, to) : Promise.resolve<RepClientRemitRow[]>([])),
-    [from, to, rangeValid],
+    [from, to, rangeValid, financialRevision],
   );
 
   useReloadOnFocus(() => {

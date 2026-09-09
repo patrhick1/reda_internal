@@ -1,3 +1,4 @@
+import { useFinancialRevision } from '@/lib/financial-refresh';
 import { useMemo } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, Text, View } from 'react-native';
 import { useAsync } from '@/hooks/useAsync';
@@ -26,8 +27,9 @@ export default function AgentEarnings() {
   // mounted, so a screen opened before Lagos midnight can still be mounted the
   // next day. The earnings reload sets loading and re-renders; recomputing here
   // changes the dependency below and replaces the stale day request.
+  const financialRevision = useFinancialRevision();
   const today = lagosWeekRange().today;
-  const remitQ = useAsync(() => listAgentEarningsSummary(today, today), [today]);
+  const remitQ = useAsync(() => listAgentEarningsSummary(today, today), [today, financialRevision]);
 
   useReloadOnFocus(() => {
     reload();
@@ -54,7 +56,10 @@ export default function AgentEarnings() {
         refreshControl={
           <RefreshControl
             refreshing={loading && !!data}
-            onRefresh={reload}
+            onRefresh={() => {
+              reload();
+              remitQ.reload();
+            }}
             tintColor={colors.black}
           />
         }

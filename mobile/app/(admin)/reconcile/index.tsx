@@ -1,3 +1,4 @@
+import { useFinancialRevision } from '@/lib/financial-refresh';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -100,19 +101,20 @@ export default function AdminReconcile() {
   // setFrom/setTo on every keystroke, and the underlying RPCs take `date`
   // params — without this guard, typing "2026-06-0" hits PostgREST with
   // 22007 invalid-date-syntax and the network tab fills with 400s.
+  const financialRevision = useFinancialRevision();
   const rangeValid = isYmd(from) && isYmd(to);
   const clientsQ = useAsync(
     () => (rangeValid ? listClientRemit(from, to) : Promise.resolve<ClientRemitRow[]>([])),
-    [from, to, rangeValid],
+    [from, to, rangeValid, financialRevision],
   );
   const agentsQ = useAsync(
     () =>
       rangeValid ? listAgentEarningsSummary(from, to) : Promise.resolve<AgentEarningsRow[]>([]),
-    [from, to, rangeValid],
+    [from, to, rangeValid, financialRevision],
   );
   const waybillCostsQ = useAsync(
     () => (rangeValid ? getWaybillPaidOutTotal(from, to) : Promise.resolve(0)),
-    [from, to, rangeValid],
+    [from, to, rangeValid, financialRevision],
   );
 
   // Settlement (§14-2) is a per-DAY action, so it only applies when the range

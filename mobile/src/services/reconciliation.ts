@@ -151,6 +151,9 @@ export type ClientRemitDetailRow = {
 };
 
 type ReplacementFinancialRow = {
+  customer_paid: number;
+  payment_method: string | null;
+  payment_received_by: string | null;
   attempt_id: string;
   delivery_id: string;
   attempted_at: string;
@@ -167,6 +170,9 @@ type ReplacementFinancialRow = {
 };
 
 type RepReplacementFinancialRow = {
+  customer_paid: number;
+  payment_method: string | null;
+  payment_received_by: string | null;
   attempt_id: string;
   delivery_id: string;
   attempted_at: string;
@@ -180,6 +186,9 @@ type RepReplacementFinancialRow = {
 };
 
 type AgentReplacementFinancialRow = {
+  customer_paid: number;
+  payment_method: string | null;
+  payment_received_by: string | null;
   attempt_id: string;
   delivery_id: string;
   attempted_at: string;
@@ -194,7 +203,7 @@ async function listReplacementFinancials(
   clientId?: string,
 ): Promise<ReplacementFinancialRow[]> {
   const { data, error } = await rpcUntyped<ReplacementFinancialRow[]>(
-    'list_replacement_financials',
+    'list_replacement_financials_v2',
     { p_from: from, p_to: to, p_client_id: clientId ?? null },
   );
   if (error) throw error;
@@ -207,7 +216,7 @@ async function listRepReplacementFinancials(
   clientId?: string,
 ): Promise<RepReplacementFinancialRow[]> {
   const { data, error } = await rpcUntyped<RepReplacementFinancialRow[]>(
-    'list_replacement_financials_rep',
+    'list_replacement_financials_rep_v2',
     { p_from: from, p_to: to, p_client_id: clientId ?? null },
   );
   if (error) throw error;
@@ -219,7 +228,7 @@ async function listReplacementAgentFinancials(
   to: string,
 ): Promise<AgentReplacementFinancialRow[]> {
   const { data, error } = await rpcUntyped<AgentReplacementFinancialRow[]>(
-    'list_replacement_agent_financials',
+    'list_replacement_agent_financials_v2',
     { p_from: from, p_to: to },
   );
   if (error) throw error;
@@ -264,7 +273,9 @@ export async function listClientRemit(from: string, to: string): Promise<ClientR
     }
     row.deliveries_count += 1;
     row.total_reda_fee += Number(replacement.client_charge ?? 0);
-    row.total_remit -= Number(replacement.client_charge ?? 0);
+    row.total_paid += Number(replacement.customer_paid ?? 0);
+    row.total_remit +=
+      Number(replacement.customer_paid ?? 0) - Number(replacement.client_charge ?? 0);
   }
   const balanceByClient = new Map(balances.map((balance) => [balance.client_id, balance]));
   for (const row of rows) {
@@ -293,7 +304,7 @@ export async function listAgentEarningsSummary(
   const rows = ((data ?? []) as AgentEarningsRow[]).map((row) => ({ ...row }));
   const byAgent = new Map(rows.map((row) => [row.agent_id, row]));
   for (const replacement of replacementRows) {
-    if (!replacement.agent_id || Number(replacement.agent_payment ?? 0) === 0) continue;
+    if (!replacement.agent_id) continue;
     let row = byAgent.get(replacement.agent_id);
     if (!row) {
       row = {
@@ -310,7 +321,10 @@ export async function listAgentEarningsSummary(
     }
     row.deliveries_count += 1;
     row.total_earnings += Number(replacement.agent_payment);
-    row.total_remit -= Number(replacement.agent_payment);
+    const collected =
+      replacement.payment_received_by === 'rider' ? Number(replacement.customer_paid ?? 0) : 0;
+    row.total_collected += collected;
+    row.total_remit += collected - Number(replacement.agent_payment);
   }
   return [...byAgent.values()];
 }
@@ -359,11 +373,11 @@ export async function listClientRemitDetail(
     quantity_ordered: 0,
     quantity_delivered: 0,
     customer_price: 0,
-    paid: 0,
-    payment_method: null,
+    paid: Number(row.customer_paid ?? 0),
+    payment_method: row.payment_method,
     reda_fee: Number(row.client_charge ?? 0),
     cash_pos_fee: 0,
-    remit: -Number(row.client_charge ?? 0),
+    remit: Number(row.customer_paid ?? 0) - Number(row.client_charge ?? 0),
     agent_name: row.agent_name,
     note:
       row.notes ?? (row.outcome === 'completed' ? 'Replacement completed' : 'Replacement attempt'),
@@ -516,11 +530,11 @@ export async function listRepClientRemitDetail(
     outstanding: 0,
     remit: Number(row.remit ?? 0),
     agent_name: row.agent_name,
-    payment_method: null,
+    payment_method: row.payment_method,
     cash_pos_fee: 0,
     note:
       row.notes ?? (row.outcome === 'completed' ? 'Replacement completed' : 'Replacement attempt'),
-    paid: 0,
+    paid: Number(row.customer_paid ?? 0),
   }));
   return [...deliveryRows, ...replacementRows].sort((a, b) =>
     a.scheduled_date < b.scheduled_date ? 1 : a.scheduled_date > b.scheduled_date ? -1 : 0,

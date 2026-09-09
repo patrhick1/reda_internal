@@ -1,3 +1,4 @@
+import { notifyFinancialChange } from '@/lib/financial-refresh';
 import {
   createContext,
   useCallback,
@@ -232,6 +233,8 @@ export function QueueProvider({ children }: { children: ReactNode }) {
           // focus/pull. A delivered status change hits both.
           if (DELIVERY_JOB_KINDS.has(next.kind)) invalidateDeliveries();
           if (STOCK_JOB_KINDS.has(next.kind)) invalidateStock();
+          if (next.kind === 'complete_replacement' || next.kind === 'record_replacement_attempt')
+            notifyFinancialChange();
         } catch (e) {
           const msg = errorMessage(e);
           const isTerminal = e instanceof TerminalError;

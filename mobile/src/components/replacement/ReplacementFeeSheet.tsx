@@ -1,3 +1,8 @@
+import {
+  ReplacementPaymentFields,
+  emptyReplacementPayment,
+  parseReplacementPayment,
+} from './ReplacementPaymentFields';
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { Banner, Button, Input, Sheet } from '@/components/ui';
@@ -18,6 +23,7 @@ export function ReplacementFeeSheet({
   onClose: () => void;
   onSaved: () => void | Promise<void>;
 }) {
+  const [payment, setPayment] = useState(emptyReplacementPayment);
   const [clientCharge, setClientCharge] = useState('0');
   const [agentPayment, setAgentPayment] = useState('0');
   const [reason, setReason] = useState('');
@@ -26,6 +32,11 @@ export function ReplacementFeeSheet({
 
   useEffect(() => {
     if (!attempt) return;
+    setPayment({
+      amount: String(attempt.customer_paid ?? 0),
+      method: attempt.payment_method,
+      recipient: attempt.payment_received_by,
+    });
     setClientCharge(String(attempt.client_charge ?? 0));
     setAgentPayment(String(attempt.agent_payment ?? 0));
     setReason('');
@@ -43,6 +54,7 @@ export function ReplacementFeeSheet({
     try {
       await updateReplacementAttemptFees({
         attemptId: attempt.id,
+        ...parseReplacementPayment(payment),
         clientCharge: amount(clientCharge),
         agentPayment: amount(agentPayment),
         reason: reason.trim(),
@@ -60,7 +72,7 @@ export function ReplacementFeeSheet({
     <Sheet
       open={!!attempt}
       onClose={submitting ? () => undefined : onClose}
-      title="Correct replacement fee"
+      title="Correct replacement finances"
       subtitle="Admin only · settlement-protected"
       footer={
         <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -90,6 +102,7 @@ export function ReplacementFeeSheet({
           onChange={setAgentPayment}
           keyboardType="numeric"
         />
+        <ReplacementPaymentFields value={payment} onChange={setPayment} />
         <Input
           label="Reason for correction"
           value={reason}

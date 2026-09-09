@@ -129,6 +129,9 @@ const EXECUTORS: Record<JobKind, Executor> = {
         notes: item.notes,
       })),
       p_notes: args.notes,
+      p_customer_paid: args.customerPaid ?? 0,
+      p_payment_method: args.paymentMethod ?? null,
+      p_payment_received_by: args.paymentReceivedBy ?? null,
     });
     if (error) throw classifyRpcError(error);
   },

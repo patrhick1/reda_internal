@@ -1,3 +1,4 @@
+import { notifyFinancialChange } from '@/lib/financial-refresh';
 import { queryClient } from '@/lib/query';
 import { rpcUntyped } from '@/lib/supabase';
 import { invalidateDeliveries } from './deliveries';
@@ -79,6 +80,9 @@ export type ReplacementReturnItem = {
 };
 
 export type ReplacementAttempt = {
+  customer_paid: number;
+  payment_method: string | null;
+  payment_received_by: string | null;
   id: string;
   outcome: ReplacementAttemptOutcome | 'completed';
   status_after: string;
@@ -197,18 +201,25 @@ export async function receiveReplacementReturn(input: {
 
 export async function updateReplacementAttemptFees(input: {
   attemptId: string;
+  customerPaid: number;
+  paymentMethod: string | null;
+  paymentReceivedBy: string | null;
   clientCharge: number;
   agentPayment: number;
   reason: string;
 }): Promise<void> {
-  const { error } = await rpcUntyped('update_replacement_attempt_fees', {
+  const { error } = await rpcUntyped('correct_replacement_payment', {
     p_attempt_id: input.attemptId,
+    p_customer_paid: input.customerPaid,
+    p_payment_method: input.paymentMethod,
+    p_payment_received_by: input.paymentReceivedBy,
     p_client_charge: money(input.clientCharge),
     p_agent_payment: money(input.agentPayment),
     p_reason: input.reason,
   });
   if (error) throw error;
   invalidateDeliveries();
+  notifyFinancialChange();
   void queryClient.invalidateQueries({ queryKey: ['reconciliation'] });
 }
 

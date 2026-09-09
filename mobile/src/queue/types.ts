@@ -105,6 +105,9 @@ export type RecordReplacementAttemptArgs = {
 /** Successful replacement visit. The server atomically moves outbound stock,
  * records every returned item's custody, records the attempt and closes the job. */
 export type CompleteReplacementArgs = {
+  customerPaid?: number;
+  paymentMethod?: string | null;
+  paymentReceivedBy?: string | null;
   deliveryId: string;
   returnOutcomes: {
     returnItemId: string;

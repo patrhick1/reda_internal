@@ -1,3 +1,4 @@
+import { useFinancialRevision } from '@/lib/financial-refresh';
 import { useCallback, useMemo } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, Share, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -36,14 +37,15 @@ export default function RepClientReconcileDetail() {
     to: string;
   }>();
 
+  const financialRevision = useFinancialRevision();
   const rangeValid = !!id && isYmd(from) && isYmd(to);
   const detailQ = useAsync<RepClientRemitDetailRow[]>(
     () => (rangeValid ? listRepClientRemitDetail(id, from, to) : Promise.resolve([])),
-    [id, from, to, rangeValid],
+    [id, from, to, rangeValid, financialRevision],
   );
   const accountQ = useAsync<ClientAccountBalance | null>(
     () => (rangeValid ? getClientAccountBalance(id, from, to) : Promise.resolve(null)),
-    [id, from, to, rangeValid],
+    [id, from, to, rangeValid, financialRevision],
   );
 
   useReloadOnFocus(() => {

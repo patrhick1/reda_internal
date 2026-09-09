@@ -316,14 +316,27 @@ export function buildClientShareMessage(input: {
   const format = input.format ?? 'default';
   const showPhone = input.showPhone ?? false;
   const blocks = input.rows.map((r) => {
-    if (r.orderType === 'waybill' || r.orderType === 'replacement') {
+    if (r.orderType === 'replacement') {
+      const net = Number(r.remit ?? 0);
+      return [
+        `Replacement: ${r.customerName ?? 'Customer'}`,
+        `Customer paid: ${formatNaira(Number(r.paid ?? 0))}`,
+        net < 0
+          ? `Client owes Reda: ${formatNaira(-net)}`
+          : net > 0
+            ? `Reda remits client: ${formatNaira(net)}`
+            : 'No balance due',
+        ...(r.note?.trim() ? [`Note: ${r.note.trim()}`] : []),
+      ].join('\n');
+    }
+    if (r.orderType === 'waybill') {
       // Uzo's format: the charge-side breakdown only (type fee + each pickup
       // extra), printed verbatim from the stored note — no header or total.
       // Fall back to a single "<type> ₦total" line if the note is missing.
       const breakdown = (r.note ?? '').trim();
       return (
         breakdown ||
-        `${r.customerName ?? (r.orderType === 'replacement' ? 'Replacement' : 'Pickup / Waybill')} ${formatNaira(Math.abs(Number(r.remit ?? 0)))}`
+        `${r.customerName ?? 'Pickup / Waybill'} ${formatNaira(Math.abs(Number(r.remit ?? 0)))}`
       );
     }
     const lines = [`Name: ${r.customerName ?? 'Customer'}`];

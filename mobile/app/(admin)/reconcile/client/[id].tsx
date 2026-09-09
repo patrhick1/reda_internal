@@ -1,3 +1,4 @@
+import { useFinancialRevision } from '@/lib/financial-refresh';
 import { useCallback, useMemo } from 'react';
 import {
   ActivityIndicator,
@@ -47,18 +48,19 @@ export default function ClientReconcileDetail() {
 
   // Defensive YMD gate — same reason as the reconcile index: PostgREST 22007
   // when an invalid `from`/`to` URL param reaches the date-typed RPC.
+  const financialRevision = useFinancialRevision();
   const rangeValid = !!id && isYmd(from) && isYmd(to);
   const detailQ = useAsync<ClientRemitDetailRow[]>(
     () => (rangeValid ? listClientRemitDetail(id, from, to) : Promise.resolve([])),
-    [id, from, to, rangeValid],
+    [id, from, to, rangeValid, financialRevision],
   );
   const accountQ = useAsync<ClientAccountBalance | null>(
     () => (rangeValid ? getClientAccountBalance(id, from, to) : Promise.resolve(null)),
-    [id, from, to, rangeValid],
+    [id, from, to, rangeValid, financialRevision],
   );
   const payoutsQ = useAsync<ClientPayoutRow[]>(
     () => (rangeValid ? listClientPayouts(id, from, to) : Promise.resolve([])),
-    [id, from, to, rangeValid],
+    [id, from, to, rangeValid, financialRevision],
   );
 
   useReloadOnFocus(() => {

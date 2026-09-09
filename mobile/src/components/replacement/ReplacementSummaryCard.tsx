@@ -110,6 +110,12 @@ export function ReplacementSummaryCard({
                       ? 'Replacement completed'
                       : ATTEMPT_OUTCOME_LABELS[attempt.outcome]}
                   </Text>
+                  <Text style={note}>
+                    Customer paid {formatNaira(attempt.customer_paid ?? 0)}
+                    {attempt.customer_paid > 0
+                      ? ` · ${attempt.payment_method} · received by ${attempt.payment_received_by === 'rider' ? 'rider' : 'REDA'}`
+                      : ''}
+                  </Text>
                   {attempt.notes ? <Text style={note}>{attempt.notes}</Text> : null}
                   {showFinancials ? (
                     <View style={{ marginTop: 6, gap: 6 }}>
@@ -125,7 +131,7 @@ export function ReplacementSummaryCard({
                             icon="edit"
                             onPress={() => onEditAttemptFees(attempt)}
                           >
-                            Correct fee
+                            Correct finances
                           </Button>
                         </View>
                       ) : null}
