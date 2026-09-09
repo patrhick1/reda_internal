@@ -210,7 +210,16 @@ export const STATUS_GROUPS: Record<'active' | 'soft' | 'done' | 'closed', string
     // 2026-06-22). Revertible once Uzo sends the product; never cascades.
     'no_product',
   ],
-  done: ['delivered'],
+  done: [
+    'delivered',
+    // A finished replacement is done work too (Greg, 2026-09-08): it belongs
+    // under the Done chip on the ops list and the rider's Done section. This
+    // does NOT touch the dashboard figures — the ops/rep dashboards count
+    // "done" by checking `delivered` explicitly and the home Rate comes from
+    // today_delivery_rate on the server, so a replacement never counts as
+    // another sold order there.
+    'replacement_completed',
+  ],
   closed: [
     'cancelled',
     'agent_cancelled',
@@ -229,10 +238,6 @@ export const STATUS_GROUPS: Record<'active' | 'soft' | 'done' | 'closed', string
     // not editable, excluded from rollover. Still hidden from the status picker.
     'picked_up',
     'waybilled',
-    // Kept outside `done`: dashboard delivery-rate figures use that bucket and
-    // a replacement is service recovery, not another successfully delivered
-    // customer order.
-    'replacement_completed',
   ],
 };
 

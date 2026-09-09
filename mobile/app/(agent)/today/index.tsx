@@ -827,7 +827,9 @@ const DeliveryCard = memo(function DeliveryCard({
   const status = delivery.current_status ?? 'pending';
   const bucket = statusBucket(status);
   const isReplacement = delivery.order_type === 'replacement';
-  const isDone = status === 'delivered';
+  // Finished work dims, whether it ended as delivered or as a completed
+  // replacement — both live in the done bucket.
+  const isDone = bucket === 'done';
   const dimmed = isDone || (selectMode && !selectable);
   return (
     <Card
