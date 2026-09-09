@@ -1,6 +1,12 @@
 // Shared per-client stock detail screen — admin and dispatcher both render
 // this via thin route wrappers. Read-only by design; the only action is the
 // "Share with client" button which goes through the OS share sheet.
+//
+// Retired (inactive) products: current_stock is a plain sum of adjustments,
+// so a product deactivated while units were still out keeps a row here until
+// it is drained. Reda staff need to see that (it is stock we hold), so the
+// row stays on screen tagged "Inactive" — but the vendor-facing Stock Update
+// must not list it (Uzo, 2026-09-06), so the share skips it.
 import { useCallback, useMemo } from 'react';
 import {
   ActivityIndicator,
@@ -68,31 +74,43 @@ export function ClientStockDetail({ basePath }: { basePath?: '/(admin)' | '/(dis
           total_qty: 0,
           warehouse_qty: 0,
           agents_qty: 0,
+          // productsQ only returns active catalog rows.
+          is_active: true,
         });
       }
     }
-    return Array.from(byProductId.values()).sort((a, b) =>
-      a.product_name.localeCompare(b.product_name),
-    );
+    // Active products by name, retired ones after them — leftover units on a
+    // retired product are an exception to act on, not part of the catalog.
+    return Array.from(byProductId.values()).sort((a, b) => {
+      if (a.is_active !== b.is_active) return a.is_active ? -1 : 1;
+      return a.product_name.localeCompare(b.product_name);
+    });
   }, [group, productsQ.data]);
 
   const outOfStockCount = useMemo(
     () => products.filter((p) => p.total_qty === 0).length,
     [products],
   );
-  // Only products we actually hold are shareable — a client with catalog
-  // products but zero on hand would otherwise produce a header-only message.
-  const inStockProducts = useMemo(() => products.filter((p) => p.total_qty > 0), [products]);
+  const inactiveCount = useMemo(() => products.filter((p) => !p.is_active).length, [products]);
+  // Only ACTIVE products we actually hold are shareable — a client with catalog
+  // products but zero on hand would otherwise produce a header-only message,
+  // and a retired product's leftover units are not part of the vendor's
+  // stock update (staff see them on screen; the vendor does not).
+  const shareableProducts = useMemo(
+    () => products.filter((p) => p.total_qty > 0 && p.is_active),
+    [products],
+  );
 
   const onShare = useCallback(async () => {
-    if (inStockProducts.length === 0) return;
+    if (shareableProducts.length === 0) return;
     const dateLabel = formatDateLagos(todayLagos());
     const header = [`📦${clientName} Stock Update`, dateLabel].join('\n');
 
     // Client-facing: just the total on-hand per product (no warehouse/agents
     // split — the vendor only needs how many of theirs we hold, not where).
-    // Out-of-stock products are omitted — the vendor only wants what we hold now.
-    const lines = inStockProducts.map((p) => `• ${p.product_name}: ${p.total_qty}`).join('\n');
+    // Out-of-stock and retired products are omitted — the vendor only wants
+    // what we hold now of what they still sell.
+    const lines = shareableProducts.map((p) => `• ${p.product_name}: ${p.total_qty}`).join('\n');
 
     const message = `${header}\n\n${lines}\n\nSent from Reda Logistics`;
     try {
@@ -100,7 +118,7 @@ export function ClientStockDetail({ basePath }: { basePath?: '/(admin)' | '/(dis
     } catch {
       /* user cancelled */
     }
-  }, [clientName, inStockProducts]);
+  }, [clientName, shareableProducts]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -163,6 +181,7 @@ export function ClientStockDetail({ basePath }: { basePath?: '/(admin)' | '/(dis
               >
                 {products.length} {products.length === 1 ? 'product' : 'products'}
                 {outOfStockCount > 0 ? ` · ${outOfStockCount} out of stock` : ''}
+                {inactiveCount > 0 ? ` · ${inactiveCount} inactive (not shared)` : ''}
               </Text>
 
               <View style={{ marginTop: 14, gap: 6 }}>
@@ -208,7 +227,7 @@ export function ClientStockDetail({ basePath }: { basePath?: '/(admin)' | '/(dis
           full
           icon="share"
           onPress={onShare}
-          disabled={inStockProducts.length === 0}
+          disabled={shareableProducts.length === 0}
         >
           Share with client
         </Button>
@@ -219,6 +238,7 @@ export function ClientStockDetail({ basePath }: { basePath?: '/(admin)' | '/(dis
 
 function ProductRow({ product }: { product: ClientStockGroup['products'][number] }) {
   const out = product.total_qty === 0;
+  const retired = !product.is_active;
   return (
     <Card>
       <View
@@ -233,6 +253,31 @@ function ProductRow({ product }: { product: ClientStockGroup['products'][number]
           <Text style={{ fontFamily: fonts.bold, fontSize: 15, color: colors.black }}>
             {product.product_name}
           </Text>
+          {retired ? (
+            <View
+              style={{
+                alignSelf: 'flex-start',
+                marginTop: 6,
+                paddingHorizontal: 8,
+                paddingVertical: 2,
+                backgroundColor: colors.surface,
+                borderWidth: 1,
+                borderColor: colors.border,
+                borderRadius: 999,
+              }}
+            >
+              <Text
+                style={{
+                  fontFamily: fonts.bold,
+                  fontSize: 11,
+                  color: colors.textSecondary,
+                  letterSpacing: 0.3,
+                }}
+              >
+                Inactive · not shared
+              </Text>
+            </View>
+          ) : null}
           {out ? (
             <View
               style={{

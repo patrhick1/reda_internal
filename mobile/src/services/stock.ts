@@ -305,6 +305,10 @@ export type ClientProductTotal = {
   total_qty: number;
   warehouse_qty: number;
   agents_qty: number;
+  /** False once the product is retired from the catalog. Leftover units keep
+   *  the row on Reda-facing screens (they still need draining), but the
+   *  client-facing "Stock Update" share must leave retired products out. */
+  is_active: boolean;
 };
 
 export type ClientStockGroup = {
@@ -346,6 +350,7 @@ export function groupByClient(rows: StockMatrixRow[]): ClientStockGroup[] {
         total_qty: 0,
         warehouse_qty: 0,
         agents_qty: 0,
+        is_active: r.is_active,
       };
       c.products.set(r.product_catalog_id, p);
     }

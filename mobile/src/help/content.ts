@@ -167,7 +167,7 @@ If someone else is already fixing the same row, you'll see *"<Name> is fixing th
 - Top of the screen has three buttons: **Receive stock** (the big red one), **New transfer**, **Adjustment**.
 - The list below has two tabs:
   - **By holder** (default) — the warehouse is always shown at the top (even when empty), then each agent. Red number = below zero (problem). Yellow number = 3 or fewer left, running low.
-  - **By client** — totals per client. Each card shows how many products that client has with Reda, and how that splits between the warehouse and the agents. Tap a client to see each of their products with the same breakdown, plus a **Share with client** button (sends a summary via WhatsApp).
+  - **By client** — totals per client. Each card shows how many products that client has with Reda, and how that splits between the warehouse and the agents. Tap a client to see each of their products with the same breakdown, plus a **Share with client** button (sends a summary via WhatsApp). Products marked **Inactive** are retired from the catalog — leftover units still show here so they can be drained, but they are left out of the shared update.
 
 ### Receive stock (vendor intake)
 
@@ -198,7 +198,7 @@ If someone else is already fixing the same row, you'll see *"<Name> is fixing th
 
 ### See how much of a client's product Reda holds
 
-- Stock screen → **By client** tab → tap the client → see each of their products with how much is at the warehouse and how much is with agents. Tap **Share with client** to send the breakdown via WhatsApp.
+- Stock screen → **By client** tab → tap the client → see each of their products with how much is at the warehouse and how much is with agents. Tap **Share with client** to send the breakdown via WhatsApp. Retired (**Inactive**) products are not included in what the client receives.
 - Or: **Catalog → Clients → that client → View stock** lands you in the same screen.`,
   },
   {
