@@ -1,8 +1,9 @@
 // Warehouse "Stock" tab = a Stack (not loose tab screens). The dashboard
-// (index) is the root; Transfer / Receive / Adjust / Available / Movements are
-// PUSHED on top. This is what makes `router.back()` both navigate AND unmount
-// the action screen after a queued submit settles — the same proven pattern as
-// the dispatcher stock stack. When these lived as hidden `Tabs.Screen`s, a
+// (index) is the root; Transfer / Receive / Adjust / Movements are PUSHED on
+// top (Available orders is its own tab — see ../available). This is what
+// makes `router.back()` both navigate AND unmount the action screen after a
+// queued submit settles — the same proven pattern as the dispatcher stock
+// stack. When these lived as hidden `Tabs.Screen`s, a
 // `router.back()` couldn't pop a root tab route, so a successful Transfer left
 // the submit button spinning forever (the screen never unmounted, `submitting`
 // never reset). Keeping them on a real stack fixes Transfer, Receive and Adjust
@@ -27,7 +28,6 @@ export default function WarehouseHomeLayout() {
       <Stack.Screen name="count" options={{ title: 'Count stock' }} />
       {/* These carry their own AppBar / nested stack. */}
       <Stack.Screen name="count-history" options={{ headerShown: false }} />
-      <Stack.Screen name="available" options={{ headerShown: false }} />
       <Stack.Screen name="stock-coverage" options={{ headerShown: false }} />
       <Stack.Screen name="replacement-returns" options={{ headerShown: false }} />
       <Stack.Screen name="agents" options={{ headerShown: false }} />

@@ -3,8 +3,9 @@
 // ARE the place. Redesigned 2026-06-08 to match the admin/dispatcher
 // Overview pattern: hero stats + search + filter chips + a flat product
 // list, with the three write CTAs (Receive / Transfer / Adjust) demoted
-// to a compact row + overflow sheet. The Available orders card is kept
-// because warehouse staff plan their day around it.
+// to a compact row + overflow sheet. Available orders used to be a card
+// here; it is now its own tab (app/(warehouse)/available, 2026-09-09) so the
+// warehouse can jump straight to it.
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -13,7 +14,6 @@ import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { useStockCoverage, useRestockSignal } from '@/hooks/queries';
 import { listHolderStock, type StockMatrixRow } from '@/services/stock';
-import { listAvailableOrders } from '@/services/available-orders';
 import { AppBar, Button, Card, Empty, FilterChips, Icon, Input, Sheet } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 import {
@@ -48,7 +48,6 @@ export default function WarehouseHome() {
   // shelf. listHolderStock adds `agent_id = holderId`, so we pull only what we
   // show. Cross-holder views live on the Agent-stock / By-client screens.
   const stockQ = useAsync(() => listHolderStock(holderId), [holderId]);
-  const availableQ = useAsync(() => listAvailableOrders(), []);
   // Demand-aware coverage for the "Stock coverage" card — warehouse is the
   // persona who fixes shortages, so the check lives on their home.
   const coverageQ = useStockCoverage();
@@ -58,7 +57,6 @@ export default function WarehouseHome() {
 
   useReloadOnFocus(() => {
     stockQ.reload();
-    availableQ.reload();
     coverageQ.refetchIfStale();
     restockQ.refetchIfStale();
   });
@@ -136,21 +134,8 @@ export default function WarehouseHome() {
   const showCountHistory = canViewOthersStockHistory(user.role);
   const showOverflow = showReceive || showAdjust || showCount || showCountHistory;
 
-  const availableRows = useMemo(() => availableQ.data ?? [], [availableQ.data]);
-  const availableAgents = useMemo(
-    () => new Set(availableRows.map((r) => r.agent_id)).size,
-    [availableRows],
-  );
-  const availableUnits = useMemo(
-    () => availableRows.reduce((sum, r) => sum + r.quantity_ordered, 0),
-    [availableRows],
-  );
-
-  const loading = stockQ.loading || availableQ.loading;
-  const reload = () => {
-    stockQ.reload();
-    availableQ.reload();
-  };
+  const loading = stockQ.loading;
+  const reload = () => stockQ.reload();
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -254,42 +239,6 @@ export default function WarehouseHome() {
                 ) : null}
               </View>
             ) : null}
-
-            {/* Available orders shortcut — Mary's main planning surface. */}
-            <Card dense onPress={() => router.push('/(warehouse)/available')}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <View
-                  style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 20,
-                    backgroundColor: colors.surface,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Icon name="truck" size={18} color={colors.black} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>
-                    Available orders
-                  </Text>
-                  <Text
-                    style={{
-                      fontFamily: fonts.medium,
-                      fontSize: 12,
-                      color: colors.textSecondary,
-                      marginTop: 2,
-                    }}
-                  >
-                    {availableRows.length === 0
-                      ? 'Nothing confirmed yet today'
-                      : `${availableUnits} ${availableUnits === 1 ? 'unit' : 'units'} across ${availableAgents} ${availableAgents === 1 ? 'agent' : 'agents'}`}
-                  </Text>
-                </View>
-                <Icon name="chevronRight" size={20} color={colors.textSecondary} />
-              </View>
-            </Card>
 
             {/* Stock coverage — demand-aware shortage check. Always visible:
                 warehouse is the persona who FIXES a shortage (receive /

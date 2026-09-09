@@ -1,5 +1,7 @@
 // Shared "Available orders" index — dispatcher + warehouse both render this
-// via thin route wrappers. Two stacked sections:
+// via thin route wrappers. The dispatcher pushes it from the dashboard (back
+// arrow); the warehouse mounts it as a root tab (`asTab` — Reda mark, no
+// back, since there is nothing to pop to). Two stacked sections:
 //   1. "Total to pull today" — per-client per-product roll-up. The warehouse
 //      person reads this to know which units to surface today.
 //   2. "By agent" — one row per agent with available orders, summarising
@@ -23,7 +25,14 @@ import { colors, fonts } from '@/lib/theme';
 
 export type AvailableBasePath = '/(dispatcher)' | '/(warehouse)';
 
-export function AvailableOrdersIndex({ basePath }: { basePath: AvailableBasePath }) {
+export function AvailableOrdersIndex({
+  basePath,
+  asTab = false,
+}: {
+  basePath: AvailableBasePath;
+  /** Mounted as a bottom-tab root rather than pushed — hides the back arrow. */
+  asTab?: boolean;
+}) {
   const router = useRouter();
   const ordersQ = useAsync(() => listAvailableOrders(), []);
   // Which agents have left the warehouse today — surfaced as a chip per row so
@@ -53,7 +62,11 @@ export function AvailableOrdersIndex({ basePath }: { basePath: AvailableBasePath
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
-      <AppBar title="Available orders" subtitle={subtitle} onBack={() => router.back()} />
+      <AppBar
+        title="Available orders"
+        subtitle={subtitle}
+        onBack={asTab ? undefined : () => router.back()}
+      />
 
       {ordersQ.error ? (
         <Empty icon="alert" title="Could not load" sub={ordersQ.error} />

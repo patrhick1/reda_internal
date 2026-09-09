@@ -22,8 +22,8 @@ export default function WarehouseLayout() {
       }}
     >
       {/* The "Stock" tab is a nested Stack (the (home) group): the dashboard
-          plus the Transfer / Receive / Adjust / Available / Movements screens
-          pushed on top. Stacking them — rather than mounting each as a hidden
+          plus the Transfer / Receive / Adjust / Movements screens pushed on
+          top. Stacking them — rather than mounting each as a hidden
           tab route — is what lets `router.back()` dismiss an action screen
           after a submit settles, so a successful Transfer no longer leaves the
           button spinning. */}
@@ -33,6 +33,19 @@ export default function WarehouseLayout() {
           title: 'Stock',
           tabBarIcon: ({ color, focused }) => (
             <Icon name="warehouse" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
+          ),
+        }}
+      />
+      {/* Available orders is the warehouse's main planning surface, so it
+          stands alone as a tab (2026-09-09) instead of a card on the Stock
+          dashboard. Warehouse-only — admin/dispatcher keep their own entry
+          points. Its own Stack holds the per-agent drilldown. */}
+      <Tabs.Screen
+        name="available"
+        options={{
+          title: 'Available',
+          tabBarIcon: ({ color, focused }) => (
+            <Icon name="truck" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
           ),
         }}
       />
