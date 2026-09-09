@@ -31,6 +31,7 @@
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { denyIfNotInternal } from '../_shared/internal-auth.ts';
+import { chooseOrderTotal, type OrderTotalChoice } from '../_shared/order-total.ts';
 import {
   PRODUCT_EXTRACTION_SCHEMA,
   PRODUCT_EXTRACTION_PROMPT,
@@ -563,6 +564,10 @@ Deno.serve(async (req) => {
   let lineItems: LineItem[] = contractorProducts ?? [];
   let orderTotal: number | null =
     typeof contractorFields.customer_price === 'number' ? contractorFields.customer_price : null;
+  // How the total was chosen, and what each source said — saved into
+  // parse_result.total_sources so a wrong pick stays visible.
+  let totalChoice: OrderTotalChoice | null = null;
+  let llmTotalRaw: number | null = null;
 
   // Call the LLM unless the contractor gave us BOTH a complete envelope AND a
   // products[] array. In practice (single product_name today) we always call.
@@ -573,6 +578,10 @@ Deno.serve(async (req) => {
     // tight deterministic trailing-name parse (the only signal is raw_text). A
     // wrapped sign-off ("(Praise)") is recovered below, shared with the LLM path.
     clientRepRaw = extractTrailingRep(row.raw_text);
+    totalChoice = chooseOrderTotal({
+      contractorTotal: orderTotal, llmTotal: null, llmRan: false, lines: lineItems,
+    });
+    orderTotal = totalChoice.total;
   } else {
     const apiKey = Deno.env.get('OPENROUTER_API_KEY');
     if (!apiKey) {
@@ -615,12 +624,19 @@ Deno.serve(async (req) => {
     clientRepRaw = out.parsed.client_rep ?? null;
     // Products: prefer a contractor-supplied array, else the LLM's array.
     if (lineItems.length === 0) lineItems = out.parsed.products ?? [];
-    // Order total: LLM's Total line, else sum of line prices, else contractor's.
-    if (orderTotal === null) {
-      const lineSum = lineItems.reduce((s, li) => s + (li.customer_price ?? 0), 0);
-      orderTotal = typeof out.parsed.total_amount === 'number' ? out.parsed.total_amount
-                 : (lineSum > 0 ? lineSum : null);
-    }
+    // Order total. The contractor carries ONE price field and, on a message
+    // with a price beside every product, it is the FIRST product's amount —
+    // not the total (2026-08-11 Gift / Dentora: contractor 32,000, message
+    // "Total: N67000"; 12 of 13 wrong totals in 90 days). Once the LLM has
+    // seen the whole message, its Total line (else the sum of its priced
+    // lines) wins whenever there are two or more priced lines; the
+    // contractor's figure stays authoritative for single-line orders only.
+    // See _shared/order-total.ts (+ tests).
+    llmTotalRaw = typeof out.parsed.total_amount === 'number' ? out.parsed.total_amount : null;
+    totalChoice = chooseOrderTotal({
+      contractorTotal: orderTotal, llmTotal: llmTotalRaw, llmRan: true, lines: lineItems,
+    });
+    orderTotal = totalChoice.total;
     source = Object.keys(contractorFields).length > 0 ? 'contractor+openrouter' : 'openrouter';
   }
 
@@ -864,9 +880,20 @@ Deno.serve(async (req) => {
       raw_address:        rawAddressRaw,
       instructions:       deliveryInstructions,   // self-extracted handling note (null if none)
       client_rep:         clientRep,              // client's trailing rep/closer name (null if none)
-      total_amount:       orderTotal,
+      total_amount:       orderTotal,  // the CHOSEN total — see total_sources for each source's own figure
       products:           lineItems,    // [Feature A] the full extracted line set
     },
+    // Where the total came from. Each source's own figure is kept so a wrong
+    // pick is visible in the review screen and in audits, instead of the
+    // winner overwriting the evidence (that is how 2026-08-11 looked like an
+    // LLM error when the LLM had said 67,000).
+    total_sources: totalChoice ? {
+      contractor:   typeof contractorFields.customer_price === 'number' ? contractorFields.customer_price : null,
+      llm:          llmTotalRaw,
+      line_sum:     totalChoice.lineSum,
+      priced_lines: totalChoice.pricedLines,
+      chosen:       totalChoice.source,
+    } : null,
     // [Feature A] per-line resolution: each line, its chosen SKU, and candidates.
     product_matches: lineMatches.map((r) => ({
       line:       r.line,
