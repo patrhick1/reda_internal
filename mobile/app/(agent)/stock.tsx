@@ -90,7 +90,19 @@ export default function AgentStock() {
         }
         data={data ?? []}
         keyExtractor={(r) => r.product_catalog_id}
-        renderItem={({ item }) => <StockRow row={item} />}
+        renderItem={({ item }) => (
+          <StockRow
+            row={item}
+            // Tap a product to trace it: Stock history opens already filtered
+            // to this product, each row showing the running balance.
+            onPress={() =>
+              router.push({
+                pathname: '/(agent)/movements',
+                params: { productId: item.product_catalog_id },
+              })
+            }
+          />
+        )}
         ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
         contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
         refreshControl={
@@ -123,11 +135,11 @@ export default function AgentStock() {
   );
 }
 
-function StockRow({ row }: { row: StockMatrixRow }) {
+function StockRow({ row, onPress }: { row: StockMatrixRow; onPress: () => void }) {
   const negative = isNegative(row.quantity_on_hand);
   const low = isLow(row.quantity_on_hand);
   return (
-    <Card dense>
+    <Card dense onPress={onPress}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
         <View
           style={{
@@ -187,6 +199,7 @@ function StockRow({ row }: { row: StockMatrixRow }) {
             </Text>
           ) : null}
         </View>
+        <Icon name="chevronRight" size={18} color={colors.textTertiary} />
       </View>
     </Card>
   );

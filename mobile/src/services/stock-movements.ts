@@ -51,6 +51,11 @@ export type StockMovement = {
    *  delivery detail screen. */
   delivery_id: string | null;
   customer_name: string | null;
+  /** Running balance of the traced product on this holder AFTER this event.
+   *  Only present when the request filtered on one product (it is the ledger
+   *  sum up to and including the row — exactly how current_stock is derived);
+   *  null otherwise. */
+  balance_after: number | null;
 };
 
 export type MovementCursor = { event_at: string; event_id: string } | null;
@@ -67,6 +72,8 @@ export type MovementFilters = {
   /** Only movements whose paired recipient is this holder — i.e. stock
    *  issued/transferred/returned TO this agent ("To agent" filter). */
   counterpartyId?: string | null;
+  /** Trace one product: only its movements, each with `balance_after`. */
+  productCatalogId?: string | null;
 };
 
 /** Fetch one page of movement events for a holder. Pass `cursor = null` for
@@ -87,6 +94,7 @@ export async function listStockMovements(
     p_actor_id: filters?.actorId ?? null,
     p_kinds: filters?.kinds && filters.kinds.length > 0 ? filters.kinds : null,
     p_counterparty_id: filters?.counterpartyId ?? null,
+    p_product_catalog_id: filters?.productCatalogId ?? null,
   });
 
   if (error) throw error;
@@ -108,6 +116,7 @@ export async function listStockMovements(
     related_adjustment_id: string | null;
     delivery_id: string | null;
     customer_name: string | null;
+    balance_after: number | null;
   }>;
 
   return rows
@@ -140,6 +149,7 @@ export async function listStockMovements(
         related_adjustment_id: row.related_adjustment_id,
         delivery_id: row.delivery_id,
         customer_name: row.customer_name,
+        balance_after: row.balance_after ?? null,
       };
     })
     .filter((m): m is StockMovement => m !== null);
@@ -298,6 +308,8 @@ export async function listGlobalStockMovements(
         holder_name: row.holder_name,
         client_id: row.client_id,
         client_name: row.client_name,
+        // The cross-holder feed never traces one product, so no running balance.
+        balance_after: null,
       };
     })
     .filter((m): m is GlobalMovement => m !== null);
@@ -343,4 +355,29 @@ export async function listMovementCounterparties(
       (r): r is MovementCounterparty => r.counterparty_id != null && r.counterparty_name != null,
     )
     .map((r) => ({ counterparty_id: r.counterparty_id, counterparty_name: r.counterparty_name }));
+}
+
+// ---------------------------------------------------------------------------
+// Product picker for the per-holder history: every product this holder has
+// ever moved, with what they hold now and when it last moved. Product names
+// only — no vendor names — so an agent sees nothing here they can't already see
+// on their own rows.
+// ---------------------------------------------------------------------------
+
+export type MovementProduct = {
+  product_catalog_id: string;
+  product_name: string;
+  movement_count: number;
+  last_moved_at: string;
+  on_hand: number;
+};
+
+/** Products with at least one movement on this holder, most recently moved
+ *  first. Same server gate as {@link listStockMovements}. */
+export async function listMovementProducts(holderId: string): Promise<MovementProduct[]> {
+  const { data, error } = await rpcUntyped<MovementProduct[]>('list_movement_products', {
+    p_holder_id: holderId,
+  });
+  if (error) throw error;
+  return data ?? [];
 }

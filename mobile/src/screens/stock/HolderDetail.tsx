@@ -314,7 +314,20 @@ export function HolderDetail({
         }
         renderItem={({ item }) => (
           <View style={{ paddingHorizontal: 16 }}>
-            <ProductRow row={item} cover={coverMap.get(item.product_catalog_id)} />
+            <ProductRow
+              row={item}
+              cover={coverMap.get(item.product_catalog_id)}
+              // Tap a product to trace it through this holder's history.
+              onPress={
+                showMovementsLink
+                  ? () =>
+                      router.push({
+                        pathname: movementsRoute(basePath),
+                        params: { holderId, productId: item.product_catalog_id },
+                      })
+                  : undefined
+              }
+            />
           </View>
         )}
         ItemSeparatorComponent={() => <View style={{ height: 6 }} />}
@@ -383,14 +396,22 @@ function Stat({
 
 // --- Product row -------------------------------------------------------------
 
-function ProductRow({ row, cover }: { row: StockMatrixRow; cover?: CoverLike }) {
+function ProductRow({
+  row,
+  cover,
+  onPress,
+}: {
+  row: StockMatrixRow;
+  cover?: CoverLike;
+  onPress?: () => void;
+}) {
   const negative = isNegative(row.quantity_on_hand);
   const low = cover ? isLowOnCover(cover) : isLow(row.quantity_on_hand);
   const urgent = isUrgentCover(cover);
   const daysLeft = coverLabel(cover);
   return (
-    <Card dense>
-      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+    <Card dense onPress={onPress}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <View style={{ flex: 1 }}>
           <Text
             style={{ fontFamily: fonts.semibold, fontSize: 14, color: colors.black }}
@@ -421,6 +442,7 @@ function ProductRow({ row, cover }: { row: StockMatrixRow; cover?: CoverLike }) 
         >
           {row.quantity_on_hand}
         </Text>
+        {onPress ? <Icon name="chevronRight" size={18} color={colors.textTertiary} /> : null}
       </View>
     </Card>
   );

@@ -19,12 +19,14 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import {
   listMovementActors,
   listMovementCounterparties,
+  listMovementProducts,
   listStockMovements,
   nextCursor,
   type MovementActor,
   type MovementCounterparty,
   type MovementCursor,
   type MovementEventKind,
+  type MovementProduct,
   type StockMovement,
 } from '@/services/stock-movements';
 import { getUser, type AppUser } from '@/services/users';
@@ -36,6 +38,7 @@ import {
   Empty,
   FilterChips,
   Icon,
+  Input,
   SectionHeader,
   Sheet,
 } from '@/components/ui';
@@ -79,9 +82,13 @@ const ALL_ACTORS = '__all__';
 export function Movements({
   holderId,
   basePath,
+  initialProductId = null,
 }: {
   holderId: string;
   basePath: MovementsBasePath;
+  /** Open already tracing this product — set when arriving from a product row
+   *  (My stock for agents, a holder's detail for ops). */
+  initialProductId?: string | null;
 }) {
   const router = useRouter();
   const [holder, setHolder] = useState<AppUser | null>(null);
@@ -100,8 +107,16 @@ export function Movements({
   const [counterpartyId, setCounterpartyId] = useState<string | null>(null);
   const [counterparties, setCounterparties] = useState<MovementCounterparty[]>([]);
   const [recipientSheetOpen, setRecipientSheetOpen] = useState(false);
+  // Product trace: one product's movements, each row carrying its running
+  // balance. The picker lists the holder's own moved products (searchable —
+  // a busy rider has 150 of them).
+  const [productId, setProductId] = useState<string | null>(initialProductId);
+  const [products, setProducts] = useState<MovementProduct[]>([]);
+  const [productSheetOpen, setProductSheetOpen] = useState(false);
+  const [productQuery, setProductQuery] = useState('');
 
-  const filtersActive = kindCat !== 'all' || actorId !== null || counterpartyId !== null;
+  const filtersActive =
+    kindCat !== 'all' || actorId !== null || counterpartyId !== null || productId !== null;
 
   // Monotonic request id. Tapping filter chips quickly (or a "Load older" still
   // in flight when a filter changes) fires overlapping fetches; only the latest
@@ -160,6 +175,29 @@ export function Movements({
     };
   }, [holderId]);
 
+  // Products for the picker. Not reset on holder change the way the other
+  // filters are: a deep link may have set productId before the list arrives.
+  useEffect(() => {
+    let cancelled = false;
+    setProducts([]);
+    listMovementProducts(holderId)
+      .then((p) => {
+        if (!cancelled) setProducts(p);
+      })
+      .catch(() => {
+        // Non-critical: the pill still works for a deep-linked product, and the
+        // history itself is unaffected.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [holderId]);
+
+  // A second deep link into the already-mounted screen retargets the trace.
+  useEffect(() => {
+    setProductId(initialProductId);
+  }, [initialProductId]);
+
   const kindsFor = useCallback(
     (cat: string) => KIND_CATEGORIES.find((c) => c.id === cat)?.kinds ?? null,
     [],
@@ -174,6 +212,7 @@ export function Movements({
         actorId,
         kinds: kindsFor(kindCat),
         counterpartyId,
+        productCatalogId: productId,
       });
       if (reqRef.current !== req) return; // superseded by a newer load
       setRows(page);
@@ -185,7 +224,7 @@ export function Movements({
     } finally {
       if (reqRef.current === req) setLoading(false);
     }
-  }, [holderId, actorId, kindCat, kindsFor, counterpartyId]);
+  }, [holderId, actorId, kindCat, kindsFor, counterpartyId, productId]);
 
   const loadOlder = useCallback(async () => {
     if (!cursor || loading || endOfHistory) return;
@@ -197,6 +236,7 @@ export function Movements({
         actorId,
         kinds: kindsFor(kindCat),
         counterpartyId,
+        productCatalogId: productId,
       });
       if (reqRef.current !== req) return; // a filter change superseded this page
       setRows((prev) => [...prev, ...page]);
@@ -208,7 +248,17 @@ export function Movements({
     } finally {
       if (reqRef.current === req) setLoading(false);
     }
-  }, [holderId, cursor, loading, endOfHistory, actorId, kindCat, kindsFor, counterpartyId]);
+  }, [
+    holderId,
+    cursor,
+    loading,
+    endOfHistory,
+    actorId,
+    kindCat,
+    kindsFor,
+    counterpartyId,
+    productId,
+  ]);
 
   useFocusEffect(
     useCallback(() => {
@@ -253,6 +303,26 @@ export function Movements({
     [counterparties, counterpartyId],
   );
 
+  const selectedProduct = useMemo(
+    () => products.find((p) => p.product_catalog_id === productId) ?? null,
+    [products, productId],
+  );
+  // Name for the pill before the picker list has arrived (deep link): fall
+  // back to what the rows themselves say, then to a neutral label.
+  const selectedProductName =
+    selectedProduct?.product_name ??
+    rows.find((r) => r.product_catalog_id === productId)?.product_name ??
+    (productId ? 'Selected' : 'All');
+
+  // Picker rows: name-sorted so search reads naturally; the RPC's recency
+  // order is only useful for the summary, not for finding a product.
+  const visibleProducts = useMemo(() => {
+    const needle = productQuery.trim().toLowerCase();
+    return products
+      .filter((p) => !needle || p.product_name.toLowerCase().includes(needle))
+      .sort((a, b) => a.product_name.localeCompare(b.product_name));
+  }, [products, productQuery]);
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <AppBar title="Stock history" subtitle={subtitle} onBack={() => router.back()} />
@@ -276,46 +346,52 @@ export function Movements({
             onChange={(v) => setActorId(v === ALL_ACTORS ? null : v)}
           />
         ) : null}
-        {/* "To agent" recipient dropdown — only where stock was actually
+        {/* Dropdown pills. Product is the rider's main lever ("what happened
+            to THIS product"); "To agent" only appears where stock was actually
             issued/transferred onward (warehouse / ops views). */}
-        {counterparties.length > 0 ? (
-          <View style={{ paddingHorizontal: 16, paddingTop: 2, paddingBottom: 10 }}>
-            <Pressable
-              onPress={() => setRecipientSheetOpen(true)}
-              accessibilityRole="button"
-              accessibilityLabel="Filter by recipient agent"
-              style={({ pressed }) => [
-                {
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  alignSelf: 'flex-start',
-                  gap: 8,
-                  borderWidth: 1,
-                  borderColor: counterpartyId ? colors.black : colors.border,
-                  backgroundColor: counterpartyId ? colors.black : colors.white,
-                  borderRadius: 999,
-                  paddingVertical: 6,
-                  paddingHorizontal: 12,
-                },
-                pressed && { opacity: 0.85 },
-              ]}
-            >
-              <Text
-                style={{
-                  fontFamily: fonts.bold,
-                  fontSize: 12,
-                  color: counterpartyId ? colors.white : colors.black,
-                }}
-              >
-                To agent: {selectedCounterpartyName ?? 'All'}
-              </Text>
-              <Icon
-                name="chevronDown"
-                size={15}
-                color={counterpartyId ? colors.white : colors.textSecondary}
+        {products.length > 0 || productId !== null || counterparties.length > 0 ? (
+          <View
+            style={{
+              flexDirection: 'row',
+              flexWrap: 'wrap',
+              gap: 8,
+              paddingHorizontal: 16,
+              paddingTop: 2,
+              paddingBottom: 10,
+            }}
+          >
+            {products.length > 0 || productId !== null ? (
+              <FilterPill
+                label={`Product: ${selectedProductName}`}
+                active={productId !== null}
+                accessibilityLabel="Filter by product"
+                onPress={() => setProductSheetOpen(true)}
               />
-            </Pressable>
+            ) : null}
+            {counterparties.length > 0 ? (
+              <FilterPill
+                label={`To agent: ${selectedCounterpartyName ?? 'All'}`}
+                active={counterpartyId !== null}
+                accessibilityLabel="Filter by recipient agent"
+                onPress={() => setRecipientSheetOpen(true)}
+              />
+            ) : null}
           </View>
+        ) : null}
+        {/* Trace context: where the product stands now, so the rows below read
+            as "how did it get here". */}
+        {selectedProduct ? (
+          <Text
+            style={{
+              paddingHorizontal: 16,
+              paddingBottom: 10,
+              fontFamily: fonts.medium,
+              fontSize: 12,
+              color: colors.textSecondary,
+            }}
+          >
+            {`${selectedProduct.on_hand} on hand now · ${selectedProduct.movement_count} ${selectedProduct.movement_count === 1 ? 'movement' : 'movements'} · last ${relativeTime(selectedProduct.last_moved_at)}`}
+          </Text>
         ) : null}
       </View>
 
@@ -343,7 +419,17 @@ export function Movements({
         ListEmptyComponent={
           error ? (
             <Empty icon="alert" title="Could not load history" sub={error} />
-          ) : loading ? null : filtersActive ? (
+          ) : loading ? null : productId !== null ? (
+            <Empty
+              icon="package"
+              title={`No movements for ${selectedProductName === 'Selected' ? 'this product' : selectedProductName}`}
+              sub={
+                kindCat !== 'all' || actorId !== null || counterpartyId !== null
+                  ? 'Nothing of this type for this product. Clear the other filters or pick another product.'
+                  : 'Pick another product, or choose "All products" to see everything.'
+              }
+            />
+          ) : filtersActive ? (
             <Empty
               icon="filter"
               title="No matching movements"
@@ -408,16 +494,137 @@ export function Movements({
           />
         ))}
       </Sheet>
+
+      <Sheet
+        open={productSheetOpen}
+        onClose={() => {
+          setProductSheetOpen(false);
+          setProductQuery('');
+        }}
+        title="Filter by product"
+        subtitle="Trace one product through this history"
+      >
+        <View style={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 8 }}>
+          <Input
+            icon="search"
+            value={productQuery}
+            onChange={setProductQuery}
+            placeholder="Search product"
+            autoCapitalize="none"
+            autoCorrect={false}
+            rightAdornment={
+              productQuery ? (
+                <Pressable
+                  onPress={() => setProductQuery('')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear search"
+                  hitSlop={8}
+                >
+                  <Icon name="x" size={16} color={colors.textSecondary} />
+                </Pressable>
+              ) : null
+            }
+          />
+        </View>
+        {!productQuery.trim() ? (
+          <RecipientOption
+            label="All products"
+            selected={productId === null}
+            onPress={() => {
+              setProductId(null);
+              setProductSheetOpen(false);
+            }}
+          />
+        ) : null}
+        {visibleProducts.map((p) => (
+          <RecipientOption
+            key={p.product_catalog_id}
+            label={p.product_name}
+            sub={`${p.on_hand} on hand · ${p.movement_count} ${p.movement_count === 1 ? 'movement' : 'movements'} · last ${relativeTime(p.last_moved_at)}`}
+            selected={productId === p.product_catalog_id}
+            onPress={() => {
+              setProductId(p.product_catalog_id);
+              setProductSheetOpen(false);
+              setProductQuery('');
+            }}
+          />
+        ))}
+        {visibleProducts.length === 0 && productQuery.trim() ? (
+          <Text
+            style={{
+              padding: 20,
+              fontFamily: fonts.medium,
+              fontSize: 13,
+              color: colors.textSecondary,
+            }}
+          >
+            No product here matches “{productQuery.trim()}”.
+          </Text>
+        ) : null}
+      </Sheet>
     </View>
+  );
+}
+
+/** The dropdown-style filter pill (Product / To agent). Black when a value is
+ *  chosen so an active narrowing is visible at a glance. */
+function FilterPill({
+  label,
+  active,
+  accessibilityLabel,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  accessibilityLabel: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      style={({ pressed }) => [
+        {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 8,
+          borderWidth: 1,
+          borderColor: active ? colors.black : colors.border,
+          backgroundColor: active ? colors.black : colors.white,
+          borderRadius: 999,
+          paddingVertical: 6,
+          paddingHorizontal: 12,
+          maxWidth: '100%',
+        },
+        pressed && { opacity: 0.85 },
+      ]}
+    >
+      <Text
+        style={{
+          fontFamily: fonts.bold,
+          fontSize: 12,
+          color: active ? colors.white : colors.black,
+          flexShrink: 1,
+        }}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
+      <Icon name="chevronDown" size={15} color={active ? colors.white : colors.textSecondary} />
+    </Pressable>
   );
 }
 
 function RecipientOption({
   label,
+  sub,
   selected,
   onPress,
 }: {
   label: string;
+  /** Secondary line (e.g. on-hand + last moved for a product option). */
+  sub?: string;
   selected: boolean;
   onPress: () => void;
 }) {
@@ -436,15 +643,31 @@ function RecipientOption({
         pressed && { opacity: 0.7 },
       ]}
     >
-      <Text
-        style={{
-          fontFamily: selected ? fonts.bold : fonts.medium,
-          fontSize: 15,
-          color: colors.black,
-        }}
-      >
-        {label}
-      </Text>
+      <View style={{ flex: 1, paddingRight: 12 }}>
+        <Text
+          style={{
+            fontFamily: selected ? fonts.bold : fonts.medium,
+            fontSize: 15,
+            color: colors.black,
+          }}
+          numberOfLines={1}
+        >
+          {label}
+        </Text>
+        {sub ? (
+          <Text
+            style={{
+              fontFamily: fonts.medium,
+              fontSize: 12,
+              color: colors.textSecondary,
+              marginTop: 2,
+            }}
+            numberOfLines={1}
+          >
+            {sub}
+          </Text>
+        ) : null}
+      </View>
       {selected ? <Icon name="check" size={18} color={colors.red} /> : null}
     </Pressable>
   );
@@ -556,6 +779,20 @@ function MovementRow({
               }}
             >
               {Math.abs(row.quantity_delta)} of {row.quantity_ordered}
+            </Text>
+          ) : null}
+          {row.balance_after != null ? (
+            // Only while tracing one product: the running total after this
+            // event, so the list reads as "how did I get to N".
+            <Text
+              style={{
+                fontFamily: fonts.bold,
+                fontSize: 11,
+                color: colors.textSecondary,
+                marginTop: 1,
+              }}
+            >
+              {row.balance_after} left
             </Text>
           ) : null}
           <Text
