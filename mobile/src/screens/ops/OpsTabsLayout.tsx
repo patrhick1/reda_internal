@@ -1,6 +1,5 @@
 // Tab-bar configuration shared by the dispatcher and rep route groups.
-// Dispatchers get Dashboard / Deliveries / Review / Profile (plus a hidden
-// Stock route entered from the dashboard Quick action). Reps get only
+// Dispatchers get Dashboard / Deliveries / Review / Profile / Stock. Reps get only
 // Dashboard / Deliveries / Profile — the needs-review queue is manager-only
 // per Uzo (2026-06-10), so reps neither see the Review tab nor declare the
 // (rep)/review directory (it was removed). Reps remain stockless.
@@ -100,10 +99,10 @@ export function OpsTabsLayout() {
           ),
         }}
       />
-      {/* Hidden routes: declared only for dispatchers so expo-router accepts
-          the (dispatcher)/stock and (dispatcher)/available directories
-          without surfacing them in the tab bar. Reps must NOT declare these
-          — they have no matching directories. */}
+      {/* Stock is a visible dispatcher tab. The remaining routes are declared
+          only for dispatchers so expo-router accepts their directories without
+          surfacing them in the tab bar. Reps must NOT declare these — they have
+          no matching directories. */}
       {showStock ? (
         <>
           <Tabs.Screen
@@ -113,7 +112,6 @@ export function OpsTabsLayout() {
               tabBarIcon: ({ color, focused }) => (
                 <Icon name="warehouse" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
               ),
-              href: null,
             }}
           />
           <Tabs.Screen

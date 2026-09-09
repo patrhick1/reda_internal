@@ -512,6 +512,38 @@ export function DeliveryDetail() {
           gap: 12,
         }}
       >
+        {status === 'delivered' &&
+        d.order_type === 'delivery' &&
+        (user.role === 'admin' || user.role === 'dispatcher') ? (
+          <Button
+            variant="secondary"
+            icon="refresh"
+            onPress={() =>
+              router.push({
+                pathname:
+                  user.role === 'admin'
+                    ? '/(admin)/replacement-new'
+                    : '/(dispatcher)/replacement-new',
+                params: { originalDeliveryId: d.id! },
+              })
+            }
+          >
+            Create replacement
+          </Button>
+        ) : null}
+        {isReplacement && replacementQ.data?.job.original_delivery_id ? (
+          <Button
+            variant="secondary"
+            onPress={() =>
+              router.push({
+                pathname: `/(${user.role})/deliveries/[id]` as '/(admin)/deliveries/[id]',
+                params: { id: replacementQ.data!.job.original_delivery_id! },
+              })
+            }
+          >
+            View original delivery
+          </Button>
+        ) : null}
         {/* Hero */}
         <Card>
           <View
@@ -1009,6 +1041,11 @@ export function DeliveryDetail() {
           ) : null}
         </Card>
 
+        {isReplacement && !isTerminal ? (
+          <Button variant="secondary" onPress={() => setReplacementAttemptOpen(true)}>
+            Record unsuccessful trip
+          </Button>
+        ) : null}
         {isReplacement ? (
           <ReplacementSummaryCard
             details={replacementQ.data}
@@ -1196,11 +1233,9 @@ export function DeliveryDetail() {
                 variant="secondary"
                 full
                 style={{ paddingHorizontal: 14 }}
-                onPress={() =>
-                  isReplacement ? setReplacementAttemptOpen(true) : setUpdateOpen(true)
-                }
+                onPress={() => setUpdateOpen(true)}
               >
-                {isReplacement ? 'Attempt unsuccessful' : 'Update status'}
+                Update status
               </Button>
             </View>
             {!isTerminal ? (

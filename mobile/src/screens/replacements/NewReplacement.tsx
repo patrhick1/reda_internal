@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
+import { getDelivery, listDeliveries, type DeliveryRow } from '@/services/deliveries';
 import { AppBar, Banner, Button, Card, Input, Icon } from '@/components/ui';
 import { Select } from '@/components/Select';
 import { colors, fonts } from '@/lib/theme';
@@ -42,6 +43,69 @@ function amount(value: string): number {
 
 export function NewReplacement({ basePath }: { basePath: '/(admin)' | '/(dispatcher)' }) {
   const user = useCurrentUser();
+  const params = useLocalSearchParams<{ originalDeliveryId?: string }>();
+  const [original, setOriginal] = useState<DeliveryRow | null>(null);
+  const [search, setSearch] = useState('');
+  const [matches, setMatches] = useState<DeliveryRow[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [sourceError, setSourceError] = useState<string | null>(null);
+  const [loadingSource, setLoadingSource] = useState(false);
+  const [formKey, setFormKey] = useState(0);
+  const sourceRequest = useRef(0);
+
+  const selectOriginal = useCallback(
+    async (id: string) => {
+      const request = ++sourceRequest.current;
+      setLoadingSource(true);
+      setSourceError(null);
+      try {
+        const row = await getDelivery(user.role, id);
+        if (request !== sourceRequest.current) return;
+        if (!row || row.order_type !== 'delivery') throw new Error('Select an existing delivery.');
+        setOriginal(row);
+        setSearch('');
+        setMatches([]);
+        setForm(null);
+        setFormKey((key) => key + 1);
+      } catch (e) {
+        if (request === sourceRequest.current) setSourceError(errorMessage(e));
+      } finally {
+        if (request === sourceRequest.current) setLoadingSource(false);
+      }
+    },
+    [user.role],
+  );
+
+  useEffect(() => {
+    if (params.originalDeliveryId) void selectOriginal(params.originalDeliveryId);
+  }, [params.originalDeliveryId, selectOriginal]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setMatches([]);
+    if (search.trim().length < 2) {
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    const timer = setTimeout(() => {
+      listDeliveries(user.role, { search: search.trim() }, controller.signal)
+        .then((rows) => {
+          if (!controller.signal.aborted)
+            setMatches(rows.filter((row) => row.order_type === 'delivery'));
+        })
+        .catch((e) => {
+          if (!controller.signal.aborted) setSourceError(errorMessage(e));
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setSearching(false);
+        });
+    }, 300);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [search, user.role]);
   const showClientCharge = canSeeCharged(user.role);
   const clientUuid = useRef(newClientUuid());
   const nextReturnId = useRef(2);
@@ -120,7 +184,13 @@ export function NewReplacement({ basePath }: { basePath: '/(admin)' | '/(dispatc
         Number.isInteger(Number(line.quantity)) &&
         Number(line.quantity) > 0,
     );
-  const isValid = formValidation.isValid && !!reason && validReturns;
+  const isValid =
+    !!form &&
+    formValidation.isValid &&
+    !!reason &&
+    validReturns &&
+    !loadingSource &&
+    (!original || form.clientId === original.client_id);
 
   function updateReturn(id: number, patch: Partial<ReturnLine>) {
     setReturns((lines) => lines.map((line) => (line.id === id ? { ...line, ...patch } : line)));
@@ -144,6 +214,7 @@ export function NewReplacement({ basePath }: { basePath: '/(admin)' | '/(dispatc
     try {
       const deliveryId = await createReplacement({
         clientUuid: clientUuid.current,
+        originalDeliveryId: original?.id ?? null,
         clientId: form.clientId!,
         customerName: form.customerName.trim(),
         customerPhone: form.customerPhone.trim(),
@@ -195,8 +266,78 @@ export function NewReplacement({ basePath }: { basePath: '/(admin)' | '/(dispatc
           returned product stays in rider custody until warehouse receives and inspects it.
         </Banner>
 
+        <Card style={{ gap: 12 }}>
+          <Text style={kicker}>Search previous delivery</Text>
+          <Input
+            value={search}
+            onChange={setSearch}
+            placeholder="Customer name or phone — all dates"
+          />
+          {searching || loadingSource ? <Text>Loading deliveries…</Text> : null}
+          {sourceError ? <Banner tone="error">{sourceError}</Banner> : null}
+          {!searching && search.trim().length >= 2 && matches.length === 0 ? (
+            <Text>No matching deliveries. You can enter the details manually.</Text>
+          ) : null}
+          {matches.map((row) => (
+            <Pressable
+              key={row.id}
+              disabled={loadingSource || submitting}
+              onPress={() => {
+                if (row.id) void selectOriginal(row.id);
+              }}
+              style={{ paddingVertical: 12 }}
+            >
+              <Text style={{ fontFamily: fonts.bold }}>
+                {row.customer_name} · {row.customer_phone}
+              </Text>
+              <Text>
+                {row.client_name} · {row.product_label ?? row.product_name}
+              </Text>
+              <Text>
+                {row.scheduled_date} · {row.current_status} · {row.raw_address}
+              </Text>
+            </Pressable>
+          ))}
+          {original ? (
+            <Text>
+              Original order: {original.customer_name} · {original.scheduled_date}. Customer details
+              are copied below; confirm the products, rider and fees for this trip.
+            </Text>
+          ) : null}
+          <Button
+            variant="secondary"
+            disabled={submitting}
+            onPress={() => {
+              sourceRequest.current++;
+              setLoadingSource(false);
+              setOriginal(null);
+              setSearch('');
+              setSourceError(null);
+              setForm(null);
+              setFormKey((key) => key + 1);
+            }}
+          >
+            Enter manually
+          </Button>
+          {original && form && form.clientId !== original.client_id ? (
+            <Banner tone="error">
+              The client must match the original delivery. Select another order or enter manually.
+            </Banner>
+          ) : null}
+        </Card>
+
         <DeliveryFieldsForm
-          initial={{ scheduledDate: todayLagos(), customerPrice: 0 }}
+          key={formKey}
+          initial={{
+            scheduledDate: todayLagos(),
+            customerPrice: 0,
+            clientId: original?.client_id,
+            customerName: original?.customer_name ?? '',
+            customerPhone: original?.customer_phone ?? '',
+            customerPhoneAlt: original?.customer_phone_alt ?? '',
+            rawAddress: original?.raw_address ?? '',
+            locationId: original?.location_id,
+          }}
           hideFields={['customerPrice']}
           onChange={onFormChange}
         />

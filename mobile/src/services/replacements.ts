@@ -22,6 +22,7 @@ export type ReplacementReturnInput = ReplacementItemInput & {
 };
 
 export type CreateReplacementInput = {
+  originalDeliveryId?: string | null;
   clientUuid: string;
   clientId: string;
   customerName: string;
@@ -124,6 +125,7 @@ function money(value: number): number {
 export async function createReplacement(input: CreateReplacementInput): Promise<string> {
   const { data, error } = await rpcUntyped<string>('create_replacement', {
     p_client_uuid: input.clientUuid,
+    p_original_delivery_id: input.originalDeliveryId ?? null,
     p_client_id: input.clientId,
     p_customer_name: input.customerName,
     p_customer_phone: input.customerPhone,

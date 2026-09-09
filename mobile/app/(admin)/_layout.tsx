@@ -85,7 +85,6 @@ export default function AdminLayout() {
           tabBarIcon: ({ color, focused }) => (
             <Icon name="warehouse" size={22} color={color} stroke={focused ? 2.2 : 1.75} />
           ),
-          href: null,
         }}
       />
       <Tabs.Screen

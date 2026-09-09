@@ -634,6 +634,11 @@ export default function AgentDeliveryDetail() {
           ) : null}
         </Card>
 
+        {isReplacement && !isTerminal ? (
+          <Button variant="secondary" onPress={() => setReplacementAttemptOpen(true)}>
+            Record unsuccessful trip
+          </Button>
+        ) : null}
         {isReplacement ? (
           <ReplacementSummaryCard
             details={replacementQ.data}
@@ -792,11 +797,9 @@ export default function AgentDeliveryDetail() {
               variant="secondary"
               full
               style={{ paddingHorizontal: 14 }}
-              onPress={() =>
-                isReplacement ? setReplacementAttemptOpen(true) : setUpdateOpen(true)
-              }
+              onPress={() => setUpdateOpen(true)}
             >
-              {isReplacement ? 'Attempt unsuccessful' : 'Update status'}
+              Update status
             </Button>
           </View>
           {!isTerminal ? (

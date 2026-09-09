@@ -163,7 +163,7 @@ If someone else is already fixing the same row, you'll see *"<Name> is fixing th
     id: 'stock',
     title: 'Stock — receive, transfer, adjust',
     icon: 'warehouse',
-    body: `- **Stock** (warehouse icon, under Home → Quick Actions).
+    body: `- **Stock** (warehouse icon in the bottom bar; also available under Home → Quick Actions).
 - Top of the screen has three buttons: **Receive stock** (the big red one), **New transfer**, **Adjustment**.
 - The list below has two tabs:
   - **By holder** (default) — the warehouse is always shown at the top (even when empty), then each agent. Red number = below zero (problem). Yellow number = 3 or fewer left, running low.
