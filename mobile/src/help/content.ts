@@ -410,7 +410,8 @@ const REP = [
 - Use the chip row to switch to **Yesterday** / **Last 7 days** / **Custom** for a different window.
 - The big number is *Total to remit* — what Reda will send across all clients for the period.
 - Tap any client row → opens that client's per-delivery list: each delivery's customer, product, quantity delivered, and the amount to remit. A note flags a short delivery.
-- Tap **Share with client** → pick WhatsApp and send the report straight to the client.`,
+- Tap **Share with client** → pick WhatsApp and send the report straight to the client.
+- A red **Client owes Reda** card means the client's fees or a replacement charge outran what their customers paid. Normally that is taken off their next remittance automatically. If the client sends the money instead, tap **Record payment received** (admin, single-day view), date it the day the money landed, and the ledger clears it — their next delivery is then remitted in full. The app only accepts up to what they owed that day. A recorded payment can be voided from the client's report page if it was a mistake.`,
   },
 ] as const satisfies readonly HelpSection[];
 

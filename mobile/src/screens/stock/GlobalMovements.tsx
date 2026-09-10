@@ -31,7 +31,7 @@ import { listClients } from '@/services/clients';
 import { isWarehousePlace } from '@/services/users';
 import { useUsers } from '@/hooks/queries';
 import { useAsync } from '@/hooks/useAsync';
-import { lagosDayKey, lagosDayLabel, relativeTime, todayLagos, isYmd } from '@/lib/date';
+import { formatTimeLagos, lagosDayKey, lagosDayLabel, todayLagos, isYmd } from '@/lib/date';
 import { presetRange, type Preset } from '@/lib/reconcile';
 import {
   AppBar,
@@ -617,7 +617,7 @@ function GlobalMovementRow({
               marginTop: 1,
             }}
           >
-            {relativeTime(row.event_at)}
+            {formatTimeLagos(row.event_at)}
           </Text>
         </View>
         {onPress ? <Icon name="chevronRight" size={18} color={colors.textTertiary} /> : null}

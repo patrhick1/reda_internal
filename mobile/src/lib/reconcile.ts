@@ -310,6 +310,8 @@ export function buildClientShareMessage(input: {
     balanceBeforePeriod: number;
     periodActivity: number;
     payoutsInPeriod: number;
+    /** Money the client sent Reda in the range. */
+    paymentsInPeriod: number;
     currentBalance: number;
   } | null;
 }): string {
@@ -409,6 +411,11 @@ export function buildClientShareMessage(input: {
           ...(input.account.payoutsInPeriod > 0
             ? [
                 `${singleDay ? 'Already paid today' : 'Already paid this period'}: ${formatNaira(input.account.payoutsInPeriod)}`,
+              ]
+            : []),
+          ...(input.account.paymentsInPeriod > 0
+            ? [
+                `${singleDay ? 'Received from you today' : 'Received from you this period'}: ${formatNaira(input.account.paymentsInPeriod)}`,
               ]
             : []),
         ]

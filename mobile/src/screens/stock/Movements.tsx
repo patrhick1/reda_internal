@@ -30,7 +30,7 @@ import {
   type StockMovement,
 } from '@/services/stock-movements';
 import { getUser, type AppUser } from '@/services/users';
-import { lagosDayKey, lagosDayLabel, relativeTime } from '@/lib/date';
+import { formatTimeLagos, lagosDayKey, lagosDayLabel, relativeTime } from '@/lib/date';
 import {
   AppBar,
   Button,
@@ -803,7 +803,7 @@ function MovementRow({
               marginTop: 1,
             }}
           >
-            {relativeTime(row.event_at)}
+            {formatTimeLagos(row.event_at)}
           </Text>
         </View>
         {onPress ? <Icon name="chevronRight" size={18} color={colors.textTertiary} /> : null}

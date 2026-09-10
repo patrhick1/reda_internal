@@ -33,6 +33,8 @@ export type ClientRemitRow = {
   balance_before_period: number;
   period_activity: number;
   payouts_in_period: number;
+  /** Money the client sent Reda in the range (client_payments). */
+  payments_in_period: number;
   current_balance: number;
 };
 
@@ -44,6 +46,8 @@ export type ClientAccountBalance = {
   balance_before_period: number;
   period_activity: number;
   payouts_in_period: number;
+  /** Money the client sent Reda in the range (client_payments). */
+  payments_in_period: number;
   current_balance: number;
 };
 
@@ -55,6 +59,7 @@ type ClientBalanceFields = Pick<
   | 'balance_before_period'
   | 'period_activity'
   | 'payouts_in_period'
+  | 'payments_in_period'
   | 'current_balance'
 >;
 
@@ -66,6 +71,7 @@ function emptyClientBalance(): ClientBalanceFields {
     balance_before_period: 0,
     period_activity: 0,
     payouts_in_period: 0,
+    payments_in_period: 0,
     current_balance: 0,
   };
 }
@@ -294,6 +300,7 @@ export async function listClientRemit(from: string, to: string): Promise<ClientR
     row.balance_before_period = Number(balance.balance_before_period ?? 0);
     row.period_activity = Number(balance.period_activity ?? 0);
     row.payouts_in_period = Number(balance.payouts_in_period ?? 0);
+    row.payments_in_period = Number(balance.payments_in_period ?? 0);
     row.current_balance = Number(balance.current_balance ?? 0);
   }
   return [...byClient.values()];
@@ -417,6 +424,8 @@ export type RepClientRemitRow = {
   balance_before_period: number;
   period_activity: number;
   payouts_in_period: number;
+  /** Money the client sent Reda in the range (client_payments). */
+  payments_in_period: number;
   current_balance: number;
 };
 
@@ -471,6 +480,7 @@ export async function listRepClientRemit(from: string, to: string): Promise<RepC
     balance_before_period: 0,
     period_activity: 0,
     payouts_in_period: 0,
+    payments_in_period: 0,
     current_balance: 0,
   }));
   const byClient = new Map(rows.map((row) => [row.client_id, row]));
@@ -488,6 +498,7 @@ export async function listRepClientRemit(from: string, to: string): Promise<RepC
         balance_before_period: 0,
         period_activity: 0,
         payouts_in_period: 0,
+        payments_in_period: 0,
         current_balance: 0,
       };
       rows.push(row);
@@ -505,6 +516,7 @@ export async function listRepClientRemit(from: string, to: string): Promise<RepC
     row.balance_before_period = Number(balance.balance_before_period ?? 0);
     row.period_activity = Number(balance.period_activity ?? 0);
     row.payouts_in_period = Number(balance.payouts_in_period ?? 0);
+    row.payments_in_period = Number(balance.payments_in_period ?? 0);
     row.current_balance = Number(balance.current_balance ?? 0);
   }
   return [...byClient.values()];
@@ -689,6 +701,15 @@ export type ClientPayoutRow = {
   note: string | null;
 };
 
+export type ClientPaymentRow = {
+  payment_id: string;
+  payment_date: string;
+  amount: number;
+  received_at: string;
+  received_by_name: string | null;
+  note: string | null;
+};
+
 /** Establish the signed balance at the start of an effective date. Positive
  * means Reda owes the client; negative means the client owes Reda. */
 export async function setClientBalanceOpening(input: {
@@ -748,6 +769,67 @@ export async function listClientPayouts(
 export async function voidClientPayout(payoutId: string, reason: string): Promise<void> {
   const { error } = await rpcUntyped('void_client_payout', {
     p_payout_id: payoutId,
+    p_reason: reason,
+  });
+  if (error) throw error;
+}
+
+// ---------------------------------------------------------------------------
+// Client payments — money the VENDOR sent Reda to settle what they owe (the
+// mirror of payouts). The ledger treats one as reducing the debt on the day it
+// arrived; the server caps it at what the vendor owed that day (debt carried
+// in + that day's charges − payments already recorded), see
+// client_payment_limit. Shipped 2026-09-10.
+// ---------------------------------------------------------------------------
+
+/** What the client may pay Reda for `date` (YYYY-MM-DD). Zero when nothing was
+ * owed that day. Single source of truth for the cap the sheet shows. */
+export async function getClientPaymentLimit(clientId: string, date: string): Promise<number> {
+  const { data, error } = await rpcUntyped<number | string | null>('client_payment_limit', {
+    p_client_id: clientId,
+    p_date: date,
+  });
+  if (error) throw error;
+  return Number(data ?? 0);
+}
+
+/** Record money received from the client. Idempotent on clientUuid. */
+export async function recordClientPayment(input: {
+  clientUuid: string;
+  clientId: string;
+  paymentDate: string;
+  amount: number;
+  note: string | null;
+}): Promise<string> {
+  const { data, error } = await rpcUntyped<string>('record_client_payment', {
+    p_client_uuid: input.clientUuid,
+    p_client_id: input.clientId,
+    p_payment_date: input.paymentDate,
+    p_amount: input.amount,
+    p_note: input.note,
+  });
+  if (error) throw error;
+  if (!data) throw new Error('Payment returned no result');
+  return data;
+}
+
+export async function listClientPayments(
+  clientId: string,
+  from: string,
+  to: string,
+): Promise<ClientPaymentRow[]> {
+  const { data, error } = await rpcUntyped<ClientPaymentRow[]>('list_client_payments', {
+    p_client_id: clientId,
+    p_from: from,
+    p_to: to,
+  });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function voidClientPayment(paymentId: string, reason: string): Promise<void> {
+  const { error } = await rpcUntyped('void_client_payment', {
+    p_payment_id: paymentId,
     p_reason: reason,
   });
   if (error) throw error;

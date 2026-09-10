@@ -21,6 +21,18 @@ export function clientAmountPayable(row: ClientBalanceLike): number {
   return Math.max(0, displayedClientBalance(row));
 }
 
+/** Whether to offer "Record payment received" for a tracked client: they close
+ * the range owing Reda, OR they entered it owing (a same-day delivery may have
+ * already netted a transfer that still needs recording — the closing figure
+ * alone would hide it). The server computes the exact per-day cap
+ * (client_payment_limit); this only decides whether to show the action. */
+export function clientMayOweReda(row: ClientBalanceLike): boolean {
+  if (!row.balance_tracking) return false;
+  return (
+    Number(row.current_balance ?? 0) < -0.005 || Number(row.balance_before_period ?? 0) < -0.005
+  );
+}
+
 export type ClientBalanceDirection = 'reda_owes_client' | 'client_owes_reda' | 'clear';
 
 export function clientBalanceDirection(row: ClientBalanceLike): ClientBalanceDirection {

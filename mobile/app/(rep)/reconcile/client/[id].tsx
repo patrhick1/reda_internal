@@ -84,6 +84,7 @@ export default function RepClientReconcileDetail() {
             balanceBeforePeriod: Number(account.balance_before_period),
             periodActivity: Number(account.period_activity),
             payoutsInPeriod: Number(account.payouts_in_period),
+            paymentsInPeriod: Number(account.payments_in_period),
             currentBalance: Number(account.current_balance),
           }
         : null,

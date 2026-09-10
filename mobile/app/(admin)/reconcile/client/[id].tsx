@@ -16,9 +16,12 @@ import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import {
   getClientAccountBalance,
   listClientRemitDetail,
+  listClientPayments,
   listClientPayouts,
+  voidClientPayment,
   voidClientPayout,
   type ClientAccountBalance,
+  type ClientPaymentRow,
   type ClientPayoutRow,
   type ClientRemitDetailRow,
 } from '@/services/reconciliation';
@@ -62,12 +65,17 @@ export default function ClientReconcileDetail() {
     () => (rangeValid ? listClientPayouts(id, from, to) : Promise.resolve([])),
     [id, from, to, rangeValid, financialRevision],
   );
+  const paymentsQ = useAsync<ClientPaymentRow[]>(
+    () => (rangeValid ? listClientPayments(id, from, to) : Promise.resolve([])),
+    [id, from, to, rangeValid, financialRevision],
+  );
 
   useReloadOnFocus(() => {
     if (!rangeValid) return;
     detailQ.reload();
     accountQ.reload();
     payoutsQ.reload();
+    paymentsQ.reload();
   });
 
   const rows = useMemo(() => detailQ.data ?? [], [detailQ.data]);
@@ -128,6 +136,32 @@ export default function ClientReconcileDetail() {
     [accountQ, payoutsQ],
   );
 
+  const onVoidPayment = useCallback(
+    (payment: ClientPaymentRow) => {
+      const run = async () => {
+        try {
+          await voidClientPayment(payment.payment_id, 'voided from client reconciliation report');
+          paymentsQ.reload();
+          accountQ.reload();
+        } catch (e) {
+          const message = errorMessage(e);
+          if (Platform.OS === 'web') window.alert(`Could not void payment\n\n${message}`);
+          else Alert.alert('Could not void payment', message);
+        }
+      };
+      const message = `Void the ${formatNaira(payment.amount)} payment received? The audit record will be kept and the amount goes back onto what the client owes.`;
+      if (Platform.OS === 'web') {
+        if (window.confirm(message)) run();
+      } else {
+        Alert.alert('Void payment?', message, [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Void payment', style: 'destructive', onPress: run },
+        ]);
+      }
+    },
+    [accountQ, paymentsQ],
+  );
+
   const onShare = useCallback(async () => {
     // Per-delivery blocks + Total in Uzo's preferred shape, built by the shared
     // helper so the admin and rep "Share with client" output stays identical.
@@ -145,6 +179,7 @@ export default function ClientReconcileDetail() {
             balanceBeforePeriod: Number(account.balance_before_period),
             periodActivity: Number(account.period_activity),
             payoutsInPeriod: Number(account.payouts_in_period),
+            paymentsInPeriod: Number(account.payments_in_period),
             currentBalance: Number(account.current_balance),
           }
         : null,
@@ -240,6 +275,10 @@ export default function ClientReconcileDetail() {
                     label="Payouts in range"
                     value={formatNaira(account.payouts_in_period)}
                   />
+                  <SmallRow
+                    label="Paid by client in range"
+                    value={formatNaira(account.payments_in_period)}
+                  />
                   <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 4 }} />
                 </>
               ) : null}
@@ -258,9 +297,11 @@ export default function ClientReconcileDetail() {
         }
         renderItem={({ item }) => <DeliveryRow row={item} />}
         ListFooterComponent={
-          (payoutsQ.data?.length ?? 0) > 0 ? (
+          (payoutsQ.data?.length ?? 0) > 0 || (paymentsQ.data?.length ?? 0) > 0 ? (
             <View style={{ marginTop: 10, gap: 8 }}>
-              <Text style={kicker}>Payouts recorded in this range</Text>
+              {(payoutsQ.data?.length ?? 0) > 0 ? (
+                <Text style={kicker}>Payouts recorded in this range</Text>
+              ) : null}
               {payoutsQ.data?.map((payout) => (
                 <Card key={payout.payout_id} dense>
                   <View
@@ -292,6 +333,46 @@ export default function ClientReconcileDetail() {
                       size="sm"
                       icon="x"
                       onPress={() => onVoidPayout(payout)}
+                    >
+                      Void
+                    </Button>
+                  </View>
+                </Card>
+              ))}
+              {(paymentsQ.data?.length ?? 0) > 0 ? (
+                <Text style={kicker}>Payments received in this range</Text>
+              ) : null}
+              {paymentsQ.data?.map((payment) => (
+                <Card key={payment.payment_id} dense>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 12,
+                    }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>
+                        {formatNaira(payment.amount)} · {formatDateLagos(payment.payment_date)}
+                      </Text>
+                      <Text
+                        style={{
+                          fontFamily: fonts.medium,
+                          fontSize: 12,
+                          color: colors.textSecondary,
+                          marginTop: 2,
+                        }}
+                      >
+                        {[payment.received_by_name, payment.note].filter(Boolean).join(' · ') ||
+                          'No reference'}
+                      </Text>
+                    </View>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      icon="x"
+                      onPress={() => onVoidPayment(payment)}
                     >
                       Void
                     </Button>

@@ -62,11 +62,13 @@ import { downloadTextFile, downloadBinaryFile } from '@/lib/download';
 import { BulkAgentHandoverSheet } from '@/components/sheets/BulkAgentHandoverSheet';
 import {
   ClientBalanceOpeningSheet,
+  ClientPaymentSheet,
   ClientPayoutSheet,
 } from '@/components/sheets/ClientBalanceSheets';
 import {
   clientAmountPayable,
   clientBalanceDirection,
+  clientMayOweReda,
   displayedClientBalance,
 } from '@/lib/client-balance';
 
@@ -96,6 +98,7 @@ export default function AdminReconcile() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [openingClient, setOpeningClient] = useState<ClientRemitRow | null>(null);
   const [payoutClient, setPayoutClient] = useState<ClientRemitRow | null>(null);
+  const [paymentClient, setPaymentClient] = useState<ClientRemitRow | null>(null);
 
   // Gate the RPC fires behind YMD validation: the From/To Inputs call
   // setFrom/setTo on every keystroke, and the underlying RPCs take `date`
@@ -506,6 +509,7 @@ export default function AdminReconcile() {
           onVoid={handleVoid}
           onStartBalance={setOpeningClient}
           onRecordPayout={setPayoutClient}
+          onRecordPayment={setPaymentClient}
           onOpenClient={(c) =>
             router.push({
               pathname: '/(admin)/reconcile/client/[id]',
@@ -572,6 +576,21 @@ export default function AdminReconcile() {
           notify('Payout recorded', `${formatNaira(amount)} sent and deducted from the balance.`);
         }}
       />
+      <ClientPaymentSheet
+        open={paymentClient != null}
+        clientId={paymentClient?.client_id ?? null}
+        clientName={paymentClient?.client_name ?? null}
+        defaultDate={to}
+        onClose={() => setPaymentClient(null)}
+        onSaved={(amount) => {
+          setPaymentClient(null);
+          clientsQ.reload();
+          notify(
+            'Payment recorded',
+            `${formatNaira(amount)} received from the client and taken off what they owe.`,
+          );
+        }}
+      />
     </View>
   );
 }
@@ -593,6 +612,7 @@ function ClientsList({
   onVoid,
   onStartBalance,
   onRecordPayout,
+  onRecordPayment,
 }: {
   state: ReturnType<typeof useAsync<ClientRemitRow[]>>;
   openId: string | null;
@@ -611,6 +631,7 @@ function ClientsList({
   onVoid: (settlementId: string) => void;
   onStartBalance: (client: ClientRemitRow) => void;
   onRecordPayout: (client: ClientRemitRow) => void;
+  onRecordPayment: (client: ClientRemitRow) => void;
 }) {
   // A negative balance from one client must never reduce another client's bank
   // payout, so headline payable is the sum of positive balances only.
@@ -730,6 +751,11 @@ function ClientsList({
             canManage: canSettle,
             onStart: () => onStartBalance(item),
             onPayout: () => onRecordPayout(item),
+            // Offered whenever the client owes or owed in the range: a same-day
+            // delivery can turn the close positive while a morning transfer
+            // still needs recording.
+            canReceive: canSettle && clientMayOweReda(item),
+            onPayment: () => onRecordPayment(item),
           }}
           extra={[
             ...(item.balance_tracking
@@ -740,6 +766,10 @@ function ClientsList({
                   },
                   { label: 'Activity in range', value: formatNaira(item.period_activity) },
                   { label: 'Payouts in range', value: formatNaira(item.payouts_in_period) },
+                  {
+                    label: 'Paid by client in range',
+                    value: formatNaira(item.payments_in_period),
+                  },
                 ]
               : []),
             { label: 'Customer paid', value: formatNaira(item.total_paid) },
@@ -1395,6 +1425,9 @@ function ExpandableRow({
     canManage: boolean;
     onStart: () => void;
     onPayout: () => void;
+    /** Show "Record payment received" (client → Reda). */
+    canReceive: boolean;
+    onPayment: () => void;
   };
   selectionMode?: boolean;
   selectable?: boolean;
@@ -1701,23 +1734,47 @@ function ExpandableRow({
                       Record payout
                     </Button>
                   ) : null}
+                  {clientBalance.canReceive ? (
+                    <Button
+                      variant="secondary"
+                      full
+                      icon="arrowDown"
+                      onPress={clientBalance.onPayment}
+                    >
+                      Record payment received
+                    </Button>
+                  ) : null}
                 </>
               ) : clientBalance.direction === 'client_owes_reda' ? (
-                <View style={{ backgroundColor: colors.redSoft, borderRadius: 10, padding: 10 }}>
-                  <Text style={{ fontFamily: fonts.bold, fontSize: 12, color: colors.red }}>
-                    Client owes Reda — no transfer required
-                  </Text>
-                  <Text
-                    style={{
-                      fontFamily: fonts.medium,
-                      fontSize: 12,
-                      color: colors.red,
-                      marginTop: 2,
-                    }}
-                  >
-                    This amount will be deducted automatically from the next positive remittance.
-                  </Text>
-                </View>
+                <>
+                  <View style={{ backgroundColor: colors.redSoft, borderRadius: 10, padding: 10 }}>
+                    <Text style={{ fontFamily: fonts.bold, fontSize: 12, color: colors.red }}>
+                      Client owes Reda — no transfer required
+                    </Text>
+                    <Text
+                      style={{
+                        fontFamily: fonts.medium,
+                        fontSize: 12,
+                        color: colors.red,
+                        marginTop: 2,
+                      }}
+                    >
+                      {clientBalance.canReceive
+                        ? 'Deducted from the next positive remittance — or, if the client sends the money, record it below.'
+                        : 'This amount will be deducted automatically from the next positive remittance.'}
+                    </Text>
+                  </View>
+                  {clientBalance.canReceive ? (
+                    <Button
+                      variant="emphasis"
+                      full
+                      icon="arrowDown"
+                      onPress={clientBalance.onPayment}
+                    >
+                      Record payment received
+                    </Button>
+                  ) : null}
+                </>
               ) : (
                 <Text
                   style={{ fontFamily: fonts.medium, fontSize: 12, color: colors.textSecondary }}
