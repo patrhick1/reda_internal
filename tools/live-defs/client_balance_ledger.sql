@@ -1,3 +1,7 @@
+-- 2026-09-10: client_account_balances (payments_in_period column, payment
+-- event stream) and set_client_balance_opening (lock also on payments)
+-- refreshed from the box after 20260910090000_client_payments.sql. The new
+-- objects are captured in client_payments.sql.
 -- ============================================================================
 -- Client remittance balance ledger
 -- ============================================================================
@@ -156,7 +160,8 @@ create or replace function public.client_account_balances(
   balance_before_period numeric,
   period_activity numeric,
   payouts_in_period numeric,
-  current_balance numeric
+  current_balance numeric,
+  payments_in_period numeric
 )
 language plpgsql stable security definer set search_path = 'public', 'auth'
 as $function$
@@ -185,31 +190,45 @@ begin
      where s.subject_type = 'client'
        and s.voided_at is null
        and s.expected_amount > 0
+  ), payment_events as (
+    -- Money the vendor sent Reda. Reduces their debt on the day it arrived.
+    select p.client_id, p.payment_date as event_date, p.amount
+      from public.client_payments p
+     where p.voided_at is null
   ), daily_events as (
     select
       e.client_id,
       e.event_date,
       sum(e.activity) as activity,
-      sum(e.payout) as payout
+      sum(e.payout) as payout,
+      sum(e.payment) as payment
     from (
-      select a.client_id, a.activity_date as event_date, a.amount as activity, 0::numeric as payout
+      select a.client_id, a.activity_date as event_date,
+             a.amount as activity, 0::numeric as payout, 0::numeric as payment
         from public.client_financial_activity a
         join openings o on o.client_id = a.client_id
        where o.effective_date is not null
          and a.activity_date between o.effective_date and p_to
       union all
-      select pe.client_id, pe.event_date, 0::numeric, pe.amount
+      select pe.client_id, pe.event_date, 0::numeric, pe.amount, 0::numeric
         from payout_events pe
         join openings o on o.client_id = pe.client_id
        where o.effective_date is not null
          and pe.event_date between o.effective_date and p_to
+      union all
+      select pm.client_id, pm.event_date, 0::numeric, 0::numeric, pm.amount
+        from payment_events pm
+        join openings o on o.client_id = pm.client_id
+       where o.effective_date is not null
+         and pm.event_date between o.effective_date and p_to
     ) e
     group by e.client_id, e.event_date
   ), daily_ledger(client_id, balance_date, closing_balance) as (
     select
       o.client_id,
       o.effective_date,
-      o.opening_balance + coalesce(e.activity, 0) - coalesce(e.payout, 0)
+      o.opening_balance
+        + coalesce(e.activity, 0) - coalesce(e.payout, 0) + coalesce(e.payment, 0)
     from openings o
     left join daily_events e
       on e.client_id = o.client_id and e.event_date = o.effective_date
@@ -217,10 +236,13 @@ begin
 
     union all
 
+    -- Only a negative close carries: a positive close is paid out through the
+    -- external Kuda batch the same evening.
     select
       l.client_id,
       l.balance_date + 1,
-      least(l.closing_balance, 0) + coalesce(e.activity, 0) - coalesce(e.payout, 0)
+      least(l.closing_balance, 0)
+        + coalesce(e.activity, 0) - coalesce(e.payout, 0) + coalesce(e.payment, 0)
     from daily_ledger l
     left join daily_events e
       on e.client_id = l.client_id and e.event_date = l.balance_date + 1
@@ -245,6 +267,16 @@ begin
      and pe.event_date between greatest(o.effective_date, p_from) and p_to
     where o.effective_date <= p_to
     group by o.client_id
+  ), period_payment_totals as (
+    select
+      o.client_id,
+      coalesce(sum(pm.amount), 0) as amount
+    from openings o
+    left join payment_events pm
+      on pm.client_id = o.client_id
+     and pm.event_date between greatest(o.effective_date, p_from) and p_to
+    where o.effective_date <= p_to
+    group by o.client_id
   )
   select
     o.client_id,
@@ -267,10 +299,12 @@ begin
       select l.closing_balance
         from daily_ledger l
        where l.client_id = o.client_id and l.balance_date = p_to
-    ), 0) else 0 end
+    ), 0) else 0 end,
+    case when o.effective_date <= p_to then coalesce(pm.amount, 0) else 0 end
   from openings o
   left join period_activity_totals a on a.client_id = o.client_id
-  left join period_payout_totals pt on pt.client_id = o.client_id;
+  left join period_payout_totals pt on pt.client_id = o.client_id
+  left join period_payment_totals pm on pm.client_id = o.client_id;
 end;
 $function$;
 
@@ -281,7 +315,7 @@ create or replace function public.set_client_balance_opening(
   p_client_id uuid,
   p_effective_date date,
   p_opening_balance numeric,
-  p_note text default null
+  p_note text DEFAULT NULL::text
 ) returns uuid
 language plpgsql security definer set search_path = 'public', 'auth'
 as $function$
@@ -321,9 +355,13 @@ begin
   if exists (
     select 1 from public.client_payouts p
      where p.client_id = p_client_id and p.voided_at is null
+  ) or exists (
+    select 1 from public.client_payments p
+     where p.client_id = p_client_id and p.voided_at is null
   ) then
-    raise exception 'opening balance is locked after the first ledger payout'
-      using errcode = '22023', hint = 'void the payout first if the cutover was incorrect';
+    raise exception 'opening balance is locked after the first ledger payout or payment'
+      using errcode = '22023',
+            hint = 'void the payout or payment first if the cutover was incorrect';
   end if;
 
   select to_jsonb(o) into v_old

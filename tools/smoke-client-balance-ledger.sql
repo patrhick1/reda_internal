@@ -21,8 +21,15 @@ end $$;
 select id as test_admin_id from public.users
  where role = 'admin' and is_active
  order by created_at limit 1 \gset
-select id as test_client_id from public.clients
- order by is_active desc, created_at limit 1 \gset
+-- A client with no ledger payout or payment on file: the opening balance is
+-- locked once either exists, and real payouts have been recorded since this
+-- test was written (it used to pick Bowan, who has one).
+select c.id as test_client_id from public.clients c
+ where not exists (select 1 from public.client_payouts p
+                    where p.client_id = c.id and p.voided_at is null)
+   and not exists (select 1 from public.client_payments p
+                    where p.client_id = c.id and p.voided_at is null)
+ order by c.is_active desc, c.created_at limit 1 \gset
 insert into public.clients(name)
 values ('__client_balance_rollover_smoke__')
 returning id as rollover_client_id \gset
