@@ -180,16 +180,30 @@ export function SameCustomerOrdersSheet({
                         }
                         style={{
                           padding: 10,
-                          borderWidth: 1,
-                          borderColor: colors.border,
-                          borderRadius: 8,
+                          minWidth: 44,
+                          minHeight: 44,
+                          alignItems: 'center',
+                          justifyContent: 'center',
                         }}
                       >
-                        <Icon
-                          name={selected.has(order.id) ? 'check' : 'plus'}
-                          size={16}
-                          color={colors.black}
-                        />
+                        <View
+                          style={{
+                            width: 22,
+                            height: 22,
+                            borderWidth: 2,
+                            borderColor: selected.has(order.id)
+                              ? colors.black
+                              : colors.textSecondary,
+                            borderRadius: 4,
+                            backgroundColor: selected.has(order.id) ? colors.black : colors.white,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          {selected.has(order.id) ? (
+                            <Icon name="check" size={14} color={colors.white} />
+                          ) : null}
+                        </View>
                       </Pressable>
                     ) : null}
                     <View style={{ flex: 1 }}>
