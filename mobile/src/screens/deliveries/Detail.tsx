@@ -24,6 +24,8 @@ import {
   type StockSignal,
 } from '@/lib/stock-signal';
 import { useCurrentUser } from '@/hooks/useAuth';
+import { useSameCustomerBadges, useSameCustomerConfig } from '@/hooks/useSameCustomer';
+import { SameCustomerOrdersSheet } from '@/components/sheets/SameCustomerOrdersSheet';
 import {
   getDelivery,
   getDeliveryRedaCharge,
@@ -105,6 +107,14 @@ export function DeliveryDetail() {
   const router = useRouter();
   const user = useCurrentUser();
   const insets = useSafeAreaInsets();
+
+  const sameCustomerConfig = useSameCustomerConfig();
+  const sameCustomerBadges = useSameCustomerBadges(
+    id ? [id] : [],
+    sameCustomerConfig.data?.discovery_enabled === true,
+  );
+  const sameCustomerBadge = sameCustomerBadges.data?.[0];
+  const [sameCustomerOpen, setSameCustomerOpen] = useState(false);
 
   const deliveryQ = useAsync(() => getDelivery(user.role, id), [user.role, id]);
   const replacementQ = useAsync(
@@ -512,6 +522,15 @@ export function DeliveryDetail() {
           gap: 12,
         }}
       >
+        {sameCustomerConfig.data?.discovery_enabled &&
+        isOps(user.role) &&
+        d.order_type === 'delivery' ? (
+          <Button variant="secondary" onPress={() => setSameCustomerOpen(true)}>
+            {sameCustomerBadge
+              ? `${sameCustomerBadge.order_count} orders · ${sameCustomerBadge.possible_only ? 'Possible customer match' : 'Same customer'}`
+              : 'Customer matching'}
+          </Button>
+        ) : null}
         {status === 'delivered' &&
         d.order_type === 'delivery' &&
         (user.role === 'admin' || user.role === 'dispatcher') ? (
@@ -1285,6 +1304,14 @@ export function DeliveryDetail() {
           await Promise.all([replacementQ.reload(), deliveryQ.reload()]);
         }}
       />
+      {sameCustomerOpen && d.scheduled_date ? (
+        <SameCustomerOrdersSheet
+          key={`${d.scheduled_date}:${sameCustomerBadge?.group_id ?? id}`}
+          day={sameCustomerBadge?.day ?? d.scheduled_date}
+          groupId={sameCustomerBadge?.group_id ?? `order:${id}`}
+          onClose={() => setSameCustomerOpen(false)}
+        />
+      ) : null}
       <UpdateStatusSheet
         open={updateOpen}
         delivery={d}

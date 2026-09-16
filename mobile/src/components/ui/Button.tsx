@@ -57,6 +57,7 @@ export function Button({
 
   return (
     <Pressable
+      disabled={disabled}
       onPress={disabled ? undefined : onPress}
       accessibilityRole="button"
       accessibilityLabel={a11yLabel}

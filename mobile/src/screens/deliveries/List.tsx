@@ -15,6 +15,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
+import { useSameCustomerBadges, useSameCustomerConfig } from '@/hooks/useSameCustomer';
+import { SameCustomerOrdersList } from '@/components/delivery/SameCustomerOrdersList';
+import type { SameCustomerBadge } from '@/services/same-customer';
 import {
   useClients,
   useDeliveriesList,
@@ -89,6 +92,7 @@ const SOFT_STATUSES = new Set<string>(STATUS_GROUPS.soft);
 // Stable empty map so rows don't see a fresh object (→ re-render) before the
 // unread query resolves.
 const EMPTY_UNREAD: ReadonlyMap<string, number> = new Map();
+const EMPTY_DELIVERIES: DeliveryRow[] = [];
 
 // --- Unassigned grouping --------------------------------------------------
 // On the Unassigned tab the queue is grouped by the prior-day snapshot
@@ -130,6 +134,7 @@ const FILTER_IDS_LIST = [
   'done',
   'failed',
   'unassigned',
+  'same_customer',
 ] as const;
 type Filter = (typeof FILTER_IDS_LIST)[number];
 const FILTER_IDS = new Set<string>(FILTER_IDS_LIST);
@@ -139,6 +144,8 @@ type FailedKindFilter = 'attempted' | 'auto_closed';
 
 export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   const user = useCurrentUser();
+  const sameCustomerConfig = useSameCustomerConfig();
+  const sameCustomerEnabled = sameCustomerConfig.data?.discovery_enabled === true;
   const router = useRouter();
   const insets = useSafeAreaInsets();
   // Optional deep-link target — the rep dashboard's "Awaiting client update" card
@@ -150,6 +157,12 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   // Persists across preset toggles so switching today → yesterday → custom
   // doesn't blank the value the user already typed.
   const [customDate, setCustomDate] = useState<string>(todayLagos());
+  useEffect(() => {
+    if (filter === 'same_customer' && datePreset === 'all') setDatePreset('today');
+    if (filter === 'same_customer' && sameCustomerConfig.isSuccess && !sameCustomerEnabled) {
+      setFilter('all');
+    }
+  }, [filter, datePreset, sameCustomerEnabled, sameCustomerConfig.isSuccess]);
   // Failed outcomes are event history, so they use an explicit bounded range
   // rather than the normal list's scheduled-date selector. Seven days gives a
   // useful operational default without adding a query to the regular screen.
@@ -853,9 +866,16 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
               ? (unassignedSorted ?? unassignedRows)
               : filter === 'failed'
                 ? failedRows
-                : buckets[filter];
+                : filter === 'same_customer'
+                  ? EMPTY_DELIVERIES
+                  : buckets[filter];
 
   const visibleIds = useMemo(() => list.flatMap((d) => (d.id ? [d.id] : [])), [list]);
+  const sameCustomerBadges = useSameCustomerBadges(visibleIds, sameCustomerEnabled);
+  const sameCustomerById = useMemo(
+    () => new Map((sameCustomerBadges.data ?? []).map((badge) => [badge.delivery_id, badge])),
+    [sameCustomerBadges.data],
+  );
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
   // The location picker is a queue-building tool: once dispatch has chosen the
   // areas, the next intended action is always a bulk operation on that entire
@@ -908,6 +928,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         : 'Assign / reassign';
   const filterOptions = [
     { id: 'all' as const, label: 'All', count: allRows.length },
+    ...(sameCustomerEnabled ? [{ id: 'same_customer' as const, label: 'Same customer' }] : []),
     { id: 'to_notify' as const, label: 'To notify', count: toNotifyRows.length },
     ...(canSeeClaims ? [{ id: 'unread' as const, label: 'Unread', count: unreadRows.length }] : []),
     { id: 'active' as const, label: 'Active', count: buckets.active.length },
@@ -956,7 +977,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
           subtitle={
             filter === 'failed'
               ? failedRangeSubtitle(failedDatePreset, failedRange.from, failedRange.to)
-              : nameNeedle
+              : nameNeedle && filter !== 'same_customer'
                 ? 'Searching all dates'
                 : subtitleFor(datePreset, customDate)
           }
@@ -971,7 +992,13 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         }}
       >
         <FilterChips
-          options={filter === 'failed' ? FAILED_DATE_OPTIONS : DATE_OPTIONS}
+          options={
+            filter === 'failed'
+              ? FAILED_DATE_OPTIONS
+              : filter === 'same_customer'
+                ? DATE_OPTIONS.filter((option) => option.id !== 'all')
+                : DATE_OPTIONS
+          }
           value={filter === 'failed' ? failedDatePreset : datePreset}
           onChange={(v) => {
             exitSelect();
@@ -1072,7 +1099,9 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
               placeholder={
                 filter === 'failed'
                   ? 'Search failed orders by name or phone'
-                  : 'Search name or phone (all dates)'
+                  : filter === 'same_customer'
+                    ? 'Search name or phone for this day'
+                    : 'Search name or phone (all dates)'
               }
               autoCapitalize="none"
               autoCorrect={false}
@@ -1092,7 +1121,10 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
                 ) : null
               }
             />
-            {filter !== 'failed' && nameNeedle && (data?.length ?? 0) >= SEARCH_LIMIT ? (
+            {filter !== 'failed' &&
+            filter !== 'same_customer' &&
+            nameNeedle &&
+            (data?.length ?? 0) >= SEARCH_LIMIT ? (
               <Text
                 style={{
                   fontFamily: fonts.medium,
@@ -1151,203 +1183,221 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
           </View>
         ) : null}
       </View>
-      <FlatList
-        data={list}
-        keyExtractor={keyForDelivery}
-        renderItem={({ item }) => {
-          const claim = item.id ? followupByDelivery.get(item.id) : undefined;
-          const itemId = item.id ?? '';
-          const selected = selectMode && itemId ? selectedIds.has(itemId) : false;
-          const header = itemId ? headerByRowId.get(itemId) : undefined;
-          return (
-            <>
-              {header ? (
-                <GroupHeaderRow
-                  label={header.label}
-                  count={header.count}
-                  carried={header.carried}
-                />
-              ) : null}
-              <DeliveryListRow
-                delivery={item}
-                failure={filter === 'failed' ? (item as FailedDeliveryRow) : undefined}
-                followup={claim}
-                showClient={showClient}
-                unreadCount={itemId ? (unreadByDelivery.get(itemId) ?? 0) : 0}
-                selectMode={selectMode}
-                selected={selected}
-                onPress={() => {
-                  if (selectMode) {
-                    if (itemId) toggleSelected(itemId);
-                    return;
+      {filter === 'same_customer' && sameCustomerEnabled ? (
+        <SameCustomerOrdersList
+          key={`${datePreset}:${customDate}:${agentId}:${clientId}:${debouncedNeedle}`}
+          filters={{
+            day:
+              datePreset === 'yesterday'
+                ? yesterdayLagos()
+                : datePreset === 'custom'
+                  ? customDate
+                  : todayLagos(),
+            agentId,
+            clientId,
+            search: debouncedNeedle,
+          }}
+        />
+      ) : (
+        <FlatList
+          data={list}
+          keyExtractor={keyForDelivery}
+          renderItem={({ item }) => {
+            const claim = item.id ? followupByDelivery.get(item.id) : undefined;
+            const itemId = item.id ?? '';
+            const selected = selectMode && itemId ? selectedIds.has(itemId) : false;
+            const header = itemId ? headerByRowId.get(itemId) : undefined;
+            return (
+              <>
+                {header ? (
+                  <GroupHeaderRow
+                    label={header.label}
+                    count={header.count}
+                    carried={header.carried}
+                  />
+                ) : null}
+                <DeliveryListRow
+                  delivery={item}
+                  sameCustomerBadge={sameCustomerById.get(itemId)}
+                  failure={filter === 'failed' ? (item as FailedDeliveryRow) : undefined}
+                  followup={claim}
+                  showClient={showClient}
+                  unreadCount={itemId ? (unreadByDelivery.get(itemId) ?? 0) : 0}
+                  selectMode={selectMode}
+                  selected={selected}
+                  onPress={() => {
+                    if (selectMode) {
+                      if (itemId) toggleSelected(itemId);
+                      return;
+                    }
+                    router.push({
+                      pathname: `${basePath}/deliveries/[id]` as
+                        | `/(admin)/deliveries/[id]`
+                        | `/(dispatcher)/deliveries/[id]`
+                        | `/(rep)/deliveries/[id]`,
+                      params: { id: itemId },
+                    });
+                  }}
+                  onLongPress={
+                    canBulkSelect && filter !== 'failed' && itemId
+                      ? () => {
+                          if (!selectMode) enterSelect(itemId);
+                          else toggleSelected(itemId);
+                        }
+                      : undefined
                   }
-                  router.push({
-                    pathname: `${basePath}/deliveries/[id]` as
-                      | `/(admin)/deliveries/[id]`
-                      | `/(dispatcher)/deliveries/[id]`
-                      | `/(rep)/deliveries/[id]`,
-                    params: { id: itemId },
-                  });
-                }}
-                onLongPress={
-                  canBulkSelect && filter !== 'failed' && itemId
-                    ? () => {
-                        if (!selectMode) enterSelect(itemId);
-                        else toggleSelected(itemId);
-                      }
-                    : undefined
-                }
-              />
-            </>
-          );
-        }}
-        ItemSeparatorComponent={SeparatorH8}
-        refreshControl={
-          <RefreshControl
-            refreshing={
-              filter === 'failed'
-                ? failedQ.fetching && !!failedQ.data
-                : filter === 'postponed'
-                  ? postponedQ.fetching && !!postponedQ.data
-                  : filter === 'unassigned'
-                    ? unassignedQ.fetching && !!unassignedQ.data
-                    : fetching && !!data
-            }
-            onRefresh={() => {
-              if (filter === 'failed') {
-                failedQ.reload();
-                return;
+                />
+              </>
+            );
+          }}
+          ItemSeparatorComponent={SeparatorH8}
+          refreshControl={
+            <RefreshControl
+              refreshing={
+                filter === 'failed'
+                  ? failedQ.fetching && !!failedQ.data
+                  : filter === 'postponed'
+                    ? postponedQ.fetching && !!postponedQ.data
+                    : filter === 'unassigned'
+                      ? unassignedQ.fetching && !!unassignedQ.data
+                      : fetching && !!data
               }
-              reload();
-              postponedQ.reload();
-              unassignedQ.reload();
-            }}
-            tintColor={colors.black}
-          />
-        }
-        contentContainerStyle={{
-          padding: 16,
-          paddingBottom: selectMode ? 132 + insets.bottom : 96,
-          flexGrow: 1,
-        }}
-        initialNumToRender={12}
-        windowSize={7}
-        maxToRenderPerBatch={8}
-        removeClippedSubviews
-        ListFooterComponent={
-          filter === 'failed' && (failedQ.data?.length ?? 0) >= FAILED_DELIVERIES_LIMIT ? (
-            <Text
-              style={{
-                textAlign: 'center',
-                color: colors.textSecondary,
-                fontFamily: fonts.medium,
-                fontSize: 12,
-                paddingVertical: 16,
-              }}
-            >
-              Showing the {FAILED_DELIVERIES_LIMIT} most recent. Narrow the date range to see older
-              records.
-            </Text>
-          ) : // "All dates" is capped to the most recent ALL_DATES_LIMIT rows to keep
-          // egress down; tell the user how to reach older orders. Only relevant to
-          // the date-scoped filters (Postponed/Unassigned run their own uncapped,
-          // small cross-date queries).
-          datePreset === 'all' &&
-            filter !== 'postponed' &&
-            filter !== 'unassigned' &&
-            (data?.length ?? 0) >= ALL_DATES_LIMIT ? (
-            <Text
-              style={{
-                textAlign: 'center',
-                color: colors.textSecondary,
-                fontFamily: fonts.medium,
-                fontSize: 12,
-                paddingVertical: 16,
-              }}
-            >
-              Showing the {ALL_DATES_LIMIT} most recent. Search a name or phone to find older
-              orders.
-            </Text>
-          ) : null
-        }
-        ListEmptyComponent={
-          filter === 'failed' ? (
-            !failedRange.valid ? (
-              <Empty
-                icon="calendar"
-                title="Check the date range"
-                sub="Enter valid From and To dates, with From no later than To."
-              />
-            ) : failedQ.error ? (
-              <Empty icon="alert" title="Could not load failed deliveries" sub={failedQ.error} />
-            ) : failedQ.loading ? (
-              <View style={{ padding: 60, alignItems: 'center' }}>
-                <ActivityIndicator color={colors.black} />
-              </View>
-            ) : (
-              <Empty
-                icon="check"
-                title={failedKind === 'attempted' ? 'No attempted failures' : 'Nothing here'}
-                sub={
-                  failedKind === 'attempted'
-                    ? 'No confirmed orders ended unsuccessfully in this range. Auto-closed policy records are kept in their own tab.'
-                    : 'No failed-delivery records match this range and the active filters.'
+              onRefresh={() => {
+                if (filter === 'failed') {
+                  failedQ.reload();
+                  return;
                 }
-              />
-            )
-          ) : filter === 'postponed' ? (
-            postponedQ.error ? (
-              <Empty icon="alert" title="Could not load" sub={postponedQ.error} />
-            ) : postponedQ.loading ? (
-              <View style={{ padding: 60, alignItems: 'center' }}>
-                <ActivityIndicator color={colors.black} />
-              </View>
-            ) : (
-              <Empty
-                icon="calendar"
-                title="No postponed orders"
-                sub="Orders postponed to a later date show here with their due date, soonest first."
-              />
-            )
-          ) : filter === 'unassigned' ? (
-            unassignedQ.error ? (
-              <Empty icon="alert" title="Could not load" sub={unassignedQ.error} />
-            ) : unassignedQ.loading ? (
+                reload();
+                postponedQ.reload();
+                unassignedQ.reload();
+              }}
+              tintColor={colors.black}
+            />
+          }
+          contentContainerStyle={{
+            padding: 16,
+            paddingBottom: selectMode ? 132 + insets.bottom : 96,
+            flexGrow: 1,
+          }}
+          initialNumToRender={12}
+          windowSize={7}
+          maxToRenderPerBatch={8}
+          removeClippedSubviews
+          ListFooterComponent={
+            filter === 'failed' && (failedQ.data?.length ?? 0) >= FAILED_DELIVERIES_LIMIT ? (
+              <Text
+                style={{
+                  textAlign: 'center',
+                  color: colors.textSecondary,
+                  fontFamily: fonts.medium,
+                  fontSize: 12,
+                  paddingVertical: 16,
+                }}
+              >
+                Showing the {FAILED_DELIVERIES_LIMIT} most recent. Narrow the date range to see
+                older records.
+              </Text>
+            ) : // "All dates" is capped to the most recent ALL_DATES_LIMIT rows to keep
+            // egress down; tell the user how to reach older orders. Only relevant to
+            // the date-scoped filters (Postponed/Unassigned run their own uncapped,
+            // small cross-date queries).
+            datePreset === 'all' &&
+              filter !== 'postponed' &&
+              filter !== 'unassigned' &&
+              (data?.length ?? 0) >= ALL_DATES_LIMIT ? (
+              <Text
+                style={{
+                  textAlign: 'center',
+                  color: colors.textSecondary,
+                  fontFamily: fonts.medium,
+                  fontSize: 12,
+                  paddingVertical: 16,
+                }}
+              >
+                Showing the {ALL_DATES_LIMIT} most recent. Search a name or phone to find older
+                orders.
+              </Text>
+            ) : null
+          }
+          ListEmptyComponent={
+            filter === 'failed' ? (
+              !failedRange.valid ? (
+                <Empty
+                  icon="calendar"
+                  title="Check the date range"
+                  sub="Enter valid From and To dates, with From no later than To."
+                />
+              ) : failedQ.error ? (
+                <Empty icon="alert" title="Could not load failed deliveries" sub={failedQ.error} />
+              ) : failedQ.loading ? (
+                <View style={{ padding: 60, alignItems: 'center' }}>
+                  <ActivityIndicator color={colors.black} />
+                </View>
+              ) : (
+                <Empty
+                  icon="check"
+                  title={failedKind === 'attempted' ? 'No attempted failures' : 'Nothing here'}
+                  sub={
+                    failedKind === 'attempted'
+                      ? 'No confirmed orders ended unsuccessfully in this range. Auto-closed policy records are kept in their own tab.'
+                      : 'No failed-delivery records match this range and the active filters.'
+                  }
+                />
+              )
+            ) : filter === 'postponed' ? (
+              postponedQ.error ? (
+                <Empty icon="alert" title="Could not load" sub={postponedQ.error} />
+              ) : postponedQ.loading ? (
+                <View style={{ padding: 60, alignItems: 'center' }}>
+                  <ActivityIndicator color={colors.black} />
+                </View>
+              ) : (
+                <Empty
+                  icon="calendar"
+                  title="No postponed orders"
+                  sub="Orders postponed to a later date show here with their due date, soonest first."
+                />
+              )
+            ) : filter === 'unassigned' ? (
+              unassignedQ.error ? (
+                <Empty icon="alert" title="Could not load" sub={unassignedQ.error} />
+              ) : unassignedQ.loading ? (
+                <View style={{ padding: 60, alignItems: 'center' }}>
+                  <ActivityIndicator color={colors.black} />
+                </View>
+              ) : (
+                <Empty
+                  icon="package"
+                  title={locationFilterActive ? 'No unassigned orders here' : 'Nothing unassigned'}
+                  sub={
+                    locationFilterActive
+                      ? `No open unassigned orders match ${selectedLocationsLabel ?? 'the selected locations'} and the other active filters.`
+                      : 'Open orders with no agent show here, across all dates.'
+                  }
+                />
+              )
+            ) : error ? (
+              <Empty icon="alert" title="Could not load" sub={error} />
+            ) : loading ? (
               <View style={{ padding: 60, alignItems: 'center' }}>
                 <ActivityIndicator color={colors.black} />
               </View>
             ) : (
               <Empty
                 icon="package"
-                title={locationFilterActive ? 'No unassigned orders here' : 'Nothing unassigned'}
-                sub={
-                  locationFilterActive
-                    ? `No open unassigned orders match ${selectedLocationsLabel ?? 'the selected locations'} and the other active filters.`
-                    : 'Open orders with no agent show here, across all dates.'
-                }
+                title="Nothing here"
+                sub={emptySubtitle(
+                  datePreset,
+                  customDate,
+                  agents.find((a) => a.id === agentId)?.display_name ?? null,
+                  nameQuery.trim() || null,
+                  clients.find((c) => c.id === clientId)?.name ?? null,
+                )}
               />
             )
-          ) : error ? (
-            <Empty icon="alert" title="Could not load" sub={error} />
-          ) : loading ? (
-            <View style={{ padding: 60, alignItems: 'center' }}>
-              <ActivityIndicator color={colors.black} />
-            </View>
-          ) : (
-            <Empty
-              icon="package"
-              title="Nothing here"
-              sub={emptySubtitle(
-                datePreset,
-                customDate,
-                agents.find((a) => a.id === agentId)?.display_name ?? null,
-                nameQuery.trim() || null,
-                clients.find((c) => c.id === clientId)?.name ?? null,
-              )}
-            />
-          )
-        }
-      />
+          }
+        />
+      )}
       {selectMode ? (
         <View
           style={{
@@ -1557,6 +1607,7 @@ function GroupHeaderRow({
 // renderItem closures on filter switches.
 const DeliveryListRow = memo(function DeliveryListRow({
   delivery,
+  sameCustomerBadge,
   failure,
   onPress,
   onLongPress,
@@ -1567,6 +1618,7 @@ const DeliveryListRow = memo(function DeliveryListRow({
   selected,
 }: {
   delivery: DeliveryRow;
+  sameCustomerBadge?: SameCustomerBadge;
   failure?: FailedDeliveryRow;
   onPress: () => void;
   onLongPress?: () => void;
@@ -1692,6 +1744,19 @@ const DeliveryListRow = memo(function DeliveryListRow({
             ) : null}
             <StatusPill status={status} variant="subtle" size="sm" />
           </View>
+          {sameCustomerBadge ? (
+            <Text
+              style={{
+                fontFamily: fonts.semibold,
+                fontSize: 12,
+                color: colors.textSecondary,
+                marginTop: 4,
+              }}
+            >
+              {sameCustomerBadge.order_count} orders ·{' '}
+              {sameCustomerBadge.possible_only ? 'Possible customer match' : 'Same customer'}
+            </Text>
+          ) : null}
           <Text
             style={{
               fontFamily: fonts.medium,

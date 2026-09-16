@@ -33,6 +33,9 @@ export const isOps = (role: Role): boolean => OPS_ROLES.has(role);
 const MANAGER_ROLES: ReadonlySet<Role> = new Set(['admin', 'dispatcher']);
 const isManager = (role: Role): boolean => MANAGER_ROLES.has(role);
 
+/** Audited customer identity corrections; server enforces the same manager gate. */
+export const canCorrectCustomerMatch = (role: Role): boolean => isManager(role);
+
 // --- Read permissions ---------------------------------------------------------
 
 /** Margin (charged − agent_payment). Admin-only.
