@@ -42,7 +42,14 @@ export function SameCustomerOrdersList({ filters }: { filters: SameCustomerFilte
           </View>
         }
         renderItem={({ item }) => (
-          <Card onPress={() => setGroupId(item.group_id)}>
+          <Card
+            onPress={() => setGroupId(item.group_id)}
+            style={
+              item.needs_assignment
+                ? { backgroundColor: colors.warningSoft, borderColor: colors.warning }
+                : undefined
+            }
+          >
             <View style={{ gap: 6 }}>
               <Text style={{ fontFamily: fonts.bold, color: colors.black }}>
                 {item.customer_name}
@@ -59,6 +66,12 @@ export function SameCustomerOrdersList({ filters }: { filters: SameCustomerFilte
                     : 'Same phone'}
                 {item.addresses_differ ? ' · Address details differ' : ''}
               </Text>
+              {item.needs_assignment ? (
+                <Text style={{ fontFamily: fonts.semibold, color: colors.warningDark }}>
+                  Review assignment ·{' '}
+                  {item.has_unassigned ? 'Unassigned orders' : 'Different riders'}
+                </Text>
+              ) : null}
               {item.matching_order_count < item.order_count ? (
                 <Text style={{ fontFamily: fonts.medium, color: colors.textSecondary }}>
                   {item.order_count - item.matching_order_count} related orders outside your current

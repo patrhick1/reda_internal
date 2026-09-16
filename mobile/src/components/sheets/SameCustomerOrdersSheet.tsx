@@ -270,17 +270,19 @@ export function SameCustomerOrdersSheet({
                   >
                     Assign selected
                   </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={busy || selectedOrders.length < 2}
-                    onPress={() => {
-                      setAction('link');
-                      setChooseRider(false);
-                    }}
-                  >
-                    Same customer
-                  </Button>
+                  {details.data.match_kind === 'alternate' ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={busy || selectedOrders.length < 2}
+                      onPress={() => {
+                        setAction('link');
+                        setChooseRider(false);
+                      }}
+                    >
+                      Confirm customer match
+                    </Button>
+                  ) : null}
                   <Button
                     size="sm"
                     variant="secondary"

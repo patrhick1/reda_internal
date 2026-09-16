@@ -6,6 +6,7 @@ import {
   getSameCustomerBadges,
   getSameCustomerConfig,
   getSameCustomerOrders,
+  getSameCustomerSummary,
   listSameCustomerOrders,
   type SameCustomerFilters,
 } from '@/services/same-customer';
@@ -64,6 +65,21 @@ export function useSameCustomerBadges(ids: string[], enabled: boolean) {
   });
   useReloadOnFocus(() => {
     if (enabled && stableIds.length && isOps(user.role)) void query.refetch();
+  });
+  return query;
+}
+
+export function useSameCustomerSummary(filters: SameCustomerFilters, enabled: boolean) {
+  const user = useCurrentUser();
+  const query = useQuery({
+    queryKey: ['deliveries', 'same-customer', user.userId, 'summary', filters],
+    queryFn: () => getSameCustomerSummary(filters),
+    enabled: enabled && isOps(user.role) && /^\d{4}-\d{2}-\d{2}$/.test(filters.day),
+    staleTime: 15_000,
+    refetchInterval: 30_000,
+  });
+  useReloadOnFocus(() => {
+    if (enabled && isOps(user.role)) void query.refetch();
   });
   return query;
 }

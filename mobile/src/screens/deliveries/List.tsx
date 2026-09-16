@@ -15,7 +15,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
-import { useSameCustomerBadges, useSameCustomerConfig } from '@/hooks/useSameCustomer';
+import {
+  useSameCustomerBadges,
+  useSameCustomerConfig,
+  useSameCustomerSummary,
+} from '@/hooks/useSameCustomer';
 import { SameCustomerOrdersList } from '@/components/delivery/SameCustomerOrdersList';
 import type { SameCustomerBadge } from '@/services/same-customer';
 import {
@@ -193,6 +197,12 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     const cleared: Record<string, undefined> = {};
     if (params.filter && FILTER_IDS.has(params.filter)) {
       setFilter(params.filter as Filter);
+      if (params.filter === 'same_customer') {
+        setDatePreset('today');
+        setAgentId(null);
+        setClientId(null);
+        setNameQuery('');
+      }
       cleared.filter = undefined;
     }
     if (typeof params.agent === 'string' && params.agent) {
@@ -926,9 +936,28 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
       : assignedCount === assignableRows.length
         ? 'Reassign'
         : 'Assign / reassign';
+  const sameCustomerDay =
+    datePreset === 'yesterday'
+      ? yesterdayLagos()
+      : datePreset === 'custom'
+        ? customDate
+        : todayLagos();
+  const sameCustomerSummary = useSameCustomerSummary(
+    { day: sameCustomerDay, agentId, clientId, search: debouncedNeedle },
+    sameCustomerEnabled,
+  );
   const filterOptions = [
     { id: 'all' as const, label: 'All', count: allRows.length },
-    ...(sameCustomerEnabled ? [{ id: 'same_customer' as const, label: 'Same customer' }] : []),
+    ...(sameCustomerEnabled
+      ? [
+          {
+            id: 'same_customer' as const,
+            label: datePreset === 'all' ? 'Same customer · Today' : 'Same customer',
+            count: sameCustomerSummary.error ? undefined : sameCustomerSummary.data?.total,
+            attention: !sameCustomerSummary.error && (sameCustomerSummary.data?.attention ?? 0) > 0,
+          },
+        ]
+      : []),
     { id: 'to_notify' as const, label: 'To notify', count: toNotifyRows.length },
     ...(canSeeClaims ? [{ id: 'unread' as const, label: 'Unread', count: unreadRows.length }] : []),
     { id: 'active' as const, label: 'Active', count: buckets.active.length },

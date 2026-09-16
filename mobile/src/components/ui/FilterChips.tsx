@@ -6,6 +6,7 @@ export type FilterOption<T extends string = string> = {
   id: T;
   label: string;
   count?: number;
+  attention?: boolean;
 };
 
 export function FilterChips<T extends string>({
@@ -31,8 +32,18 @@ export function FilterChips<T extends string>({
             onPress={() => onChange(o.id)}
             style={({ pressed }) => [
               {
-                backgroundColor: active ? colors.black : colors.white,
-                borderColor: active ? colors.black : colors.border,
+                backgroundColor: o.attention
+                  ? active
+                    ? colors.warningDark
+                    : colors.warningSoft
+                  : active
+                    ? colors.black
+                    : colors.white,
+                borderColor: o.attention
+                  ? colors.warningDark
+                  : active
+                    ? colors.black
+                    : colors.border,
                 borderWidth: 1,
                 borderRadius: 999,
                 paddingVertical: 4,
@@ -49,7 +60,7 @@ export function FilterChips<T extends string>({
               style={{
                 fontFamily: fonts.bold,
                 fontSize: 12,
-                color: active ? colors.white : colors.black,
+                color: active ? colors.white : o.attention ? colors.warningDark : colors.black,
               }}
             >
               {o.label}
@@ -59,7 +70,11 @@ export function FilterChips<T extends string>({
                 style={{
                   fontFamily: fonts.semibold,
                   fontSize: 12,
-                  color: active ? colors.white : colors.textSecondary,
+                  color: active
+                    ? colors.white
+                    : o.attention
+                      ? colors.warningDark
+                      : colors.textSecondary,
                   opacity: 0.85,
                 }}
               >

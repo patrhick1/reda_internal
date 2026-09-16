@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
+import { useSameCustomerConfig, useSameCustomerSummary } from '@/hooks/useSameCustomer';
 import { usePendingLocationChangesCount } from '@/hooks/usePendingLocationChangesCount';
 import { countNegativeMarginDeliveries, type DeliveryRow } from '@/services/deliveries';
 import { getTodayDeliveryRate, getDeliveryRateHistory } from '@/services/reconciliation';
@@ -52,6 +53,14 @@ export default function AdminHome() {
   // Latest six working days for the home trend strip (tap → full history).
   // Sunday is skipped, but each working day remains its own daily bar.
   const today = todayLagos();
+  const sameCustomerConfig = useSameCustomerConfig();
+  const sameCustomerSummary = useSameCustomerSummary(
+    { day: today },
+    sameCustomerConfig.data?.discovery_enabled === true,
+  );
+  const sameCustomerAttention = sameCustomerSummary.error
+    ? 0
+    : (sameCustomerSummary.data?.attention ?? 0);
   const trendQ = useAsync(
     () => getDeliveryRateHistory(workingDayWindowStart(today, 6), today),
     [today],
@@ -172,7 +181,8 @@ export default function AdminHome() {
         />
 
         {/* Needs attention */}
-        {reviewCount > 0 ||
+        {sameCustomerAttention > 0 ||
+        reviewCount > 0 ||
         openIssues.length > 0 ||
         pendingZoneCount > 0 ||
         negMarginCount > 0 ||
@@ -181,6 +191,21 @@ export default function AdminHome() {
           <>
             <SectionHeader>Needs attention</SectionHeader>
             <View style={{ gap: 8 }}>
+              {sameCustomerAttention > 0 ? (
+                <AttentionRow
+                  icon="users"
+                  iconBg={colors.warningSoft}
+                  iconColor={colors.warningDark}
+                  title={`${sameCustomerAttention} same-customer ${sameCustomerAttention === 1 ? 'group needs' : 'groups need'} assignment review`}
+                  sub="Today · Different riders or unassigned orders"
+                  onPress={() =>
+                    router.push({
+                      pathname: '/(admin)/deliveries',
+                      params: { filter: 'same_customer' },
+                    })
+                  }
+                />
+              ) : null}
               {openIssues.length > 0 ? (
                 <IssuesAttentionBlock
                   issues={openIssues}

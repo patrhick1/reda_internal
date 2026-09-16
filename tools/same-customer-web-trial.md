@@ -59,3 +59,32 @@ duplicate-copy visibility and unusually large contact-group handling remain.
   product/address/rider details and the trial notice. At 390 px, document width
   remained 390 px. No production assignment or customer correction was submitted.
 - Payout migrations and native OTA publication are excluded.
+
+## Web attention improvements — 16 September 2026
+
+The Same customer chip shows the full filtered group count and turns amber when a
+group has an open delivery and either multiple riders or an unassigned member.
+Group cards use the same indicator. Admin Home adds a Today shortcut under Needs
+attention; it opens today's group list and resets stale vendor/rider/search
+filters. Fully completed groups do not trigger assignment attention. Separate
+riders may be intentional, so the wording asks for review.
+
+Known primary/linked groups no longer show the redundant Same customer action.
+Alternate-phone candidates show Confirm customer match, retaining reasoned audit.
+
+This release uses the existing discovery RPC and deliveries_safe read view;
+no production database migration is required or included. Status and assignment
+are read in batches of up to 200 IDs. Summary counts traverse every group page,
+deduplicate groups, and reject incomplete/changing results instead of showing a
+partial count. Queries refresh after assignment/correction, on focus, and every
+30 seconds. A server aggregate is a future optimization for much larger volume.
+
+The prepared attention SQL migration remains local and is excluded from this web
+release. Automatic approval review rejected its production rehearsal; no rejected
+command ran. The web-only implementation removes that dependency.
+
+Validation: TypeScript and ESLint; isolated JavaScript checks for multiple pages,
+same rider, completed deliveries, missing rows, changing totals and duplicate
+pages. Previous UI validation covered primary/alternate correction labels,
+assignment refresh and 390 px layout. No automatic assignments, payout activation,
+production order edits or native OTA publication are included.
