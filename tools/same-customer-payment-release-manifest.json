@@ -1,0 +1,54 @@
+[
+  {
+    "file": "supabase/migrations/20260915233000_same_customer_pay_shadow.sql",
+    "sha256": "e5f765c3dda160c42d9e8af72ec24c5c114cef587a6f077a13f7fd3109b87d9e"
+  },
+  {
+    "file": "supabase/migrations/20260916003000_same_customer_completion_review.sql",
+    "sha256": "e2d3a63fb87fe04dd76d8f3ccabcad081a3e56d25fa6391db2a06a4696d43da1"
+  },
+  {
+    "file": "supabase/migrations/20260916013000_same_customer_normal_fee.sql",
+    "sha256": "6b1a327751f4dda7c4ed007c17dee1766972c7737d23a386701bc1746cc4b541"
+  },
+  {
+    "file": "supabase/migrations/20260916023000_same_customer_financial_locks.sql",
+    "sha256": "8f11e57242a726e6ac74d048bd2e2ab2b553ca31b2c14133f81acb978611a322"
+  },
+  {
+    "file": "supabase/migrations/20260916033000_same_customer_manual_fees.sql",
+    "sha256": "80ebe7641b5a605b9b5407cb259fadf1f049557fd8c8300167bdc921182dea65"
+  },
+  {
+    "file": "supabase/migrations/20260916043000_same_customer_final_pay.sql",
+    "sha256": "71cbd4dee3e7c9f3bf3abf6344b5126fd17bf8f618773b7fa8b2810f1273b41d"
+  },
+  {
+    "file": "supabase/migrations/20260916053000_same_customer_financial_readers.sql",
+    "sha256": "4a4d19c02d75e9c4a787ac3a3ee80dff27d4543693a38440123e3e902c1dff9e"
+  },
+  {
+    "file": "supabase/migrations/20260916063000_same_customer_delivery_pay.sql",
+    "sha256": "4dca224796c6bf6534715a66f52416bc5cc1dc36765a8af656179729e4cb894d"
+  },
+  {
+    "file": "supabase/migrations/20260916073000_same_customer_settlement_write_guard.sql",
+    "sha256": "915ed92a11fb5855d70d74d34b82a0bafd331da11c5ecd8b82ca11e3dba2bc5b"
+  },
+  {
+    "file": "supabase/migrations/20260916083000_same_customer_normal_fee_review.sql",
+    "sha256": "549a83b95ae036975ee751ad2b0fcfc101be5d6653195c5d1546ef40667ba9cd"
+  },
+  {
+    "file": "supabase/migrations/20260916120000_same_customer_attention.sql",
+    "sha256": "b077190e6c3866e73faeebbcd1961086c9f2a550f0504cb65c485ede4d9a8f83"
+  },
+  {
+    "file": "supabase/migrations/20260916133000_same_customer_client_contract.sql",
+    "sha256": "6c1d894fc3d1c894f09b1c1b181eabb56ce9eee83539056c4eb2bf8b717f5e5b"
+  },
+  {
+    "file": "supabase/migrations/20260916140000_same_customer_policy_audit.sql",
+    "sha256": "01153d72fd1ca49172b21dd2c6eeeecccf10c1d4eba01d7c0d272ee64838a5fa"
+  }
+]

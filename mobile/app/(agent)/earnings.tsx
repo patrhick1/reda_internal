@@ -7,14 +7,15 @@ import { useCurrentUser } from '@/hooks/useAuth';
 import { listAgentEarnings, type AgentEarningRow } from '@/services/deliveries';
 import { listAgentEarningsSummary } from '@/services/reconciliation';
 import { formatNaira } from '@/lib/format';
-import { AppBar, Card, Empty, SectionHeader } from '@/components/ui';
+import { AppBar, Banner, Card, Empty, SectionHeader } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 
 export default function AgentEarnings() {
   const user = useCurrentUser();
+  const financialRevision = useFinancialRevision();
   const { data, loading, error, reload } = useAsync(
     () => listAgentEarnings(user.userId),
-    [user.userId],
+    [user.userId, financialRevision],
   );
 
   // Agents remit DAILY, not weekly (per Uzo, 2026-06-20), so the remit card is
@@ -27,7 +28,6 @@ export default function AgentEarnings() {
   // mounted, so a screen opened before Lagos midnight can still be mounted the
   // next day. The earnings reload sets loading and re-renders; recomputing here
   // changes the dependency below and replaces the stale day request.
-  const financialRevision = useFinancialRevision();
   const today = lagosWeekRange().today;
   const remitQ = useAsync(() => listAgentEarningsSummary(today, today), [today, financialRevision]);
 
@@ -41,8 +41,10 @@ export default function AgentEarnings() {
   // card rendering during the first load and on the rare empty-week case.
   const remit = remitQ.data?.[0];
   const collected = Number(remit?.total_collected ?? 0);
-  const youKeep = Number(remit?.total_earnings ?? 0);
-  const toRemit = Number(remit?.total_remit ?? 0);
+  const pendingRemit = !!remit && (remit.total_remit == null || remit.pending_pay_count > 0);
+  const youKeep = Number(remit?.known_earnings ?? 0);
+  const toRemit = remit?.total_remit ?? 0;
+  const remitUnavailable = !!remitQ.error || (remitQ.loading && !remit);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -86,14 +88,30 @@ export default function AgentEarnings() {
                   marginTop: 4,
                 }}
               >
-                {formatNaira(buckets.today)}
+                {buckets.todayPending ? 'Pending review' : formatNaira(buckets.today)}
               </Text>
               <View style={{ flexDirection: 'row', gap: 14, marginTop: 10 }}>
-                <SubStat label="This week" value={formatNaira(buckets.thisWeek)} />
+                <SubStat
+                  label="This week"
+                  value={buckets.weekPending ? 'Pending review' : formatNaira(buckets.thisWeek)}
+                />
                 <View style={{ width: 1, backgroundColor: '#333' }} />
-                <SubStat label="This month" value={formatNaira(buckets.thisMonth)} />
+                <SubStat
+                  label="This month"
+                  value={buckets.monthPending ? 'Pending review' : formatNaira(buckets.thisMonth)}
+                />
               </View>
             </Card>
+            {buckets.monthPending > 0 ? (
+              <Banner tone="info">
+                {buckets.monthPending}{' '}
+                {buckets.monthPending === 1 ? 'earning needs' : 'earnings need'} review this month.
+                Known earnings: {formatNaira(buckets.thisMonth)}.
+              </Banner>
+            ) : null}
+            {remitQ.error ? (
+              <Banner tone="error">Could not load remittance. Pull down to retry.</Banner>
+            ) : null}
             <Card>
               <Text
                 style={{
@@ -113,15 +131,28 @@ export default function AgentEarnings() {
                   alignItems: 'flex-start',
                 }}
               >
-                <RemitTile label="Collected" value={formatNaira(collected)} />
+                <RemitTile
+                  label="Collected"
+                  value={remitUnavailable ? 'Unavailable' : formatNaira(collected)}
+                />
                 <View style={{ width: 1, backgroundColor: colors.border, marginHorizontal: 12 }} />
                 <RemitTile
-                  label="You keep"
-                  value={formatNaira(youKeep)}
+                  label={pendingRemit ? 'Known pay' : 'You keep'}
+                  value={remitUnavailable ? 'Unavailable' : formatNaira(youKeep)}
                   valueColor={colors.success}
                 />
                 <View style={{ width: 1, backgroundColor: colors.border, marginHorizontal: 12 }} />
-                <RemitTile label="To remit" value={formatNaira(toRemit)} valueColor={colors.red} />
+                <RemitTile
+                  label="To remit"
+                  value={
+                    remitUnavailable
+                      ? 'Unavailable'
+                      : pendingRemit
+                        ? 'Pending review'
+                        : formatNaira(toRemit)
+                  }
+                  valueColor={colors.red}
+                />
               </View>
               <Text
                 style={{
@@ -133,7 +164,9 @@ export default function AgentEarnings() {
               >
                 {remitQ.loading && !remit
                   ? 'Loading…'
-                  : 'Cash + transfer you collected, minus your delivery pay.'}
+                  : pendingRemit
+                    ? 'Your remittance will be available after the pending earnings are reviewed.'
+                    : 'Cash + transfer you collected, minus your delivery pay.'}
               </Text>
             </Card>
             <SectionHeader>Recent deliveries</SectionHeader>
@@ -244,9 +277,26 @@ function EarningRow({ row }: { row: AgentEarningRow }) {
           >
             {row.scheduled_date}
           </Text>
+          {row.pay_state === 'ready' ? (
+            <Text style={{ color: colors.textSecondary }}>
+              {row.manual_exception
+                ? 'Reviewed exception'
+                : row.multiplier === 0.5
+                  ? 'Half fee · same customer and Lagos day'
+                  : 'Full fee'}
+            </Text>
+          ) : null}
         </View>
-        <Text style={{ fontFamily: fonts.extrabold, fontSize: 16, color: colors.success }}>
-          +{formatNaira(row.agent_payment_snapshot)}
+        <Text
+          style={{
+            fontFamily: fonts.extrabold,
+            fontSize: 16,
+            color: row.agent_payment_snapshot == null ? colors.warningDark : colors.success,
+          }}
+        >
+          {row.agent_payment_snapshot == null
+            ? 'Pending review'
+            : `+${formatNaira(row.agent_payment_snapshot)}`}
         </Text>
       </View>
     </Card>
@@ -277,11 +327,20 @@ function bucketize(rows: AgentEarningRow[]) {
   let today = 0,
     thisWeek = 0,
     thisMonth = 0;
+  let todayPending = 0,
+    weekPending = 0,
+    monthPending = 0;
   for (const row of rows) {
+    if (row.agent_payment_snapshot == null) {
+      if (row.scheduled_date === r.today) todayPending++;
+      if (row.scheduled_date >= r.start && row.scheduled_date <= r.today) weekPending++;
+      if (row.scheduled_date >= r.startOfMonth && row.scheduled_date <= r.today) monthPending++;
+      continue;
+    }
     const amount = Number(row.agent_payment_snapshot);
     if (row.scheduled_date === r.today) today += amount;
-    if (row.scheduled_date >= r.start) thisWeek += amount;
-    if (row.scheduled_date >= r.startOfMonth) thisMonth += amount;
+    if (row.scheduled_date >= r.start && row.scheduled_date <= r.today) thisWeek += amount;
+    if (row.scheduled_date >= r.startOfMonth && row.scheduled_date <= r.today) thisMonth += amount;
   }
-  return { today, thisWeek, thisMonth };
+  return { today, thisWeek, thisMonth, todayPending, weekPending, monthPending };
 }

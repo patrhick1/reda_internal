@@ -1,6 +1,8 @@
 import { rpcUntyped, supabase } from '@/lib/supabase';
 import { ymdLagos } from '@/lib/date';
 import { isRedaWorkingDay } from '@/lib/rate-trend';
+import { mergeReplacementEarnings, type AgentEarningsRow } from '@/lib/agent-earnings';
+export type { AgentEarningsRow } from '@/lib/agent-earnings';
 
 // Phase 6.3 reconciliation RPCs. Types intentionally hand-written for now; will
 // regenerate via `npm run gen:types` once the SQL is applied. The @ts-expect-
@@ -96,21 +98,6 @@ export async function getClientAccountBalance(
   const rows = await listClientAccountBalances(from, to);
   return rows.find((row) => row.client_id === clientId) ?? null;
 }
-
-export type AgentEarningsRow = {
-  agent_id: string;
-  agent_name: string;
-  deliveries_count: number;
-  total_quantity: number;
-  /** What Reda pays the rider (sum of agent_payment_snapshot × quantity_delivered).
-   *  Payroll, money Reda → rider. Still used by the Summary tab's margin math. */
-  total_earnings: number;
-  /** Gross cash + transfer the rider collected from customers (sum of paid). */
-  total_collected: number;
-  /** NET the rider owes Reda = total_collected − total_earnings (rider keeps
-   *  their own delivery pay and remits the rest). Drives the "By agent" view. */
-  total_remit: number;
-};
 
 /** One product line within a delivery, from the reconcile RPC's `products`
  *  jsonb. Multi-product deliveries return N of these; the legacy single product
@@ -310,37 +297,28 @@ export async function listAgentEarningsSummary(
   from: string,
   to: string,
 ): Promise<AgentEarningsRow[]> {
-  const [{ data, error }, replacementRows] = await Promise.all([
-    supabase.rpc('agent_earnings_summary', { p_from: from, p_to: to }),
+  const [ordinary, replacementRows] = await Promise.all([
+    readAgentEarningsSummary(from, to),
     listReplacementAgentFinancials(from, to),
   ]);
+  return mergeReplacementEarnings(ordinary, replacementRows);
+}
+
+async function readAgentEarningsSummary(from: string, to: string): Promise<AgentEarningsRow[]> {
+  const result = await rpcUntyped<AgentEarningsRow[]>('agent_earnings_summary_v2', {
+    p_from: from,
+    p_to: to,
+  });
+  if (!result.error) return result.data ?? [];
+  // Client-first rollout only: never hide auth, pending-pay, or network errors.
+  if (result.error.code !== 'PGRST202' && result.error.code !== '42883') throw result.error;
+  const { data, error } = await supabase.rpc('agent_earnings_summary', { p_from: from, p_to: to });
   if (error) throw error;
-  const rows = ((data ?? []) as AgentEarningsRow[]).map((row) => ({ ...row }));
-  const byAgent = new Map(rows.map((row) => [row.agent_id, row]));
-  for (const replacement of replacementRows) {
-    if (!replacement.agent_id) continue;
-    let row = byAgent.get(replacement.agent_id);
-    if (!row) {
-      row = {
-        agent_id: replacement.agent_id,
-        agent_name: replacement.agent_name ?? 'Agent',
-        deliveries_count: 0,
-        total_quantity: 0,
-        total_earnings: 0,
-        total_collected: 0,
-        total_remit: 0,
-      };
-      rows.push(row);
-      byAgent.set(row.agent_id, row);
-    }
-    row.deliveries_count += 1;
-    row.total_earnings += Number(replacement.agent_payment);
-    const collected =
-      replacement.payment_received_by === 'rider' ? Number(replacement.customer_paid ?? 0) : 0;
-    row.total_collected += collected;
-    row.total_remit += collected - Number(replacement.agent_payment);
-  }
-  return [...byAgent.values()];
+  return (data ?? []).map((row) => ({
+    ...row,
+    known_earnings: Number(row.total_earnings),
+    pending_pay_count: 0,
+  }));
 }
 
 /** Total operational cost of delivered pickup/waybill records for the period.

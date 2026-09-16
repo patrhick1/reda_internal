@@ -137,12 +137,13 @@ export default function AdminNegativeMargin() {
                       }}
                       numberOfLines={1}
                     >
-                      Charge {formatNaira(charged)} · Agent {formatNaira(d.agent_payment_snapshot)}
+                      Charge {formatNaira(charged)} · Agent{' '}
+                      {formatNaira(d.rider_pay ? d.rider_pay.amount : d.agent_payment_snapshot)}
                     </Text>
                   </View>
                   <View style={{ alignItems: 'flex-end' }}>
                     <Text style={{ fontFamily: fonts.extrabold, fontSize: 16, color: colors.red }}>
-                      {formatNaira(d.margin)}
+                      {formatNaira(d.rider_pay ? d.rider_pay.margin : d.margin)}
                     </Text>
                     <Text
                       style={{

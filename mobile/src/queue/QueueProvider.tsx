@@ -19,6 +19,7 @@ import { invalidateDeliveries } from '@/services/deliveries';
 import { invalidateStock } from '@/services/stock';
 import { loadJobs, saveJobs, migrateLegacyQueue, clearAllQueueStorageForTests } from './storage';
 import { executeJob } from './executors';
+import { recoverPaymentUpgradeJobs } from './payment-upgrade';
 import {
   BACKOFF_MS,
   MAX_ATTEMPTS,
@@ -121,6 +122,7 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       }
       const loaded = await loadJobs(userId);
       if (cancelled) return;
+      const upgradeRecovered = recoverPaymentUpgradeJobs(loaded, Date.now());
       // Reconcile orphaned in-flight jobs. A job persisted as `in_flight`
       // means the app died between marking it in-flight and the RPC
       // resolving (reboot, OS kill, crash, force-close). Nothing in the
@@ -130,14 +132,14 @@ export function QueueProvider({ children }: { children: ReactNode }) {
       // dead-letter screen. Reset them to `pending` so the drain replays
       // them. Safe: every RPC is idempotent on `clientUuid`, so a job that
       // actually landed server-side before the kill replays as a no-op.
-      const hasOrphaned = loaded.some((j) => j.status === 'in_flight');
+      const hasOrphaned = upgradeRecovered.some((j) => j.status === 'in_flight');
       const reconciled = hasOrphaned
-        ? loaded.map((j) =>
+        ? upgradeRecovered.map((j) =>
             j.status === 'in_flight'
               ? { ...j, status: 'pending' as const, nextAttemptAt: Date.now() }
               : j,
           )
-        : loaded;
+        : upgradeRecovered;
       // When nothing was reconciled, keep jobs === lastSavedRef so the
       // persist effect skips a redundant write. When we did reconcile, leave
       // them mismatched so the effect flushes the repaired state to disk.

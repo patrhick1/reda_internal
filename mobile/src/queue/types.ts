@@ -142,7 +142,8 @@ export type Job = {
   lastError: string | null;
   /** ms since epoch. Set to enqueue time, updated on each retry. */
   nextAttemptAt: number;
-  /** ms since epoch. Used in UI ("queued 2m ago"). */
+  /** ms since epoch, captured once at enqueue and preserved across retries.
+   * Also sent as the claimed occurrence time for successful delivery events. */
   createdAt: number;
   /** Human label for the dead-letter UI. e.g. "Mark delivered · Mr Adeyemi". */
   label: string;

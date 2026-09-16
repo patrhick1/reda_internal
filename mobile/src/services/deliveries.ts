@@ -4,6 +4,7 @@ import type { Database } from '@/types/database.gen';
 import type { Role } from '@/lib/permissions';
 import { STATUS_GROUPS, STATUS_META, TERMINAL_STATUSES } from '@/lib/theme';
 import { formatDayMonthLagos } from '@/lib/date';
+import type { DeliveryPay } from '@/lib/delivery-pay';
 
 /** [Egress Phase 2.4] Invalidate every cached delivery list at once. All list
  *  variants (date-scoped list, unassigned, postponed, agent-postponed — see
@@ -114,6 +115,8 @@ export type DeliveryRow = (DeliveryAdminRow | DeliverySafeRow) &
   DeliveryDisplayJoins & {
     // deliveries_admin contributes `margin`; deliveries_safe contributes null
     margin: number | null;
+    /** Missing only on an older server or an operational list without pay metadata. */
+    rider_pay?: DeliveryPay;
     /** [Feature A] The delivery's line items, attached via a batched second
      *  query (see attachItemsToRows). Empty array if none resolved. The legacy
      *  product_name / quantity_ordered columns remain for back-compat display
@@ -251,8 +254,13 @@ export type AgentEarningRow = {
   id: string;
   customer_name: string;
   scheduled_date: string;
-  agent_payment_snapshot: number;
+  agent_payment_snapshot: number | null;
   product_name: string | null;
+  pay_state?: 'legacy' | 'ready' | 'pending';
+  review_reason?: string | null;
+  business_date?: string | null;
+  multiplier?: number | null;
+  manual_exception?: boolean;
 };
 
 /** Returns this agent's delivered-deliveries in the last N days (default 35 — covers month).
@@ -267,6 +275,26 @@ export async function listAgentEarnings(
   const cutoff = new Date(todayLagosDate);
   cutoff.setDate(cutoff.getDate() - days);
 
+  const rows: AgentEarningRow[] = [];
+  let cursor: AgentEarningRow | undefined;
+  for (;;) {
+    const result = await rpcUntyped<AgentEarningRow[]>('list_my_earnings_v2', {
+      p_from: cutoff.toISOString().slice(0, 10),
+      p_to: todayLagosDate.toISOString().slice(0, 10),
+      p_after_date: cursor?.scheduled_date ?? null,
+      p_after_id: cursor?.id ?? null,
+      p_limit: 200,
+    });
+    if (result.error) {
+      if (!cursor && (result.error.code === 'PGRST202' || result.error.code === '42883')) break;
+      throw result.error;
+    }
+    const page = result.data ?? [];
+    rows.push(...page);
+    if (page.length < 200) return rows;
+    cursor = page[page.length - 1];
+  }
+  // Older server only: the new endpoint owns successful-rider attribution.
   const { data, error } = await supabase
     .from('deliveries_safe')
     .select(
@@ -521,8 +549,8 @@ export async function listDeliveries(
   // [Egress Phase 3] Compact list rows — no per-row line-item fetch. The card
   // label + sibling identity are server-computed (product_label,
   // sibling_group_key); detail screens hydrate the full `items` via getDelivery.
-  // `items: []` preserves the shared DeliveryRow shape. This whole function is
-  // now a single PostgREST round trip (no delivery_items chunk requests).
+  // `items: []` preserves the shared DeliveryRow shape. Completed agent rows
+  // also receive bounded payment metadata below; there is no per-row item fetch.
   const rows = (data ?? []).map((row) => ({
     ...attachJoins(row as unknown as JoinShape & object),
     items: [] as DeliveryItem[],
@@ -534,6 +562,12 @@ export async function listDeliveries(
   // Direct comparison, not localeCompare: fixed-format UTC ISO timestamps sort
   // chronologically by lexical order (faster, locale-immune). activity_at is
   // always >= created_at, so the created_at fallback only guards a null.
+  if (role === 'agent') {
+    const completed = rows.filter(
+      (row) => row.current_status === 'delivered' && row.order_type !== 'replacement',
+    );
+    await attachDeliveryPay(completed);
+  }
   return rows.sort((a, b) => {
     const x = a.activity_at ?? a.created_at ?? '';
     const y = b.activity_at ?? b.created_at ?? '';
@@ -672,10 +706,11 @@ export async function listUnassigned(role: Role): Promise<DeliveryRow[]> {
  *  list automatically — no resolved/ack state to maintain. All dates; newest
  *  first. deliveries_admin is already admin-gated + excludes deleted rows. */
 export async function listNegativeMarginDeliveries(): Promise<DeliveryRow[]> {
-  const { data, error } = await supabase
+  const scoped = await readNegativeMarginIds();
+  if (scoped && scoped.delivery_ids.length === 0) return [];
+  let query = supabase
     .from('deliveries_admin')
     .select(`*, ${JOIN_FRAGMENT}`)
-    .lt('margin', 0)
     // Waybills/pickups are intentionally margin-negative (Reda subsidises the
     // trip) — they are not mistakes to correct, so keep them out of the review.
     .eq('order_type', 'delivery')
@@ -684,17 +719,26 @@ export async function listNegativeMarginDeliveries(): Promise<DeliveryRow[]> {
     // signals a systemic problem (e.g. a bad rate card) worth surfacing rather
     // than silently loading thousands of rows into the review screen.
     .limit(200);
+  query = scoped ? query.in('id', scoped.delivery_ids) : query.lt('margin', 0);
+  const { data, error } = await query;
   if (error) throw error;
   const joined = (data ?? []).map((row) =>
     attachJoins(row as unknown as JoinShape & object),
   ) as Omit<DeliveryRow, 'items'>[];
-  return (await attachItemsToRows(joined)) as DeliveryRow[];
+  const rows = (await attachItemsToRows(joined)) as DeliveryRow[];
+  if (scoped) {
+    await attachDeliveryPay(rows);
+    // A correction between the ID lookup and row hydration can resolve a flag.
+    return rows.filter((row) => row.rider_pay?.margin != null && row.rider_pay.margin < 0);
+  }
+  return rows;
 }
 
-/** Count of negative-margin deliveries — for the admin Home attention badge.
- *  Head-only count query (no rows, no line-item round trip), unlike
- *  listNegativeMarginDeliveries which hydrates the full rows for the list. */
+/** Count of confirmed negative margins for the Home attention badge.
+ * The current endpoint omits IDs for this request; older servers use a head query. */
 export async function countNegativeMarginDeliveries(): Promise<number> {
+  const scoped = await readNegativeMarginIds(0);
+  if (scoped) return scoped.total_count;
   const { count, error } = await supabase
     .from('deliveries_admin')
     .select('id', { count: 'exact', head: true })
@@ -702,6 +746,17 @@ export async function countNegativeMarginDeliveries(): Promise<number> {
     .eq('order_type', 'delivery');
   if (error) throw error;
   return count ?? 0;
+}
+
+async function readNegativeMarginIds(limit = 200) {
+  const { data, error } = await rpcUntyped<{ total_count: number; delivery_ids: string[] }>(
+    'get_negative_margin_delivery_ids',
+    { p_limit: limit },
+  );
+  if (error?.code === 'PGRST202' || error?.code === '42883') return null;
+  if (error) throw error;
+  if (!data) throw new Error('Margin review is unavailable. Refresh to retry.');
+  return data;
 }
 
 /** A handful of fields per row — used by the New Delivery screen's pre-submit
@@ -816,7 +871,32 @@ export async function getDelivery(role: Role, id: string): Promise<DeliveryRow |
   if (!data) return null;
   const joined = attachJoins(data as unknown as JoinShape & object) as Omit<DeliveryRow, 'items'>;
   const [row] = await attachItemsToRows([joined]);
-  return row as DeliveryRow;
+  if (role !== 'admin' && role !== 'agent') return row as DeliveryRow;
+  const result = row as DeliveryRow;
+  await attachDeliveryPay([result]);
+  return result;
+}
+
+/** One bounded payment lookup per batch, never one request per delivery. */
+async function attachDeliveryPay(rows: DeliveryRow[]): Promise<void> {
+  for (let offset = 0; offset < rows.length; offset += 500) {
+    const batch = rows.slice(offset, offset + 500);
+    const payment = await rpcUntyped<DeliveryPay[]>('get_delivery_pay_state', {
+      p_delivery_ids: batch.map((row) => row.id),
+    });
+    if (payment.error) {
+      // Only a missing endpoint permits client-first fallback.
+      if (offset === 0 && (payment.error.code === 'PGRST202' || payment.error.code === '42883'))
+        return;
+      throw payment.error;
+    }
+    const byId = new Map((payment.data ?? []).map((pay) => [pay.delivery_id, pay]));
+    for (const row of batch) {
+      const pay = row.id ? byId.get(row.id) : undefined;
+      if (!pay) throw new Error('Delivery payment is no longer available. Refresh the delivery.');
+      row.rider_pay = pay;
+    }
+  }
 }
 
 export type CreateDeliveryInput = {

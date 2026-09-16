@@ -38,7 +38,10 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   // Dev-only egress measurement (audit Phase 0). instrumentedFetch is a pass-
   // through in production — the real fetch is returned untouched — so this adds
   // no overhead to release builds.
-  global: { fetch: instrumentedFetch(fetch) },
+  global: {
+    fetch: instrumentedFetch(fetch),
+    headers: { 'x-reda-payment-contract': '1' },
+  },
   // `transport` is undefined outside dev; realtime-js resolves it as
   // `options?.transport ?? WebSocketFactory.getWebSocketConstructor()`, so
   // undefined falls straight through to the platform default. Passed

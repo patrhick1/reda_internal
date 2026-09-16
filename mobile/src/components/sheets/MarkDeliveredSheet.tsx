@@ -407,13 +407,18 @@ export function MarkDeliveredSheet({
         ) : null}
 
         <View style={{ backgroundColor: colors.surface, borderRadius: 12, padding: 12, gap: 6 }}>
-          <SummaryRow label="Your earnings" value={formatNaira(agentEarn)} />
+          <SummaryRow label="Estimated earnings" value={formatNaira(agentEarn)} />
           {isVendorDirect ? (
             <SummaryRow label="To remit to Reda" value={formatNaira(0)} />
           ) : (
-            <SummaryRow label="Remit to Reda" value={formatNaira(remit)} />
+            <SummaryRow label="Estimated remit to Reda" value={formatNaira(remit)} />
           )}
         </View>
+
+        <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+          Final earnings and remittance are confirmed after completion. Check My earnings before
+          handing over money.
+        </Text>
 
         {error ? (
           <Banner tone="error" icon="alert">

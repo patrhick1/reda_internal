@@ -26,9 +26,6 @@ export function SameCustomerOrdersList({ filters }: { filters: SameCustomerFilte
         }
         ListHeaderComponent={
           <View style={{ gap: 10, paddingBottom: 10 }}>
-            <Banner tone="info">
-              Customer matching trial. Assignments are live; rider fees follow the existing rules.
-            </Banner>
             <Text style={{ fontFamily: fonts.semibold, color: colors.black }}>
               {query.data?.pages[0]?.total_groups ?? 0} matching groups ·{' '}
               {formatYmdShort(filters.day)}

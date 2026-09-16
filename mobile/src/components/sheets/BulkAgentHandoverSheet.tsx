@@ -43,8 +43,10 @@ export function BulkAgentHandoverSheet({
     [selected],
   );
 
+  const hasPending = selected.some((row) => row.total_remit == null || row.pending_pay_count > 0);
+
   async function submit() {
-    if (submitting || selected.length === 0) return;
+    if (submitting || selected.length === 0 || hasPending) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -81,7 +83,7 @@ export function BulkAgentHandoverSheet({
               full
               icon="check"
               onPress={submit}
-              disabled={submitting || selected.length === 0}
+              disabled={submitting || selected.length === 0 || hasPending}
             >
               {submitting
                 ? 'Recording…'
@@ -108,7 +110,11 @@ export function BulkAgentHandoverSheet({
           }}
         >
           <SummaryRow label="Agents" value={String(selected.length)} />
-          <SummaryRow label="Total received" value={formatNaira(total)} strong />
+          <SummaryRow
+            label="Total received"
+            value={hasPending ? 'Pending review' : formatNaira(total)}
+            strong
+          />
         </View>
 
         <View>
@@ -151,7 +157,7 @@ export function BulkAgentHandoverSheet({
                   {row.agent_name}
                 </Text>
                 <Text style={{ fontFamily: fonts.extrabold, fontSize: 14, color: colors.black }}>
-                  {formatNaira(Number(row.total_remit))}
+                  {row.total_remit == null ? 'Pending review' : formatNaira(row.total_remit)}
                 </Text>
               </View>
             ))}

@@ -22,15 +22,18 @@ import type {
 } from './types';
 import { rpcUntyped } from '@/lib/supabase';
 
-export type Executor = (clientUuid: string, args: unknown) => Promise<void>;
+export type Executor = (clientUuid: string, args: unknown, occurredAt?: string) => Promise<void>;
 
 const EXECUTORS: Record<JobKind, Executor> = {
-  async change_delivery_status(clientUuid, raw) {
+  async change_delivery_status(clientUuid, raw, occurredAt) {
     const args = raw as ChangeDeliveryStatusArgs;
     const { error } = await supabase.rpc('change_delivery_status', {
       p_client_uuid: clientUuid,
       p_delivery_id: args.deliveryId,
       p_to_status: args.toStatus,
+      // Queue creation time is persisted once. Retrying after Lagos midnight
+      // must preserve the original claim; the server decides the accepted day.
+      p_effective_at: args.toStatus === 'delivered' ? occurredAt : undefined,
       p_reason: args.reason as unknown as string,
       p_notes: args.notes as unknown as string,
       p_quantity_delivered: args.quantityDelivered as unknown as number,
@@ -140,5 +143,10 @@ const EXECUTORS: Record<JobKind, Executor> = {
 export async function executeJob(job: Job): Promise<void> {
   const exec = EXECUTORS[job.kind];
   if (!exec) throw new Error(`unknown job kind: ${job.kind}`);
-  await exec(job.clientUuid, job.args);
+  const occurred = new Date(job.createdAt);
+  const occurredAt =
+    Number.isFinite(job.createdAt) && Number.isFinite(occurred.getTime())
+      ? occurred.toISOString()
+      : undefined;
+  await exec(job.clientUuid, job.args, occurredAt);
 }

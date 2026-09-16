@@ -60,6 +60,38 @@ duplicate-copy visibility and unusually large contact-group handling remain.
   remained 390 px. No production assignment or customer correction was submitted.
 - Payout migrations and native OTA publication are excluded.
 
+
+## Production result
+
+Published successfully from commit `8f49512edb41b765af24cd862c263958804a912a`.
+Vercel deployment `2LKzzE8itB7ENd4fhdrb8jrqUuBC` succeeded; GitHub security,
+TypeScript, lint and formatting checks all passed. The production domain
+`https://app.redalogisticss.com` returns HTTP 200 and serves the discovery-only
+bundle `entry-82aba019d3a2e5914cb6f559c482aee5.js`. The sign-in screen loaded in
+the browser. `tools/check-same-customer-web.mjs` verifies the live bundle includes
+discovery and excludes the unfinished financial RPCs.
+
+Final database check: discovery enabled, payout policy and earning tables absent,
+zero identity decisions and zero assignment requests from testing. Temporary Test
+Agent/Dispatcher sessions were revoked (HTTP 204), their local token file removed,
+and test servers stopped. The isolated PostgreSQL database has zero users,
+deliveries and earnings. No native update was published.
+
+For Uzo: refresh the web app, open Deliveries → Same customer, and select a day.
+14 September 2026 has two existing matching groups for inspection. Assignments
+and customer-match corrections are real operational writes; the new full/half
+pay rule is not active yet.
+
+
+### Checkbox follow-up
+
+Published checkbox selection in commit `e6d24c9`, Vercel deployment
+`H2rCRVaTqD9pn6woskTZTTnN71TM`. Production serves
+`entry-cdc22dbcf11690c9a22b358282cfd0f8.js`. Empty/checked squares retain checkbox
+accessibility and a 44 px minimum tap target. Synthetic browser checks verified
+selection/deselection and 390 px layout; TypeScript, lint, format, CI and deployment
+passed. No database or payout changes accompanied this update.
+
 ## Web attention improvements — 16 September 2026
 
 The Same customer chip shows the full filtered group count and turns amber when a
@@ -88,3 +120,11 @@ same rider, completed deliveries, missing rows, changing totals and duplicate
 pages. Previous UI validation covered primary/alternate correction labels,
 assignment refresh and 390 px layout. No automatic assignments, payout activation,
 production order edits or native OTA publication are included.
+
+Published web-only as `77dd85e` on 16 September 2026. Vercel deployment
+`GkW8ykRr99UKWQKbpUK1hJeAjaDa` and both CI jobs succeeded. Public page and bundle
+returned HTTP 200; bundle `entry-cff39f9c2aa1ab1f3ffc958b09819476.js` includes
+the updated match action and assignment review UI, uses the live API, and excludes
+the payout engine. Production login rendered. Local browser checked the existing
+API response shape, Home shortcut, group count, and selected primary-match actions.
+Local fixture server stopped and test tabs closed.

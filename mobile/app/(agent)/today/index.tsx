@@ -26,7 +26,9 @@ import { formatNaira, formatYmdShort } from '@/lib/format';
 import { formatTimeLagos, todayLagos } from '@/lib/date';
 import { errorMessage } from '@/lib/errors';
 import { getMyDepartureToday, setLeftWarehouse } from '@/services/agent-departures';
-import { getReplacementAgentPayTotal } from '@/services/reconciliation';
+import { listAgentEarningsSummary } from '@/services/reconciliation';
+import { deliveryPayLabel } from '@/lib/delivery-pay';
+import { useFinancialRevision } from '@/lib/financial-refresh';
 import {
   Button,
   Card,
@@ -111,10 +113,13 @@ export default function AgentToday() {
   // "Left the warehouse" state for today — drives the hero control and, once set,
   // lets ops (warehouse/dispatcher/rep) see this rider is on the road.
   const departureQ = useAsync(() => getMyDepartureToday(user.userId), [user.userId]);
-  const replacementPayQ = useAsync(
-    () => getReplacementAgentPayTotal(todayLagos(), todayLagos()),
-    [user.userId],
+  const financialRevision = useFinancialRevision();
+  const currentLagosDay = todayLagos();
+  const earningsQ = useAsync(
+    () => listAgentEarningsSummary(currentLagosDay, currentLagosDay),
+    [user.userId, currentLagosDay, financialRevision, data],
   );
+  const earnings = earningsQ.data?.find((row) => row.agent_id === user.userId);
   // "Should I call?" coverage — one tiny cached RPC (~50 rows). Drives the
   // per-row stock warning; refreshed automatically via invalidateStock() when
   // stock moves or any order is confirmed (queue drain).
@@ -132,7 +137,7 @@ export default function AgentToday() {
     refetchOverdueIfStale();
     coverageQ.refetchIfStale();
     departureQ.reload();
-    replacementPayQ.reload();
+    earningsQ.reload();
   });
 
   // Optimistic override so the toggle feels instant: undefined = trust the
@@ -240,10 +245,7 @@ export default function AgentToday() {
   }, [filter, selectMode, exitSelect]);
 
   // Hero stats stay GLOBAL (whole day), independent of the active filter/search.
-  const stats = useMemo(
-    () => summarize(data ?? [], replacementPayQ.data ?? 0),
-    [data, replacementPayQ.data],
-  );
+  const stats = useMemo(() => summarize(data ?? []), [data]);
   const dateLabel = todayLagosLabel();
 
   // Apply the name search first so the segment counts reflect the slice on
@@ -398,7 +400,13 @@ export default function AgentToday() {
         >
           <StatCell
             label="Earned today"
-            value={formatNaira(stats.earnedToday)}
+            value={
+              earningsQ.error || earningsQ.loading
+                ? 'Unavailable'
+                : earnings?.pending_pay_count
+                  ? 'Pending review'
+                  : formatNaira(earnings?.total_earnings ?? 0)
+            }
             accent={colors.success}
           />
           <StatCell
@@ -715,7 +723,7 @@ export default function AgentToday() {
               reload();
               reloadPostponed();
               reloadOverdue();
-              replacementPayQ.reload();
+              earningsQ.reload();
             }}
             tintColor={colors.black}
           />
@@ -973,8 +981,9 @@ const DeliveryCard = memo(function DeliveryCard({
             >
               {isReplacement
                 ? 'Replacement'
-                : isDone && delivery.agent_payment_snapshot != null
-                  ? `+${formatNaira(delivery.agent_payment_snapshot)}`
+                : isDone
+                  ? (deliveryPayLabel(delivery.rider_pay) ??
+                    `+${formatNaira(delivery.rider_pay ? delivery.rider_pay.amount : delivery.agent_payment_snapshot)}`)
                   : formatNaira(delivery.customer_price)}
             </Text>
           </View>
@@ -991,23 +1000,14 @@ function SeparatorH12() {
   return <View style={{ height: 12 }} />;
 }
 
-function summarize(
-  rows: DeliveryRow[],
-  replacementPay: number,
-): { earnedToday: number; delivered: number; total: number } {
-  // agent_payment_snapshot is per-delivery, not per-unit. Do NOT multiply by quantity.
-  // Replacement work has its own attempt accounting and must not distort the
-  // delivery completion fraction shown in this header.
+function summarize(rows: DeliveryRow[]): { delivered: number; total: number } {
+  // This is an operational count. Earnings use the successful-rider summary,
+  // including completed work that was reassigned and separate replacement pay.
   const deliveries = rows.filter((row) => row.order_type !== 'replacement');
-  let earnedToday = replacementPay;
-  let delivered = 0;
-  for (const d of deliveries) {
-    if (d.current_status === 'delivered') {
-      delivered++;
-      earnedToday += Number(d.agent_payment_snapshot ?? 0);
-    }
-  }
-  return { earnedToday, delivered, total: deliveries.length };
+  return {
+    delivered: deliveries.filter((row) => row.current_status === 'delivered').length,
+    total: deliveries.length,
+  };
 }
 
 function greeting(): string {

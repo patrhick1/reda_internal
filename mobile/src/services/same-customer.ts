@@ -10,6 +10,152 @@ export type SameCustomerConfig = {
   shadow_review_enabled?: boolean;
 };
 
+export type SameCustomerShadowPay = {
+  mode: 'shadow' | 'final' | 'legacy';
+  delivery_id: string;
+  normal_fee: number | null;
+  multiplier: number | null;
+  expected_amount: number | null;
+  current_payable_amount: number | null;
+  business_date: string | null;
+  accounting_date: string;
+  state: 'ready' | 'pending' | 'reversed';
+  review_reason: string | null;
+  active: boolean;
+  revision: number;
+  group_id: string | null;
+  manual_amount: number | null;
+  manual_reason: string | null;
+  reported_occurred_at: string | null;
+  recorded_at: string;
+  rider_name: string;
+  last_normal_fee_review?: {
+    normal_fee: number;
+    reason: string;
+    reviewed_by: string;
+    reviewed_at: string;
+  } | null;
+  last_date_review: {
+    accepted_day: string;
+    reason: string;
+    reviewed_by: string;
+    reviewed_at: string;
+  } | null;
+};
+
+export type SameCustomerPayGroup = {
+  mode?: 'shadow' | 'final';
+  group_id: string;
+  revision: number;
+  state: 'ready' | 'manual_review' | 'rate_mismatch';
+  rider_name: string;
+  business_date: string;
+  total_count: number;
+  proposed_total: number | null;
+  next_cursor: string | null;
+  orders: {
+    delivery_id: string;
+    customer_name: string;
+    vendor_name: string;
+    normal_fee: number | null;
+    multiplier: number;
+    current_payable: number | null;
+    manual_amount: number | null;
+    manual_reason: string | null;
+    proposed_amount: number | null;
+    accounting_date: string;
+  }[];
+};
+
+export async function getSameCustomerPayGroup(groupId: string, after: string | null) {
+  const { data, error } = await rpcUntyped<SameCustomerPayGroup>('get_same_customer_pay_group', {
+    p_group_id: groupId,
+    p_after: after,
+    p_limit: 50,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function reviewSameCustomerManualPay(input: {
+  requestId: string;
+  groupId: string;
+  revision: number;
+  reason: string;
+}) {
+  const { error } = await rpcUntyped('review_same_customer_manual_pay', {
+    p_request_id: input.requestId,
+    p_group_id: input.groupId,
+    p_expected_revision: input.revision,
+    p_reason: input.reason,
+  });
+  if (error) throw error;
+  invalidateDeliveries();
+  notifyFinancialChange();
+}
+
+export async function clearSameCustomerManualFee(input: {
+  requestId: string;
+  deliveryId: string;
+  revision: number;
+  reason: string;
+}) {
+  const { error } = await rpcUntyped('clear_same_customer_manual_fee', {
+    p_request_id: input.requestId,
+    p_delivery_id: input.deliveryId,
+    p_expected_revision: input.revision,
+    p_reason: input.reason,
+  });
+  if (error) throw error;
+  invalidateDeliveries();
+  notifyFinancialChange();
+}
+
+export async function getSameCustomerShadowPay(deliveryId: string) {
+  const { data, error } = await rpcUntyped<SameCustomerShadowPay>('get_same_customer_shadow_pay', {
+    p_delivery_id: deliveryId,
+  });
+  if (error) throw error;
+  return data;
+}
+
+export async function correctSameCustomerNormalFee(input: {
+  requestId: string;
+  deliveryId: string;
+  revision: number;
+  normalFee: number;
+  reason: string;
+}) {
+  const { error } = await rpcUntyped('correct_same_customer_normal_fee', {
+    p_request_id: input.requestId,
+    p_delivery_id: input.deliveryId,
+    p_expected_revision: input.revision,
+    p_normal_fee: input.normalFee,
+    p_reason: input.reason,
+  });
+  if (error) throw error;
+  invalidateDeliveries();
+  notifyFinancialChange();
+}
+
+export async function reviewSameCustomerCompletionDay(input: {
+  requestId: string;
+  deliveryId: string;
+  revision: number;
+  acceptedDay: string;
+  reason: string;
+}) {
+  const { error } = await rpcUntyped('review_same_customer_completion_day', {
+    p_request_id: input.requestId,
+    p_delivery_id: input.deliveryId,
+    p_expected_revision: input.revision,
+    p_accepted_day: input.acceptedDay,
+    p_reason: input.reason,
+  });
+  if (error) throw error;
+  invalidateDeliveries();
+  notifyFinancialChange();
+}
 export type SameCustomerGroup = {
   group_id: string;
   match_kind: SameCustomerMatchKind;

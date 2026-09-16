@@ -18,6 +18,8 @@ import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useStatusDefs, useStockCoverage } from '@/hooks/queries';
 import { useCurrentUser } from '@/hooks/useAuth';
+import { deliveryPayLabel } from '@/lib/delivery-pay';
+import { useFinancialRevision } from '@/lib/financial-refresh';
 import {
   COMMITTED_STATUSES,
   SIGNAL_META,
@@ -64,7 +66,8 @@ export default function AgentDeliveryDetail() {
   const insets = useSafeAreaInsets();
   const user = useCurrentUser();
 
-  const deliveryQ = useAsync(() => getDelivery(user.role, id), [user.role, id]);
+  const financialRevision = useFinancialRevision();
+  const deliveryQ = useAsync(() => getDelivery(user.role, id), [user.role, id, financialRevision]);
   const replacementQ = useAsync(
     () =>
       deliveryQ.data?.order_type === 'replacement'
@@ -628,7 +631,17 @@ export default function AgentDeliveryDetail() {
                   marginTop: 4,
                 }}
               >
-                You earned {formatNaira(Number(d.agent_payment_snapshot ?? 0))}
+                {d.current_status !== 'delivered'
+                  ? 'Earnings pending sync'
+                  : deliveryQ.loading
+                    ? 'Earnings refreshing…'
+                    : (deliveryPayLabel(d.rider_pay) ??
+                      `You earned ${formatNaira(d.rider_pay ? d.rider_pay.amount : d.agent_payment_snapshot)}`)}
+                {d.rider_pay?.state === 'ready' &&
+                d.rider_pay.multiplier === 0.5 &&
+                !d.rider_pay.manual_exception
+                  ? ' · Half fee for the same customer and Lagos day'
+                  : ''}
               </Text>
             </View>
           ) : null}

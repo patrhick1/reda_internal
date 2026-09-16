@@ -7,9 +7,25 @@ import {
   getSameCustomerConfig,
   getSameCustomerOrders,
   getSameCustomerSummary,
+  getSameCustomerShadowPay,
   listSameCustomerOrders,
   type SameCustomerFilters,
 } from '@/services/same-customer';
+
+export function useSameCustomerShadowPay(deliveryId: string, enabled = true) {
+  const user = useCurrentUser();
+  const query = useQuery({
+    queryKey: ['deliveries', 'same-customer', user.userId, 'shadow-pay', deliveryId],
+    queryFn: () => getSameCustomerShadowPay(deliveryId),
+    enabled: enabled && user.role === 'admin' && !!deliveryId,
+    staleTime: 0,
+    refetchInterval: 30_000,
+  });
+  useReloadOnFocus(() => {
+    if (enabled && user.role === 'admin' && deliveryId) void query.refetch();
+  });
+  return query;
+}
 
 export function useSameCustomerConfig() {
   const user = useCurrentUser();

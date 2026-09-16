@@ -26,6 +26,9 @@ import {
 import { useCurrentUser } from '@/hooks/useAuth';
 import { useSameCustomerBadges, useSameCustomerConfig } from '@/hooks/useSameCustomer';
 import { SameCustomerOrdersSheet } from '@/components/sheets/SameCustomerOrdersSheet';
+import { SameCustomerPayReview } from '@/components/delivery/SameCustomerPayReview';
+import { deliveryPayLabel } from '@/lib/delivery-pay';
+import { useFinancialRevision } from '@/lib/financial-refresh';
 import {
   getDelivery,
   getDeliveryRedaCharge,
@@ -107,7 +110,6 @@ export function DeliveryDetail() {
   const router = useRouter();
   const user = useCurrentUser();
   const insets = useSafeAreaInsets();
-
   const sameCustomerConfig = useSameCustomerConfig();
   const sameCustomerBadges = useSameCustomerBadges(
     id ? [id] : [],
@@ -116,7 +118,8 @@ export function DeliveryDetail() {
   const sameCustomerBadge = sameCustomerBadges.data?.[0];
   const [sameCustomerOpen, setSameCustomerOpen] = useState(false);
 
-  const deliveryQ = useAsync(() => getDelivery(user.role, id), [user.role, id]);
+  const financialRevision = useFinancialRevision();
+  const deliveryQ = useAsync(() => getDelivery(user.role, id), [user.role, id, financialRevision]);
   const replacementQ = useAsync(
     () =>
       deliveryQ.data?.order_type === 'replacement'
@@ -382,6 +385,10 @@ export function DeliveryDetail() {
   }
 
   const d = deliveryQ.data;
+  const payUnavailable = deliveryQ.loading;
+  const payStatusLabel = deliveryPayLabel(d.rider_pay);
+  const payPending = d.rider_pay?.state === 'pending';
+  const displayedMargin = d.rider_pay ? d.rider_pay.margin : d.margin;
   const status = optimisticStatus ?? d.current_status ?? 'pending';
   const isTerminal = TERMINAL_STATUSES.has(status);
   const isDelivered = status === 'delivered';
@@ -522,6 +529,11 @@ export function DeliveryDetail() {
           gap: 12,
         }}
       >
+        {user.role === 'admin' &&
+        sameCustomerConfig.data?.shadow_review_enabled &&
+        d.order_type === 'delivery' ? (
+          <SameCustomerPayReview key={id} deliveryId={id} />
+        ) : null}
         {sameCustomerConfig.data?.discovery_enabled &&
         isOps(user.role) &&
         d.order_type === 'delivery' ? (
@@ -1008,16 +1020,39 @@ export function DeliveryDetail() {
                 label={
                   isWaybill ? 'Reda paid out' : isReplacement ? 'Rider pay recorded' : 'Agent earns'
                 }
-                value={formatNaira(
-                  d.agent_payment_snapshot != null ? Number(d.agent_payment_snapshot) : null,
-                )}
+                value={
+                  payUnavailable
+                    ? 'Unavailable'
+                    : (payStatusLabel ??
+                      formatNaira(
+                        d.rider_pay
+                          ? d.rider_pay.amount
+                          : d.agent_payment_snapshot != null
+                            ? Number(d.agent_payment_snapshot)
+                            : null,
+                      ))
+                }
               />
             ) : null}
-            {showMargin && d.margin != null ? (
-              <MoneyRow label="Margin" value={formatNaira(Number(d.margin))} accent />
+            {showMargin && (displayedMargin != null || payPending) ? (
+              <MoneyRow
+                label="Margin"
+                value={
+                  payUnavailable
+                    ? 'Unavailable'
+                    : payPending
+                      ? 'Pending review'
+                      : formatNaira(displayedMargin)
+                }
+                accent
+              />
             ) : null}
           </View>
-          {showMargin && d.margin != null && Number(d.margin) < 0 ? (
+          {showMargin &&
+          !payUnavailable &&
+          !payPending &&
+          displayedMargin != null &&
+          Number(displayedMargin) < 0 ? (
             <View
               style={{
                 marginTop: 12,
@@ -1044,7 +1079,7 @@ export function DeliveryDetail() {
                 }}
               >
                 {isWaybill
-                  ? `Reda subsidised ${formatNaira(Math.abs(Number(d.margin)))} on this ${String(
+                  ? `Reda subsidised ${formatNaira(Math.abs(Number(displayedMargin)))} on this ${String(
                       d.customer_name ?? 'waybill',
                     ).toLowerCase()}.`
                   : 'Negative margin — Reda pays the agent more than it collects.'}
