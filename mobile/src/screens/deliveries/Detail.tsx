@@ -24,7 +24,11 @@ import {
   type StockSignal,
 } from '@/lib/stock-signal';
 import { useCurrentUser } from '@/hooks/useAuth';
-import { useSameCustomerBadges, useSameCustomerConfig } from '@/hooks/useSameCustomer';
+import {
+  useSameCustomerBadges,
+  useSameCustomerConfig,
+  useSameCustomerDetails,
+} from '@/hooks/useSameCustomer';
 import { SameCustomerOrdersSheet } from '@/components/sheets/SameCustomerOrdersSheet';
 import { SameCustomerPayReview } from '@/components/delivery/SameCustomerPayReview';
 import { deliveryPayLabel } from '@/lib/delivery-pay';
@@ -116,11 +120,26 @@ export function DeliveryDetail() {
     id ? [id] : [],
     sameCustomerConfig.data?.discovery_enabled === true,
   );
-  const sameCustomerBadge = sameCustomerBadges.data?.[0];
+  const sameCustomerBadge = sameCustomerBadges.data?.find(
+    (badge) => badge.delivery_id === id && badge.order_count > 1,
+  );
   const [sameCustomerOpen, setSameCustomerOpen] = useState(false);
 
   const financialRevision = useFinancialRevision();
   const deliveryQ = useAsync(() => getDelivery(user.role, id), [user.role, id, financialRevision]);
+  // Keep manually corrected single orders reachable without offering an empty
+  // matching panel on every ordinary delivery.
+  const sameCustomerCorrection = useSameCustomerDetails(
+    deliveryQ.data?.scheduled_date ?? '',
+    `order:${id}`,
+    sameCustomerConfig.data?.discovery_enabled === true &&
+      deliveryQ.data?.order_type === 'delivery' &&
+      sameCustomerBadges.isSuccess &&
+      !sameCustomerBadge,
+  );
+  const hasCustomerMatchCorrection = sameCustomerCorrection.data?.orders.some(
+    (order) => order.id === id && order.match_mode !== 'auto',
+  );
   const replacementQ = useAsync(
     () =>
       deliveryQ.data?.order_type === 'replacement'
@@ -535,15 +554,6 @@ export function DeliveryDetail() {
         d.order_type === 'delivery' ? (
           <SameCustomerPayReview key={id} deliveryId={id} presentation="alert" />
         ) : null}
-        {sameCustomerConfig.data?.discovery_enabled &&
-        canViewSameCustomer(user.role) &&
-        d.order_type === 'delivery' ? (
-          <Button variant="secondary" onPress={() => setSameCustomerOpen(true)}>
-            {sameCustomerBadge
-              ? `${sameCustomerBadge.order_count} orders · ${sameCustomerBadge.possible_only ? 'Possible customer match' : 'Same customer'}`
-              : 'Customer matching'}
-          </Button>
-        ) : null}
         {status === 'delivered' &&
         d.order_type === 'delivery' &&
         (user.role === 'admin' || user.role === 'dispatcher') ? (
@@ -689,6 +699,22 @@ export function DeliveryDetail() {
               Map
             </Button>
           </View>
+          {sameCustomerConfig.data?.discovery_enabled &&
+          canViewSameCustomer(user.role) &&
+          d.order_type === 'delivery' &&
+          (sameCustomerBadge || hasCustomerMatchCorrection) ? (
+            <View style={{ marginTop: 12 }}>
+              <Button
+                size="sm"
+                variant={sameCustomerBadge ? 'secondary' : 'ghost'}
+                onPress={() => setSameCustomerOpen(true)}
+              >
+                {sameCustomerBadge
+                  ? `${sameCustomerBadge.possible_only ? 'Possible match' : 'Same customer'} · ${sameCustomerBadge.order_count} orders`
+                  : 'Review match correction'}
+              </Button>
+            </View>
+          ) : null}
         </Card>
 
         {/* "Should I call?" stock check — worst line drives the tone. Same

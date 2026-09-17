@@ -107,7 +107,7 @@ export function SameCustomerOrdersSheet({
       onClose={() => {
         if (!busy) onClose();
       }}
-      title="Same customer"
+      title={details.data?.match_kind === 'single' ? 'Customer match correction' : 'Same customer'}
       subtitle={formatYmdShort(day)}
       footer={
         <Button variant="secondary" full disabled={busy} onPress={onClose}>
@@ -155,15 +155,20 @@ export function SameCustomerOrdersSheet({
                 : details.data.match_kind === 'linked'
                   ? 'Operations linked these orders to the same customer.'
                   : details.data.match_kind === 'single'
-                    ? 'Review this order’s customer matching. A separate-customer correction can be reset here.'
+                    ? orders.some((order) => order.match_mode !== 'auto')
+                      ? 'This order has a manual customer-match correction. Select it to restore automatic phone matching.'
+                      : 'This order uses automatic phone matching. No manual correction remains.'
                     : 'These orders share the same phone number.'}{' '}
-              Select orders to manage them. Each order keeps its own outcome and payment.
+              {details.data.match_kind !== 'single'
+                ? 'Select orders to manage them. Each order keeps its own outcome and payment.'
+                : ''}
             </Text>
             {orders.map((order) => (
               <Card key={order.id} dense>
                 <View style={{ gap: 8 }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                    {canManage ? (
+                    {canManage &&
+                    (details.data?.match_kind !== 'single' || order.match_mode !== 'auto') ? (
                       <Pressable
                         accessibilityRole="checkbox"
                         aria-checked={selected.has(order.id)}
@@ -260,16 +265,18 @@ export function SameCustomerOrdersSheet({
                   {selectedOrders.length} selected
                 </Text>
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                  <Button
-                    size="sm"
-                    disabled={busy || !hasOpenSelection}
-                    onPress={() => {
-                      setChooseRider(!chooseRider);
-                      setAction(null);
-                    }}
-                  >
-                    Assign selected
-                  </Button>
+                  {details.data.match_kind !== 'single' ? (
+                    <Button
+                      size="sm"
+                      disabled={busy || !hasOpenSelection}
+                      onPress={() => {
+                        setChooseRider(!chooseRider);
+                        setAction(null);
+                      }}
+                    >
+                      Assign selected
+                    </Button>
+                  ) : null}
                   {details.data.match_kind === 'alternate' ? (
                     <Button
                       size="sm"
@@ -283,17 +290,19 @@ export function SameCustomerOrdersSheet({
                       Confirm customer match
                     </Button>
                   ) : null}
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={busy}
-                    onPress={() => {
-                      setAction('split');
-                      setChooseRider(false);
-                    }}
-                  >
-                    Different customers
-                  </Button>
+                  {details.data.match_kind !== 'single' ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={busy}
+                      onPress={() => {
+                        setAction('split');
+                        setChooseRider(false);
+                      }}
+                    >
+                      Different customers
+                    </Button>
+                  ) : null}
                   {selectedOrders.some((order) => order.match_mode !== 'auto') ? (
                     <Button
                       size="sm"
