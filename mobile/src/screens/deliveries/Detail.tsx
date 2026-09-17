@@ -533,7 +533,7 @@ export function DeliveryDetail() {
         {user.role === 'admin' &&
         sameCustomerConfig.data?.shadow_review_enabled &&
         d.order_type === 'delivery' ? (
-          <SameCustomerPayReview key={id} deliveryId={id} />
+          <SameCustomerPayReview key={id} deliveryId={id} presentation="alert" />
         ) : null}
         {sameCustomerConfig.data?.discovery_enabled &&
         canViewSameCustomer(user.role) &&
@@ -1019,7 +1019,7 @@ export function DeliveryDetail() {
             {showAgentPayment ? (
               <MoneyRow
                 label={
-                  isWaybill ? 'Reda paid out' : isReplacement ? 'Rider pay recorded' : 'Agent earns'
+                  isWaybill ? 'Reda paid out' : isReplacement ? 'Rider pay recorded' : 'Rider fee'
                 }
                 value={
                   payUnavailable
@@ -1031,7 +1031,16 @@ export function DeliveryDetail() {
                           : d.agent_payment_snapshot != null
                             ? Number(d.agent_payment_snapshot)
                             : null,
-                      ))
+                      ) +
+                        (d.rider_pay?.state === 'ready' && d.rider_pay.mode === 'final'
+                          ? d.rider_pay.manual_exception
+                            ? ' · Manual exception'
+                            : d.rider_pay.multiplier === 1
+                              ? ' · Full fee'
+                              : d.rider_pay.multiplier === 0.5
+                                ? ' · Half fee'
+                                : ''
+                          : ''))
                 }
               />
             ) : null}
@@ -1049,6 +1058,11 @@ export function DeliveryDetail() {
               />
             ) : null}
           </View>
+          {user.role === 'admin' &&
+          sameCustomerConfig.data?.shadow_review_enabled &&
+          d.order_type === 'delivery' ? (
+            <SameCustomerPayReview key={id} deliveryId={id} />
+          ) : null}
           {showMargin &&
           !payUnavailable &&
           !payPending &&
