@@ -34,6 +34,8 @@ if ($LASTEXITCODE -ne 0) { throw 'Normal fee review migration failed.' }
 if ($LASTEXITCODE -ne 0) { throw 'Payment client contract migration failed.' }
 & $PsqlPath @connectionArgs -f (Join-Path $repoPath 'supabase/migrations/20260916140000_same_customer_policy_audit.sql')
 if ($LASTEXITCODE -ne 0) { throw 'Policy audit migration failed.' }
+& $PsqlPath @connectionArgs -f (Join-Path $repoPath 'supabase/migrations/20260917100000_same_customer_manager_visibility.sql')
+if ($LASTEXITCODE -ne 0) { throw 'Manager visibility migration failed.' }
 & $PsqlPath @connectionArgs -f (Join-Path $PSScriptRoot 'test-same-customer-discovery.sql')
 $testExit = $LASTEXITCODE
 if ($testExit -eq 0) {
@@ -46,6 +48,10 @@ if ($testExit -eq 0) {
 }
 if ($testExit -eq 0) {
   & $PsqlPath @connectionArgs -f (Join-Path $PSScriptRoot 'test-same-customer-financial-readers.sql')
+  $testExit = $LASTEXITCODE
+}
+if ($testExit -eq 0) {
+  & $PsqlPath @connectionArgs -f (Join-Path $PSScriptRoot 'test-same-customer-manager-visibility.sql')
   $testExit = $LASTEXITCODE
 }
 # A failed psql exits and PostgreSQL rolls its open test transaction back too.

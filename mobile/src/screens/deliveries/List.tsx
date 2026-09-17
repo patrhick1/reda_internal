@@ -51,6 +51,7 @@ import {
   canBulkUnassignDelivery,
   canFilterDeliveriesList,
   canSeeClientName,
+  canViewSameCustomer,
 } from '@/lib/permissions';
 import { formatNaira, formatYmdShort } from '@/lib/format';
 import {
@@ -149,7 +150,8 @@ type FailedKindFilter = 'attempted' | 'auto_closed';
 export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   const user = useCurrentUser();
   const sameCustomerConfig = useSameCustomerConfig();
-  const sameCustomerEnabled = sameCustomerConfig.data?.discovery_enabled === true;
+  const sameCustomerEnabled =
+    canViewSameCustomer(user.role) && sameCustomerConfig.data?.discovery_enabled === true;
   const router = useRouter();
   const insets = useSafeAreaInsets();
   // Optional deep-link target — the rep dashboard's "Awaiting client update" card
@@ -163,10 +165,14 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   const [customDate, setCustomDate] = useState<string>(todayLagos());
   useEffect(() => {
     if (filter === 'same_customer' && datePreset === 'all') setDatePreset('today');
-    if (filter === 'same_customer' && sameCustomerConfig.isSuccess && !sameCustomerEnabled) {
+    if (
+      filter === 'same_customer' &&
+      (!canViewSameCustomer(user.role) || sameCustomerConfig.isSuccess) &&
+      !sameCustomerEnabled
+    ) {
       setFilter('all');
     }
-  }, [filter, datePreset, sameCustomerEnabled, sameCustomerConfig.isSuccess]);
+  }, [filter, datePreset, sameCustomerEnabled, sameCustomerConfig.isSuccess, user.role]);
   // Failed outcomes are event history, so they use an explicit bounded range
   // rather than the normal list's scheduled-date selector. Seven days gives a
   // useful operational default without adding a query to the regular screen.
@@ -883,8 +889,14 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   const visibleIds = useMemo(() => list.flatMap((d) => (d.id ? [d.id] : [])), [list]);
   const sameCustomerBadges = useSameCustomerBadges(visibleIds, sameCustomerEnabled);
   const sameCustomerById = useMemo(
-    () => new Map((sameCustomerBadges.data ?? []).map((badge) => [badge.delivery_id, badge])),
-    [sameCustomerBadges.data],
+    () =>
+      new Map(
+        (sameCustomerEnabled ? (sameCustomerBadges.data ?? []) : []).map((badge) => [
+          badge.delivery_id,
+          badge,
+        ]),
+      ),
+    [sameCustomerBadges.data, sameCustomerEnabled],
   );
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
   // The location picker is a queue-building tool: once dispatch has chosen the

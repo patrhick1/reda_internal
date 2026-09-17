@@ -35,6 +35,7 @@ const isManager = (role: Role): boolean => MANAGER_ROLES.has(role);
 
 /** Audited customer identity corrections; server enforces the same manager gate. */
 export const canCorrectCustomerMatch = (role: Role): boolean => isManager(role);
+export const canViewSameCustomer = (role: Role): boolean => isManager(role);
 
 // --- Read permissions ---------------------------------------------------------
 

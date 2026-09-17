@@ -101,7 +101,10 @@ end $$;
 rollback to assignment_cases;
 
 select set_config('request.jwt.claim.sub',md5('same-customer-user-rep')::uuid::text,true);
-select pg_temp.check_ok(jsonb_array_length(public.same_customer_badges(array[md5('same-customer-order-1')::uuid]))=1,'rep can read batched badges');
+do $$ begin
+  perform public.same_customer_badges(array[md5('same-customer-order-1')::uuid]);
+  raise exception 'FAIL: rep read customer badges';
+exception when insufficient_privilege then null; end $$;
 do $$ begin
   begin perform public.assign_same_customer_orders(gen_random_uuid(),array[md5('same-customer-order-1')::uuid],md5('same-customer-user-agent')::uuid);
     raise exception 'FAIL: rep assigned orders'; exception when insufficient_privilege then null; end;

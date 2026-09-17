@@ -71,6 +71,7 @@ import {
   canManageBlacklist,
   canViewBlacklist,
   isOps,
+  canViewSameCustomer,
 } from '@/lib/permissions';
 import {
   listClientNotificationsForDelivery,
@@ -535,7 +536,7 @@ export function DeliveryDetail() {
           <SameCustomerPayReview key={id} deliveryId={id} />
         ) : null}
         {sameCustomerConfig.data?.discovery_enabled &&
-        isOps(user.role) &&
+        canViewSameCustomer(user.role) &&
         d.order_type === 'delivery' ? (
           <Button variant="secondary" onPress={() => setSameCustomerOpen(true)}>
             {sameCustomerBadge
@@ -1339,7 +1340,7 @@ export function DeliveryDetail() {
           await Promise.all([replacementQ.reload(), deliveryQ.reload()]);
         }}
       />
-      {sameCustomerOpen && d.scheduled_date ? (
+      {canViewSameCustomer(user.role) && sameCustomerOpen && d.scheduled_date ? (
         <SameCustomerOrdersSheet
           key={`${d.scheduled_date}:${sameCustomerBadge?.group_id ?? id}`}
           day={sameCustomerBadge?.day ?? d.scheduled_date}
