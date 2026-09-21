@@ -55,6 +55,10 @@ DO $$ DECLARE w record; BEGIN
  UPDATE reda_maintenance.outbox SET status='submitted',submitted_at=now()-interval '11 minutes',attempts=3,request_id=-1;
  PERFORM reda_maintenance.monitor();
  PERFORM pg_temp.assert(EXISTS(SELECT 1 FROM reda_maintenance.outbox WHERE status='failed'),'notification timeout persists separately');
+ PERFORM pg_temp.assert(EXISTS(SELECT 1 FROM reda_maintenance.alerts WHERE key='failed_notifications' AND resolved_at IS NULL),'notification exhaustion raises health alert');
+ UPDATE reda_maintenance.outbox SET status='sent',sent_at=now() WHERE status='failed';
+ PERFORM reda_maintenance.monitor();
+ PERFORM pg_temp.assert(EXISTS(SELECT 1 FROM reda_maintenance.alerts WHERE key='failed_notifications' AND resolved_at IS NOT NULL),'notification recovery resolves health alert');
  RAISE NOTICE 'PASS: offline rescheduling, immutable dates, stale requests, date validation, group rollback/resume, dead worker, notification timeout';
 END $$;
 ROLLBACK;

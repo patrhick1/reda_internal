@@ -271,6 +271,9 @@ BEGIN
   END;
   v_n:=v_n+1;
  END LOOP;
+ PERFORM reda_maintenance.set_alert('failed_notifications',
+   'Order-processing notifications exhausted their retries. Check provider availability and the notification outbox.',
+   EXISTS(SELECT 1 FROM reda_maintenance.outbox WHERE status='failed'));
  -- Keep operational diagnostics bounded; order and financial history are untouched.
  DELETE FROM reda_maintenance.outbox WHERE status='sent' AND sent_at<now()-interval '30 days';
  DELETE FROM reda_maintenance.work WHERE completed_at<now()-interval '90 days' AND status IN('succeeded','changed');
