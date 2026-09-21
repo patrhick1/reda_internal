@@ -1,274 +1,331 @@
-import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Platform, ScrollView, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Alert, Platform, ScrollView, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
-import {
-  previewEodRollover,
-  runEodRolloverAllStuck,
-  type EodPreviewRow,
-} from '@/services/reconciliation';
-import { AppBar, Banner, Button, Card, Empty, StatusPill } from '@/components/ui';
+import { AppBar, Banner, Button, Card, Input } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
-import { formatNaira } from '@/lib/format';
 import { errorMessage } from '@/lib/errors';
+import {
+  maintenanceHealth,
+  prepareMaintenance,
+  requestMaintenance,
+  retryMaintenanceGroup,
+  resolveMaintenanceHold,
+  type MaintenanceKind,
+  type MaintenancePreview,
+} from '@/services/maintenance';
 
-import { todayLagos } from '@/lib/date';
-
-// Presentation-only translation of the server's `action` code into a phrase for
-// the close-out rows. NOT a rule — the DECISION (which rows roll vs close, and
-// what they become) is made once, server-side, by _eod_classify and delivered
-// via preview_eod_rollover. This map only labels it.
-const ACTION_LABEL: Record<string, string> = {
-  close_followup: 'Back to client',
-  close_disinterest: 'Closed · unserious',
-  close_policy: 'Closed · failed',
-  cap_unserious: 'Closed · carry cap',
-  dedup_same_agent: 'Closed · duplicate',
-  dedup_cross_agent: 'Closed · duplicate',
-  sibling_resolved: 'Closed · already handled',
+const labels: Record<string, string> = {
+  release: 'Release to Unassigned',
+  dedup_postponed: 'Close duplicate postponement',
+  roll: 'Carry to the next eligible workday',
+  close_followup: 'Return to client',
+  close_disinterest: 'Close as Unserious',
+  close_policy: 'Close as Failed delivery',
+  cap_unserious: 'Close as Unserious (carry limit)',
+  dedup_same_agent: 'Close duplicate',
+  dedup_cross_agent: 'Close duplicate',
+  sibling_resolved: 'Close already-handled duplicate',
 };
-
+function confirmAction(message: string, action: () => void) {
+  if (Platform.OS === 'web') {
+    if (window.confirm(message)) action();
+  } else
+    Alert.alert('Confirm operation', message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Continue', onPress: action },
+    ]);
+}
 export default function EndOfDay() {
   const router = useRouter();
-  const [rolling, setRolling] = useState(false);
-  const today = todayLagos();
-  const previewQ = useAsync<EodPreviewRow[]>(() => previewEodRollover(today), [today]);
-  useReloadOnFocus(() => {
-    previewQ.reload();
-  });
-
-  // Split by the server's verdict: only 'roll' carries forward; everything else
-  // is closed out. No status logic on the device — `action` comes straight from
-  // the same classifier the nightly job runs.
-  const { willRoll, willClose } = useMemo(() => {
-    const roll: EodPreviewRow[] = [];
-    const close: EodPreviewRow[] = [];
-    for (const r of previewQ.data ?? []) {
-      if (r.action === 'roll') roll.push(r);
-      else close.push(r);
+  const health = useAsync(maintenanceHealth, []);
+  const [kind, setKind] = useState<MaintenanceKind>('release');
+  const [date, setDate] = useState('');
+  const [preview, setPreview] = useState<MaintenancePreview | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [reviewNote, setReviewNote] = useState('');
+  useReloadOnFocus(health.reload);
+  const reload = health.reload;
+  useEffect(() => {
+    const timer = setInterval(reload, 30000);
+    return () => clearInterval(timer);
+  }, [reload]);
+  const selectedDate =
+    date || (kind === 'release' ? health.data?.release_through : health.data?.close_through) || '';
+  async function perform(action: () => Promise<void>) {
+    setBusy(true);
+    setError(null);
+    try {
+      await action();
+      health.reload();
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
     }
-    return { willRoll: roll, willClose: close };
-  }, [previewQ.data]);
-
-  const openCount = willRoll.length + willClose.length;
-
-  const onRunAll = useCallback(() => {
-    const prompt = `Run end of day?\n\nReleases postponed orders due tomorrow, carries the active orders forward, and closes out the rest — follow-ups go back to the client. ${willRoll.length} will roll forward and ${willClose.length} will be closed.`;
-    const runIt = async () => {
-      setRolling(true);
-      try {
-        const n = await runEodRolloverAllStuck();
-        if (Platform.OS === 'web') {
-          if (typeof window !== 'undefined')
-            window.alert(`Rolled ${n} ${n === 1 ? 'delivery' : 'deliveries'} forward.`);
-        } else {
-          Alert.alert('Done', `Rolled ${n} ${n === 1 ? 'delivery' : 'deliveries'} forward.`);
-        }
-        previewQ.reload();
-      } catch (e) {
-        if (Platform.OS === 'web') {
-          if (typeof window !== 'undefined') window.alert(`Rollover failed: ${errorMessage(e)}`);
-        } else {
-          Alert.alert('Rollover failed', errorMessage(e));
-        }
-      } finally {
-        setRolling(false);
-      }
-    };
-
-    if (Platform.OS === 'web') {
-      if (typeof window !== 'undefined' && window.confirm(prompt)) runIt();
-      return;
-    }
-    Alert.alert(
-      'Run end-of-day rollover?',
-      `Carries the active orders forward and closes out the rest (follow-ups go back to the client). ${willRoll.length} will roll forward and ${willClose.length} will be closed.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Run end of day', style: 'destructive', onPress: runIt },
-      ],
-    );
-  }, [willRoll.length, willClose.length, previewQ]);
-
+  }
+  function openOrder(id: string) {
+    router.push({ pathname: '/(admin)/deliveries/[id]', params: { id } });
+  }
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <AppBar
         title="End of day"
-        subtitle="Decide what to do with unfinished deliveries"
+        subtitle="Processing health and safe recovery"
         onBack={() => router.back()}
         helpTopic="eod"
       />
-      {previewQ.loading && !previewQ.data ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator color={colors.black} />
-        </View>
-      ) : previewQ.error ? (
-        <Empty icon="alert" title="Could not load" sub={previewQ.error} />
-      ) : openCount === 0 ? (
-        <Empty
-          icon="check"
-          title="No deliveries to roll"
-          sub="Everything closed out cleanly. Rest up."
-        />
-      ) : (
-        <>
-          <View style={{ padding: 16 }}>
-            <Banner tone="info" icon="calendar">
-              {`${openCount} still open for ${today}. End of day carries ${willRoll.length} forward and closes ${willClose.length} out — follow-ups go back to the client. Duplicates and repeat-rollovers are closed automatically.`}
-            </Banner>
-          </View>
-          <ScrollView
-            contentContainerStyle={{ padding: 16, paddingTop: 0, paddingBottom: 100, gap: 12 }}
-          >
-            {willRoll.length > 0 ? (
-              <>
-                <SectionHeader
-                  label="Roll forward"
-                  count={willRoll.length}
-                  sub="Carried to tomorrow as new pending orders"
-                />
-                {willRoll.map((r) => (
-                  <DeliveryRowEOD key={r.delivery_id} row={r} />
-                ))}
-              </>
-            ) : null}
-            {willClose.length > 0 ? (
-              <>
-                <SectionHeader
-                  label="Close out"
-                  count={willClose.length}
-                  sub="Not rolled — closed out at end of day"
-                />
-                {willClose.map((r) => (
-                  <DeliveryRowEOD
-                    key={r.delivery_id}
-                    row={r}
-                    closeLabel={ACTION_LABEL[r.action] ?? 'Closed'}
-                  />
-                ))}
-              </>
-            ) : null}
-          </ScrollView>
-          <View
-            style={{
-              paddingHorizontal: 16,
-              paddingVertical: 12,
-              borderTopWidth: 1,
-              borderTopColor: colors.border,
-              backgroundColor: colors.white,
-            }}
-          >
-            <Button variant="emphasis" full icon="check" disabled={rolling} onPress={onRunAll}>
-              {rolling ? 'Working…' : 'Run end of day'}
-            </Button>
-          </View>
-        </>
-      )}
-    </View>
-  );
-}
-
-function SectionHeader({ label, count, sub }: { label: string; count: number; sub: string }) {
-  return (
-    <View style={{ marginTop: 4 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
-        <Text style={{ fontFamily: fonts.extrabold, fontSize: 16, color: colors.black }}>
-          {label}
-        </Text>
-        <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.textSecondary }}>
-          {count}
-        </Text>
-      </View>
-      <Text
-        style={{
-          fontFamily: fonts.medium,
-          fontSize: 12,
-          color: colors.textSecondary,
-          marginTop: 2,
-        }}
-      >
-        {sub}
-      </Text>
-    </View>
-  );
-}
-
-function DeliveryRowEOD({ row, closeLabel }: { row: EodPreviewRow; closeLabel?: string }) {
-  // customer_price is per-delivery, not per-unit. Do NOT multiply by quantity.
-  const expected = Number(row.customer_price ?? 0);
-  return (
-    <Card>
-      <View
-        style={{
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-          gap: 12,
-        }}
-      >
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontFamily: fonts.bold, fontSize: 15, color: colors.black }}>
-            {row.customer_name}
-          </Text>
-          <Text
-            style={{
-              fontFamily: fonts.medium,
-              fontSize: 12,
-              color: colors.textSecondary,
-              marginTop: 2,
-            }}
-          >
-            {row.product_name ?? '—'}
-            {row.quantity_ordered ? ` × ${row.quantity_ordered}` : ''}
-            {' · '}
-            {formatNaira(expected)}
-          </Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}>
-            <StatusPill status={row.current_status ?? 'pending'} variant="subtle" size="sm" />
-            {row.assigned_agent_name ? (
-              <Text
-                numberOfLines={1}
-                style={{
-                  fontFamily: fonts.medium,
-                  fontSize: 12,
-                  color: colors.textSecondary,
-                  flexShrink: 1,
-                }}
-              >
-                {/* Full display name so namesakes (e.g. "Mummy Jerry") stay distinguishable. */}·{' '}
-                {row.assigned_agent_name}
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 80 }}>
+        {error || health.error ? (
+          <Banner tone="error" icon="alert">
+            {error ?? health.error}
+          </Banner>
+        ) : null}
+        {message ? (
+          <Banner tone="info" icon="check">
+            {message}
+          </Banner>
+        ) : null}
+        {!health.data ? (
+          <Text>Loading processing status…</Text>
+        ) : (
+          <>
+            <Card>
+              <Text style={{ fontFamily: fonts.bold, fontSize: 18 }}>
+                Automatic processing {health.data.enabled ? 'enabled' : 'paused'}
               </Text>
+              <Text>
+                Last worker check:{' '}
+                {health.data.worker_at
+                  ? new Date(health.data.worker_at).toLocaleString()
+                  : 'No check recorded'}
+              </Text>
+              <Text>Today in Lagos: {health.data.today}. Today closes at 23:59 Lagos.</Text>
+              <Text>
+                Nightly work is checked again each morning. Queued work is processed in batches.
+              </Text>
+              {health.data.notification_failures > 0 ? (
+                <Text>
+                  {health.data.notification_failures} notification deliveries failed; order
+                  processing is tracked separately.
+                </Text>
+              ) : null}
+            </Card>
+            {health.data.alerts.map((a) => (
+              <Banner key={a.key} tone="warn" icon="alert">
+                {a.message}
+              </Banner>
+            ))}
+            <Card>
+              <Text style={{ fontFamily: fonts.bold, fontSize: 18 }}>Choose an operation</Text>
+              <View style={{ gap: 8, marginVertical: 12 }}>
+                <Button
+                  title={
+                    kind === 'release' ? '✓ Release due postponements' : 'Release due postponements'
+                  }
+                  disabled={busy}
+                  onPress={() => {
+                    setKind('release');
+                    setDate('');
+                    setPreview(null);
+                  }}
+                />
+                <Button
+                  title={kind === 'close' ? '✓ Close a completed day' : 'Close a completed day'}
+                  disabled={busy}
+                  onPress={() => {
+                    setKind('close');
+                    setDate('');
+                    setPreview(null);
+                  }}
+                />
+              </View>
+              <Text>
+                {kind === 'release'
+                  ? 'Release ordinary deliveries to Unassigned. Client-policy closures and duplicate handling appear in the preview. This does not close today’s active work.'
+                  : 'Apply the existing carry limits and closure rules to this completed business day. Missed days carry directly to an actionable workday.'}
+              </Text>
+              <Input
+                label={
+                  kind === 'release'
+                    ? 'Due on or before (YYYY-MM-DD)'
+                    : 'Business day to close (YYYY-MM-DD)'
+                }
+                value={selectedDate}
+                onChange={(value) => {
+                  setDate(value);
+                  setPreview(null);
+                }}
+              />
+              <Button
+                title="Preview exact scope"
+                disabled={busy || !selectedDate}
+                onPress={() =>
+                  void perform(async () => {
+                    setPreview(await prepareMaintenance(kind, selectedDate));
+                    setMessage(null);
+                  })
+                }
+              />
+            </Card>
+            {preview ? (
+              <Card>
+                <Text style={{ fontFamily: fonts.bold, fontSize: 18 }}>
+                  {preview.rows.length} of {preview.total_orders} orders · {preview.kind} ·{' '}
+                  {preview.date}
+                </Text>
+                {preview.total_orders > preview.rows.length ? (
+                  <Text>
+                    This preview contains complete groups up to 500 orders. After processing,
+                    prepare another preview for the remainder. Automatic processing continues
+                    through the full queue.
+                  </Text>
+                ) : null}
+                {preview.oversized_groups > 0 ? (
+                  <Text>
+                    {preview.oversized_groups} unusually large groups need manual review before
+                    processing.
+                  </Text>
+                ) : null}
+                <Text>
+                  Changes made after this preview are skipped and reported. Protected orders are
+                  excluded. Carry counts are preserved on release.
+                </Text>
+                {preview.rows.map((row) => (
+                  <View
+                    key={row.id}
+                    style={{
+                      borderBottomWidth: 1,
+                      borderBottomColor: colors.border,
+                      paddingVertical: 10,
+                      gap: 3,
+                    }}
+                  >
+                    <Text style={{ fontFamily: fonts.bold }}>{row.customer_name}</Text>
+                    <Text>
+                      {row.status} · {row.date} · {row.agent ?? 'Unassigned'} · prior carries:{' '}
+                      {row.carry}
+                    </Text>
+                    <Text>{labels[row.action] ?? row.action}</Text>
+                    <Text onPress={() => openOrder(row.id)} style={{ color: colors.textSecondary }}>
+                      Open order
+                    </Text>
+                  </View>
+                ))}
+                <Button
+                  title={`Queue ${preview.rows.length} reviewed orders`}
+                  disabled={busy || preview.rows.length === 0 || !health.data.enabled}
+                  onPress={() =>
+                    confirmAction(
+                      `Queue ${preview.rows.length} orders for ${preview.kind} on ${preview.date}? Only this saved preview will be submitted.`,
+                      () =>
+                        void perform(async () => {
+                          await requestMaintenance(preview.preview_id);
+                          setPreview(null);
+                          setMessage(
+                            'Queued. Follow progress below; submission does not mean processing has finished.',
+                          );
+                        }),
+                    )
+                  }
+                />
+              </Card>
+            ) : null}
+            <Text style={{ fontFamily: fonts.bold, fontSize: 18 }}>Recent runs</Text>
+            {health.data.runs.length === 0 ? (
+              <Text>No processing runs recorded.</Text>
             ) : (
-              <Text
-                style={{
-                  fontFamily: fonts.bold,
-                  fontSize: 11,
-                  color: colors.red,
-                  letterSpacing: 0.6,
-                  textTransform: 'uppercase',
-                }}
-              >
-                Unassigned
-              </Text>
+              health.data.runs.map((run) => (
+                <Card key={run.id}>
+                  <Text style={{ fontFamily: fonts.bold }}>
+                    {run.business_date} · {run.kind} · {run.status}
+                  </Text>
+                  <Text>
+                    {run.remaining_groups} groups remaining · {run.failed_groups} failed ·{' '}
+                    {run.changed_groups} skipped after changes
+                  </Text>
+                  <Text>
+                    {Object.entries(run.outcomes ?? {})
+                      .map(([outcome, count]) => `${count} ${outcome.replaceAll('_', ' ')}`)
+                      .join(' · ') || 'No order outcomes recorded'}
+                  </Text>
+                </Card>
+              ))
             )}
-          </View>
-          {closeLabel ? (
-            <Text
-              style={{
-                fontFamily: fonts.bold,
-                fontSize: 11,
-                color: colors.textSecondary,
-                letterSpacing: 0.4,
-                textTransform: 'uppercase',
-                marginTop: 6,
-              }}
-            >
-              {`Ends as · ${closeLabel}`}
-            </Text>
-          ) : null}
-        </View>
-      </View>
-    </Card>
+            {health.data.failures.map((f) => (
+              <Card key={f.id}>
+                <Text style={{ fontFamily: fonts.bold }}>
+                  Group {f.id}: {f.status}
+                </Text>
+                <Text>
+                  {f.error_message ??
+                    'Changed after preview. Review the current order before preparing another operation.'}
+                </Text>
+                {f.delivery_ids.map((id) => (
+                  <Text key={id} onPress={() => openOrder(id)}>
+                    Open {id}
+                  </Text>
+                ))}
+                {f.status === 'failed' ? (
+                  <Button
+                    title="Retry after review"
+                    disabled={busy}
+                    onPress={() =>
+                      void perform(async () => {
+                        await retryMaintenanceGroup(f.id);
+                        setMessage('Retry queued with the original scope and revision checks.');
+                      })
+                    }
+                  />
+                ) : null}
+              </Card>
+            ))}
+            {health.data.holds.length > 0 ? (
+              <>
+                <Text style={{ fontFamily: fonts.bold, fontSize: 18 }}>
+                  Protected orders awaiting review
+                </Text>
+                <Text>
+                  These orders were excluded to preserve prior human handling. Removing protection
+                  makes them eligible for a new preview or the next scheduled check.
+                </Text>
+                <Input
+                  label="Review note (required before removing protection)"
+                  value={reviewNote}
+                  onChange={setReviewNote}
+                />
+                {health.data.holds.map((h) => (
+                  <Card key={h.id}>
+                    <Text style={{ fontFamily: fonts.bold }} onPress={() => openOrder(h.id)}>
+                      {h.customer_name} · {h.date}
+                    </Text>
+                    <Text>{h.reason}</Text>
+                    <Button
+                      title="Remove protection after review"
+                      disabled={busy || !reviewNote.trim()}
+                      onPress={() =>
+                        confirmAction(
+                          'Make this order eligible for processing again?',
+                          () =>
+                            void perform(async () => {
+                              await resolveMaintenanceHold(h.id, reviewNote.trim());
+                              setMessage(
+                                'Protection removed. Prepare a fresh preview to review the outcome.',
+                              );
+                            }),
+                        )
+                      }
+                    />
+                  </Card>
+                ))}
+              </>
+            ) : null}
+          </>
+        )}
+      </ScrollView>
+    </View>
   );
 }

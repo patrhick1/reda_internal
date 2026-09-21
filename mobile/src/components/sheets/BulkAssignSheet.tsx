@@ -73,6 +73,10 @@ export function BulkAssignSheet({
       subtitle={countLabel}
     >
       <View style={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 8 }}>
+        <Banner tone="info" icon="calendar">
+          Ownership of a postponed delivery is temporary. It returns to Unassigned when released;
+          assign its delivery route after release.
+        </Banner>
         <Input
           icon="search"
           value={query}

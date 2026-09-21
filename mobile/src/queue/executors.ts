@@ -27,6 +27,19 @@ export type Executor = (clientUuid: string, args: unknown, occurredAt?: string) 
 const EXECUTORS: Record<JobKind, Executor> = {
   async change_delivery_status(clientUuid, raw, occurredAt) {
     const args = raw as ChangeDeliveryStatusArgs;
+    if (args.toStatus === 'postponed' && args.expectedUpdatedAt) {
+      const { error } = await rpcUntyped('postpone_delivery', {
+        p_client_uuid: clientUuid,
+        p_delivery_id: args.deliveryId,
+        p_date: args.newScheduledDate,
+        p_expected_updated_at: args.expectedUpdatedAt,
+        p_expected_status: args.expectedStatus,
+        p_expected_date: args.expectedScheduledDate,
+        p_reason: args.reason,
+      });
+      if (error) throw classifyRpcError(error);
+      return;
+    }
     const { error } = await supabase.rpc('change_delivery_status', {
       p_client_uuid: clientUuid,
       p_delivery_id: args.deliveryId,

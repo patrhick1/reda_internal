@@ -673,11 +673,26 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
       // show as Active too). Available/Soft/Done are NOT assignment-gated
       // because those statuses are only ever set by an agent working the
       // order, so an unassigned row practically never lands in them.
-      active: all.filter(isAssignedActive),
+      active: all.filter(
+        (d) =>
+          isAssignedActive(d) ||
+          (d.current_status === 'postponed' &&
+            !!d.assigned_agent_id &&
+            !!d.scheduled_date &&
+            d.scheduled_date <= todayLagos()),
+      ),
       available: all.filter(
         (d) => d.current_status === 'available' || d.current_status === 'available_evening',
       ),
-      soft: all.filter((d) => statusBucket(d.current_status) === 'soft'),
+      soft: all.filter(
+        (d) =>
+          statusBucket(d.current_status) === 'soft' &&
+          !(
+            d.current_status === 'postponed' &&
+            !!d.scheduled_date &&
+            d.scheduled_date <= todayLagos()
+          ),
+      ),
       done: all.filter((d) => statusBucket(d.current_status) === 'done'),
       // NB: Unassigned is NOT bucketed here — it's a separate cross-date query
       // (unassignedRows below), date-independent and terminal-free, per Uzo.

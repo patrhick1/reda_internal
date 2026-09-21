@@ -93,3 +93,28 @@ test('ordinary non-completion status RPC keeps its previous date semantics', asy
   });
   assert.equal(h.calls[0].args.p_effective_at, undefined);
 });
+
+test('offline postponement retries retain the reviewed revision, date and request ID', async () => {
+  const h = harness();
+  const job = {
+    kind: 'change_delivery_status',
+    clientUuid: 'postponement-request',
+    createdAt: Date.now(),
+    args: {
+      deliveryId: 'order-a',
+      toStatus: 'postponed',
+      newScheduledDate: '2026-09-28',
+      expectedUpdatedAt: '2026-09-21T12:00:00Z',
+      expectedStatus: 'postponed',
+      expectedScheduledDate: '2026-09-23',
+    },
+  };
+  h.failOnce(new Error('network unavailable'));
+  await assert.rejects(h.execute(job));
+  h.succeed();
+  await h.execute({ ...job, attempts: 1 });
+  assert.deepEqual(h.calls[0], h.calls[1]);
+  assert.equal(h.calls[1].name, 'postpone_delivery');
+  assert.equal(h.calls[1].args.p_expected_date, '2026-09-23');
+  assert.equal(h.calls[1].args.p_expected_updated_at, '2026-09-21T12:00:00Z');
+});

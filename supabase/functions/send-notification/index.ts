@@ -19,10 +19,9 @@
 // Deploy: supabase functions deploy send-notification
 
 // deno-lint-ignore-file no-explicit-any
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { denyIfNotInternal } from '../_shared/internal-auth.ts';
-
-const EXPO_PUSH_URL = 'https://exp.host/--/api/v2/push/send';
+import { submitPushBatch } from '../_shared/push-batch.ts';
 
 // [Feature A] Shared multi-product helpers for notification composition.
 type NotifLine = { product_catalog_id: string; name: string; qty: number };
@@ -125,25 +124,14 @@ Deno.serve(async (req) => {
 
   const chunks = chunk(messages, 100);
   const stale: string[] = [];
+  let failed = 0;
+  let accepted = 0;
 
   for (const batch of chunks) {
-    const res = await fetch(EXPO_PUSH_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(batch),
-    });
-    if (!res.ok) {
-      const errText = await res.text();
-      console.error('expo push http failed', res.status, errText);
-      continue;
-    }
-    const json = (await res.json()) as { data?: Array<{ status: string; details?: { error?: string } }> };
-    const tickets = json.data ?? [];
-    tickets.forEach((t, i) => {
-      if (t.status === 'error' && t.details?.error === 'DeviceNotRegistered') {
-        stale.push(batch[i].to);
-      }
-    });
+    const result = await submitPushBatch(batch);
+    stale.push(...result.stale);
+    failed += result.failed;
+    accepted += result.accepted;
   }
 
   // Prune dead tokens so the table doesn't grow forever.
@@ -157,8 +145,8 @@ Deno.serve(async (req) => {
   }
 
   return new Response(
-    JSON.stringify({ recipients: tokenList.length, pruned: stale.length }),
-    { status: 200, headers: { 'Content-Type': 'application/json' } },
+    JSON.stringify({ recipients: tokenList.length, accepted, failed, pruned: stale.length }),
+    { status: failed > 0 ? 503 : 200, headers: { 'Content-Type': 'application/json' } },
   );
 });
 
@@ -195,7 +183,7 @@ type Resolved = { title: string; body: string; data: Record<string, unknown> | u
 async function resolve(
   audience: Audience,
   body: any,
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient,
 ): Promise<Resolved | { error: string; status: number }> {
   const dataField = (typeof body.data === 'object' && body.data) ? body.data as Record<string, unknown> : undefined;
 

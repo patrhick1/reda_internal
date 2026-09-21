@@ -68,10 +68,21 @@ export function UpdateStatusSheet({
   // surfaces applies the per-current-status PICKER_ALLOWED_FROM allow-list so
   // e.g. an 'available' order shows only the short agent set (ops keep the full
   // list). Shared pure helper so behaviour is unit-tested.
-  const options = useMemo(
-    () => pickerTransitions(transitionsQ.data ?? [], currentStatus, restrictToAgentSet),
-    [transitionsQ.data, currentStatus, restrictToAgentSet],
-  );
+  const options = useMemo(() => {
+    const rows = pickerTransitions(transitionsQ.data ?? [], currentStatus, restrictToAgentSet);
+    if (currentStatus === 'postponed') {
+      return [
+        {
+          from_status: 'postponed',
+          to_status: 'postponed',
+          requires_reason: false,
+          requires_admin: false,
+        } as DeliveryStatusTransition,
+        ...rows,
+      ];
+    }
+    return rows;
+  }, [transitionsQ.data, currentStatus, restrictToAgentSet]);
 
   function reset() {
     setPicked(null);
@@ -142,6 +153,11 @@ export function UpdateStatusSheet({
               paid: null,
               paymentMethod: null,
               newScheduledDate,
+              expectedUpdatedAt: isPostponed ? (delivery.updated_at ?? undefined) : undefined,
+              expectedStatus: isPostponed ? currentStatus : undefined,
+              expectedScheduledDate: isPostponed
+                ? (delivery.scheduled_date ?? undefined)
+                : undefined,
             },
             label,
           );
@@ -218,7 +234,9 @@ export function UpdateStatusSheet({
                     color: colors.textSecondary,
                   }}
                 >
-                  {meta.desc}
+                  {currentStatus === 'postponed' && t.to_status === 'postponed'
+                    ? 'Change promised date'
+                    : meta.desc}
                   {t.requires_reason ? ' · reason required' : ''}
                   {t.requires_admin ? ' · admin only' : ''}
                 </Text>
@@ -250,6 +268,16 @@ export function UpdateStatusSheet({
           ) : null}
           {isPostponed ? (
             <View style={{ gap: 10 }}>
+              <Banner
+                tone={delivery.client_auto_cancel_soft_fails ? 'warn' : 'info'}
+                icon="calendar"
+              >
+                {delivery.order_type === 'replacement'
+                  ? 'This replacement keeps its current owner and moves to the chosen date.'
+                  : delivery.client_auto_cancel_soft_fails
+                    ? 'This client closes postponed deliveries as failed at end of day. Choosing a future date does not keep this order open.'
+                    : 'You keep ownership while the order waits. Before its due day it returns to Unassigned for fresh assignment. Earlier reassignment is temporary.'}
+              </Banner>
               <Text
                 style={{ fontFamily: fonts.semibold, fontSize: 13, color: colors.textSecondary }}
               >

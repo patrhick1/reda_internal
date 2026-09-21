@@ -321,7 +321,7 @@ export default function AgentToday() {
     { id: 'active' as const, label: 'Active', count: buckets.active.length },
     { id: 'available' as const, label: 'Available', count: buckets.available.length },
     { id: 'soft' as const, label: 'Soft fail', count: buckets.soft.length },
-    { id: 'overdue' as const, label: 'Overdue replacements', count: overdueRows.length },
+    { id: 'overdue' as const, label: 'Overdue orders', count: overdueRows.length },
     { id: 'postponed' as const, label: 'Postponed', count: postponedRows.length },
     { id: 'done' as const, label: 'Done', count: buckets.done.length },
     { id: 'closed' as const, label: 'Closed', count: buckets.closed.length },
@@ -630,7 +630,7 @@ export default function AgentToday() {
             </SectionHeader>
           ) : filter === 'overdue' ? (
             <SectionHeader>
-              {`Overdue replacements - ${list.length} ${list.length === 1 ? 'job' : 'jobs'}`}
+              {`Overdue orders - ${list.length} ${list.length === 1 ? 'job' : 'jobs'}`}
             </SectionHeader>
           ) : null
         }
@@ -653,7 +653,7 @@ export default function AgentToday() {
               <Empty
                 icon="calendar"
                 title="No postponed orders"
-                sub="Orders you postpone to a later date stay here until that day arrives — then they move back into Today."
+                sub="Ordinary deliveries return to Unassigned before their due day for fresh assignment. Replacements keep their owner. Client-specific closure rules still apply."
               />
             )
           ) : filter === 'overdue' ? (
@@ -667,13 +667,13 @@ export default function AgentToday() {
               <Empty
                 icon="search"
                 title="Nothing matches"
-                sub={`No overdue replacement jobs matching "${nameQuery.trim()}".`}
+                sub={`No overdue orders matching "${nameQuery.trim()}".`}
               />
             ) : (
               <Empty
                 icon="check"
-                title="No overdue replacements"
-                sub="Every replacement assigned before today has been handled or rescheduled."
+                title="No overdue orders"
+                sub="No open orders assigned to you are overdue."
               />
             )
           ) : error ? (
