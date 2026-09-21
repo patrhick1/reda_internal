@@ -1,5 +1,11 @@
 BEGIN;
 
+-- Match the actual function expression used by plans and workers. The earlier
+-- CASE-expression index is not usable when PostgreSQL keeps this function call.
+CREATE INDEX deliveries_maintenance_group_lookup ON public.deliveries(
+ reda_maintenance.group_key(customer_phone_normalized,items_fingerprint,product_catalog_id,scheduled_date,id))
+ WHERE deleted_at IS NULL AND order_type='delivery';
+
 ALTER TABLE reda_maintenance.runs DROP CONSTRAINT runs_kind_check;
 ALTER TABLE reda_maintenance.runs ADD CONSTRAINT runs_kind_check CHECK(kind IN('release','close','finish_day'));
 ALTER TABLE reda_maintenance.runs ADD COLUMN target_date date;

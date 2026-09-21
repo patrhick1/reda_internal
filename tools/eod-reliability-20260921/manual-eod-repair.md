@@ -15,6 +15,8 @@ The preceding maintenance release incorrectly applied the automatic cutoff to ma
 
 Each sibling group is reviewed and locked as a unit. The existing worker, financial lock order, retry budget and stable effect identifiers are reused. A private saved approval permits early release; automatic and public permission boundaries stay intact. Large reviews are paginated for display without truncating submitted work. Revision checks skip changed groups instead of overwriting accepted human actions.
 
+Live verification exposed an additional index mismatch: PostgreSQL retained the group-key function call, so the earlier CASE-expression index was unused. The added index matches the actual lookup. In a rollback-only rehearsal against 21,292 production orders, nightly planning took 83 ms and manual planning 453 ms. A CI regression fixture now materializes both plans with 20,000 archived and 500 active orders under a 10-second limit.
+
 Local synthetic load tests: 419 and 4,190 additional orders, no failed groups or duplicate children. At 4,190 orders, preview/enqueue took 8.5 seconds and the longest worker batch took 6.2 seconds. These are local measurements with concurrent app builds, not a production latency guarantee. The legacy compatibility RPC remains synchronous; updated screens are the scalable path.
 
 ## Verification
