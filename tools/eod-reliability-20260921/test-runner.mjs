@@ -18,8 +18,13 @@ function sql(text, database = db) {
 }
 function file(name) { return readFileSync(path.join(dir, name), 'utf8').replace(/^\uFEFF/, ''); }
 function checkEmpty() {
-  if (sql("select current_database() || ':' || inet_server_addr() || ':' || inet_server_port()") !== `${db}:127.0.0.1/32:55449`
-    && sql("select inet_server_addr()='127.0.0.1'::inet and inet_server_port()=55449") !== 't') throw new Error('Isolated database required');
+  // The client is always pinned to localhost:55449. GitHub's service container
+  // sees its private bridge address and internal port, not that published port.
+  const local = sql("select inet_server_addr()='127.0.0.1'::inet and inet_server_port()=55449") === 't';
+  const ciContainer = process.env.GITHUB_ACTIONS === 'true'
+    && sql("select inet_server_addr()<<'172.16.0.0/12'::inet and inet_server_port()=5432") === 't';
+  if (sql('select current_database()') !== db || sql('select current_user') !== 'reda_test'
+    || (!local && !ciContainer)) throw new Error('Isolated database required');
 }
 checkEmpty();
 if (process.argv.includes('--setup')) {

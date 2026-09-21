@@ -1,7 +1,9 @@
 \set ON_ERROR_STOP on
 BEGIN;
 DO $$ BEGIN
-  IF current_database()<>'reda_eod_test' OR inet_server_addr()<>'127.0.0.1'::inet THEN
+  IF current_database()<>'reda_eod_test' OR current_user<>'reda_test'
+    OR NOT (inet_server_addr()='127.0.0.1'::inet
+      OR (inet_server_addr()<<'172.16.0.0/12'::inet AND inet_server_port()=5432)) THEN
     RAISE EXCEPTION 'Isolated EOD database required'; END IF;
 END $$;
 INSERT INTO auth.users(id,email) VALUES

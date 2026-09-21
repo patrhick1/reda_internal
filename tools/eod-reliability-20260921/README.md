@@ -92,7 +92,7 @@ orders, work records and audit history for inspection. Correct the failing
 operation and resume with its existing work IDs. Do not restore the unsafe
 all-dates RPC or blindly reverse completed orders.
 
-Diagnostics: submitted/sent notification attempts are retained for 30 days,
+Diagnostics: successful notification attempts are retained for 30 days,
 completed work details for 90 days, and previews for seven days. Runs retain
 aggregate outcomes. Unresolved failures/holds remain visible. Order history and
 financial audit records are never deleted by maintenance retention.
