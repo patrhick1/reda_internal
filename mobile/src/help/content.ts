@@ -85,25 +85,20 @@ You don't need to remember to cancel anything yourself. If the agents have **dif
   },
   {
     id: 'eod',
-    title: 'End of day — auto-rollover at 9pm',
+    title: 'End of day — prepare the next working day',
     icon: 'calendar',
-    body: `At **9pm Lagos every night**, the app rolls every still-pending delivery forward to the next working day automatically. You don't have to remember. You'll get a push that says either:
+    body: `You can finish the day when work is done, including around **10pm Lagos**. The automatic **23:59 Lagos** run is the fallback.
 
-- **"Rolled N deliveries forward. Tap to review."** — the cron found stuck rows and rolled them.
-- **"All clear — nothing to roll."** — your team finished everything for the day.
-- **"Auto end of day FAILED"** — something went wrong. Open the EOD screen and tap **Roll all forward** to do it manually.
+1. Open **Home → End of day**, or **Open end of day** in Reconciliation.
+2. Tap **Preview next working day**. Check the source and destination dates, rollovers, released postponements, and closures. Existing carry limits still apply.
+3. Confirm the operation and wait for its processing status. Failed or changed groups need review; submitting is not completion.
+4. Tap **View prepared orders** to open Unassigned for the destination date. Assign these orders to agents. The assignment picker shows their actual dates.
 
-**Sundays are skipped.** Saturday's pending deliveries land on Monday automatically.
+**Sundays are skipped:** Saturday prepares Monday; Monday prepares Tuesday. Postponements due through the destination are released without adding a carry. Later postponements and protected orders stay untouched.
 
-### If you want to do it yourself
+The nightly fallback and morning check preserve already-prepared orders and their assignments. Work added after a manual close is still eligible for later processing.
 
-- Go to **Home → End of day** (calendar icon in Quick Actions).
-- Anything in the list is a delivery that didn't close out for that date.
-- Tap **Roll N forward**. Same effect as the 9pm cron — the original delivery is closed (marked as *rolled over*), and a fresh one for the same customer is opened for the next working day.
-
-### Looking back
-
-If you want to see what got rolled (or any other past date), go to **Deliveries** and tap the **Yesterday** chip at the top. **Custom** lets you type any date. **All dates** shows everything across history.`,
+The regular **Unassigned** queue shows all dates. **Show all Unassigned** leaves the prepared-date view. Recovery tools are available on End of day for reviewing missed processing.`,
   },
   {
     id: 'fix-delivery',

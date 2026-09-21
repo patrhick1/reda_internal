@@ -22,7 +22,6 @@ import {
   listAgentEarningsSummary,
   listClientRemit,
   listSettlementsForDate,
-  runEodRolloverAllStuck,
   settlePeriod,
   voidSettlement,
   type AgentEarningsRow,
@@ -233,39 +232,8 @@ export default function AdminReconcile() {
   }, []);
 
   const onRunEod = useCallback(() => {
-    const prompt = `Run end of day?\n\nThis releases postponed orders coming due into Unassigned, then rolls every stuck non-terminal delivery forward one day.`;
-    const runIt = async () => {
-      try {
-        const n = await runEodRolloverAllStuck();
-        if (Platform.OS === 'web') {
-          if (typeof window !== 'undefined') window.alert(`Rolled ${n} deliveries forward.`);
-        } else {
-          Alert.alert('Done', `Rolled ${n} deliveries forward.`);
-        }
-        clientsQ.reload();
-        agentsQ.reload();
-      } catch (e) {
-        if (Platform.OS === 'web') {
-          if (typeof window !== 'undefined') window.alert(`Rollover failed: ${errorMessage(e)}`);
-        } else {
-          Alert.alert('Rollover failed', errorMessage(e));
-        }
-      }
-    };
-
-    if (Platform.OS === 'web') {
-      if (typeof window !== 'undefined' && window.confirm(prompt)) runIt();
-      return;
-    }
-    Alert.alert(
-      'Run end of day?',
-      `This releases postponed orders coming due into Unassigned, then rolls every stuck non-terminal delivery forward one day.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Run', style: 'destructive', onPress: runIt },
-      ],
-    );
-  }, [clientsQ, agentsQ]);
+    router.push('/(admin)/eod');
+  }, [router]);
 
   // Build + download the Moniepoint bulk-transfer CSV for the selected day.
   // Includes every vendor with a POSITIVE remit AND complete bank details, and
@@ -605,7 +573,6 @@ function ClientsList({
   canSettle,
   showDownload,
   isWide,
-  eodDate,
   onDownloadCsv,
   onDownloadKudaCsv,
   onRunEod,
@@ -722,7 +689,7 @@ function ClientsList({
           ) : null}
           <View style={{ marginTop: 8 }}>
             <Button variant="secondary" full icon="calendar" onPress={onRunEod}>
-              {`Run EOD rollover · ${eodDate}`}
+              Open end of day
             </Button>
           </View>
         </View>
@@ -804,7 +771,6 @@ function AgentsList({
   setOpenId,
   settlements,
   canSettle,
-  isWide,
   eodDate,
   onRunEod,
   onSettle,
@@ -1080,7 +1046,7 @@ function AgentsList({
             {!selectMode ? (
               <View style={{ marginTop: 8 }}>
                 <Button variant="secondary" full icon="calendar" onPress={onRunEod}>
-                  {`${isWide ? 'Run EOD rollover' : 'Run EOD'} · ${eodDate}`}
+                  Open end of day
                 </Button>
               </View>
             ) : null}
@@ -1265,7 +1231,6 @@ function SummaryTab({
   loading,
   rangeLabel,
   isWide,
-  eodDate,
   onRunEod,
 }: {
   error: string | null;
@@ -1399,7 +1364,7 @@ function SummaryTab({
         </View>
         <View style={{ flex: 1 }}>
           <Button variant="secondary" full icon="calendar" onPress={onRunEod}>
-            {`Run EOD rollover · ${eodDate}`}
+            Open end of day
           </Button>
         </View>
       </View>

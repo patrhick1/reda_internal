@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, Platform, ScrollView, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
@@ -6,8 +6,10 @@ import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { AppBar, Banner, Button, Card, Input } from '@/components/ui';
 import { colors, fonts } from '@/lib/theme';
 import { errorMessage } from '@/lib/errors';
+import { invalidateDeliveries } from '@/services/deliveries';
 import {
   maintenanceHealth,
+  manualPreviewPage,
   prepareMaintenance,
   requestMaintenance,
   retryMaintenanceGroup,
@@ -40,21 +42,41 @@ function confirmAction(message: string, action: () => void) {
 export default function EndOfDay() {
   const router = useRouter();
   const health = useAsync(maintenanceHealth, []);
-  const [kind, setKind] = useState<MaintenanceKind>('release');
+  const [kind, setKind] = useState<MaintenanceKind>('finish_day');
+  const [recovery, setRecovery] = useState(false);
   const [date, setDate] = useState('');
   const [preview, setPreview] = useState<MaintenancePreview | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reviewNote, setReviewNote] = useState('');
+  const refreshedRuns = useRef(new Set<string>());
+  useEffect(() => {
+    let changed = false;
+    for (const run of health.data?.runs ?? []) {
+      if (run.remaining_groups !== 0) continue;
+      const revision = `${run.id}:${run.status}:${JSON.stringify(run.outcomes)}`;
+      if (!refreshedRuns.current.has(revision)) {
+        refreshedRuns.current.add(revision);
+        changed = true;
+      }
+    }
+    if (changed) invalidateDeliveries();
+  }, [health.data?.runs]);
   useReloadOnFocus(health.reload);
   const reload = health.reload;
   useEffect(() => {
-    const timer = setInterval(reload, 30000);
+    const timer = setInterval(
+      reload,
+      health.data?.runs.some((run) => run.remaining_groups > 0) ? 3000 : 30000,
+    );
     return () => clearInterval(timer);
-  }, [reload]);
+  }, [reload, health.data?.runs]);
   const selectedDate =
-    date || (kind === 'release' ? health.data?.release_through : health.data?.close_through) || '';
+    (kind === 'finish_day'
+      ? health.data?.today
+      : date || (kind === 'release' ? health.data?.release_through : health.data?.close_through)) ||
+    '';
   async function perform(action: () => Promise<void>) {
     setBusy(true);
     setError(null);
@@ -74,7 +96,7 @@ export default function EndOfDay() {
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <AppBar
         title="End of day"
-        subtitle="Processing health and safe recovery"
+        subtitle="Finish today and prepare the next working day"
         onBack={() => router.back()}
         helpTopic="eod"
       />
@@ -94,74 +116,64 @@ export default function EndOfDay() {
         ) : (
           <>
             <Card>
-              <Text style={{ fontFamily: fonts.bold, fontSize: 18 }}>
-                Automatic processing {health.data.enabled ? 'enabled' : 'paused'}
+              <Text style={{ fontFamily: fonts.bold, fontSize: 18 }}>Finish today</Text>
+              <Text>
+                Finish when work is done, including around 10pm Lagos. The automatic 23:59 Lagos run
+                is the fallback.
               </Text>
               <Text>
-                Last worker check:{' '}
-                {health.data.worker_at
-                  ? new Date(health.data.worker_at).toLocaleString()
-                  : 'No check recorded'}
+                Preview the destination date and outcomes, finish processing, then assign the
+                prepared orders to agents.
               </Text>
-              <Text>Today in Lagos: {health.data.today}. Today closes at 23:59 Lagos.</Text>
-              <Text>
-                Nightly work is checked again each morning. Queued work is processed in batches.
-              </Text>
-              {health.data.notification_failures > 0 ? (
-                <Text>
-                  {health.data.notification_failures} notification deliveries failed; order
-                  processing is tracked separately.
-                </Text>
-              ) : null}
-            </Card>
-            {health.data.alerts.map((a) => (
-              <Banner key={a.key} tone="warn" icon="alert">
-                {a.message}
-              </Banner>
-            ))}
-            <Card>
-              <Text style={{ fontFamily: fonts.bold, fontSize: 18 }}>Choose an operation</Text>
-              <View style={{ gap: 8, marginVertical: 12 }}>
-                <Button
-                  title={
-                    kind === 'release' ? '✓ Release due postponements' : 'Release due postponements'
-                  }
-                  disabled={busy}
-                  onPress={() => {
-                    setKind('release');
-                    setDate('');
-                    setPreview(null);
-                  }}
-                />
-                <Button
-                  title={kind === 'close' ? '✓ Close a completed day' : 'Close a completed day'}
-                  disabled={busy}
-                  onPress={() => {
-                    setKind('close');
-                    setDate('');
-                    setPreview(null);
-                  }}
-                />
-              </View>
-              <Text>
-                {kind === 'release'
-                  ? 'Release ordinary deliveries to Unassigned. Client-policy closures and duplicate handling appear in the preview. This does not close today’s active work.'
-                  : 'Apply the existing carry limits and closure rules to this completed business day. Missed days carry directly to an actionable workday.'}
-              </Text>
-              <Input
-                label={
-                  kind === 'release'
-                    ? 'Due on or before (YYYY-MM-DD)'
-                    : 'Business day to close (YYYY-MM-DD)'
-                }
-                value={selectedDate}
-                onChange={(value) => {
-                  setDate(value);
+              <Button
+                title={recovery ? 'Hide recovery tools' : 'Recovery tools'}
+                disabled={busy}
+                onPress={() => {
+                  setRecovery(!recovery);
+                  setKind('finish_day');
+                  setDate('');
                   setPreview(null);
                 }}
               />
+              {recovery ? (
+                <View style={{ gap: 8, marginVertical: 12 }}>
+                  {(['finish_day', 'release', 'close'] as const).map((option) => (
+                    <Button
+                      key={option}
+                      title={`${kind === option ? '✓ ' : ''}${option === 'finish_day' ? 'Finish today' : option === 'release' ? 'Release due postponements' : 'Close a completed day'}`}
+                      disabled={busy}
+                      onPress={() => {
+                        setKind(option);
+                        setDate('');
+                        setPreview(null);
+                      }}
+                    />
+                  ))}
+                  {kind !== 'finish_day' ? (
+                    <>
+                      <Text>
+                        {kind === 'release'
+                          ? 'Release postponements already due. To prepare the next working day early, choose Finish today.'
+                          : 'Recover a completed day using the existing carry limits and closure rules.'}
+                      </Text>
+                      <Input
+                        label={
+                          kind === 'release'
+                            ? 'Due on or before (YYYY-MM-DD)'
+                            : 'Completed day (YYYY-MM-DD)'
+                        }
+                        value={selectedDate}
+                        onChange={(value) => {
+                          setDate(value);
+                          setPreview(null);
+                        }}
+                      />
+                    </>
+                  ) : null}
+                </View>
+              ) : null}
               <Button
-                title="Preview exact scope"
+                title={kind === 'finish_day' ? 'Preview next working day' : 'Preview recovery'}
                 disabled={busy || !selectedDate}
                 onPress={() =>
                   void perform(async () => {
@@ -174,14 +186,24 @@ export default function EndOfDay() {
             {preview ? (
               <Card>
                 <Text style={{ fontFamily: fonts.bold, fontSize: 18 }}>
-                  {preview.rows.length} of {preview.total_orders} orders · {preview.kind} ·{' '}
-                  {preview.date}
+                  {preview.kind === 'finish_day'
+                    ? `${preview.date} → ${preview.target_date}`
+                    : `${preview.kind} · ${preview.date}`}
                 </Text>
-                {preview.total_orders > preview.rows.length ? (
+                <Text>
+                  {preview.total_orders} orders in this saved review · {preview.rows.length} shown
+                </Text>
+                {preview.summary ? (
                   <Text>
-                    This preview contains complete groups up to 500 orders. After processing,
-                    prepare another preview for the remainder. Automatic processing continues
-                    through the full queue.
+                    {Object.entries(preview.summary)
+                      .map(([action, count]) => `${count} ${labels[action] ?? action}`)
+                      .join(' · ')}
+                  </Text>
+                ) : null}
+                {preview.kind !== 'finish_day' && preview.total_orders > preview.rows.length ? (
+                  <Text>
+                    Recovery processes the displayed complete groups, up to 500 orders. Preview
+                    again for the remainder.
                   </Text>
                 ) : null}
                 {preview.oversized_groups > 0 ? (
@@ -209,24 +231,48 @@ export default function EndOfDay() {
                       {row.status} · {row.date} · {row.agent ?? 'Unassigned'} · prior carries:{' '}
                       {row.carry}
                     </Text>
-                    <Text>{labels[row.action] ?? row.action}</Text>
+                    <Text>
+                      {labels[row.action] ?? row.action}
+                      {row.target_date ? ` · ${row.date} → ${row.target_date}` : ''}
+                    </Text>
                     <Text onPress={() => openOrder(row.id)} style={{ color: colors.textSecondary }}>
                       Open order
                     </Text>
                   </View>
                 ))}
+                {preview.kind === 'finish_day' && preview.rows.length < preview.total_orders ? (
+                  <Button
+                    title="Load more reviewed orders"
+                    disabled={busy}
+                    onPress={() =>
+                      void perform(async () => {
+                        const more = await manualPreviewPage(
+                          preview.preview_id,
+                          preview.rows.length,
+                        );
+                        setPreview({ ...preview, rows: [...preview.rows, ...more] });
+                      })
+                    }
+                  />
+                ) : null}
                 <Button
-                  title={`Queue ${preview.rows.length} reviewed orders`}
-                  disabled={busy || preview.rows.length === 0 || !health.data.enabled}
+                  title={
+                    preview.kind === 'finish_day'
+                      ? `Finish day · prepare ${preview.target_date}`
+                      : `Queue ${preview.rows.length} reviewed orders`
+                  }
+                  disabled={busy || preview.total_orders === 0 || !health.data.enabled}
                   onPress={() =>
                     confirmAction(
-                      `Queue ${preview.rows.length} orders for ${preview.kind} on ${preview.date}? Only this saved preview will be submitted.`,
+                      preview.kind === 'finish_day'
+                        ? `Finish ${preview.date} and prepare ${preview.target_date}? The saved review covers all ${preview.total_orders} orders, including those on further pages. Carry-limit and other closures shown above also apply. Wait for completion before assigning.`
+                        : `Queue ${preview.rows.length} orders for ${preview.kind} on ${preview.date}?`,
                       () =>
                         void perform(async () => {
-                          await requestMaintenance(preview.preview_id);
+                          await requestMaintenance(preview.preview_id, preview.kind);
                           setPreview(null);
                           setMessage(
-                            'Queued. Follow progress below; submission does not mean processing has finished.',
+                            'Processing requested. Follow progress below and wait for completion before assigning prepared orders.',
                           );
                         }),
                     )
@@ -241,7 +287,9 @@ export default function EndOfDay() {
               health.data.runs.map((run) => (
                 <Card key={run.id}>
                   <Text style={{ fontFamily: fonts.bold }}>
-                    {run.business_date} · {run.kind} · {run.status}
+                    {run.business_date}
+                    {run.target_date ? ` → ${run.target_date}` : ''} ·{' '}
+                    {run.kind === 'finish_day' ? 'Finish day' : run.kind} · {run.status}
                   </Text>
                   <Text>
                     {run.remaining_groups} groups remaining · {run.failed_groups} failed ·{' '}
@@ -252,9 +300,50 @@ export default function EndOfDay() {
                       .map(([outcome, count]) => `${count} ${outcome.replaceAll('_', ' ')}`)
                       .join(' · ') || 'No order outcomes recorded'}
                   </Text>
+                  {run.kind === 'finish_day' && run.target_date && run.remaining_groups === 0 ? (
+                    <>
+                      {run.failed_groups > 0 || run.changed_groups > 0 ? (
+                        <Text>
+                          Some groups need review. Only successfully prepared orders will appear.
+                        </Text>
+                      ) : null}
+                      <Button
+                        title="View prepared orders"
+                        onPress={() =>
+                          router.push({
+                            pathname: '/(admin)/deliveries',
+                            params: { filter: 'unassigned', preparedDate: run.target_date! },
+                          })
+                        }
+                      />
+                    </>
+                  ) : null}
                 </Card>
               ))
             )}
+            <Card>
+              <Text style={{ fontFamily: fonts.bold }}>
+                Automatic processing {health.data.enabled ? 'enabled' : 'paused'}
+              </Text>
+              <Text>Today in Lagos: {health.data.today}. Automatic fallback: 23:59 Lagos.</Text>
+              <Text>
+                Last worker check:{' '}
+                {health.data.worker_at
+                  ? new Date(health.data.worker_at).toLocaleString()
+                  : 'No check recorded'}
+              </Text>
+              {health.data.notification_failures > 0 ? (
+                <Text>
+                  {health.data.notification_failures} notification deliveries failed; order
+                  processing is tracked separately.
+                </Text>
+              ) : null}
+            </Card>
+            {health.data.alerts.map((a) => (
+              <Banner key={a.key} tone="warn" icon="alert">
+                {a.message}
+              </Banner>
+            ))}
             {health.data.failures.map((f) => (
               <Card key={f.id}>
                 <Text style={{ fontFamily: fonts.bold }}>

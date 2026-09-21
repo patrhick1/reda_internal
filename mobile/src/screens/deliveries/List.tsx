@@ -56,6 +56,7 @@ import {
 import { formatNaira, formatYmdShort } from '@/lib/format';
 import {
   AppBar,
+  Banner,
   Avatar,
   Button,
   Card,
@@ -157,7 +158,8 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   // Optional deep-link target — the rep dashboard's "Awaiting client update" card
   // routes here with ?filter=to_notify. Validated against FILTER_IDS so a stray
   // param can never put the chips in an unknown state.
-  const params = useLocalSearchParams<{ filter?: string; agent?: string }>();
+  const params = useLocalSearchParams<{ filter?: string; agent?: string; preparedDate?: string }>();
+  const [preparedDate, setPreparedDate] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>('all');
   const [datePreset, setDatePreset] = useState<DatePreset>('today');
   // Persists across preset toggles so switching today → yesterday → custom
@@ -202,6 +204,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   useEffect(() => {
     const cleared: Record<string, undefined> = {};
     if (params.filter && FILTER_IDS.has(params.filter)) {
+      setPreparedDate(null);
       setFilter(params.filter as Filter);
       if (params.filter === 'same_customer') {
         setDatePreset('today');
@@ -215,8 +218,21 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
       setAgentId(params.agent);
       cleared.agent = undefined;
     }
+    if (typeof params.preparedDate === 'string') {
+      if (isYmd(params.preparedDate)) {
+        setPreparedDate(params.preparedDate);
+        setCustomDate(params.preparedDate);
+        setDatePreset('custom');
+        setFilter('unassigned');
+        setAgentId(null);
+        setClientId(null);
+        setLocationIds(EMPTY_LOCATION_IDS);
+        setNameQuery('');
+      }
+      cleared.preparedDate = undefined;
+    }
     if (Object.keys(cleared).length > 0) router.setParams(cleared);
-  }, [params.filter, params.agent, router]);
+  }, [params.filter, params.agent, params.preparedDate, router]);
   // The list-narrowing affordances — customer-name search, agent picker, and
   // client picker — all share one audience: the full ops set (admin +
   // dispatcher + rep). Reps coordinate with vendors and asked to scan "show me
@@ -743,6 +759,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
   // (set on another tab) keeps the queue visible when the user switches over.
   const unassignedRows = useMemo(() => {
     let rows = unassignedQ.data ?? [];
+    if (preparedDate) rows = rows.filter((d) => d.scheduled_date === preparedDate);
     if (clientId) rows = rows.filter((d) => d.client_id === clientId);
     if (locationIds.size > 0) {
       rows = rows.filter((d) => locationIds.has(d.location_id ?? UNMATCHED_LOCATION));
@@ -754,7 +771,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
           (d.customer_phone ?? '').toLowerCase().includes(nameNeedle),
       );
     return rows;
-  }, [unassignedQ.data, clientId, locationIds, nameNeedle]);
+  }, [unassignedQ.data, clientId, locationIds, nameNeedle, preparedDate]);
 
   // Unassigned tab: sort into prior-status groups and compute the header that
   // sits above the first row of each group. Other tabs keep the server order.
@@ -1058,6 +1075,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
           value={filter === 'failed' ? failedDatePreset : datePreset}
           onChange={(v) => {
             exitSelect();
+            setPreparedDate(null);
             if (filter === 'failed') setFailedDatePreset(v as FailedDatePreset);
             else setDatePreset(v as DatePreset);
           }}
@@ -1100,6 +1118,21 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
               onChange={(value) => {
                 exitSelect();
                 setCustomDate(value);
+                setPreparedDate(null);
+              }}
+            />
+          </View>
+        ) : null}
+        {filter === 'unassigned' && preparedDate ? (
+          <View style={{ paddingHorizontal: 16, paddingBottom: 8, gap: 6 }}>
+            <Banner tone="info" icon="calendar">
+              Prepared for {preparedDate}. Only unassigned orders on this date are shown.
+            </Banner>
+            <Button
+              title="Show all Unassigned"
+              onPress={() => {
+                exitSelect();
+                setPreparedDate(null);
               }}
             />
           </View>
@@ -1109,6 +1142,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
           value={filter}
           onChange={(value) => {
             exitSelect();
+            setPreparedDate(null);
             setFilter(value);
           }}
         />
@@ -1577,6 +1611,11 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
       <BulkAssignSheet
         open={bulkSheetOpen}
         deliveryIds={assignableRows.flatMap((d) => (d.id ? [d.id] : []))}
+        expectedDates={Object.fromEntries(
+          assignableRows.flatMap((d) =>
+            d.id && d.scheduled_date ? [[d.id, d.scheduled_date]] : [],
+          ),
+        )}
         agents={bulkAssignTargets}
         onClose={() => setBulkSheetOpen(false)}
         onAssigned={onBulkAssigned}

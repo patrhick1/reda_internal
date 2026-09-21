@@ -14,6 +14,7 @@ import { errorMessage } from '@/lib/errors';
 export function BulkAssignSheet({
   open,
   deliveryIds,
+  expectedDates,
   agents,
   onClose,
   onAssigned,
@@ -21,6 +22,7 @@ export function BulkAssignSheet({
   open: boolean;
   /** Selected delivery ids. The sheet does nothing until at least one is supplied. */
   deliveryIds: string[];
+  expectedDates?: Record<string, string>;
   /** Active, top-level agents (parent_agent_id IS NULL). The List already filters
    *  this set; passing it down avoids a second roundtrip and means the sheet has
    *  no opinion about role/active filtering. */
@@ -46,7 +48,7 @@ export function BulkAssignSheet({
     setError(null);
     setSubmittingId(agent.id);
     try {
-      const updated = await bulkAssignDeliveries(deliveryIds, agent.id);
+      const updated = await bulkAssignDeliveries(deliveryIds, agent.id, expectedDates);
       onAssigned(updated);
       setQuery('');
     } catch (e) {
@@ -58,6 +60,13 @@ export function BulkAssignSheet({
 
   const submitting = submittingId !== null;
   const countLabel = `${deliveryIds.length} ${deliveryIds.length === 1 ? 'delivery' : 'deliveries'}`;
+  const dateCounts = Object.entries(
+    (expectedDates ? deliveryIds : []).reduce<Record<string, number>>((counts, id) => {
+      const date = expectedDates?.[id];
+      if (date) counts[date] = (counts[date] ?? 0) + 1;
+      return counts;
+    }, {}),
+  ).sort(([a], [b]) => a.localeCompare(b));
 
   return (
     <Sheet
@@ -74,8 +83,8 @@ export function BulkAssignSheet({
     >
       <View style={{ paddingHorizontal: 16, paddingTop: 4, paddingBottom: 8 }}>
         <Banner tone="info" icon="calendar">
-          Ownership of a postponed delivery is temporary. It returns to Unassigned when released;
-          assign its delivery route after release.
+          Assignment keeps each order’s scheduled date.{' '}
+          {dateCounts.map(([date, count]) => `${count} for ${date}`).join(' · ')}
         </Banner>
         <Input
           icon="search"
