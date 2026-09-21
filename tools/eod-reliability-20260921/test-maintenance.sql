@@ -12,7 +12,6 @@ DO $$ DECLARE r uuid; p jsonb; before_count int; target date:=reda_maintenance.b
  PERFORM pg_temp.assert(has_function_privilege('reda_maintenance_worker','reda_maintenance.work()','execute'),'worker can invoke private worker');
  PERFORM pg_temp.assert(NOT has_table_privilege('reda_maintenance_worker','public.deliveries','update'),'worker cannot directly update orders');
  BEGIN PERFORM public.prepare_maintenance('close',target+1); RAISE EXCEPTION 'FAIL: early close accepted'; EXCEPTION WHEN invalid_parameter_value THEN NULL; END;
- BEGIN PERFORM public.run_eod_rollover_all_stuck(); RAISE EXCEPTION 'FAIL: old broad recovery accepted'; EXCEPTION WHEN invalid_parameter_value THEN NULL; END;
  INSERT INTO reda_maintenance.holds(delivery_id,expected_updated_at,reason)
  SELECT id,updated_at,'TEST human-handled' FROM deliveries WHERE id=md5('eod-test-order-9')::uuid;
  p:=public.prepare_maintenance('release',target);

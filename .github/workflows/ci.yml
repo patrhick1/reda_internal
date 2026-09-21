@@ -63,6 +63,20 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run format:check
+      - name: Build isolated workflow UI
+        run: npx expo export --platform web --max-workers 2
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: https://api.redalogisticss.com
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: isolated-ui-test
+      - name: Install workflow test browser
+        run: |
+          npm install --prefix "$RUNNER_TEMP/eod-browser" --no-save playwright@1.55.0
+          node "$RUNNER_TEMP/eod-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Exercise Uzo's end-of-day and assignment workflow
+        run: node ../tools/eod-reliability-20260921/test-manual-eod-ui.mjs
+        env:
+          EOD_UI_DIST: dist
+          PLAYWRIGHT_MODULE_PATH: ${{ runner.temp }}/eod-browser/node_modules/playwright
 
   security:
     name: Security checks

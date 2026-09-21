@@ -1,0 +1,24 @@
+[
+  {
+    "scale": 1,
+    "orders": 419,
+    "batches": 10,
+    "enqueueMs": 711,
+    "maxDispatchMs": 571,
+    "maxBatchMs": 6096,
+    "totalMs": 32137,
+    "failedGroups": 0,
+    "duplicateChildren": 0
+  },
+  {
+    "scale": 10,
+    "orders": 4190,
+    "batches": 85,
+    "enqueueMs": 8507,
+    "maxDispatchMs": 1606,
+    "maxBatchMs": 6210,
+    "totalMs": 209614,
+    "failedGroups": 0,
+    "duplicateChildren": 0
+  }
+]

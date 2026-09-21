@@ -1,10 +1,12 @@
 import { rpcUntyped } from '@/lib/supabase';
 
-export type MaintenanceKind = 'release' | 'close';
+export type MaintenanceKind = 'finish_day' | 'release' | 'close';
 export type MaintenancePreview = {
   preview_id: string;
   kind: MaintenanceKind;
   date: string;
+  target_date?: string;
+  summary?: Record<string, number>;
   expires_at: string;
   total_orders: number;
   oversized_groups: number;
@@ -16,6 +18,7 @@ export type MaintenancePreview = {
     agent: string | null;
     carry: number;
     action: string;
+    target_date?: string | null;
   }[];
 };
 export type MaintenanceHealth = {
@@ -30,6 +33,7 @@ export type MaintenanceHealth = {
     id: string;
     kind: MaintenanceKind;
     business_date: string;
+    target_date?: string | null;
     status: string;
     remaining_groups: number;
     failed_groups: number;
@@ -56,14 +60,35 @@ export async function prepareMaintenance(
   kind: MaintenanceKind,
   date: string,
 ): Promise<MaintenancePreview> {
-  const { data, error } = await rpcUntyped('prepare_maintenance', { p_kind: kind, p_date: date });
+  const { data, error } = await rpcUntyped(
+    kind === 'finish_day' ? 'prepare_manual_eod' : 'prepare_maintenance',
+    kind === 'finish_day' ? { p_for_date: date } : { p_kind: kind, p_date: date },
+  );
   if (error) throw error;
   return data as MaintenancePreview;
 }
-export async function requestMaintenance(previewId: string): Promise<string> {
-  const { data, error } = await rpcUntyped('request_maintenance', { p_preview_id: previewId });
+export async function requestMaintenance(
+  previewId: string,
+  kind: MaintenanceKind,
+): Promise<string> {
+  const { data, error } = await rpcUntyped(
+    kind === 'finish_day' ? 'request_manual_eod' : 'request_maintenance',
+    { p_preview_id: previewId },
+  );
   if (error) throw error;
   return data as string;
+}
+export async function manualPreviewPage(
+  previewId: string,
+  offset: number,
+): Promise<MaintenancePreview['rows']> {
+  const { data, error } = await rpcUntyped('manual_eod_preview_page', {
+    p_preview_id: previewId,
+    p_offset: offset,
+    p_limit: 100,
+  });
+  if (error) throw error;
+  return data as MaintenancePreview['rows'];
 }
 export async function retryMaintenanceGroup(id: number): Promise<void> {
   const { error } = await rpcUntyped('retry_maintenance_group', { p_work_id: id });

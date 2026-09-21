@@ -1327,10 +1327,12 @@ export async function clearDeliveryLocation(deliveryId: string, reason: string):
 export async function bulkAssignDeliveries(
   deliveryIds: string[],
   agentId: string,
+  expectedDates?: Record<string, string>,
 ): Promise<number> {
-  const { data, error } = await supabase.rpc('bulk_assign_deliveries', {
+  const { data, error } = await rpcUntyped('bulk_assign_deliveries', {
     p_delivery_ids: deliveryIds,
     p_agent_id: agentId,
+    ...(expectedDates ? { p_expected_dates: expectedDates } : {}),
   });
   if (error) throw error;
   invalidateDeliveries();
