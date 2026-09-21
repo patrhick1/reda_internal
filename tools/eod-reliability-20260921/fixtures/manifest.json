@@ -1,0 +1,5 @@
+{
+  "source": "Schema-only production snapshot, 2026-09-21; network functions sanitized",
+  "uncompressed_sha256": "e1c30d010932875ca3d34def95950478a9561f4b47565edb628f97f7d437ed39",
+  "row_data": "Only status definitions and transitions; no customer, order, user or financial rows"
+}

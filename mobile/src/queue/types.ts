@@ -29,6 +29,10 @@ export type ChangeDeliveryStatusArgs = {
    *  ignores it otherwise. Required by the UI for postponed transitions;
    *  null for every other status. */
   newScheduledDate: string | null;
+  /** Persist the previewed order revision with an offline postponement. */
+  expectedUpdatedAt?: string;
+  expectedStatus?: string;
+  expectedScheduledDate?: string;
   /** [Feature A] Per-line delivered quantities for 'delivered' on multi-product
    *  orders. Omitted on single-product / non-delivered transitions; the server
    *  then fans quantityDelivered onto the order's lone line. */

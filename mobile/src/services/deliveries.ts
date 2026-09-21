@@ -626,17 +626,15 @@ export async function listAgentPostponed(userId: string): Promise<DeliveryRow[]>
   })) as DeliveryRow[];
 }
 
-/** Open replacement jobs assigned before today must not disappear from the
- * rider's work queue. Normal deliveries are copied forward by EOD rollover,
- * but replacements deliberately are not: copying one would split its attempt
- * and return-custody ledger across two delivery ids. Keep the original job
- * visible instead until it is attempted, rescheduled, cancelled or completed. */
+/** Surface all overdue open work, including ordinary deliveries awaiting
+ * maintenance recovery. Replacements retain their original identity and owner.
+ * The exported name remains compatible with existing query/cache callers. */
 export async function listAgentOverdueReplacements(userId: string): Promise<DeliveryRow[]> {
   const { data, error } = await supabase
     .from('deliveries_safe')
     .select(`${LIST_COLUMNS}, ${LIST_JOIN_FRAGMENT}`)
     .eq('assigned_agent_id', userId)
-    .eq('order_type', 'replacement')
+    .in('order_type', ['delivery', 'replacement'])
     .lt('scheduled_date', todayLagos())
     .not('current_status', 'in', `(${[...TERMINAL_STATUSES].join(',')})`)
     .order('scheduled_date', { ascending: true });
@@ -1402,7 +1400,10 @@ export async function bulkChangeStatus(
  *  belonging to the delivery being viewed (vs. an earlier carried-over day);
  *  `scheduled_date` is the owning delivery's date, for day dividers. */
 export type DeliveryChainHistoryRow =
-  Database['public']['Functions']['list_delivery_history_chain']['Returns'][number];
+  Database['public']['Functions']['list_delivery_history_chain']['Returns'][number] & {
+    postponed_to?: string | null;
+    previous_scheduled_date?: string | null;
+  };
 
 /** Status history for a delivery AND its rollover ancestry (parent chain),
  *  oldest delivery first and chronological within each. Backed by a
@@ -1412,7 +1413,7 @@ export type DeliveryChainHistoryRow =
 export async function listDeliveryHistoryChain(
   deliveryId: string,
 ): Promise<DeliveryChainHistoryRow[]> {
-  const { data, error } = await supabase.rpc('list_delivery_history_chain', {
+  const { data, error } = await rpcUntyped('list_delivery_history_chain_v2', {
     p_delivery_id: deliveryId,
   });
   if (error) throw error;

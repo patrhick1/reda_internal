@@ -1,0 +1,35 @@
+[
+  {
+    "scale": 1,
+    "orders": 419,
+    "batches": 6,
+    "enqueueMs": 190,
+    "maxDispatchMs": 184,
+    "maxBatchMs": 3052,
+    "totalMs": 11385,
+    "failedGroups": 0,
+    "duplicateChildren": 0
+  },
+  {
+    "scale": 10,
+    "orders": 4190,
+    "batches": 43,
+    "enqueueMs": 773,
+    "maxDispatchMs": 622,
+    "maxBatchMs": 3274,
+    "totalMs": 101220,
+    "failedGroups": 0,
+    "duplicateChildren": 0
+  },
+  {
+    "scale": 50,
+    "orders": 20950,
+    "batches": 211,
+    "enqueueMs": 5605,
+    "maxDispatchMs": 4611,
+    "maxBatchMs": 5053,
+    "totalMs": 663862,
+    "failedGroups": 0,
+    "duplicateChildren": 0
+  }
+]

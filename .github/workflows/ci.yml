@@ -6,6 +6,46 @@ on:
     branches: [main]
 
 jobs:
+  maintenance:
+    name: Order maintenance — database and HTTP integration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: reda_test
+          POSTGRES_PASSWORD: isolated-test-only
+          POSTGRES_DB: reda_eod_test
+        ports: ['55449:5432']
+        options: >-
+          --health-cmd "pg_isready -U reda_test -d reda_eod_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+      postgrest:
+        image: postgrest/postgrest:v14.12
+        env:
+          PGRST_DB_URI: postgres://reda_test:isolated-test-only@postgres:5432/reda_eod_test
+          PGRST_DB_SCHEMAS: public
+          PGRST_DB_ANON_ROLE: anon
+          PGRST_DB_PRE_REQUEST: public.check_payment_client_contract
+          PGRST_JWT_SECRET: isolated-reda-eod-test-secret-at-least-32-characters
+        ports: ['55451:3000']
+    env:
+      PGPASSWORD: isolated-test-only
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: 'v2.7.1'
+      - run: node tools/eod-reliability-20260921/test-runner.mjs --setup
+      - name: Reload API schema
+        run: psql -h 127.0.0.1 -p 55449 -U reda_test -d reda_eod_test -c "NOTIFY pgrst, 'reload schema';"
+      - name: Exercise actual scheduled HTTP client and private worker permissions
+        run: deno test --no-check --no-config --node-modules-dir=none --allow-net=127.0.0.1:55451,127.0.0.1:55452 --allow-env tools/test-eod-compatibility.ts
+      - run: deno test --no-config supabase/functions/_shared/push-batch.test.ts
+
   mobile:
     name: Mobile app — typecheck + lint + format
     runs-on: ubuntu-latest

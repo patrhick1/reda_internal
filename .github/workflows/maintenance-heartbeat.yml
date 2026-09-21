@@ -1,0 +1,28 @@
+name: Order processing heartbeat
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17,47 * * * *'
+permissions:
+  contents: read
+jobs:
+  heartbeat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check independent server and scheduler heartbeat
+        env:
+          REDA_PUBLIC_ANON_KEY: ${{ vars.REDA_PUBLIC_ANON_KEY }}
+        run: |
+          node --input-type=module <<'JS'
+          const key=process.env.REDA_PUBLIC_ANON_KEY;
+          if(!key) throw new Error('Repository variable REDA_PUBLIC_ANON_KEY is missing');
+          const response=await fetch('https://api.redalogisticss.com/rest/v1/rpc/maintenance_heartbeat',{
+            method:'POST',headers:{apikey:key,Authorization:`Bearer ${key}`,'Content-Type':'application/json'},
+            body:'{}',signal:AbortSignal.timeout(30000),
+          });
+          if(!response.ok) throw new Error(`Reda heartbeat HTTP ${response.status}`);
+          const result=await response.json();
+          if(result.healthy!==true) throw new Error('Reda order processing is not healthy. Check the End of day screen or server availability.');
+          console.log(`Healthy at ${result.checked_at}; version ${result.version}`);
+          JS

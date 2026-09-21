@@ -105,6 +105,12 @@ function pathForRoute(role: Role, data: Record<string, unknown>): `/${string}` |
       return null;
     case 'eod':
       return role === 'admin' ? '/(admin)/eod' : null;
+    case 'deliveries':
+      if (role === 'agent') return '/(agent)/today';
+      if (role === 'admin') return '/(admin)/deliveries';
+      if (role === 'dispatcher') return '/(dispatcher)/deliveries';
+      if (role === 'rep') return '/(rep)/deliveries';
+      return null;
     case 'location_approvals':
       // Agent zone-change approvals — managers only (admin + dispatcher).
       if (role === 'admin') return '/(admin)/location-approvals';

@@ -1,8 +1,8 @@
 // Edge Function: scheduled-eod-check
 //
-// Run by Supabase Scheduled Edge Functions cron at 20:00 UTC (= 21:00 Lagos,
-// past the typical end-of-deliveries window). Configure schedule in the
-// dashboard: Edge Functions → scheduled-eod-check → Schedule → 0 20 * * *
+// Compatibility bridge for the existing nightly cron at 22:59 UTC
+// (= 23:59 Africa/Lagos). The database maintenance scheduler replaces this
+// HTTP path after the reliability rollout; keep it compatible during cutover.
 //
 // What it does:
 //   1. Signs in as the "Reda System" admin user (a real users row — see
@@ -22,9 +22,12 @@
 // Deploy: supabase functions deploy scheduled-eod-check
 
 // deno-lint-ignore-file no-explicit-any
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { createSystemClient } from '../_shared/system-client.ts';
+import { denyIfNotInternal } from '../_shared/internal-auth.ts';
 
-Deno.serve(async (_req) => {
+Deno.serve(async (req) => {
+  const denied = denyIfNotInternal(req);
+  if (denied) return denied;
   const supabaseUrl  = Deno.env.get('SUPABASE_URL');
   const anonKey      = Deno.env.get('SUPABASE_ANON_KEY');
   const serviceKey   = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
@@ -38,7 +41,7 @@ Deno.serve(async (_req) => {
   // Sign in as the Reda System admin. The resulting client has a real JWT,
   // so auth.uid() is set inside RPCs and the existing is_admin_or_dispatcher()
   // checks pass naturally.
-  const supabase = createClient(supabaseUrl, anonKey, { auth: { persistSession: false } });
+  const supabase = createSystemClient(supabaseUrl, anonKey);
   const { error: signinErr } = await supabase.auth.signInWithPassword({
     email:    systemEmail,
     password: systemPass,
@@ -50,6 +53,16 @@ Deno.serve(async (_req) => {
       body:  `Sign-in as Reda System failed: ${signinErr.message}. Run EOD manually.`,
     });
     return new Response('signin failed', { status: 500 });
+  }
+
+  // Exercise the real signed-in client and live compatibility gate without
+  // running EOD. Available only to the trusted internal callers above.
+  if (new URL(req.url).searchParams.get('mode') === 'check') {
+    const { error } = await supabase.rpc('check_payment_client_contract');
+    return new Response(JSON.stringify({ compatible: !error, code: error?.code ?? null }), {
+      status: error ? 503 : 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
 
   // Run the rollover for every stuck date.
