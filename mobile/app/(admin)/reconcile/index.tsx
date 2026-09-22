@@ -1,4 +1,6 @@
 import { useFinancialRevision } from '@/lib/financial-refresh';
+import { AgentPayDetails } from '@/components/delivery/AgentPayDetails';
+import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -487,6 +489,8 @@ export default function AdminReconcile() {
         />
       ) : tab === 'agents' ? (
         <AgentsList
+          from={from}
+          to={to}
           state={agentsQ}
           openId={openId}
           setOpenId={setOpenId}
@@ -766,6 +770,8 @@ function ClientsList({
 }
 
 function AgentsList({
+  from,
+  to,
   state,
   openId,
   setOpenId,
@@ -777,6 +783,8 @@ function AgentsList({
   onBulkSettled,
   onVoid,
 }: {
+  from: string;
+  to: string;
   state: ReturnType<typeof useAsync<AgentEarningsRow[]>>;
   openId: string | null;
   setOpenId: (id: string | null) => void;
@@ -791,6 +799,7 @@ function AgentsList({
 }) {
   // Headline = total cash the riders owe Reda for the period (net of their own
   // delivery pay). This is collection-from-riders, NOT agent payroll.
+  const user = useCurrentUser();
   const [remitFilter, setRemitFilter] = useState<AgentRemitFilter>('outstanding');
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set());
@@ -1077,6 +1086,11 @@ function AgentsList({
               selectable={selectable}
               selected={selectedIds.has(item.agent_id)}
               subjectKind="agent"
+              details={
+                user.role === 'admin' && !selectMode && openId === item.agent_id ? (
+                  <AgentPayDetails agentId={item.agent_id} from={from} to={to} />
+                ) : null
+              }
               name={item.agent_name}
               countLabel={`${item.deliveries_count} deliveries · qty ${item.total_quantity}`}
               amount={item.total_remit}
@@ -1413,6 +1427,7 @@ function ExpandableRow({
   amountLabel,
   amountColor,
   extra,
+  details,
   settlement,
   canSettle,
   settleLabel,
@@ -1434,6 +1449,7 @@ function ExpandableRow({
   amountLabel: string;
   amountColor: string;
   extra: { label: string; value: string }[];
+  details?: ReactNode;
   settlement?: SettlementRow | null;
   canSettle?: boolean;
   settleLabel?: string;
@@ -1617,6 +1633,7 @@ function ExpandableRow({
           ))}
           {/* Settlement (§14-2): freeze this subject-day, or show the frozen
               record + any drift since it was settled. Single-day mode only. */}
+          {details}
           {settlement ? (
             <View
               style={{

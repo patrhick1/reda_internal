@@ -19,8 +19,10 @@ const REVIEW_REASONS: Record<string, string> = {
   missing_occurrence: 'The completion request did not include the time it happened.',
   date_discrepancy: 'The reported completion and server receipt fall on different Lagos days.',
   clock_skew: 'The device reported a completion time ahead of the server clock.',
-  rate_mismatch: 'The normal rider fees differ. Check the rates before finalising pay.',
-  manual_review: 'A manual fee adjustment needs review for this customer group.',
+  rate_mismatch:
+    'The fees still calculated automatically need a rate check. Use Adjust pay above to set an agreed amount or waive a fee.',
+  manual_review:
+    'The rider, customer or completion details changed after the manual adjustment. Confirm the agreed pay for the changed delivery.',
   settled_period_conflict:
     'This change affects a settled period. Review the frozen settlement before recalculating pay.',
 };
@@ -147,7 +149,8 @@ export function SameCustomerPayReview({
                   : formatNaira(pay.current_payable_amount)}
               </Text>
               <Text>
-                Normal fee: {pay.normal_fee == null ? 'Not set' : formatNaira(pay.normal_fee)}
+                Automatic base rate:{' '}
+                {pay.normal_fee == null ? 'Not set' : formatNaira(pay.normal_fee)}
               </Text>
               {pay.last_normal_fee_review ? (
                 <Text style={{ color: colors.textSecondary }}>
@@ -157,7 +160,7 @@ export function SameCustomerPayReview({
               ) : null}
               {pay.active && !editing && clearRevision == null ? (
                 <Button variant="secondary" disabled={busy} onPress={() => setNormalFeeDraft(pay)}>
-                  Correct normal fee
+                  Correct automatic base rate
                 </Button>
               ) : null}
               <Text style={{ fontFamily: fonts.semibold }}>
@@ -175,7 +178,8 @@ export function SameCustomerPayReview({
               ) : null}
               {pay.manual_amount != null ? (
                 <Text>
-                  Manual exception: {formatNaira(pay.manual_amount)} · {pay.manual_reason}
+                  {pay.manual_amount === 0 ? 'Manually waived' : 'Manually set'}:{' '}
+                  {formatNaira(pay.manual_amount)} · {pay.manual_reason}
                 </Text>
               ) : null}
               {pay.group_id && pay.review_reason === 'manual_review' ? (
