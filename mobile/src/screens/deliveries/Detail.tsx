@@ -1047,6 +1047,14 @@ export function DeliveryDetail() {
                 label={
                   isWaybill ? 'Reda paid out' : isReplacement ? 'Rider pay recorded' : 'Rider fee'
                 }
+                actionLabel={
+                  user.role === 'admin' && d.order_type === 'delivery' ? 'Adjust pay' : undefined
+                }
+                onAction={
+                  user.role === 'admin' && d.order_type === 'delivery'
+                    ? () => setCorrectChargeOpen(true)
+                    : undefined
+                }
                 value={
                   payUnavailable
                     ? 'Unavailable'

@@ -1,23 +1,20 @@
-import { useEffect, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
-import { Banner, Input, Sheet } from '@/components/ui';
-import { colors, fonts } from '@/lib/theme';
-import { correctDeliveryCharge } from '@/services/deliveries';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Text, View } from 'react-native';
+import { Banner, Button, Input, Sheet } from '@/components/ui';
+import { fonts } from '@/lib/theme';
 import { errorMessage } from '@/lib/errors';
 import { formatNaira } from '@/lib/format';
+import { newClientUuid } from '@/lib/uuid';
+import {
+  PAY_ISSUE_TEXT,
+  previewFeeAdjustment,
+  saveFeeAdjustment,
+  type FeePreview,
+} from '@/services/fee-adjustments';
 
-/** Admin-only sheet to manually override a delivery's snapshotted Reda charge
- *  and agent payout. Reached from the Negative-margin review flow: a row whose
- *  charge cap clamped below the agent fee lands with margin < 0, and this is
- *  where Uzo fixes the numbers. The live margin preview turns red while the
- *  charge is still below the agent payout. Reason required; the server
- *  (correct_delivery_charge) re-checks admin + non-negative + changed, prefixes
- *  the audit reason 'charge_correction:', and the parent reloads on onCorrected. */
 export function CorrectChargesSheet({
   open,
   deliveryId,
-  currentCharged,
-  currentAgentPayment,
   customerName,
   onClose,
   onCorrected,
@@ -31,61 +28,137 @@ export function CorrectChargesSheet({
   onCorrected: () => void;
 }) {
   const [charged, setCharged] = useState('');
+  const [chargedEdited, setChargedEdited] = useState(false);
   const [agentPayment, setAgentPayment] = useState('');
+  const [agentEdited, setAgentEdited] = useState(false);
   const [reason, setReason] = useState('');
+  const [preview, setPreview] = useState<{ key: string; data: FeePreview } | null>(null);
+  const [ready, setReady] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Seed the inputs from the row's current snapshots each time the sheet opens.
-  useEffect(() => {
-    if (open) {
-      setCharged(currentCharged != null ? String(currentCharged) : '');
-      setAgentPayment(currentAgentPayment != null ? String(currentAgentPayment) : '');
-      setReason('');
-      setError(null);
-    }
-  }, [open, currentCharged, currentAgentPayment]);
-
+  const [refresh, setRefresh] = useState(0);
+  const busy = useRef(false);
+  const baseRevision = useRef<string | null>(null);
+  const request = useRef<{ key: string; id: string } | null>(null);
   const chargedNum = Number(charged);
   const agentNum = Number(agentPayment);
-  const bothValid =
+  const valid =
     charged.trim() !== '' &&
     agentPayment.trim() !== '' &&
-    Number.isFinite(chargedNum) &&
-    Number.isFinite(agentNum) &&
-    chargedNum >= 0 &&
-    agentNum >= 0;
-  const margin = bothValid ? chargedNum - agentNum : null;
-  // Nothing to save when both values match the current snapshots — the server
-  // rejects an unchanged pair, so disable Save rather than round-trip to an error.
-  const unchanged = bothValid && chargedNum === currentCharged && agentNum === currentAgentPayment;
+    [chargedNum, agentNum].every(
+      (n) =>
+        Number.isFinite(n) &&
+        n >= 0 &&
+        n <= 99999999.99 &&
+        Math.abs(n * 100 - Math.round(n * 100)) < 0.000001,
+    );
+  const key = JSON.stringify([deliveryId, charged, agentPayment, agentEdited, refresh]);
+  const current = preview?.key === key ? preview.data : null;
+  const changed = current && (agentEdited || chargedNum !== current.charged);
 
-  function reset() {
-    setCharged('');
-    setAgentPayment('');
-    setReason('');
+  useEffect(() => {
+    if (!open || !deliveryId) return;
+    let cancelled = false;
+    setReady(false);
     setError(null);
+    setPreview(null);
+    setReason('');
+    setAgentEdited(false);
+    setChargedEdited(false);
+    baseRevision.current = null;
+    request.current = null;
+    void previewFeeAdjustment(deliveryId)
+      .then((data) => {
+        if (cancelled) return;
+        baseRevision.current = data.revision;
+        setCharged(data.charged == null ? '' : String(data.charged));
+        setAgentPayment(data.agent_payment == null ? '' : String(data.agent_payment));
+        setReady(true);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(errorMessage(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, deliveryId]);
+
+  useEffect(() => {
+    if (!open || !deliveryId || !ready || !valid) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void previewFeeAdjustment(deliveryId, chargedNum, agentNum, agentEdited)
+        .then((data) => {
+          if (!cancelled) {
+            if (data.revision !== baseRevision.current) {
+              setPreview(null);
+              setError(
+                'These orders changed while you were editing. Refresh the amounts before saving.',
+              );
+              return;
+            }
+            setPreview({ key, data });
+            setError(null);
+          }
+        })
+        .catch((e) => {
+          if (!cancelled) setError(errorMessage(e));
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [open, deliveryId, ready, valid, chargedNum, agentNum, agentEdited, key]);
+
+  async function refreshAmounts() {
+    if (!deliveryId || busy.current) return;
+    setPreview(null);
+    try {
+      const data = await previewFeeAdjustment(deliveryId);
+      baseRevision.current = data.revision;
+      if (!chargedEdited) setCharged(data.charged == null ? '' : String(data.charged));
+      if (!agentEdited)
+        setAgentPayment(data.agent_payment == null ? '' : String(data.agent_payment));
+      setReady(true);
+      setRefresh((n) => n + 1);
+    } catch (e) {
+      setError(errorMessage(e));
+    }
   }
 
   async function submit() {
-    if (!deliveryId) return;
-    if (!bothValid) {
-      setError('Enter a valid charge and agent payment (non-negative numbers)');
+    if (
+      !deliveryId ||
+      !current ||
+      !valid ||
+      !reason.trim() ||
+      !changed ||
+      current.settled ||
+      busy.current
+    )
       return;
-    }
-    if (!reason.trim()) {
-      setError('Reason is required');
-      return;
-    }
+    const input = {
+      deliveryId,
+      revision: current.revision,
+      charged: chargedNum,
+      agentPayment: agentNum,
+      reason: reason.trim(),
+      applyAgentOverride: agentEdited,
+    };
+    const requestKey = JSON.stringify(input);
+    if (request.current?.key !== requestKey)
+      request.current = { key: requestKey, id: newClientUuid() };
+    busy.current = true;
     setSubmitting(true);
     setError(null);
     try {
-      await correctDeliveryCharge(deliveryId, chargedNum, agentNum, reason.trim());
-      reset();
+      await saveFeeAdjustment({ ...input, requestId: request.current.id });
       onCorrected();
     } catch (e) {
       setError(errorMessage(e));
     } finally {
+      busy.current = false;
       setSubmitting(false);
     }
   }
@@ -94,115 +167,120 @@ export function CorrectChargesSheet({
     <Sheet
       open={open}
       onClose={() => {
-        if (!submitting) {
-          reset();
-          onClose();
-        }
+        if (!busy.current) onClose();
       }}
-      title="Correct charges"
+      title="Adjust charges and rider pay"
       subtitle={customerName ?? undefined}
     >
       <View style={{ padding: 20, gap: 16, paddingBottom: 32 }}>
-        <Banner tone="warn" icon="alert">
-          These amounts feed reconciliation directly. Overriding them changes what this delivery
-          contributes to Reda&apos;s and the agent&apos;s totals — use it to fix a charge that was
-          capped below the agent payout.
+        <Banner tone="info">
+          Set Reda&apos;s charge and rider pay separately. A rider amount you enter, including ₦0,
+          is saved as the agreed pay for this delivery.
         </Banner>
-
-        <Input
-          label="Reda charge (₦)"
-          value={charged}
-          onChange={setCharged}
-          keyboardType="numeric"
-          placeholder="e.g. 7000"
-        />
-        <Input
-          label="Agent earns (₦)"
-          value={agentPayment}
-          onChange={setAgentPayment}
-          keyboardType="numeric"
-          placeholder="e.g. 6000"
-        />
-
-        {margin != null ? (
-          <View
-            style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
-          >
-            <Text style={{ fontFamily: fonts.medium, fontSize: 13, color: colors.textSecondary }}>
-              Resulting margin
-            </Text>
-            <Text
-              style={{
-                fontFamily: fonts.bold,
-                fontSize: 15,
-                color: margin < 0 ? colors.red : colors.success,
+        {!ready && !error ? <ActivityIndicator /> : null}
+        {ready ? (
+          <>
+            <Input
+              label="Reda charge to client (₦)"
+              accessibilityLabel="Reda charge to client"
+              editable={!submitting}
+              value={charged}
+              onChange={(value) => {
+                setCharged(value);
+                setChargedEdited(true);
               }}
-            >
-              {formatNaira(margin)}
+              keyboardType="numeric"
+            />
+            <Input
+              label="Rider pay for this delivery (₦)"
+              accessibilityLabel="Rider pay for this delivery"
+              editable={!submitting}
+              value={agentPayment}
+              onChange={(value) => {
+                setAgentPayment(value);
+                setAgentEdited(true);
+              }}
+              keyboardType="numeric"
+            />
+            <Text>
+              Changing Reda&apos;s charge does not change rider pay. Enter 0 in the fee you want to
+              waive.
             </Text>
-          </View>
+            {!valid ? (
+              <Text>Enter non-negative amounts with at most two decimal places.</Text>
+            ) : !current && !error ? (
+              <ActivityIndicator />
+            ) : null}
+            {current ? (
+              <View style={{ gap: 8 }}>
+                <Text style={{ fontFamily: fonts.bold }}>Rider pay after saving</Text>
+                {current.orders.map((order) => (
+                  <View key={order.delivery_id} style={{ gap: 4 }}>
+                    <Text>
+                      {order.customer_name} · #{order.delivery_id.slice(0, 8)}
+                      {order.delivery_id === deliveryId ? ' · this order' : ''}
+                    </Text>
+                    <Text>
+                      {order.amount == null ? 'Needs attention' : formatNaira(order.amount)}
+                      {order.manual
+                        ? order.amount === 0
+                          ? ' · manually waived'
+                          : ' · manually set'
+                        : ' · calculated automatically'}
+                    </Text>
+                    {order.reason ? (
+                      <Text>
+                        {PAY_ISSUE_TEXT[order.reason] ??
+                          'Open the order to review its payment details.'}
+                      </Text>
+                    ) : null}
+                  </View>
+                ))}
+                <Text style={{ fontFamily: fonts.bold }}>
+                  Combined rider pay:{' '}
+                  {current.total == null ? 'Needs attention' : formatNaira(current.total)}
+                </Text>
+                {current.pending ? (
+                  <Banner tone="warn">
+                    The adjustment can be saved. The issue shown above must also be resolved before
+                    handover.
+                  </Banner>
+                ) : null}
+                {current.settled ? (
+                  <Banner tone="warn">
+                    This rider&apos;s handover is already recorded. Review that handover before
+                    changing these amounts.
+                  </Banner>
+                ) : null}
+              </View>
+            ) : null}
+            <Input
+              label="Reason"
+              accessibilityLabel="Adjustment reason"
+              editable={!submitting}
+              maxLength={2000}
+              value={reason}
+              onChange={setReason}
+              placeholder="e.g. Second delivery fee waived — charge once"
+              multiline
+            />
+          </>
         ) : null}
-
-        <Input
-          label="Reason (required)"
-          value={reason}
-          onChange={setReason}
-          placeholder="e.g. cap clamped charge below agent fee; set to rate-card 7000"
-          autoCapitalize="sentences"
-          multiline
-          numberOfLines={3}
-        />
-
+        {error ? <Banner tone="error">{error}</Banner> : null}
         {error ? (
-          <Banner tone="error" icon="alert">
-            {error}
-          </Banner>
+          <Button variant="secondary" onPress={() => void refreshAmounts()}>
+            Refresh amounts
+          </Button>
         ) : null}
-
-        <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
-          <Pressable
-            onPress={() => {
-              reset();
-              onClose();
-            }}
-            disabled={submitting}
-            style={({ pressed }) => [
-              {
-                paddingVertical: 14,
-                paddingHorizontal: 20,
-                borderRadius: 999,
-                borderWidth: 1.5,
-                borderColor: colors.black,
-                backgroundColor: colors.white,
-              },
-              pressed && { opacity: 0.85 },
-            ]}
-          >
-            <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}>
-              Cancel
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={submit}
-            disabled={submitting || !deliveryId || unchanged}
-            style={({ pressed }) => [
-              {
-                flex: 1,
-                paddingVertical: 14,
-                paddingHorizontal: 20,
-                borderRadius: 999,
-                backgroundColor: colors.black,
-                alignItems: 'center',
-                opacity: submitting || !deliveryId || unchanged ? 0.6 : 1,
-              },
-              pressed && !submitting && deliveryId && !unchanged && { opacity: 0.92 },
-            ]}
-          >
-            <Text style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.white }}>
-              {submitting ? 'Saving…' : unchanged ? 'No changes' : 'Save charges'}
-            </Text>
-          </Pressable>
-        </View>
+        <Button
+          full
+          disabled={
+            submitting || !current || !valid || !reason.trim() || !changed || current.settled
+          }
+          onPress={() => void submit()}
+        >
+          {submitting ? 'Saving…' : 'Save adjustment'}
+        </Button>
       </View>
     </Sheet>
   );

@@ -42,6 +42,7 @@ if (process.argv.includes('--setup')) {
     '20260921144000_postponement_reschedule.sql',
     '20260921145000_maintenance_heartbeat.sql',
     '20260921224000_restore_manual_eod.sql',
+    '20260922210000_manual_fee_waivers.sql',
   ]) sql(readFileSync(path.join(root, 'supabase/migrations', name), 'utf8').replace(/^\uFEFF/,''));
   sql("insert into public.same_customer_pay_policy(singleton,active_from) values(true,current_date) on conflict(singleton) do update set active_from=excluded.active_from; grant usage on schema public,auth to authenticated,anon; grant execute on function public.check_payment_client_contract() to authenticated;");
 }

@@ -40,6 +40,8 @@ jobs:
         with:
           deno-version: 'v2.7.1'
       - run: node tools/eod-reliability-20260921/test-runner.mjs --setup
+      - run: node tools/manual-fee-waivers/test-runner.mjs
+      - run: node tools/manual-fee-waivers/test-concurrency.mjs
       - name: Reload API schema
         run: psql -h 127.0.0.1 -p 55449 -U reda_test -d reda_eod_test -c "NOTIFY pgrst, 'reload schema';"
       - name: Exercise actual scheduled HTTP client and private worker permissions
@@ -76,6 +78,12 @@ jobs:
         run: node ../tools/eod-reliability-20260921/test-manual-eod-ui.mjs
         env:
           EOD_UI_DIST: dist
+          PLAYWRIGHT_MODULE_PATH: ${{ runner.temp }}/eod-browser/node_modules/playwright
+      - name: Exercise manual waiver and handover at phone width
+        run: node ../tools/manual-fee-waivers/test-ui.mjs
+        env:
+          EOD_UI_DIST: dist
+          EOD_UI_WIDTH: '390'
           PLAYWRIGHT_MODULE_PATH: ${{ runner.temp }}/eod-browser/node_modules/playwright
 
   security:
