@@ -16,9 +16,9 @@ SET LOCAL ROLE reda_maintenance_worker;
 SELECT reda_maintenance.work();
 RESET ROLE;
 DO $$ BEGIN
- PERFORM pg_temp.assert((SELECT count(*)=1 FROM deliveries WHERE current_status='pending' AND id IN(md5('eod-test-order-1')::uuid,md5('eod-test-order-7')::uuid)),'complete sibling group releases one canonical with batch size one');
- PERFORM pg_temp.assert((SELECT count(*)=1 FROM deliveries WHERE current_status='cancelled' AND id IN(md5('eod-test-order-1')::uuid,md5('eod-test-order-7')::uuid)),'surplus sibling closed');
- PERFORM pg_temp.assert((SELECT current_status='postponed' FROM deliveries WHERE id=md5('eod-test-order-9')::uuid),'protected sibling does not block newer work');
+ PERFORM pg_temp.assert((SELECT count(*)=1 FROM deliveries WHERE current_status='pending' AND id IN(md5('eod-test-order-1')::uuid,md5('eod-test-order-7')::uuid,md5('eod-test-order-9')::uuid)),'complete sibling group releases one canonical with batch size one');
+ PERFORM pg_temp.assert((SELECT count(*)=2 FROM deliveries WHERE current_status='cancelled' AND id IN(md5('eod-test-order-1')::uuid,md5('eod-test-order-7')::uuid,md5('eod-test-order-9')::uuid)),'surplus sibling closed');
+ PERFORM pg_temp.assert((SELECT current_status IN('pending','cancelled') FROM deliveries WHERE id=md5('eod-test-order-9')::uuid),'legacy hold follows the same sibling rules');
  PERFORM pg_temp.assert((SELECT current_status='postponed' AND assigned_agent_id=md5('eod-test-agent')::uuid FROM deliveries WHERE id=md5('eod-test-order-8')::uuid),'replacement identity and owner unchanged');
  PERFORM pg_temp.assert((SELECT bool_and(changed_by_user_id='2d8d5895-d2a8-4900-b15e-7662b176a805') FROM delivery_status_history),'native worker fixes audit identity without login/header');
  PERFORM pg_temp.assert(auth.uid() IS NULL,'worker restored empty caller identity');

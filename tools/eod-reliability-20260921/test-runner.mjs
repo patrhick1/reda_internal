@@ -43,6 +43,7 @@ if (process.argv.includes('--setup')) {
     '20260921145000_maintenance_heartbeat.sql',
     '20260921224000_restore_manual_eod.sql',
     '20260922210000_manual_fee_waivers.sql',
+    '20260923020000_simple_business_workflows.sql',
   ]) sql(readFileSync(path.join(root, 'supabase/migrations', name), 'utf8').replace(/^\uFEFF/,''));
   sql("insert into public.same_customer_pay_policy(singleton,active_from) values(true,current_date) on conflict(singleton) do update set active_from=excluded.active_from; grant usage on schema public,auth to authenticated,anon; grant execute on function public.check_payment_client_contract() to authenticated;");
 }
@@ -74,7 +75,7 @@ if (race) {
   sql("BEGIN; DO $$ BEGIN IF current_database()<>'reda_eod_race' THEN RAISE EXCEPTION 'Wrong race DB'; END IF; END $$; TRUNCATE public.deliveries,public.users,auth.users,public.clients,public.product_catalog,public.locations CASCADE; COMMIT;");
 } else if (!bench) {
   if (sql('select count(*) from public.deliveries') !== '0') throw new Error('Outcome tests require an empty database');
-  for (const name of ['test-maintenance.sql','test-reschedule-failures.sql','test-groups-permissions.sql','test-manual-eod.sql','test-manual-eod-failures.sql','test-history-scaling.sql']) {
+  for (const name of ['test-maintenance.sql','test-reschedule-failures.sql','test-groups-permissions.sql','test-manual-eod.sql','test-manual-eod-failures.sql','test-history-scaling.sql','test-simple-workflows.sql']) {
     for (const day of name==='test-manual-eod.sql' ? ['2026-09-21','2026-09-22','2026-09-26'] : [null]) {
       const clock = day ? ['-c',`SET test.requested_day='${day}'`] : [];
       const result = execFileSync(psql,[...args,...clock,'-f',path.join(dir,name)],{encoding:'utf8',stdio:['pipe','pipe','pipe']});

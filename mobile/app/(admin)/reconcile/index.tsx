@@ -76,7 +76,7 @@ import {
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 type Tab = 'clients' | 'agents' | 'summary';
-type AgentRemitFilter = 'outstanding' | 'pending' | 'handed_over' | 'nothing_due' | 'all';
+type AgentRemitFilter = 'outstanding' | 'handed_over' | 'nothing_due' | 'all';
 
 // Stable empty map so a missing settlements query doesn't allocate a new Map
 // each render (which would churn the list props).
@@ -693,7 +693,7 @@ function ClientsList({
           ) : null}
           <View style={{ marginTop: 8 }}>
             <Button variant="secondary" full icon="calendar" onPress={onRunEod}>
-              Open end of day
+              Run end of day
             </Button>
           </View>
         </View>
@@ -814,9 +814,14 @@ function AgentsList({
     for (const row of state.data ?? []) {
       if (row.total_remit == null || row.pending_pay_count > 0) {
         pendingRows.push(row);
-      } else if (settlements.has(`agent:${row.agent_id}`)) {
+      }
+      if (settlements.has(`agent:${row.agent_id}`)) {
         handedOverRows.push(row);
-      } else if (Number(row.total_remit) > 0) {
+      } else if (
+        row.total_remit == null ||
+        row.pending_pay_count > 0 ||
+        Number(row.total_remit) > 0
+      ) {
         outstandingRows.push(row);
       } else {
         nothingDueRows.push(row);
@@ -832,35 +837,41 @@ function AgentsList({
   }, [settlements, state.data]);
   const visibleRows = !canSettle
     ? rows
-    : remitFilter === 'pending'
-      ? pending
-      : remitFilter === 'outstanding'
-        ? outstanding
-        : remitFilter === 'handed_over'
-          ? handedOver
-          : remitFilter === 'nothing_due'
-            ? nothingDue
-            : rows;
+    : remitFilter === 'outstanding'
+      ? outstanding
+      : remitFilter === 'handed_over'
+        ? handedOver
+        : remitFilter === 'nothing_due'
+          ? nothingDue
+          : rows;
   const outstandingTotal = useMemo(
     () => outstanding.reduce((sum, row) => sum + Number(row.total_remit), 0),
     [outstanding],
   );
+  const eligibleRows = useMemo(
+    () =>
+      outstanding.filter(
+        (row) =>
+          row.total_remit != null && row.pending_pay_count === 0 && Number(row.total_remit) > 0,
+      ),
+    [outstanding],
+  );
   const selectedRows = useMemo(
-    () => outstanding.filter((row) => selectedIds.has(row.agent_id)),
-    [outstanding, selectedIds],
+    () => eligibleRows.filter((row) => selectedIds.has(row.agent_id)),
+    [eligibleRows, selectedIds],
   );
   const selectedTotal = useMemo(
     () => selectedRows.reduce((sum, row) => sum + Number(row.total_remit), 0),
     [selectedRows],
   );
   const allOutstandingSelected =
-    outstanding.length > 0 && outstanding.every((row) => selectedIds.has(row.agent_id));
+    eligibleRows.length > 0 && eligibleRows.every((row) => selectedIds.has(row.agent_id));
 
   // A focus refresh or another admin can settle a rider while selection mode is
   // open. Prune anything that is no longer outstanding before confirmation.
   useEffect(() => {
     if (!selectMode) return;
-    const eligible = new Set(outstanding.map((row) => row.agent_id));
+    const eligible = new Set(eligibleRows.map((row) => row.agent_id));
     setSelectedIds((previous) => {
       const next = new Set([...previous].filter((id) => eligible.has(id)));
       if (next.size === previous.size && [...next].every((id) => previous.has(id))) {
@@ -868,7 +879,7 @@ function AgentsList({
       }
       return next;
     });
-  }, [outstanding, selectMode]);
+  }, [eligibleRows, selectMode]);
 
   const enterSelect = useCallback(
     (seedId?: string) => {
@@ -894,11 +905,11 @@ function AgentsList({
   }, []);
   const toggleAllOutstanding = useCallback(() => {
     setSelectedIds((previous) =>
-      outstanding.length > 0 && outstanding.every((row) => previous.has(row.agent_id))
+      eligibleRows.length > 0 && eligibleRows.every((row) => previous.has(row.agent_id))
         ? new Set()
-        : new Set(outstanding.map((row) => row.agent_id)),
+        : new Set(eligibleRows.map((row) => row.agent_id)),
     );
-  }, [outstanding]);
+  }, [eligibleRows]);
   const total = canSettle
     ? outstandingTotal
     : rows.reduce((sum, row) => sum + Number(row.total_remit), 0);
@@ -929,7 +940,6 @@ function AgentsList({
   );
   const filterOptions: { id: AgentRemitFilter; label: string; count: number }[] = [
     { id: 'outstanding', label: 'Outstanding', count: outstanding.length },
-    { id: 'pending', label: 'Pay review', count: pending.length },
     { id: 'handed_over', label: 'Handed over', count: handedOver.length },
     { id: 'nothing_due', label: 'Nothing due', count: nothingDue.length },
     { id: 'all', label: 'All', count },
@@ -956,11 +966,7 @@ function AgentsList({
           <View style={{ marginBottom: 12 }}>
             <Card>
               <Text style={kicker}>
-                {pending.length
-                  ? 'Known amount to collect'
-                  : canSettle
-                    ? 'Outstanding to collect'
-                    : 'Total to collect from agents'}
+                {canSettle ? 'Outstanding to collect' : 'Total to collect from agents'}
               </Text>
               <Text
                 style={{
@@ -979,7 +985,7 @@ function AgentsList({
                   marginTop: 4,
                 }}
               >
-                {formatNaira(total)}
+                {pending.length && total === 0 ? '—' : formatNaira(total)}
               </Text>
               <Text
                 style={{
@@ -996,11 +1002,11 @@ function AgentsList({
             </Card>
             {pending.length > 0 ? (
               <Text style={{ color: colors.warningDark, marginTop: 8 }}>
-                {pending.length} rider period(s) need pay review. Their remittance is excluded from
-                this total.
+                {pending.length} {pending.length === 1 ? 'rider needs' : 'riders need'} a delivery
+                fee checked. Their amounts are excluded from this total.
               </Text>
             ) : null}
-            {canSettle && outstanding.length > 0 && !selectMode ? (
+            {canSettle && eligibleRows.length > 0 && !selectMode ? (
               <View style={{ marginTop: 8 }}>
                 <Button variant="secondary" full icon="check" onPress={() => enterSelect()}>
                   Select handovers
@@ -1055,7 +1061,7 @@ function AgentsList({
             {!selectMode ? (
               <View style={{ marginTop: 8 }}>
                 <Button variant="secondary" full icon="calendar" onPress={onRunEod}>
-                  Open end of day
+                  Run end of day
                 </Button>
               </View>
             ) : null}
@@ -1087,8 +1093,16 @@ function AgentsList({
               selected={selectedIds.has(item.agent_id)}
               subjectKind="agent"
               details={
-                user.role === 'admin' && !selectMode && openId === item.agent_id ? (
-                  <AgentPayDetails agentId={item.agent_id} from={from} to={to} />
+                user.role === 'admin' &&
+                item.pending_pay_count > 0 &&
+                !selectMode &&
+                openId === item.agent_id ? (
+                  <AgentPayDetails
+                    agentId={item.agent_id}
+                    from={from}
+                    to={to}
+                    onSaved={state.reload}
+                  />
                 ) : null
               }
               name={item.agent_name}
@@ -1118,16 +1132,11 @@ function AgentsList({
                 },
                 {
                   label: 'Rider pay (kept)',
-                  value:
-                    item.total_earnings == null
-                      ? `Pending review (${item.pending_pay_count})`
-                      : formatNaira(item.total_earnings),
+                  value: item.total_earnings == null ? '—' : formatNaira(item.total_earnings),
                 },
-                { label: 'Known rider earnings', value: formatNaira(item.known_earnings) },
                 {
                   label: 'To remit to Reda',
-                  value:
-                    item.total_remit == null ? 'Pending review' : formatNaira(item.total_remit),
+                  value: item.total_remit == null ? '—' : formatNaira(item.total_remit),
                 },
               ]}
             />
@@ -1146,7 +1155,7 @@ function AgentsList({
               title="No outstanding handovers"
               sub={
                 pending.length
-                  ? 'Check Pay review for riders whose remittance is unresolved.'
+                  ? 'A delivery fee needs checking before the remaining handover can be recorded.'
                   : 'Every agent with money to remit is marked handed over.'
               }
             />
@@ -1299,11 +1308,10 @@ function SummaryTab({
       `Reda delivery fee: ${formatNaira(totals.redaFee)}`,
       `Cash POS fee:      ${formatNaira(totals.cashPosFee)}`,
       `Remit to clients:  ${formatNaira(totals.remitToClients)}`,
-      `Agent payments:    ${totals.agentPayments == null ? 'Pending review' : formatNaira(totals.agentPayments)}`,
-      `Known rider pay:   ${formatNaira(totals.knownAgentPayments)}`,
-      `Pending earnings:  ${totals.pendingPay}`,
+      `Agent payments:    ${totals.agentPayments == null ? 'Check delivery fee' : formatNaira(totals.agentPayments)}`,
+      ...(totals.pendingPay ? [`Delivery fees to check: ${totals.pendingPay}`] : []),
       `Pickup costs:      ${formatNaira(totals.waybillPaidOut)}`,
-      `Reda margin:       ${totals.margin == null ? 'Pending review' : formatNaira(totals.margin)}`,
+      `Reda margin:       ${totals.margin == null ? 'Check delivery fee' : formatNaira(totals.margin)}`,
     ].join('\n');
     try {
       await Share.share({ message });
@@ -1344,20 +1352,21 @@ function SummaryTab({
           <SummaryRow
             label="Agent payments"
             value={
-              totals.agentPayments == null ? 'Pending review' : formatNaira(totals.agentPayments)
+              totals.agentPayments == null
+                ? 'Check delivery fee'
+                : formatNaira(totals.agentPayments)
             }
           />
           {totals.pendingPay > 0 ? (
-            <SummaryRow
-              label={`Known rider pay (${totals.pendingPay} pending)`}
-              value={formatNaira(totals.knownAgentPayments)}
-            />
+            <Text style={{ color: colors.warningDark }}>
+              Check {totals.pendingPay} delivery fee(s) under By agent to complete these totals.
+            </Text>
           ) : null}
           <SummaryRow label="Pickup / waybill costs" value={formatNaira(totals.waybillPaidOut)} />
           <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 6 }} />
           <SummaryRow
             label="Reda margin"
-            value={totals.margin == null ? 'Pending review' : formatNaira(totals.margin)}
+            value={totals.margin == null ? 'Check delivery fee' : formatNaira(totals.margin)}
             accent={totals.margin == null ? colors.warningDark : colors.success}
             bold
           />
@@ -1378,7 +1387,7 @@ function SummaryTab({
         </View>
         <View style={{ flex: 1 }}>
           <Button variant="secondary" full icon="calendar" onPress={onRunEod}>
-            Open end of day
+            Run end of day
           </Button>
         </View>
       </View>
@@ -1555,7 +1564,7 @@ function ExpandableRow({
               letterSpacing: -0.2,
             }}
           >
-            {amount == null ? 'Pending review' : formatNaira(amount)}
+            {amount == null ? '—' : formatNaira(amount)}
           </Text>
           <Text
             style={{
@@ -1581,7 +1590,7 @@ function ExpandableRow({
               }}
             >
               {amount == null
-                ? '⚠ pay review'
+                ? 'Check delivery fee'
                 : hasDrift
                   ? '⚠ changed'
                   : subjectKind === 'agent'
@@ -1599,7 +1608,7 @@ function ExpandableRow({
                 color: amount != null && amount > 0 ? colors.red : colors.textSecondary,
               }}
             >
-              {amount == null ? 'Pay review' : amount > 0 ? 'Outstanding' : 'Nothing due'}
+              {amount == null ? 'Check delivery fee' : amount > 0 ? 'Outstanding' : 'Nothing due'}
             </Text>
           ) : null}
         </View>
@@ -1739,7 +1748,7 @@ function ExpandableRow({
               }}
             >
               {amount == null
-                ? 'Resolve pending rider pay before recording a handover.'
+                ? 'Check the delivery fee above before recording this handover.'
                 : 'No handover required for this day.'}
             </Text>
           ) : null}

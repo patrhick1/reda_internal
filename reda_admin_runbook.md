@@ -28,7 +28,7 @@ and **End of day**.
 
 When an agent or customer messages you a delivery that the bot can't handle:
 
-1. Tap **Home → New delivery** (the red square in Quick Actions), or **Deliveries → +** (the floating red button).
+1. Tap **Home → New delivery** in Quick Actions.
 2. Fill in the customer name, phone, address.
 3. Tap the client chip (e.g. *Aernings*) → tap the product.
 4. Set quantity + customer price.
@@ -60,7 +60,7 @@ Open the app any time after 7pm.
 - Tap **Reconcile** (wallet icon in the tab bar). Defaults to **Today**.
 - Use the chip row to switch to **Yesterday** / **Last 7 days** / **Custom** when you need a different window.
 - Stay on **By client**. The big number is *Total remit owed* — what Reda collectively owes its clients today (paid − Reda's delivery fees).
-- Tap any client row → opens that client's per-delivery report. You see: *customer owed*, *customer paid*, *outstanding*, *Reda delivery fee*, and *remit to you*, plus a line for each delivery showing how each was paid + the Reda fee + the per-trip remit.
+- Tap any client row → opens that client's per-delivery report. You see: *customer paid*, *Reda delivery fee*, and *remit to you*, plus a line for each delivery showing how each was paid + the Reda fee + the per-trip remit.
 - Tap **Share with client** to open the share menu — pick WhatsApp and send the report straight to the client.
 
 ### Check by-agent
@@ -74,30 +74,23 @@ Open the app any time after 7pm.
 ### Check the daily summary (Reda's own P&L)
 
 - Tap **Summary** (third tab).
-- Shows: deliveries count, customer-side totals (owed / paid / outstanding), Reda-side totals (delivery fee collected / remit owed to clients / agent payments) and **Reda margin** = delivery fee − agent payments.
+- Shows: deliveries count, customer paid, Reda-side totals (client charges / remit owed to clients / agent payments / pickup and waybill costs) and **Reda margin** = client charges − agent payments − pickup/waybill costs.
 - Tap **Share summary** to send the day's numbers out of the app (to yourself on WhatsApp, for your own records).
 
 ---
 
-## End of day — auto-rollover at 9pm
+## End of day — prepare the next working day
 
-At **9pm Lagos every night**, the app rolls every still-pending delivery forward to the next working day automatically. You don't have to remember. You'll get a push that says either:
+You can finish the day when work is done, including around **10pm Lagos**. The automatic **23:59 Lagos** run is the fallback.
 
-- **"Rolled N deliveries forward. Tap to review."** — the cron found stuck rows and rolled them.
-- **"All clear — nothing to roll."** — your team finished everything for the day.
-- **"Auto end of day FAILED"** — something went wrong. Open the EOD screen and tap **Roll all forward** to do it manually.
+1. Open **Home → End of day**, or **Run end of day** in Reconciliation.
+2. Check the **Roll forward** and **Close out** lists. The destination date and any closure reasons are shown.
+3. Tap **Run end of day** and confirm. Wait for **End of day complete** before assigning orders.
+4. Tap **View prepared orders**, then assign the orders to agents.
 
-**Sundays are skipped.** Saturday's pending deliveries land on Monday automatically.
+**Sundays are skipped:** Saturday prepares Monday; Monday prepares Tuesday. Due postponements are released without adding a carry. Later postponements keep their dates. All orders follow the normal carry and closure rules.
 
-### If you want to do it yourself
-
-- Go to **Home → End of day** (calendar icon in Quick Actions).
-- Anything in the list is a delivery that didn't close out for that date.
-- Tap **Roll N forward**. Same effect as the 9pm cron — the original delivery is closed (marked as *rolled over*), and a fresh one for the same customer is opened for the next working day.
-
-### Looking back
-
-If you want to see what got rolled (or any other past date), go to **Deliveries** and tap the **Yesterday** chip at the top. **Custom** lets you type any date. **All dates** shows everything across history.
+The overnight check preserves prepared orders and their assignments. The regular **Unassigned** queue shows all dates; **Show all Unassigned** leaves the prepared-date view.
 
 ---
 
@@ -118,7 +111,7 @@ If someone else is already editing the same delivery, you'll see *"<Name> is edi
 
 ### Claim a customer follow-up
 
-When an agent flags a delivery as **Not answering / Number busy / Switched off / Tomorrow / Postponed / Follow up**, the customer needs a call from you or a dispatcher. To avoid two of you calling the same customer:
+When an agent flags a delivery as **Not picking / Number busy / Switched off / Tomorrow / Postponed / Follow up**, the customer needs a call from you or a dispatcher. To avoid two of you calling the same customer:
 
 - Open the delivery → tap **I'll handle this** on the yellow "Needs follow-up" banner.
 - Other admins/dispatchers will see *"<Your name> is handling this"* both on the delivery and in the deliveries list (small badge next to the status pill).
@@ -128,16 +121,16 @@ As admin you can change anything. Agents can only push a delivery forward (mark 
 
 ### Agent flagged something? Open issues from agents
 
-When an agent taps the alert icon on a delivery (wrong address, can't reach customer, payment dispute, product issue, other) you get a push titled **"Issue flagged"** and the delivery shows up in the **Open issues from agents** block on the home screen.
+When an agent taps the alert icon on a delivery (wrong address, can't reach customer, payment dispute, product issue, not my route, other) you get a push titled **"Issue flagged"** and the delivery shows up in the **Open issues from agents** block on the home screen.
 
 - Tap the row → opens the delivery. The agent's message is at the bottom with the issue chip + their note.
 - Type your reply in the composer and tap **Send** — the agent gets a push titled **"Reply from {your name}"**.
-- The flag also moves the delivery into a soft status (usually **Follow up** or **Not answering**), so the **I'll handle this** claim button is right there if you want to call the customer yourself.
+- The flag also moves the delivery into a soft status (usually **Follow up** or **Not picking**), so the **I'll handle this** claim button is right there if you want to call the customer yourself.
 - The issue row disappears from the home block as soon as you open the delivery (it's marked read on focus). When the delivery is closed (delivered / cancelled / etc.) the thread closes itself.
 
 ### The deliveries list order
 
-The list shows non-completed deliveries first, sorted by **most recent status change** at the top. Whatever just moved (just flagged, just marked Not answering, just transitioned) bubbles up. Completed/closed deliveries fall to the bottom.
+The list shows non-completed deliveries first, sorted by **most recent status change** at the top. Whatever just moved (just flagged, just marked Not picking, just transitioned) bubbles up. Completed/closed deliveries fall to the bottom.
 
 ---
 
@@ -149,6 +142,7 @@ If the bot is turned on (Paschal controls this):
 - *Needs Review* — the bot couldn't figure out the address or the product. **Tap any row** to open the fix screen: everything the bot already read is pre-filled, you just pick the missing piece (usually a location, sometimes the right client when two carry the same product). Tap **Create delivery** and the order is in. Tap **Discard** instead with a reason (Spam / Duplicate / Not a real order) if it shouldn't become a delivery.
 - *Shadow* — what the bot would have created if we had let it. Useful to check it's reading messages correctly before we let it create deliveries on its own.
 - *Errors* — the bot couldn't read the message, or the phone lost signal. Usually a one-off; tap to see what went wrong.
+- *Blocked* — the customer's number is on the **blacklist** (Catalog → Blacklist, or the blacklist icon on a delivery). The order was refused and no rider was sent. Tell the vendor. If the number was listed by mistake, remove it from the blacklist and tap **Re-run** on the row.
 
 If someone else is already fixing the same row, you'll see *"<Name> is fixing this"* with a **Take over** button — only use Take over if you're sure they've stopped.
 
@@ -156,11 +150,11 @@ If someone else is already fixing the same row, you'll see *"<Name> is fixing th
 
 ## Stock — receive, transfer, adjust
 
-- **Stock** (warehouse icon, under Home → Quick Actions).
+- **Stock** (warehouse icon in the bottom bar; also available under Home → Quick Actions).
 - Top of the screen has three buttons: **Receive stock** (the big red one), **New transfer**, **Adjustment**.
 - The list below has two tabs:
   - **By holder** (default) — the warehouse is always shown at the top (even when empty), then each agent. Red number = below zero (problem). Yellow number = 3 or fewer left, running low.
-  - **By client** — totals per client. Each card shows how many products that client has with Reda, and how that splits between the warehouse and the agents. Tap a client to see each of their products with the same breakdown, plus a **Share with client** button (sends a summary via WhatsApp).
+  - **By client** — totals per client. Each card shows how many products that client has with Reda, and how that splits between the warehouse and the agents. Tap a client to see each of their products with the same breakdown, plus a **Share with client** button (sends a summary via WhatsApp). Products marked **Inactive** are retired from the catalog — leftover units still show here so they can be drained, but they are left out of the shared update.
 
 ### Receive stock (vendor intake)
 
@@ -191,7 +185,7 @@ If someone else is already fixing the same row, you'll see *"<Name> is fixing th
 
 ### See how much of a client's product Reda holds
 
-- Stock screen → **By client** tab → tap the client → see each of their products with how much is at the warehouse and how much is with agents. Tap **Share with client** to send the breakdown via WhatsApp.
+- Stock screen → **By client** tab → tap the client → see each of their products with how much is at the warehouse and how much is with agents. Tap **Share with client** to send the breakdown via WhatsApp. Retired (**Inactive**) products are not included in what the client receives.
 - Or: **Catalog → Clients → that client → View stock** lands you in the same screen.
 
 ---

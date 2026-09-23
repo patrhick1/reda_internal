@@ -17,6 +17,9 @@ export type MaintenancePreview = {
     date: string;
     agent: string | null;
     carry: number;
+    product_name?: string | null;
+    quantity?: number | null;
+    customer_price?: number | null;
     action: string;
     target_date?: string | null;
   }[];
@@ -90,6 +93,20 @@ export async function manualPreviewPage(
   if (error) throw error;
   return data as MaintenancePreview['rows'];
 }
+export type ManualEodResult = {
+  complete: boolean;
+  needs_attention: boolean;
+  target_date: string;
+  outcomes: Record<string, number>;
+  problems: { id: string; customer_name: string; message: string }[];
+};
+
+export async function manualEodStatus(previewId: string): Promise<ManualEodResult> {
+  const { data, error } = await rpcUntyped('manual_eod_status', { p_preview_id: previewId });
+  if (error) throw error;
+  return data as ManualEodResult;
+}
+
 export async function retryMaintenanceGroup(id: number): Promise<void> {
   const { error } = await rpcUntyped('retry_maintenance_group', { p_work_id: id });
   if (error) throw error;

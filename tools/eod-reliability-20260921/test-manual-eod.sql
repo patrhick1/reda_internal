@@ -24,7 +24,7 @@ DO $$ DECLARE p jsonb; r uuid; n int; original_history int; target date:=public.
  BEGIN PERFORM reda_maintenance.enqueue('release',target); RAISE EXCEPTION 'FAIL: automatic early release accepted'; EXCEPTION WHEN invalid_parameter_value THEN NULL; END;
  p:=public.prepare_manual_eod(reda_maintenance.business_day());
  PERFORM pg_temp.assert(p->>'target_date'=target::text,'manual close explicitly targets next workday before automatic cutoff');
- PERFORM pg_temp.assert((p->>'total_orders')::int=7,'manual review includes past open work and excludes future/held/replacements');
+ PERFORM pg_temp.assert((p->>'total_orders')::int=8,'manual review includes past open work and ignores legacy holds; future/replacements excluded');
  PERFORM pg_temp.assert((p->'summary'->>'roll')::int=2,'review identifies two canonical rollovers');
  r:=public.request_manual_eod((p->>'preview_id')::uuid);
  PERFORM pg_temp.assert(public.request_manual_eod((p->>'preview_id')::uuid)=r,'double submission returns same run');
@@ -42,9 +42,9 @@ DO $$ DECLARE p jsonb; r uuid; n int; original_history int; target date:=public.
  PERFORM pg_temp.assert((SELECT current_status='unserious' FROM deliveries WHERE id=md5('eod-test-order-5')::uuid),'disinterest rule preserved');
  PERFORM pg_temp.assert((SELECT current_status='postponed' FROM deliveries WHERE id=md5('eod-test-order-7')::uuid),'later postponement untouched');
  PERFORM pg_temp.assert((SELECT current_status='pending' AND order_type='replacement' FROM deliveries WHERE id=md5('eod-test-order-8')::uuid),'replacement untouched');
- PERFORM pg_temp.assert((SELECT current_status='postponed' FROM deliveries WHERE id=md5('eod-test-order-9')::uuid),'protected order untouched');
+ PERFORM pg_temp.assert((SELECT current_status='pending' FROM deliveries WHERE id=md5('eod-test-order-9')::uuid),'legacy protection no longer skips an order');
  PERFORM public.bulk_assign_deliveries(ARRAY(SELECT id FROM deliveries WHERE scheduled_date=target AND current_status='pending'),md5('eod-test-agent')::uuid);
- PERFORM pg_temp.assert((SELECT count(*)=3 FROM deliveries WHERE scheduled_date=target AND current_status='pending' AND assigned_agent_id=md5('eod-test-agent')::uuid),'prepared orders assigned to agent');
+ PERFORM pg_temp.assert((SELECT count(*)=4 FROM deliveries WHERE scheduled_date=target AND current_status='pending' AND assigned_agent_id=md5('eod-test-agent')::uuid),'prepared orders assigned to agent');
  SELECT count(*) INTO original_history FROM delivery_status_history;
  PERFORM pg_temp.assert(public.run_eod_rollover_all_stuck()=0,'legacy retry reports no duplicate rollovers');
  PERFORM set_config('test.eod_phase','night',true);
@@ -53,7 +53,7 @@ DO $$ DECLARE p jsonb; r uuid; n int; original_history int; target date:=public.
  PERFORM reda_maintenance.dispatch(); PERFORM reda_maintenance.work();
  PERFORM set_config('test.eod_phase','morning',true);
  PERFORM reda_maintenance.dispatch(); PERFORM reda_maintenance.work();
- PERFORM pg_temp.assert((SELECT count(*)=3 FROM deliveries WHERE scheduled_date=target AND current_status='pending' AND assigned_agent_id=md5('eod-test-agent')::uuid),'nightly fallback and morning catch-up retain date and assignment');
+ PERFORM pg_temp.assert((SELECT count(*)=4 FROM deliveries WHERE scheduled_date=target AND current_status='pending' AND assigned_agent_id=md5('eod-test-agent')::uuid),'nightly fallback and morning catch-up retain date and assignment');
  PERFORM pg_temp.assert((SELECT count(*)=original_history FROM delivery_status_history),'nightly/retry creates no duplicate effects');
  PERFORM pg_temp.assert(NOT EXISTS(SELECT 1 FROM stock_adjustments),'manual close does not debit stock');
  PERFORM pg_temp.assert(public._ensure_workday(date '2026-09-26'+1)=date '2026-09-28','Saturday close prepares Monday');
@@ -66,7 +66,7 @@ DO $$ DECLARE p jsonb; r uuid; n int; original_history int; target date:=public.
  PERFORM reda_maintenance.enqueue('close',current_setting('test.eod_day')::date);
  FOR n IN 1..20 LOOP PERFORM reda_maintenance.dispatch(); PERFORM reda_maintenance.work(); END LOOP;
  PERFORM pg_temp.assert((SELECT count(*)=1 AND bool_and(scheduled_date=target) FROM deliveries WHERE parent_delivery_id=md5('eod-late-order')::uuid),'fallback processes orders added after manual finish');
- PERFORM pg_temp.assert((SELECT count(*)=3 FROM deliveries WHERE scheduled_date=target AND current_status='pending' AND assigned_agent_id=md5('eod-test-agent')::uuid),'late-order catch-up leaves prepared assignments intact');
+ PERFORM pg_temp.assert((SELECT count(*)=4 FROM deliveries WHERE scheduled_date=target AND current_status='pending' AND assigned_agent_id=md5('eod-test-agent')::uuid),'late-order catch-up leaves prepared assignments intact');
  RAISE NOTICE 'PASS: early manual close -> next-day assignment -> nightly/morning preservation, complete groups, carry/policy boundaries';
 END $$;
 ROLLBACK;
