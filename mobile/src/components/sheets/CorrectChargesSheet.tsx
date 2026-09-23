@@ -31,6 +31,7 @@ export function CorrectChargesSheet({
 }) {
   const [charged, setCharged] = useState('');
   const [chargedEdited, setChargedEdited] = useState(false);
+  const [missingClientCharge, setMissingClientCharge] = useState(false);
   const [agentPayment, setAgentPayment] = useState('');
   const [agentEdited, setAgentEdited] = useState(false);
   const [reason, setReason] = useState('');
@@ -54,9 +55,10 @@ export function CorrectChargesSheet({
         n <= 99999999.99 &&
         Math.abs(n * 100 - Math.round(n * 100)) < 0.000001,
     );
-  const key = JSON.stringify([deliveryId, charged, agentPayment, agentEdited, refresh]);
+  const applyAgentOverride = riderOnly || agentEdited;
+  const key = JSON.stringify([deliveryId, charged, agentPayment, applyAgentOverride, refresh]);
   const current = preview?.key === key ? preview.data : null;
-  const changed = current && (agentEdited || chargedNum !== current.charged);
+  const changed = current && (applyAgentOverride || chargedNum !== current.charged);
 
   useEffect(() => {
     if (!open || !deliveryId) return;
@@ -73,8 +75,13 @@ export function CorrectChargesSheet({
       .then((data) => {
         if (cancelled) return;
         baseRevision.current = data.revision;
+        setMissingClientCharge(data.charged == null);
         setCharged(data.charged == null ? '' : String(data.charged));
-        setAgentPayment(data.agent_payment == null ? '' : String(data.agent_payment));
+        const amount = riderOnly
+          ? (data.orders.find((order) => order.delivery_id === deliveryId)?.amount ??
+            data.agent_payment)
+          : data.agent_payment;
+        setAgentPayment(amount == null ? '' : String(amount));
         setReady(true);
       })
       .catch((e) => {
@@ -83,13 +90,13 @@ export function CorrectChargesSheet({
     return () => {
       cancelled = true;
     };
-  }, [open, deliveryId]);
+  }, [open, deliveryId, riderOnly]);
 
   useEffect(() => {
     if (!open || !deliveryId || !ready || !valid) return;
     let cancelled = false;
     const timer = setTimeout(() => {
-      void previewFeeAdjustment(deliveryId, chargedNum, agentNum, agentEdited)
+      void previewFeeAdjustment(deliveryId, chargedNum, agentNum, applyAgentOverride)
         .then((data) => {
           if (!cancelled) {
             if (data.revision !== baseRevision.current) {
@@ -111,7 +118,7 @@ export function CorrectChargesSheet({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [open, deliveryId, ready, valid, chargedNum, agentNum, agentEdited, key]);
+  }, [open, deliveryId, ready, valid, chargedNum, agentNum, applyAgentOverride, key]);
 
   async function refreshAmounts() {
     if (!deliveryId || busy.current) return;
@@ -119,9 +126,17 @@ export function CorrectChargesSheet({
     try {
       const data = await previewFeeAdjustment(deliveryId);
       baseRevision.current = data.revision;
-      if (!chargedEdited) setCharged(data.charged == null ? '' : String(data.charged));
-      if (!agentEdited)
-        setAgentPayment(data.agent_payment == null ? '' : String(data.agent_payment));
+      if (!chargedEdited) {
+        setMissingClientCharge(data.charged == null);
+        setCharged(data.charged == null ? '' : String(data.charged));
+      }
+      if (!agentEdited) {
+        const amount = riderOnly
+          ? (data.orders.find((order) => order.delivery_id === deliveryId)?.amount ??
+            data.agent_payment)
+          : data.agent_payment;
+        setAgentPayment(amount == null ? '' : String(amount));
+      }
       setReady(true);
       setRefresh((n) => n + 1);
     } catch (e) {
@@ -146,7 +161,7 @@ export function CorrectChargesSheet({
       charged: chargedNum,
       agentPayment: agentNum,
       reason: reason.trim(),
-      applyAgentOverride: agentEdited,
+      applyAgentOverride,
     };
     const requestKey = JSON.stringify(input);
     if (request.current?.key !== requestKey)
@@ -184,7 +199,13 @@ export function CorrectChargesSheet({
         {!ready && !error ? <ActivityIndicator /> : null}
         {ready ? (
           <>
-            {!riderOnly ? (
+            {riderOnly && missingClientCharge ? (
+              <Text>
+                This order has no client delivery charge recorded. Enter that charge below so the
+                rider fee can be saved. Use 0 only if the client charge was waived too.
+              </Text>
+            ) : null}
+            {!riderOnly || missingClientCharge ? (
               <Input
                 label="Reda charge to client (₦)"
                 accessibilityLabel="Reda charge to client"

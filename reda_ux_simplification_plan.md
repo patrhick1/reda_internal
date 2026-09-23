@@ -188,3 +188,5 @@ Only this documentation file was created for the current request. App implementa
 - Passing isolated checks: clean migration install; nightly/manual order suites including Monday, Tuesday and Saturday; stale previews and permissions; no-hold/no-processing-push rules; failed-run retries; 20,000 archived plus 500 active orders; fee waiver and handover suites; real concurrent saves; actual HTTP payment-contract boundary; phone/desktop exported browser workflows; typecheck, lint and formatting.
 - UI publication target is https://app.redalogisticss.com only. Necessary hold/notification backend changes are shared with existing clients; no native bundle will be published.
 - Findings UX-09 through UX-12 remain documented for a separate focused proposal, as agreed.
+
+Final fee-form edge cases: an older order with a missing client charge explicitly shows the missing field and explains why it is needed. Ordinary edits preserve the existing charge. The rider amount starts at actual current pay when known, and an unchanged amount can be confirmed with a reason. Browser regression tests cover these cases and stale-save recovery.
