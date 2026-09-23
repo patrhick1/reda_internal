@@ -89,16 +89,14 @@ You don't need to remember to cancel anything yourself. If the agents have **dif
     icon: 'calendar',
     body: `You can finish the day when work is done, including around **10pm Lagos**. The automatic **23:59 Lagos** run is the fallback.
 
-1. Open **Home → End of day**, or **Open end of day** in Reconciliation.
-2. Tap **Preview next working day**. Check the source and destination dates, rollovers, released postponements, and closures. Existing carry limits still apply.
-3. Confirm the operation and wait for its processing status. Failed or changed groups need review; submitting is not completion.
-4. Tap **View prepared orders** to open Unassigned for the destination date. Assign these orders to agents. The assignment picker shows their actual dates.
+1. Open **Home → End of day**, or **Run end of day** in Reconciliation.
+2. Check the **Roll forward** and **Close out** lists. The destination date and any closure reasons are shown.
+3. Tap **Run end of day** and confirm. Wait for **End of day complete** before assigning orders.
+4. Tap **View prepared orders**, then assign the orders to agents.
 
-**Sundays are skipped:** Saturday prepares Monday; Monday prepares Tuesday. Postponements due through the destination are released without adding a carry. Later postponements and protected orders stay untouched.
+**Sundays are skipped:** Saturday prepares Monday; Monday prepares Tuesday. Due postponements are released without adding a carry. Later postponements keep their dates. All orders follow the normal carry and closure rules.
 
-The nightly fallback and morning check preserve already-prepared orders and their assignments. Work added after a manual close is still eligible for later processing.
-
-The regular **Unassigned** queue shows all dates. **Show all Unassigned** leaves the prepared-date view. Recovery tools are available on End of day for reviewing missed processing.`,
+The overnight check preserves prepared orders and their assignments. The regular **Unassigned** queue shows all dates; **Show all Unassigned** leaves the prepared-date view.`,
   },
   {
     id: 'fix-delivery',

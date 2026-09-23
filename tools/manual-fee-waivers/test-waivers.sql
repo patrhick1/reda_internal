@@ -37,6 +37,9 @@ savepoint mixed_rates;
 select public.correct_same_customer_normal_fee(gen_random_uuid(),delivery_id,revision,4000,'TEST another legitimate baseline')
 from public.same_customer_earnings where delivery_id=md5('same-customer-order-2')::uuid;
 select pg_temp.check_ok((select bool_and(final_state='pending') from public.same_customer_earnings where active),'unresolved automatic rates remain protected');
+create temporary table fee_page as select public.list_agent_pay_issues(md5('same-customer-user-agent')::uuid,'2030-01-02','2030-01-02',null,1) p;
+select pg_temp.check_ok((select jsonb_array_length(p->'orders')=1 and p->>'next_cursor' is not null from fee_page),'fee issues paginate after filtering');
+select pg_temp.check_ok((select jsonb_array_length(public.list_agent_pay_issues(md5('same-customer-user-agent')::uuid,'2030-01-02','2030-01-02',(p->>'next_cursor')::uuid,1)->'orders')=1 from fee_page),'next issue page is accessible');
 select pg_temp.save_pay(2,0);
 select pg_temp.check_ok((select sum(final_amount)=3000 and bool_and(final_state='ready') from public.same_customer_earnings where active),'explicit waiver resolves mixed automatic/manual rates without changing either baseline');
 rollback to mixed_rates;
@@ -58,6 +61,8 @@ select pg_temp.check_ok((select sum(amount)=3000 and bool_and(state='ready') fro
   'delivery and rider metadata agree with reconciliation');
 select pg_temp.check_ok((public.list_agent_pay_details(md5('same-customer-user-agent')::uuid,'2030-01-02','2030-01-02')->'orders'->0->>'manual_amount')::numeric=0,
   'reconciliation exposes waiver and its audit details');
+select pg_temp.check_ok(public.list_agent_pay_issues(md5('same-customer-user-agent')::uuid,'2030-01-02','2030-01-02')->'orders'='[]'::jsonb,
+  'approved waiver stays in audit but is absent from issue list');
 
 savepoint single_handover;
 select public.settle_period('agent',md5('same-customer-user-agent')::uuid,'2030-01-02','TEST actual handover');
@@ -113,5 +118,6 @@ do $$ begin
   begin perform public.preview_delivery_charge_correction(md5('same-customer-order-1')::uuid); raise exception 'FAIL rider can preview private fee edit'; exception when insufficient_privilege then null; end;
   begin perform pg_temp.save_pay(1,0); raise exception 'FAIL rider can waive own fee'; exception when insufficient_privilege then null; end;
   begin perform public.list_agent_pay_details(md5('same-customer-user-agent')::uuid,'2030-01-02','2030-01-02'); raise exception 'FAIL private audit exposed'; exception when insufficient_privilege then null; end;
+  begin perform public.list_agent_pay_issues(md5('same-customer-user-agent')::uuid,'2030-01-02','2030-01-02'); raise exception 'FAIL private issues exposed'; exception when insufficient_privilege then null; end;
 end $$;
 rollback;

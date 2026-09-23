@@ -177,6 +177,7 @@ export function DeliveryDetail() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [correctLocOpen, setCorrectLocOpen] = useState(false);
   const [correctChargeOpen, setCorrectChargeOpen] = useState(false);
+  const [riderFeeOnly, setRiderFeeOnly] = useState(false);
   const [editRedaChargeOpen, setEditRedaChargeOpen] = useState(false);
   const [revertOpen, setRevertOpen] = useState(false);
   const [editWaybillOpen, setEditWaybillOpen] = useState(false);
@@ -1048,11 +1049,16 @@ export function DeliveryDetail() {
                   isWaybill ? 'Reda paid out' : isReplacement ? 'Rider pay recorded' : 'Rider fee'
                 }
                 actionLabel={
-                  user.role === 'admin' && d.order_type === 'delivery' ? 'Adjust pay' : undefined
+                  user.role === 'admin' && d.order_type === 'delivery'
+                    ? 'Change rider fee'
+                    : undefined
                 }
                 onAction={
                   user.role === 'admin' && d.order_type === 'delivery'
-                    ? () => setCorrectChargeOpen(true)
+                    ? () => {
+                        setRiderFeeOnly(true);
+                        setCorrectChargeOpen(true);
+                      }
                     : undefined
                 }
                 value={
@@ -1068,7 +1074,7 @@ export function DeliveryDetail() {
                       ) +
                         (d.rider_pay?.state === 'ready' && d.rider_pay.mode === 'final'
                           ? d.rider_pay.manual_exception
-                            ? ' · Manual exception'
+                            ? ' · Agreed fee'
                             : d.rider_pay.multiplier === 1
                               ? ' · Full fee'
                               : d.rider_pay.multiplier === 0.5
@@ -1134,7 +1140,13 @@ export function DeliveryDetail() {
                   : 'Negative margin — Reda pays the agent more than it collects.'}
               </Text>
               {!isWaybill ? (
-                <TouchableOpacity onPress={() => setCorrectChargeOpen(true)} hitSlop={8}>
+                <TouchableOpacity
+                  onPress={() => {
+                    setRiderFeeOnly(false);
+                    setCorrectChargeOpen(true);
+                  }}
+                  hitSlop={8}
+                >
                   <Text style={{ fontFamily: fonts.bold, fontSize: 13, color: colors.red }}>
                     Correct
                   </Text>
@@ -1447,6 +1459,7 @@ export function DeliveryDetail() {
         }}
       />
       <CorrectChargesSheet
+        riderOnly={riderFeeOnly}
         open={correctChargeOpen}
         deliveryId={d.id ?? null}
         currentCharged={charged != null ? Number(charged) : null}

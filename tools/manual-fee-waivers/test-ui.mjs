@@ -43,53 +43,56 @@ await page.route('**/*',async route=>{
   if(rpc==='get_delivery_reda_charge') data=[{charged_snapshot:saved?0:7000,recommended_charge:7000,client_day_settled:false}];
   if(rpc==='preview_delivery_charge_correction') {
     const amount=body.p_apply_agent_override ? body.p_agent_payment : saved?0:4000;
-    data={revision,charged:saved?0:7000,agent_payment:saved?0:4000,proposed_charge:body.p_charged??7000,total:4000+amount,pending:false,settled:handedOver,
+    data={revision,charged:7000,agent_payment:saved?0:4000,proposed_charge:body.p_charged??7000,total:4000+amount,pending:false,settled:handedOver,
       orders:[{delivery_id:other,customer_name:'TEST paid delivery',amount:4000,reason:null,manual:false},{delivery_id:id,customer_name:'TEST waived delivery',amount,reason:null,manual:body.p_apply_agent_override||saved}]};
   }
   if(rpc==='correct_delivery_charge_v2') {
-    assert.equal(body.p_agent_payment,0); assert.equal(body.p_charged,0); assert.equal(body.p_apply_agent_override,true);
+    assert.equal(body.p_agent_payment,0); assert.equal(body.p_charged,7000); assert.equal(body.p_apply_agent_override,true);
     assert.equal(body.p_reason,'Second fee waived — charge once');
     if(!forcedConflict) {
       forcedConflict=true; revision='version2';
       return route.fulfill({status:409,contentType:'application/json',body:JSON.stringify({code:'40001',message:'These orders changed. Refresh the amounts before saving.'})});
     }
     assert.equal(body.p_revision,'version2'); saved=true;
-    data={revision:'version3',charged:0,agent_payment:0,total:4000,pending:false,settled:false,orders:[]};
+    data={revision:'version3',charged:7000,agent_payment:0,total:4000,pending:false,settled:false,orders:[]};
     revision='version3';
   }
   if(rpc==='agent_earnings_summary_v2') data=[{agent_id:rider.id,agent_name:rider.display_name,deliveries_count:2,total_quantity:2,total_collected:100000,total_earnings:saved?4000:null,known_earnings:4000,total_remit:saved?96000:null,pending_pay_count:saved?0:1}];
-  if(rpc==='list_agent_pay_details') data={orders:[{delivery_id:id,customer_name:'TEST waived delivery',final_state:saved?'ready':'pending',final_review_reason:saved?null:'manual_review',final_amount:saved?0:null,manual_amount:saved?0:null,manual_reason:saved?'Second fee waived — charge once':null,manual_actor:saved?'TEST Uzo':null}],next_cursor:null};
+  if(rpc==='list_agent_pay_issues') data={orders:saved?[]:[{delivery_id:id,customer_name:'TEST waived delivery',final_state:'pending',final_review_reason:'manual_review',final_amount:null,manual_amount:null,manual_reason:null,manual_actor:null}],next_cursor:null};
   if(rpc==='settle_period') { assert(saved); assert.equal(body.p_subject_id,rider.id); handedOver=true; data='77777777-7777-4777-8777-777777777777'; }
   await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(data)});
 });
 try {
   await page.goto('http://127.0.0.1:55453/(admin)/reconcile');
   await page.getByText('By agent',{exact:true}).click();
-  await page.getByText(/^Pay review/).click();
+  assert.equal(await page.getByText(/^Pay review/).count(),0,'No review filter');
   await page.getByText('TEST External',{exact:true}).click();
-  await page.getByText(/The rider, customer or completion details changed/).waitFor();
-  await page.getByRole('button',{name:'Open order',exact:true}).click();
-  await page.getByText('Adjust pay',{exact:true}).click();
+  await page.getByText(/Delivery details changed after this fee was set/).waitFor();
+  await page.screenshot({path:path.join(dist,`reconcile-issue-${page.viewportSize().width}.png`),fullPage:true});
+  await page.getByRole('button',{name:'Change rider fee',exact:true}).click();
   await page.getByRole('textbox',{name:'Rider pay for this delivery',exact:true}).fill('0');
-  await page.getByRole('textbox',{name:'Reda charge to client',exact:true}).fill('0');
+  assert.equal(await page.getByRole('textbox',{name:'Reda charge to client',exact:true}).count(),0,'Rider-only change does not ask for client charge');
   await page.getByRole('textbox',{name:'Adjustment reason',exact:true}).fill('Second fee waived — charge once');
   await page.getByText('Combined rider pay: ₦4,000',{exact:true}).waitFor();
-  await page.getByRole('button',{name:'Save adjustment',exact:true}).click();
+  await page.getByRole('button',{name:'Save rider fee',exact:true}).click();
   await page.getByText('These orders changed. Refresh the amounts before saving.',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Refresh amounts',exact:true}).click();
   await page.getByText('Combined rider pay: ₦4,000',{exact:true}).waitFor();
   assert.equal(await page.getByRole('textbox',{name:'Rider pay for this delivery',exact:true}).inputValue(),'0');
-  await page.getByRole('button',{name:'Save adjustment',exact:true}).click();
-  await page.getByText('Adjust charges and rider pay',{exact:true}).waitFor({state:'hidden'});
+  await page.getByRole('button',{name:'Save rider fee',exact:true}).click();
+  await page.getByRole('dialog').waitFor({state:'hidden'});
   assert(saved);
   await page.goto('http://127.0.0.1:55453/(admin)/reconcile');
   await page.getByText('By agent',{exact:true}).click();
   await page.getByText('TEST External',{exact:true}).click();
-  await page.getByText(/₦0 — manually waived by TEST Uzo/).waitFor();
+  await page.getByRole('button',{name:'Mark handed over',exact:true}).waitFor();
+  assert.equal(await page.getByText('Known rider earnings',{exact:true}).count(),0);
+  assert.equal(await page.getByRole('button',{name:'Change rider fee',exact:true}).count(),0,'Approved waiver needs no review');
+  await page.screenshot({path:path.join(dist,`reconcile-simple-${page.viewportSize().width}.png`),fullPage:true});
   page.once('dialog',async d=>{assert(d.message().includes('₦96,000'));await d.accept();});
   await Promise.all([page.waitForResponse(r=>r.url().endsWith('/settle_period')),page.getByRole('button',{name:'Mark handed over',exact:true}).click()]);
   assert(handedOver); assert.deepEqual(errors,[]);
-  console.log('PASS exported UI: actionable issue, direct order navigation, separate client/rider inputs, zero preview, stale-save recovery, saved waiver explanation, exact handover.');
+  console.log('PASS exported UI: issue in Outstanding, direct rider fee edit, zero allowed, client charge preserved, stale-save recovery, no unnecessary review, exact handover.');
 } catch(e) {
   writeFileSync(path.join(rootDir(),'ui-failure.txt'),`${e}\n${errors.join('\n')}\n${await page.locator('body').innerText()}\n${JSON.stringify(calls.slice(-20))}`);
   throw e;

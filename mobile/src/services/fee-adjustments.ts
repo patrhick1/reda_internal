@@ -61,10 +61,8 @@ export async function saveFeeAdjustment(input: {
 }
 
 export const PAY_ISSUE_TEXT: Record<string, string> = {
-  rate_mismatch:
-    'The fees still calculated automatically need a rate check. Open the order to set the agreed rider pay.',
-  manual_review:
-    'The rider, customer or completion details changed after this adjustment. Open the order to confirm the agreed pay.',
+  rate_mismatch: 'Confirm the agreed rider fee. Enter 0 if this fee was waived.',
+  manual_review: 'Delivery details changed after this fee was set. Confirm the agreed rider fee.',
   missing_occurrence: 'The delivery completion day is missing. Open the order to confirm the day.',
   date_discrepancy:
     'The reported completion day differs from the upload day. Open the order to confirm when delivery happened.',
@@ -95,7 +93,7 @@ export async function listAgentPayDetails(
   const { data, error } = await rpcUntyped<{
     orders: AgentPayDetail[];
     next_cursor: string | null;
-  }>('list_agent_pay_details', {
+  }>('list_agent_pay_issues', {
     p_agent_id: agentId,
     p_from: from,
     p_to: to,

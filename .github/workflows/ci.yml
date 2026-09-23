@@ -74,16 +74,21 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/eod-browser" --no-save playwright@1.55.0
           node "$RUNNER_TEMP/eod-browser/node_modules/playwright/cli.js" install --with-deps chromium
-      - name: Exercise Uzo's end-of-day and assignment workflow
-        run: node ../tools/eod-reliability-20260921/test-manual-eod-ui.mjs
+      - name: Exercise end of day and assignment at phone and desktop widths
+        run: |
+          for width in 390 1280; do
+            EOD_UI_WIDTH="$width" node ../tools/eod-reliability-20260921/test-manual-eod-ui.mjs
+          done
         env:
           EOD_UI_DIST: dist
           PLAYWRIGHT_MODULE_PATH: ${{ runner.temp }}/eod-browser/node_modules/playwright
-      - name: Exercise manual waiver and handover at phone width
-        run: node ../tools/manual-fee-waivers/test-ui.mjs
+      - name: Exercise rider fee changes and handover at phone and desktop widths
+        run: |
+          for width in 390 1280; do
+            EOD_UI_WIDTH="$width" node ../tools/manual-fee-waivers/test-ui.mjs
+          done
         env:
           EOD_UI_DIST: dist
-          EOD_UI_WIDTH: '390'
           PLAYWRIGHT_MODULE_PATH: ${{ runner.temp }}/eod-browser/node_modules/playwright
 
   security:

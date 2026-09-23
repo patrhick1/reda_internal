@@ -1,6 +1,8 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
+import { useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
+import { CorrectChargesSheet } from '@/components/sheets/CorrectChargesSheet';
 import { Banner, Button } from '@/components/ui';
 import { errorMessage } from '@/lib/errors';
 import { formatNaira } from '@/lib/format';
@@ -11,13 +13,16 @@ export function AgentPayDetails({
   agentId,
   from,
   to,
+  onSaved,
 }: {
   agentId: string;
   from: string;
   to: string;
+  onSaved: () => void;
 }) {
   const router = useRouter();
   const user = useCurrentUser();
+  const [editing, setEditing] = useState<{ id: string; name: string } | null>(null);
   const query = useInfiniteQuery({
     queryKey: ['deliveries', 'agent-pay-details', user.userId, agentId, from, to],
     initialPageParam: null as string | null,
@@ -39,6 +44,7 @@ export function AgentPayDetails({
     <View style={{ gap: 12, marginTop: 12 }}>
       {query.data?.pages
         .flatMap((page) => page.orders)
+        .filter((order) => order.final_state === 'pending')
         .map((order) => (
           <View key={order.delivery_id} style={{ gap: 4 }}>
             <Text>
@@ -60,9 +66,15 @@ export function AgentPayDetails({
             ) : null}
             <Button
               variant="secondary"
-              onPress={() => router.push(`/(admin)/deliveries/${order.delivery_id}`)}
+              onPress={() => {
+                if (['rate_mismatch', 'manual_review'].includes(order.final_review_reason ?? '')) {
+                  setEditing({ id: order.delivery_id, name: order.customer_name });
+                } else router.push(`/(admin)/deliveries/${order.delivery_id}`);
+              }}
             >
-              Open order
+              {['rate_mismatch', 'manual_review'].includes(order.final_review_reason ?? '')
+                ? 'Change rider fee'
+                : 'Check delivery'}
             </Button>
           </View>
         ))}
@@ -75,6 +87,20 @@ export function AgentPayDetails({
           More fee details
         </Button>
       ) : null}
+      <CorrectChargesSheet
+        open={editing != null}
+        deliveryId={editing?.id ?? null}
+        customerName={editing?.name ?? null}
+        currentCharged={null}
+        currentAgentPayment={null}
+        riderOnly
+        onClose={() => setEditing(null)}
+        onCorrected={() => {
+          setEditing(null);
+          void query.refetch();
+          onSaved();
+        }}
+      />
     </View>
   );
 }

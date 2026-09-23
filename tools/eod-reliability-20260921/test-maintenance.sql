@@ -23,9 +23,11 @@ DO $$ DECLARE r uuid; p jsonb; before_count int; target date:=reda_maintenance.b
  PERFORM pg_temp.assert((SELECT current_status='pending' AND assigned_agent_id IS NULL AND scheduled_date=target AND rollover_count=1
   FROM deliveries WHERE id=md5('eod-test-order-1')::uuid),'release keeps date and carry');
  PERFORM pg_temp.assert((SELECT current_status='postponed' FROM deliveries WHERE id=md5('eod-test-order-7')::uuid),'changed preview skipped');
- PERFORM pg_temp.assert((SELECT current_status='postponed' FROM deliveries WHERE id=md5('eod-test-order-9')::uuid),'held row skipped');
+ PERFORM pg_temp.assert((SELECT current_status='pending' FROM deliveries WHERE id=md5('eod-test-order-9')::uuid),'legacy hold does not exclude an order');
  PERFORM pg_temp.assert(EXISTS(SELECT 1 FROM reda_maintenance.work WHERE status='changed'),'changed outcome visible');
- PERFORM pg_temp.assert(EXISTS(SELECT 1 FROM reda_maintenance.outbox WHERE status='pending'),'notification intent recorded');
+ PERFORM pg_temp.assert(NOT EXISTS(SELECT 1 FROM reda_maintenance.outbox WHERE payload->>'title' LIKE 'Order processing%'),'routine processing feed disabled');
+ PERFORM reda_maintenance.queue_notification('{"title":"Delivered","audience":"admins","body":"TEST ordinary delivery"}','TEST ordinary delivery');
+ PERFORM pg_temp.assert(EXISTS(SELECT 1 FROM reda_maintenance.outbox WHERE status='pending'),'business notification intent recorded');
  SELECT count(*) INTO before_count FROM delivery_status_history WHERE delivery_id=md5('eod-test-order-1')::uuid;
  PERFORM reda_maintenance.dispatch(); PERFORM reda_maintenance.work();
  PERFORM pg_temp.assert((SELECT count(*)=before_count FROM delivery_status_history WHERE delivery_id=md5('eod-test-order-1')::uuid),'retry creates no duplicate history');

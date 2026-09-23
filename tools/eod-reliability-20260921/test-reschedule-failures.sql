@@ -52,6 +52,7 @@ DO $$ DECLARE w record; BEGIN
  UPDATE reda_maintenance.work SET status='claimed',claimed_at=now()-interval '4 minutes',attempts=3 WHERE id=(SELECT min(id) FROM reda_maintenance.work);
  PERFORM reda_maintenance.dispatch();
  PERFORM pg_temp.assert(EXISTS(SELECT 1 FROM reda_maintenance.work WHERE status='failed' AND error_code='57014'),'dead worker detected and retries bounded');
+ PERFORM reda_maintenance.queue_notification('{"title":"Delivered","audience":"admins"}','TEST delivery timeout');
  UPDATE reda_maintenance.outbox SET status='submitted',submitted_at=now()-interval '11 minutes',attempts=3,request_id=-1;
  PERFORM reda_maintenance.monitor();
  PERFORM pg_temp.assert(EXISTS(SELECT 1 FROM reda_maintenance.outbox WHERE status='failed'),'notification timeout persists separately');

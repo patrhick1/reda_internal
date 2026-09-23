@@ -18,6 +18,7 @@ export function CorrectChargesSheet({
   customerName,
   onClose,
   onCorrected,
+  riderOnly = false,
 }: {
   open: boolean;
   deliveryId: string | null;
@@ -26,6 +27,7 @@ export function CorrectChargesSheet({
   customerName: string | null;
   onClose: () => void;
   onCorrected: () => void;
+  riderOnly?: boolean;
 }) {
   const [charged, setCharged] = useState('');
   const [chargedEdited, setChargedEdited] = useState(false);
@@ -169,28 +171,32 @@ export function CorrectChargesSheet({
       onClose={() => {
         if (!busy.current) onClose();
       }}
-      title="Adjust charges and rider pay"
+      title={riderOnly ? 'Change rider fee' : 'Adjust charges and rider pay'}
       subtitle={customerName ?? undefined}
     >
       <View style={{ padding: 20, gap: 16, paddingBottom: 32 }}>
-        <Banner tone="info">
-          Set Reda&apos;s charge and rider pay separately. A rider amount you enter, including ₦0,
-          is saved as the agreed pay for this delivery.
-        </Banner>
+        {!riderOnly ? (
+          <Banner tone="info">
+            Set Reda&apos;s charge and rider pay separately. A rider amount you enter, including ₦0,
+            is saved as the agreed pay for this delivery.
+          </Banner>
+        ) : null}
         {!ready && !error ? <ActivityIndicator /> : null}
         {ready ? (
           <>
-            <Input
-              label="Reda charge to client (₦)"
-              accessibilityLabel="Reda charge to client"
-              editable={!submitting}
-              value={charged}
-              onChange={(value) => {
-                setCharged(value);
-                setChargedEdited(true);
-              }}
-              keyboardType="numeric"
-            />
+            {!riderOnly ? (
+              <Input
+                label="Reda charge to client (₦)"
+                accessibilityLabel="Reda charge to client"
+                editable={!submitting}
+                value={charged}
+                onChange={(value) => {
+                  setCharged(value);
+                  setChargedEdited(true);
+                }}
+                keyboardType="numeric"
+              />
+            ) : null}
             <Input
               label="Rider pay for this delivery (₦)"
               accessibilityLabel="Rider pay for this delivery"
@@ -203,8 +209,9 @@ export function CorrectChargesSheet({
               keyboardType="numeric"
             />
             <Text>
-              Changing Reda&apos;s charge does not change rider pay. Enter 0 in the fee you want to
-              waive.
+              {riderOnly
+                ? 'Enter the agreed rider fee. Use 0 to waive it.'
+                : 'Changing Reda’s charge does not change rider pay. Enter 0 in the fee you want to waive.'}
             </Text>
             {!valid ? (
               <Text>Enter non-negative amounts with at most two decimal places.</Text>
@@ -279,7 +286,7 @@ export function CorrectChargesSheet({
           }
           onPress={() => void submit()}
         >
-          {submitting ? 'Saving…' : 'Save adjustment'}
+          {submitting ? 'Saving…' : riderOnly ? 'Save rider fee' : 'Save adjustment'}
         </Button>
       </View>
     </Sheet>
