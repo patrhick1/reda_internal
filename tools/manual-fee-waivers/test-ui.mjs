@@ -20,6 +20,11 @@ await new Promise(resolve => server.listen(55453, '127.0.0.1', resolve));
 const browser = await chromium.launch({ headless: true, ...(process.env.EOD_UI_BROWSER_CHANNEL ? {channel:process.env.EOD_UI_BROWSER_CHANNEL} : {}) });
 const page = await browser.newPage({ viewport: { width: Number(process.env.EOD_UI_WIDTH || 1280), height: 1000 } });
 const day = new Intl.DateTimeFormat('en-CA',{timeZone:'Africa/Lagos'}).format(new Date());
+const edge = process.env.FEE_UI_EDGE_CASE ?? '';
+const expectedFee = edge === 'confirm' ? 2000 : 0;
+const expectedTotal = 4000 + expectedFee, expectedRemit = 100000 - expectedTotal;
+const money = amount => '₦' + amount.toLocaleString('en-NG');
+const reason = edge === 'confirm' ? 'Confirm agreed rider fee' : 'Second fee waived — charge once';
 const admin={id:'22222222-2222-4222-8222-222222222222',email:'admin@example.invalid',display_name:'TEST Uzo',role:'admin',is_active:true};
 const rider={...admin,id:'33333333-3333-4333-8333-333333333333',display_name:'TEST External',role:'agent',parent_agent_id:null};
 const id='55555555-5555-4555-8555-555555555555', other='66666666-6666-4666-8666-666666666666';
@@ -42,22 +47,22 @@ await page.route('**/*',async route=>{
   if(rpc==='get_delivery_pay_state') data=[{delivery_id:id,mode:'final',state:saved?'ready':'pending',amount:saved?0:null,margin:saved?0:null,manual_exception:saved,review_reason:saved?null:'manual_review'}];
   if(rpc==='get_delivery_reda_charge') data=[{charged_snapshot:saved?0:7000,recommended_charge:7000,client_day_settled:false}];
   if(rpc==='preview_delivery_charge_correction') {
-    const amount=body.p_apply_agent_override ? body.p_agent_payment : saved?0:4000;
-    data={revision,charged:7000,agent_payment:saved?0:4000,proposed_charge:body.p_charged??7000,total:4000+amount,pending:false,settled:handedOver,
+    const amount=body.p_apply_agent_override ? body.p_agent_payment : saved?expectedFee:edge==='confirm'?2000:4000;
+    data={revision,charged:edge==='missing'&&!saved?null:7000,agent_payment:saved?expectedFee:4000,proposed_charge:body.p_charged??7000,total:4000+amount,pending:false,settled:handedOver,
       orders:[{delivery_id:other,customer_name:'TEST paid delivery',amount:4000,reason:null,manual:false},{delivery_id:id,customer_name:'TEST waived delivery',amount,reason:null,manual:body.p_apply_agent_override||saved}]};
   }
   if(rpc==='correct_delivery_charge_v2') {
-    assert.equal(body.p_agent_payment,0); assert.equal(body.p_charged,7000); assert.equal(body.p_apply_agent_override,true);
-    assert.equal(body.p_reason,'Second fee waived — charge once');
+    assert.equal(body.p_agent_payment,expectedFee); assert.equal(body.p_charged,7000); assert.equal(body.p_apply_agent_override,true);
+    assert.equal(body.p_reason,reason);
     if(!forcedConflict) {
       forcedConflict=true; revision='version2';
       return route.fulfill({status:409,contentType:'application/json',body:JSON.stringify({code:'40001',message:'These orders changed. Refresh the amounts before saving.'})});
     }
     assert.equal(body.p_revision,'version2'); saved=true;
-    data={revision:'version3',charged:7000,agent_payment:0,total:4000,pending:false,settled:false,orders:[]};
+    data={revision:'version3',charged:7000,agent_payment:expectedFee,total:expectedTotal,pending:false,settled:false,orders:[]};
     revision='version3';
   }
-  if(rpc==='agent_earnings_summary_v2') data=[{agent_id:rider.id,agent_name:rider.display_name,deliveries_count:2,total_quantity:2,total_collected:100000,total_earnings:saved?4000:null,known_earnings:4000,total_remit:saved?96000:null,pending_pay_count:saved?0:1}];
+  if(rpc==='agent_earnings_summary_v2') data=[{agent_id:rider.id,agent_name:rider.display_name,deliveries_count:2,total_quantity:2,total_collected:100000,total_earnings:saved?expectedTotal:null,known_earnings:4000,total_remit:saved?expectedRemit:null,pending_pay_count:saved?0:1}];
   if(rpc==='list_agent_pay_issues') data={orders:saved?[]:[{delivery_id:id,customer_name:'TEST waived delivery',final_state:'pending',final_review_reason:'manual_review',final_amount:null,manual_amount:null,manual_reason:null,manual_actor:null}],next_cursor:null};
   if(rpc==='settle_period') { assert(saved); assert.equal(body.p_subject_id,rider.id); handedOver=true; data='77777777-7777-4777-8777-777777777777'; }
   await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(data)});
@@ -70,15 +75,19 @@ try {
   await page.getByText(/Delivery details changed after this fee was set/).waitFor();
   await page.screenshot({path:path.join(dist,`reconcile-issue-${page.viewportSize().width}.png`),fullPage:true});
   await page.getByRole('button',{name:'Change rider fee',exact:true}).click();
-  await page.getByRole('textbox',{name:'Rider pay for this delivery',exact:true}).fill('0');
-  assert.equal(await page.getByRole('textbox',{name:'Reda charge to client',exact:true}).count(),0,'Rider-only change does not ask for client charge');
-  await page.getByRole('textbox',{name:'Adjustment reason',exact:true}).fill('Second fee waived — charge once');
-  await page.getByText('Combined rider pay: ₦4,000',{exact:true}).waitFor();
+  if(edge==='confirm') assert.equal(await page.getByRole('textbox',{name:'Rider pay for this delivery',exact:true}).inputValue(),'2000','Prefill actual pay, not the higher baseline fee');
+  else await page.getByRole('textbox',{name:'Rider pay for this delivery',exact:true}).fill('0');
+  if(edge==='missing') {
+    await page.getByText(/This order has no client delivery charge recorded/).waitFor();
+    await page.getByRole('textbox',{name:'Reda charge to client',exact:true}).fill('7000');
+  } else assert.equal(await page.getByRole('textbox',{name:'Reda charge to client',exact:true}).count(),0,'Rider-only change does not ask for client charge');
+  await page.getByRole('textbox',{name:'Adjustment reason',exact:true}).fill(reason);
+  await page.getByText(`Combined rider pay: ${money(expectedTotal)}`,{exact:true}).waitFor();
   await page.getByRole('button',{name:'Save rider fee',exact:true}).click();
   await page.getByText('These orders changed. Refresh the amounts before saving.',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Refresh amounts',exact:true}).click();
-  await page.getByText('Combined rider pay: ₦4,000',{exact:true}).waitFor();
-  assert.equal(await page.getByRole('textbox',{name:'Rider pay for this delivery',exact:true}).inputValue(),'0');
+  await page.getByText(`Combined rider pay: ${money(expectedTotal)}`,{exact:true}).waitFor();
+  assert.equal(await page.getByRole('textbox',{name:'Rider pay for this delivery',exact:true}).inputValue(),String(expectedFee));
   await page.getByRole('button',{name:'Save rider fee',exact:true}).click();
   await page.getByRole('dialog').waitFor({state:'hidden'});
   assert(saved);
@@ -89,10 +98,10 @@ try {
   assert.equal(await page.getByText('Known rider earnings',{exact:true}).count(),0);
   assert.equal(await page.getByRole('button',{name:'Change rider fee',exact:true}).count(),0,'Approved waiver needs no review');
   await page.screenshot({path:path.join(dist,`reconcile-simple-${page.viewportSize().width}.png`),fullPage:true});
-  page.once('dialog',async d=>{assert(d.message().includes('₦96,000'));await d.accept();});
+  page.once('dialog',async d=>{assert(d.message().includes(money(expectedRemit)));await d.accept();});
   await Promise.all([page.waitForResponse(r=>r.url().endsWith('/settle_period')),page.getByRole('button',{name:'Mark handed over',exact:true}).click()]);
   assert(handedOver); assert.deepEqual(errors,[]);
-  console.log('PASS exported UI: issue in Outstanding, direct rider fee edit, zero allowed, client charge preserved, stale-save recovery, no unnecessary review, exact handover.');
+  console.log(`PASS exported UI (${edge||'waiver'}): issue in Outstanding, direct rider fee edit, client charge preserved or explicitly entered if missing, actual pay prefill, unchanged fee confirmation, stale-save recovery, exact handover.`);
 } catch(e) {
   writeFileSync(path.join(rootDir(),'ui-failure.txt'),`${e}\n${errors.join('\n')}\n${await page.locator('body').innerText()}\n${JSON.stringify(calls.slice(-20))}`);
   throw e;

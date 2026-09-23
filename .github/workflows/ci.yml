@@ -87,6 +87,9 @@ jobs:
           for width in 390 1280; do
             EOD_UI_WIDTH="$width" node ../tools/manual-fee-waivers/test-ui.mjs
           done
+          for edge in missing confirm; do
+            EOD_UI_WIDTH=390 FEE_UI_EDGE_CASE="$edge" node ../tools/manual-fee-waivers/test-ui.mjs
+          done
         env:
           EOD_UI_DIST: dist
           PLAYWRIGHT_MODULE_PATH: ${{ runner.temp }}/eod-browser/node_modules/playwright
