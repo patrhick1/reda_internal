@@ -48,6 +48,15 @@ Its checksum is verified. Only status definitions/transitions are fixture data;
 orders and users are generated synthetic records and rolled back after tests.
 `build-test-fixture.py` documents regeneration from a private schema capture.
 
+Release and sibling-group tests run on the actual date and on every day of a
+fixed Monday-to-Sunday week. The calendar fixture changes only the default
+timestamp arguments of the three maintenance clock functions, within the
+rolled-back transaction; their production bodies and explicit-time boundary
+checks stay intact. Due postponed/historical fixtures use the last workday on
+or before their intended date, so Sunday normalization cannot move them out of
+the scenario. The stale-preview test excludes independent automatic runs to
+exercise only its reviewed manual operation.
+
 The suites cover boundaries, carry rules, complete sibling groups, policy clients,
 replacements, native-role permissions, audit identity, stale/offline rescheduling,
 immutable promised dates, held/changed rows, partial failures and recovery,

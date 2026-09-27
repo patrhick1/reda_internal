@@ -76,8 +76,12 @@ if (race) {
 } else if (!bench) {
   if (sql('select count(*) from public.deliveries') !== '0') throw new Error('Outcome tests require an empty database');
   for (const name of ['test-maintenance.sql','test-reschedule-failures.sql','test-groups-permissions.sql','test-manual-eod.sql','test-manual-eod-failures.sql','test-history-scaling.sql','test-simple-workflows.sql']) {
-    for (const day of name==='test-manual-eod.sql' ? ['2026-09-21','2026-09-22','2026-09-26'] : [null]) {
-      const clock = day ? ['-c',`SET test.requested_day='${day}'`] : [];
+    const calendar = ['test-maintenance.sql','test-groups-permissions.sql'].includes(name);
+    const days = calendar
+      ? [null, ...Array.from({length:7},(_,i)=>`2026-09-${21+i}`)]
+      : name==='test-manual-eod.sql' ? ['2026-09-21','2026-09-22','2026-09-26'] : [null];
+    for (const day of days) {
+      const clock = day ? ['-c',`SET ${calendar ? 'test.calendar_day' : 'test.requested_day'}='${day}'`] : [];
       const result = execFileSync(psql,[...args,...clock,'-f',path.join(dir,name)],{encoding:'utf8',stdio:['pipe','pipe','pipe']});
       console.log(`PASS ${name}${day ? ' '+day : ''} (${result.trim().split('\n').at(-1)})`);
     }

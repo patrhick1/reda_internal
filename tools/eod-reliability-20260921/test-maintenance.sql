@@ -20,8 +20,8 @@ DO $$ DECLARE r uuid; p jsonb; before_count int; target date:=reda_maintenance.b
  UPDATE deliveries SET raw_address='TEST changed since preview' WHERE id=md5('eod-test-order-7')::uuid;
  PERFORM reda_maintenance.dispatch();
  PERFORM reda_maintenance.work();
- PERFORM pg_temp.assert((SELECT current_status='pending' AND assigned_agent_id IS NULL AND scheduled_date=target AND rollover_count=1
-  FROM deliveries WHERE id=md5('eod-test-order-1')::uuid),'release keeps date and carry');
+ PERFORM pg_temp.assert((SELECT current_status='pending' AND assigned_agent_id IS NULL AND scheduled_date=public._ensure_workday(target) AND rollover_count=1
+  FROM deliveries WHERE id=md5('eod-test-order-1')::uuid),'release targets a workday and preserves carry');
  PERFORM pg_temp.assert((SELECT current_status='postponed' FROM deliveries WHERE id=md5('eod-test-order-7')::uuid),'changed preview skipped');
  PERFORM pg_temp.assert((SELECT current_status='pending' FROM deliveries WHERE id=md5('eod-test-order-9')::uuid),'legacy hold does not exclude an order');
  PERFORM pg_temp.assert(EXISTS(SELECT 1 FROM reda_maintenance.work WHERE status='changed'),'changed outcome visible');
@@ -38,7 +38,7 @@ DO $$ DECLARE r uuid; p jsonb; before_count int; target date:=reda_maintenance.b
  PERFORM pg_temp.assert((SELECT current_status='unserious' FROM deliveries WHERE id=md5('eod-test-order-3')::uuid),'legitimate carry cap');
  PERFORM pg_temp.assert((SELECT current_status='deferred_to_client' FROM deliveries WHERE id=md5('eod-test-order-4')::uuid),'followup closure');
  PERFORM pg_temp.assert((SELECT current_status='unserious' FROM deliveries WHERE id=md5('eod-test-order-5')::uuid),'disinterest closure');
- PERFORM pg_temp.assert((SELECT current_status='pending' FROM deliveries WHERE id=md5('eod-test-order-8')::uuid),'today work never closed');
+ PERFORM pg_temp.assert((SELECT current_status='pending' FROM deliveries WHERE id=md5('eod-test-order-8')::uuid),'current or future work never closed');
  PERFORM pg_temp.assert(NOT EXISTS(SELECT 1 FROM stock_adjustments),'maintenance does not debit stock');
  PERFORM pg_temp.assert(auth.uid()='2d8d5895-d2a8-4900-b15e-7662b176a805','caller context restored');
  PERFORM reda_maintenance.monitor();

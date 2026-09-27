@@ -6,6 +6,20 @@ DO $$ BEGIN
       OR (inet_server_addr()<<'172.16.0.0/12'::inet AND inet_server_port()=5432)) THEN
     RAISE EXCEPTION 'Isolated EOD database required'; END IF;
 END $$;
+-- Calendar matrix runs change only the default clock arguments, inside this
+-- rollback-only fixture. Explicit timestamps still exercise the real functions.
+DO $$ DECLARE day text:=nullif(current_setting('test.calendar_day',true),''); fn text; def text; BEGIN
+ IF day IS NOT NULL THEN
+  FOREACH fn IN ARRAY ARRAY['business_day','close_through','release_through'] LOOP
+   def:=pg_get_functiondef(('reda_maintenance.'||fn||'(timestamptz)')::regprocedure);
+   IF position('DEFAULT now()' in def)=0 THEN RAISE EXCEPTION 'Unexpected clock default: %',fn; END IF;
+   EXECUTE replace(def,'DEFAULT now()',format('DEFAULT %L::timestamptz',day::date::text||' 12:00:00+01'));
+  END LOOP;
+ END IF;
+END $$;
+CREATE FUNCTION pg_temp.workday_on_or_before(day date) RETURNS date LANGUAGE sql IMMUTABLE AS $$
+ SELECT day-CASE WHEN extract(isodow FROM day)=7 THEN 1 ELSE 0 END
+$$;
 INSERT INTO auth.users(id,email) VALUES
  ('2d8d5895-d2a8-4900-b15e-7662b176a805','system@reda.local'),
  (md5('eod-test-agent')::uuid,'agent@eod.example.invalid');
@@ -23,7 +37,10 @@ INSERT INTO public.deliveries(id,client_id,product_catalog_id,customer_name,cust
  current_status,rollover_count,created_by_user_id)
 SELECT md5('eod-test-order-'||n)::uuid,md5('eod-test-client')::uuid,md5('eod-test-product')::uuid,
  'TEST recipient '||n,'080000000'||lpad(n::text,2,'0'),'TEST address '||n,1,10000,3000,4000,
- md5('eod-test-agent')::uuid,(now() AT TIME ZONE 'Africa/Lagos')::date-CASE WHEN n IN(1,7,8,9) THEN 0 ELSE 2 END,
+ -- Due postponements and historical orders must remain due even when their
+ -- nominal date is Sunday. Order 8 intentionally stays current/future work.
+ md5('eod-test-agent')::uuid,CASE WHEN n=8 THEN reda_maintenance.business_day()
+  ELSE pg_temp.workday_on_or_before(reda_maintenance.business_day()-CASE WHEN n IN(1,7,9) THEN 0 ELSE 2 END) END,
  CASE WHEN n IN(1,7,9) THEN 'postponed' WHEN n=3 THEN 'not_answering' WHEN n=4 THEN 'follow_up'
    WHEN n=5 THEN 'not_available' ELSE 'pending' END,
  CASE WHEN n IN(1,3) THEN 1 ELSE 0 END,'2d8d5895-d2a8-4900-b15e-7662b176a805'
