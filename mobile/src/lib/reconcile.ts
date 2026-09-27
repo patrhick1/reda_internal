@@ -75,10 +75,10 @@ export type ShareDeliveryLine = {
   cashPosFee?: number | null;
   /** What the customer actually paid (= paid). Used by the default format's
    *  payment note when it differs from the original total, and rendered as its
-   *  own line by the paidAndFee format. */
+   *  own line by the paidAndFee and paidFeeAndRemit formats. */
   paid?: number | null;
-  /** [paidAndFee format] Reda's per-delivery delivery fee (= reda_fee / charged
-   *  snapshot). Admin-only, same as `paid`. */
+  /** Reda's per-delivery delivery fee (= reda_fee / charged snapshot).
+   *  Released to reps only for clients with an explicit fee share format. */
   redaFee?: number | null;
   /** customer_price − paid. Non-zero means the share Note should state the
    *  actual amount paid. Null when paid was never recorded — no claim is made. */
@@ -249,17 +249,17 @@ export function buildMoniepointPayoutCsv(rows: MoniepointPayoutRow[]): string {
 // because it pulls in the SheetJS workbook writer, which this pure helper file
 // (also used by the rep screens) should not carry.
 
-export type ClientShareFormat = 'default' | 'paidAndFee';
+export type ClientShareFormat = 'default' | 'paidAndFee' | 'paidFeeAndRemit';
 
-// Per-client override for the "Share with client" report format. Only Karami
-// wants the per-delivery "Customer paid" + "Delivery fee" breakdown today; every
-// other client uses the default net-remit layout. Keyed by client id (stable
-// across renames). 'paidAndFee' reveals Reda's delivery fee, so the rep RPC
+// Per-client override for the "Share with client" report format. Karami shows
+// customer payment and delivery fee; Decency also shows the net remit.
+// Keyed by client id (stable across renames). Both formats reveal Reda's fee, so the rep RPC
 // returns that fee only for clients mapped here. To add a client, update this
 // map and the matching server-side allow-list (flip both to a clients column if
 // this list ever grows).
 const CLIENT_SHARE_FORMAT: Record<string, ClientShareFormat> = {
   '2acf7d84-3a5c-4532-b47c-568b7f4928f3': 'paidAndFee', // Karami
+  '88398fcc-d4f7-4b5b-a16e-53ce5c463cf3': 'paidFeeAndRemit', // Decency Stores
 };
 
 /** The share-message format for a client (default when unmapped). */
@@ -297,8 +297,8 @@ export function buildClientShareMessage(input: {
   singleDay?: boolean;
   rows: ShareDeliveryLine[];
   /** Per-delivery layout. 'default' shows the net "To Remit"; 'paidAndFee' shows
-   *  "Customer paid" + "Delivery fee" (Karami). Admin-only — see
-   *  ShareDeliveryLine.paid. Defaults to 'default'. */
+   *  "Customer paid" + "Delivery fee" (Karami); 'paidFeeAndRemit' adds
+   *  "To remit" (Decency). Defaults to 'default'. */
   format?: ClientShareFormat;
   /** When true, add a "Phone: …" line under each customer's Name (clients who
    *  reconcile against their own records by phone — e.g. Afaking). Composes with
@@ -344,7 +344,13 @@ export function buildClientShareMessage(input: {
     const lines = [`Name: ${r.customerName ?? 'Customer'}`];
     if (showPhone && r.customerPhone?.trim()) lines.push(`Phone: ${r.customerPhone.trim()}`);
     lines.push(...shareProductLines(r.products));
-    if (format === 'paidAndFee') {
+    if (format === 'paidFeeAndRemit') {
+      lines.push(
+        `Customer paid: ${formatNaira(Number(r.paid ?? 0))}`,
+        `Delivery fee: ${formatNaira(Number(r.redaFee ?? 0))}`,
+        `To remit: ${formatNaira(Number(r.remit ?? 0))}`,
+      );
+    } else if (format === 'paidAndFee') {
       // Karami's format: show what the customer paid and Reda's delivery fee
       // instead of the net remit. The cash POS fee (when any) is listed too so
       // paid − fee − POS reconciles to the same total the footer shows.
