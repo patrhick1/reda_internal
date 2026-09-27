@@ -3,7 +3,7 @@
 CREATE FUNCTION pg_temp.assert(ok boolean,message text) RETURNS void LANGUAGE plpgsql AS $$
  BEGIN IF ok IS DISTINCT FROM true THEN RAISE EXCEPTION 'FAIL: %',message; END IF; END $$;
 UPDATE reda_maintenance.settings SET enabled=true,activated_at=now(),reconciled_day=reda_maintenance.business_day(),batch_size=1;
-UPDATE deliveries SET customer_phone='08111111111',raw_address='TEST same doorstep',scheduled_date=reda_maintenance.business_day(),current_status='postponed'
+UPDATE deliveries SET customer_phone='08111111111',raw_address='TEST same doorstep',scheduled_date=pg_temp.workday_on_or_before(reda_maintenance.business_day()),current_status='postponed'
  WHERE id IN(md5('eod-test-order-1')::uuid,md5('eod-test-order-7')::uuid,md5('eod-test-order-9')::uuid);
 UPDATE deliveries SET order_type='replacement',current_status='postponed' WHERE id=md5('eod-test-order-8')::uuid;
 INSERT INTO reda_maintenance.holds(delivery_id,expected_updated_at,reason)
@@ -33,7 +33,7 @@ SELECT set_config('request.jwt.claim.sub','2d8d5895-d2a8-4900-b15e-7662b176a805'
 DO $$ DECLARE d public.deliveries%rowtype; r uuid; BEGIN
  -- Policy clients close rather than being released for their requested date.
  UPDATE clients SET auto_cancel_soft_fails=true WHERE id=md5('eod-test-client')::uuid;
- UPDATE deliveries SET current_status='postponed',scheduled_date=reda_maintenance.business_day()
+ UPDATE deliveries SET current_status='postponed',scheduled_date=pg_temp.workday_on_or_before(reda_maintenance.business_day())
   WHERE id=md5('eod-test-order-6')::uuid;
  r:=reda_maintenance.enqueue('release',reda_maintenance.business_day());
  PERFORM reda_maintenance.dispatch(); PERFORM reda_maintenance.work();

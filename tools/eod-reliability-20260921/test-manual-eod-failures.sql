@@ -38,7 +38,13 @@ CREATE FUNCTION pg_temp.assert(ok boolean,message text) RETURNS void LANGUAGE pl
 BEGIN IF ok IS DISTINCT FROM true THEN RAISE EXCEPTION 'FAIL: %',message; END IF; END $$;
 UPDATE reda_maintenance.settings SET enabled=true,activated_at=now(),reconciled_day=reda_maintenance.business_day();
 DO $$ DECLARE p jsonb; r uuid; v_id uuid:=md5('eod-test-order-2')::uuid; old_agent uuid; n int; BEGIN
- UPDATE deliveries SET scheduled_date=public._ensure_workday(reda_maintenance.business_day()) WHERE id=v_id;
+ -- Keep the reviewed order due on Sunday rather than moving it to Monday.
+ UPDATE deliveries SET scheduled_date=pg_temp.workday_on_or_before(reda_maintenance.business_day()) WHERE id=v_id;
+ -- Exercise the approved manual snapshot only. On Sunday its due order is
+ -- Saturday work, which the independent automatic close could also process.
+ INSERT INTO reda_maintenance.runs(kind,business_date,status)
+ VALUES('release',reda_maintenance.release_through(),'succeeded'),('close',reda_maintenance.close_through(),'succeeded')
+ ON CONFLICT DO NOTHING;
  p:=public.prepare_manual_eod();
  PERFORM pg_temp.assert(jsonb_array_length(public.manual_eod_preview_page((p->>'preview_id')::uuid,0,2))=2,'saved preview paging');
  UPDATE deliveries SET current_status='available' WHERE id=v_id;
