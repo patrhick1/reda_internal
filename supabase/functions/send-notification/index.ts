@@ -22,6 +22,7 @@
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { denyIfNotInternal } from '../_shared/internal-auth.ts';
 import { submitPushBatch } from '../_shared/push-batch.ts';
+import { notificationPresentation } from '../_shared/notification-policy.ts';
 
 // [Feature A] Shared multi-product helpers for notification composition.
 type NotifLine = { product_catalog_id: string; name: string; qty: number };
@@ -117,9 +118,7 @@ Deno.serve(async (req) => {
     title,
     body: text,
     data,
-    sound: 'default',
-    priority: 'high',
-    channelId: 'default',
+    ...notificationPresentation(data),
   }));
 
   const chunks = chunk(messages, 100);

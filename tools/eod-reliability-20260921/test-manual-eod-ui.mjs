@@ -46,6 +46,12 @@ await page.route('**/*', async route => {
   if (rpc === 'prepare_manual_eod') { assert.deepEqual(body,{p_for_date:today}); data=preview; }
   if (rpc === 'manual_eod_preview_page') { assert.equal(body.p_offset,100); data=[{...preview.rows[0],id:'row-last',customer_name:'TEST carry limit',carry:1,action:'cap_unserious',target_date:null}]; }
   if (rpc === 'request_manual_eod') { assert.equal(body.p_preview_id,preview.preview_id); submitted=true; data='run-test'; }
+  if (rpc === 'advance_manual_eod') {
+    assert.equal(body.p_preview_id,preview.preview_id);
+    // Exercise fallback after a lost execution response as well as lost status.
+    if (!completed && !statusOverride) return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({message:'TEST execution response lost'})});
+    data={...(statusOverride??{complete:completed,needs_attention:false,target_date:target,outcomes:{rolled:100,capped:1},problems:[]}),processed_groups:1,retry_after_ms:0};
+  }
   if (rpc === 'manual_eod_status') {
     assert.equal(body.p_preview_id,preview.preview_id);
     if (!statusInterrupted) { statusInterrupted=true; return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({message:'TEST temporary connection failure'})}); }
@@ -61,13 +67,20 @@ try {
   await page.goto('http://127.0.0.1:55453/(admin)/eod');
   await page.getByText('Roll forward · 100',{exact:true}).waitFor();
   assert.equal(await page.getByText('Recent runs',{exact:true}).count(),0);
-  page.once('dialog', async dialog => { await dialog.dismiss(); });
   await page.getByRole('button',{name:'Run end of day',exact:true}).click();
+  const confirmation = page.getByRole('alertdialog',{name:'Run end of day?',exact:true});
+  await confirmation.getByRole('button',{name:'Cancel',exact:true}).click();
+  await confirmation.waitFor({state:'hidden'});
   assert(!submitted,'Cancelling does not start work');
+  assert.equal(calls.filter(c=>c.rpc==='request_manual_eod'||c.rpc==='advance_manual_eod').length,0,'Cancel sends no work request');
   await page.getByRole('button',{name:'Show more orders',exact:true}).click();
   await page.getByText('TEST carry limit',{exact:true}).waitFor();
-  page.once('dialog', async dialog => { assert(dialog.message().includes('all 101 orders')); assert(dialog.message().includes(target)); await dialog.accept(); });
   await page.getByRole('button',{name:'Run end of day',exact:true}).click();
+  await confirmation.waitFor();
+  const confirmationText = await confirmation.innerText();
+  assert(confirmationText.includes('all 101 orders'));
+  assert(confirmationText.includes(target));
+  await confirmation.getByRole('button',{name:'Run end of day',exact:true}).click();
   await page.getByText('Working…',{exact:true}).waitFor();
   await page.getByText('Waiting for a connection to confirm the result. You do not need to run it again.',{exact:true}).waitFor();
   await page.reload();
@@ -83,6 +96,9 @@ try {
   await page.getByRole('button',{name:'Assign 1 selected',exact:true}).click();
   await page.getByText(`Assignment keeps each order’s scheduled date. 1 for ${target}`,{exact:true}).waitFor();
   await page.getByText('TEST Agent',{exact:true}).click();
+  const assignmentNotice = page.getByRole('alertdialog',{name:'Done',exact:true});
+  await assignmentNotice.getByRole('button',{name:'OK',exact:true}).click();
+  await assignmentNotice.waitFor({state:'hidden'});
   await page.getByRole('button',{name:'Show all Unassigned',exact:true}).click();
   await page.getByText('TEST earlier recipient',{exact:true}).waitFor();
   for (const tab of ['By client','By agent','Summary']) {
@@ -97,13 +113,14 @@ try {
   await page.getByText('Close out · 1',{exact:true}).waitFor();
   await page.screenshot({path:path.join(dist,`eod-simple-${page.viewportSize().width}.png`),fullPage:true});
   statusOverride={complete:true,needs_attention:true,target_date:target,outcomes:{rolled:2},problems:[{id:'row-last',customer_name:'TEST changed order',message:'This order changed while end of day was running. Check it before trying again.'}]};
-  page.once('dialog', async dialog => dialog.accept());
   await page.getByRole('button',{name:'Run end of day',exact:true}).click();
+  await confirmation.getByRole('button',{name:'Run end of day',exact:true}).click();
   await page.getByText('TEST changed order',{exact:true}).waitFor();
   assert.equal(await page.getByText(/End of day complete/).count(),0,'Partial failure is not success');
   await page.getByRole('button',{name:'Check remaining orders',exact:true}).click();
   await page.getByRole('button',{name:'Run end of day',exact:true}).waitFor();
   assert(assigned,'Assignment action reached guarded RPC');
+  assert(calls.some(c=>c.rpc==='advance_manual_eod'),'Confirmed work starts immediately');
   assert(!calls.some(c=>c.rpc==='run_eod_rollover_all_stuck'),'All updated entrypoints use reviewed manual flow');
   assert.deepEqual(errors,[],'No UI runtime errors');
   console.log('PASS actual exported UI: early manual preview, pagination, explicit confirmation, wait for completion, prepared-date list, guarded assignment, normal all-date queue, all 3 Reconciliation entrypoints');

@@ -98,8 +98,16 @@ try {
   assert.equal(await page.getByText('Known rider earnings',{exact:true}).count(),0);
   assert.equal(await page.getByRole('button',{name:'Change rider fee',exact:true}).count(),0,'Approved waiver needs no review');
   await page.screenshot({path:path.join(dist,`reconcile-simple-${page.viewportSize().width}.png`),fullPage:true});
-  page.once('dialog',async d=>{assert(d.message().includes(money(expectedRemit)));await d.accept();});
-  await Promise.all([page.waitForResponse(r=>r.url().endsWith('/settle_period')),page.getByRole('button',{name:'Mark handed over',exact:true}).click()]);
+  await page.getByRole('button',{name:'Mark handed over',exact:true}).click();
+  const handoverConfirmation=page.getByRole('alertdialog',{name:'Confirm handover',exact:true});
+  await handoverConfirmation.waitFor();
+  assert((await handoverConfirmation.innerText()).includes(money(expectedRemit)));
+  await handoverConfirmation.getByRole('button',{name:'Cancel',exact:true}).click();
+  await handoverConfirmation.waitFor({state:'hidden'});
+  assert(!handedOver,'Cancel does not record a handover');
+  assert.equal(calls.filter(c=>c.rpc==='settle_period').length,0,'Cancel sends no settlement request');
+  await page.getByRole('button',{name:'Mark handed over',exact:true}).click();
+  await Promise.all([page.waitForResponse(r=>r.url().endsWith('/settle_period')),handoverConfirmation.getByRole('button',{name:'Confirm received',exact:true}).click()]);
   assert(handedOver); assert.deepEqual(errors,[]);
   console.log(`PASS exported UI (${edge||'waiver'}): issue in Outstanding, direct rider fee edit, client charge preserved or explicitly entered if missing, actual pay prefill, unchanged fee confirmation, stale-save recovery, exact handover.`);
 } catch(e) {

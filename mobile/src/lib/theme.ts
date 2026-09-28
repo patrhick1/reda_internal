@@ -2,6 +2,10 @@
 // single source of truth; never inline hex colors or font names in screens.
 
 import { formatYmdShort } from './format';
+import {
+  CLIENT_POLICY_CLOSURE_EXPLANATION,
+  isClientPolicyClosure,
+} from './delivery-status-display';
 
 export const colors = {
   red: '#E63027',
@@ -177,6 +181,7 @@ export function historyReasonLine(
   reason: string | null,
   scheduledDate?: string | null,
 ): string | null {
+  if (isClientPolicyClosure(toStatus, reason)) return CLIENT_POLICY_CLOSURE_EXPLANATION;
   const trimmed = reason?.trim();
   if (trimmed && !ISSUE_BUCKET_REASONS.has(trimmed)) return trimmed;
   const phrase = STATUS_CLIENT_PHRASE[toStatus] ?? null;

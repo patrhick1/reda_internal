@@ -5,6 +5,7 @@ import * as Notifications from 'expo-notifications';
 import type { Role } from '@/lib/permissions';
 import { getCall } from '@/services/calls';
 import * as callCoord from '@/lib/calls/coordinator';
+import { blockedOrdersRoute } from '@/lib/blacklist-notices';
 
 /**
  * One-time setup for receiving push notifications.
@@ -18,13 +19,17 @@ import * as callCoord from '@/lib/calls/coordinator';
  * Safe to call multiple times — the underlying APIs are idempotent.
  */
 export async function configureNotifications(): Promise<void> {
+  if (Platform.OS === 'web') return;
   Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowBanner: true,
-      shouldShowList: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-    }),
+    handleNotification: async (notification) => {
+      const quiet = notification.request.content.data?.kind === 'blacklist_blocked';
+      return {
+        shouldShowBanner: !quiet,
+        shouldShowList: true,
+        shouldPlaySound: !quiet,
+        shouldSetBadge: false,
+      };
+    },
   });
 
   if (Platform.OS === 'android') {
@@ -36,6 +41,13 @@ export async function configureNotifications(): Promise<void> {
         lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
         lightColor: '#E63027',
         sound: 'default',
+      });
+      await Notifications.setNotificationChannelAsync('blocked-orders', {
+        name: 'Blocked orders',
+        importance: Notifications.AndroidImportance.DEFAULT,
+        sound: null,
+        enableVibrate: false,
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PRIVATE,
       });
     } catch (e) {
       console.warn('android notification channel setup failed', e);
@@ -92,6 +104,7 @@ function pathForRoute(role: Role, data: Record<string, unknown>): `/${string}` |
   if (typeof r !== 'string') return null;
   switch (r) {
     case 'review':
+      if (data.tab === 'blocked') return blockedOrdersRoute(role, data.inbound_id);
       // Admins use /(admin)/needs-review; dispatchers and reps have their own list.
       if (role === 'admin') return '/(admin)/needs-review';
       if (role === 'dispatcher') return '/(dispatcher)/review';

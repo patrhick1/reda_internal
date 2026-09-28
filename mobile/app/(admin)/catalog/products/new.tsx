@@ -1,14 +1,7 @@
 import { useMemo, useState } from 'react';
 import { router } from 'expo-router';
-import {
-  ActivityIndicator,
-  Alert,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert } from '@/lib/alert';
 import { Screen } from '@/components/Screen';
 import { Field } from '@/components/Field';
 import { Button } from '@/components/Button';
@@ -144,11 +137,7 @@ export default function NewProducts() {
         setSubmitting(false);
         return;
       }
-      if (Platform.OS === 'web') {
-        if (typeof window !== 'undefined') window.alert(msg);
-      } else {
-        Alert.alert('Done', msg);
-      }
+      Alert.alert('Done', msg);
       router.back();
     } catch (e) {
       setError(errorMessage(e));

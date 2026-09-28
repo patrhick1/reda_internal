@@ -1,7 +1,7 @@
+import { errorMessage } from '@/lib/errors';
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Linking,
   Platform,
   ScrollView,
@@ -9,7 +9,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { initiateTeamCall } from '@/services/calls';
+import { Alert } from '@/lib/alert';
+import { initiateTeamCall } from '@/lib/calls/session';
 import { ensureMicPermission } from '@/lib/calls/permissions';
 import { canPlaceCall } from '@/lib/calls/availability';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -696,7 +697,7 @@ export default function AgentDeliveryDetail() {
               const call = await initiateTeamCall({ relatedDeliveryId: d.id });
               router.push(`/call/${call.id}`);
             } catch (err) {
-              const msg = err instanceof Error ? err.message : String(err);
+              const msg = errorMessage(err);
               if (msg.includes('ringing call')) {
                 Alert.alert(
                   'Already on a call',

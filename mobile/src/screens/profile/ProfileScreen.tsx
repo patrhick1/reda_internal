@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Linking,
   Pressable,
   ScrollView,
@@ -9,6 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { Alert } from '@/lib/alert';
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
 import { useRouter } from 'expo-router';

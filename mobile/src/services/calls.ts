@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { rpcUntyped, supabase } from '@/lib/supabase';
 import { newClientUuid } from '@/lib/uuid';
 import { getOrCreateDeviceUuid } from '@/lib/calls/deviceUuid';
 import type { Role } from '@/lib/permissions';
@@ -54,7 +54,18 @@ export type CallableUser = {
 
 function firstRow(data: unknown): Call | null {
   if (!data) return null;
-  return (Array.isArray(data) ? data[0] : data) as Call;
+  const row = (Array.isArray(data) ? data[0] : data) as Call | null;
+  return row?.id ? row : null;
+}
+
+/** Reconcile on app start/foreground. The server enforces device ownership. */
+export async function getActiveCall(): Promise<Call | null> {
+  const deviceUuid = await getOrCreateDeviceUuid();
+  const { data, error } = await rpcUntyped<Call>('get_my_active_call', {
+    p_device_uuid: deviceUuid,
+  });
+  if (error) throw error;
+  return firstRow(data);
 }
 
 export async function initiateCall(opts: {

@@ -22,6 +22,8 @@ export type UseEditLock = {
    *  consumers can call it explicitly right after a successful save / discard
    *  to avoid the brief window between save and unmount. */
   release: () => Promise<void>;
+  /** Stop local upkeep when the save RPC already released the server lock. */
+  markReleased: () => void;
 };
 
 /** Acquires an edit lock for the given entity on mount, heartbeats every
@@ -33,13 +35,20 @@ export type UseEditLock = {
 export function useEditLock(entityType: EditLockEntity, entityId: string | null): UseEditLock {
   const [state, setState] = useState<EditLockState>({ kind: 'loading' });
   const mountedRef = useRef(true);
+  const releasedRef = useRef(false);
+  const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const markReleased = useCallback(() => {
+    releasedRef.current = true;
+    if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+    heartbeatRef.current = null;
+  }, []);
 
   const tryAcquire = useCallback(
     async (takeover: boolean) => {
       if (!entityId) return;
       try {
         const r = await acquireEditLock(entityType, entityId, takeover);
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || releasedRef.current) return;
         if (r.isSelf) {
           setState({ kind: 'held' });
         } else {
@@ -61,6 +70,7 @@ export function useEditLock(entityType: EditLockEntity, entityId: string | null)
   // Acquire on mount / when id changes.
   useEffect(() => {
     mountedRef.current = true;
+    releasedRef.current = false;
     if (!entityId) {
       setState({ kind: 'loading' });
       return;
@@ -71,7 +81,7 @@ export function useEditLock(entityType: EditLockEntity, entityId: string | null)
       mountedRef.current = false;
       // Fire-and-forget; the next acquire after the 5-min TTL doesn't need
       // this release, but it makes the queue feel responsive.
-      if (entityId) {
+      if (entityId && !releasedRef.current) {
         releaseEditLock(entityType, entityId).catch(() => {
           /* swallow */
         });
@@ -81,12 +91,14 @@ export function useEditLock(entityType: EditLockEntity, entityId: string | null)
 
   // Heartbeat while we hold the lock.
   useEffect(() => {
-    if (state.kind !== 'held' || !entityId) return;
+    if (state.kind !== 'held' || !entityId || releasedRef.current) return;
     const tick = setInterval(() => {
+      if (releasedRef.current) return;
       heartbeatEditLock(entityType, entityId).catch((e) => {
         console.warn('heartbeat_edit_lock failed', e);
       });
     }, HEARTBEAT_MS);
+    heartbeatRef.current = tick;
     return () => clearInterval(tick);
   }, [state.kind, entityType, entityId]);
 
@@ -100,5 +112,5 @@ export function useEditLock(entityType: EditLockEntity, entityId: string | null)
     await releaseEditLock(entityType, entityId);
   }, [entityType, entityId]);
 
-  return { state, takeOver, release };
+  return { state, takeOver, release, markReleased };
 }

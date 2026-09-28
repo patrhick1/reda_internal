@@ -717,6 +717,7 @@ function MovementRow({
           style={{
             width: 44,
             height: 44,
+            flexShrink: 0,
             borderRadius: 10,
             backgroundColor: tint,
             alignItems: 'center',
@@ -725,7 +726,7 @@ function MovementRow({
         >
           <Icon name={icon} size={20} color={accent} />
         </View>
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, minWidth: 0 }}>
           <Text
             style={{ fontFamily: fonts.bold, fontSize: 14, color: colors.black }}
             numberOfLines={1}
@@ -736,10 +737,10 @@ function MovementRow({
             style={{
               fontFamily: fonts.medium,
               fontSize: 12,
+              lineHeight: 18,
               color: colors.textSecondary,
               marginTop: 2,
             }}
-            numberOfLines={1}
           >
             {sub}
           </Text>
@@ -757,7 +758,7 @@ function MovementRow({
             </Text>
           ) : null}
         </View>
-        <View style={{ alignItems: 'flex-end' }}>
+        <View style={{ alignItems: 'flex-end', flexShrink: 0 }}>
           <Text
             style={{
               fontFamily: fonts.extrabold,

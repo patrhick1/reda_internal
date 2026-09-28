@@ -1,7 +1,7 @@
+import { errorMessage } from '@/lib/errors';
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Linking,
   Platform,
   ScrollView,
@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Alert } from '@/lib/alert';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
@@ -40,7 +41,7 @@ import {
   rolledFromLabel,
   type DeliveryChainHistoryRow,
 } from '@/services/deliveries';
-import { initiateCall, initiateTeamCall } from '@/services/calls';
+import { initiateCall, initiateTeamCall } from '@/lib/calls/session';
 import { ensureMicPermission } from '@/lib/calls/permissions';
 import { canPlaceCall } from '@/lib/calls/availability';
 import {
@@ -242,7 +243,7 @@ export function DeliveryDetail() {
     try {
       await markClientNotified(historyId);
     } catch (err) {
-      Alert.alert('Could not mark notified', err instanceof Error ? err.message : String(err));
+      Alert.alert('Could not mark notified', errorMessage(err));
     } finally {
       notifQ.reload();
     }
@@ -360,7 +361,7 @@ export function DeliveryDetail() {
         const call = await begin();
         router.push(`/call/${call.id}`);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = errorMessage(err);
         if (msg.includes('ringing call')) {
           Alert.alert('Already on a call', 'You or that person already has a call ringing.');
         } else {
@@ -555,25 +556,6 @@ export function DeliveryDetail() {
         d.order_type === 'delivery' ? (
           <SameCustomerPayReview key={id} deliveryId={id} presentation="alert" />
         ) : null}
-        {status === 'delivered' &&
-        d.order_type === 'delivery' &&
-        (user.role === 'admin' || user.role === 'dispatcher') ? (
-          <Button
-            variant="secondary"
-            icon="refresh"
-            onPress={() =>
-              router.push({
-                pathname:
-                  user.role === 'admin'
-                    ? '/(admin)/replacement-new'
-                    : '/(dispatcher)/replacement-new',
-                params: { originalDeliveryId: d.id! },
-              })
-            }
-          >
-            Create replacement
-          </Button>
-        ) : null}
         {isReplacement && replacementQ.data?.job.original_delivery_id ? (
           <Button
             variant="secondary"
@@ -659,7 +641,13 @@ export function DeliveryDetail() {
                 </View>
               ) : null}
             </View>
-            <StatusPill status={status} />
+            <StatusPill
+              status={status}
+              reason={
+                chainRows.find((row) => row.id === d.latest_history_id && row.to_status === status)
+                  ?.reason
+              }
+            />
           </View>
           <View style={{ marginTop: 14, flexDirection: 'row', gap: 8 }}>
             {/* Customer-call actions — hidden for reps, who coordinate with
@@ -1691,7 +1679,7 @@ function HistoryRow({
       </View>
       <View style={{ flex: 1, paddingBottom: last ? 0 : 16 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <StatusPill status={row.to_status} variant="subtle" size="sm" />
+          <StatusPill status={row.to_status} reason={row.reason} variant="subtle" size="sm" />
           <Text style={{ fontFamily: fonts.mono, fontSize: 12, color: colors.textSecondary }}>
             {formatDateTime(row.effective_at)}
           </Text>

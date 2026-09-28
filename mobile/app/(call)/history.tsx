@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/errors';
 import { useCallback, useEffect, useState } from 'react';
 import {
   View,
@@ -6,19 +7,14 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
-  Alert,
 } from 'react-native';
+import { Alert } from '@/lib/alert';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { AppBar, Avatar, Empty, Icon } from '@/components/ui';
 import { colors, fonts, radii, spacing } from '@/lib/theme';
 import { useAuth } from '@/hooks/useAuth';
-import {
-  listCallHistory,
-  initiateCall,
-  initiateTeamCall,
-  type CallHistoryRow,
-  type CallStatus,
-} from '@/services/calls';
+import { listCallHistory, type CallHistoryRow, type CallStatus } from '@/services/calls';
+import { initiateCall, initiateTeamCall } from '@/lib/calls/session';
 
 const MISSED_STATUSES: CallStatus[] = ['missed', 'declined', 'cancelled'];
 
@@ -39,7 +35,7 @@ export default function CallHistoryScreen() {
       const data = await listCallHistory(userId, 50);
       setRows(data);
     } catch (err) {
-      Alert.alert('Could not load call history', err instanceof Error ? err.message : String(err));
+      Alert.alert('Could not load call history', errorMessage(err));
     } finally {
       setL(false);
       setR(false);
@@ -67,7 +63,7 @@ export default function CallHistoryScreen() {
             });
         router.push(`/call/${call.id}`);
       } catch (err) {
-        Alert.alert('Could not start call', err instanceof Error ? err.message : String(err));
+        Alert.alert('Could not start call', errorMessage(err));
       } finally {
         setCID(null);
       }

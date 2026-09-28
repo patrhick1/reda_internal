@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Platform, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { Alert } from '@/lib/alert';
 import { useAsync } from '@/hooks/useAsync';
 import { listActiveProductsByClient, type Product } from '@/services/products';
 import { useClients, useLocations } from '@/hooks/queries';
@@ -339,9 +340,7 @@ export function DeliveryFieldsForm({
 
   function confirmClientChange(lineCount: number, clientName: string): Promise<boolean> {
     const message = `Changing to ${clientName} will clear ${lineCount} product ${lineCount === 1 ? 'line' : 'lines'}. Continue?`;
-    if (Platform.OS === 'web') {
-      return Promise.resolve(typeof window !== 'undefined' ? window.confirm(message) : false);
-    }
+
     return new Promise((resolve) => {
       Alert.alert(
         'Change client?',

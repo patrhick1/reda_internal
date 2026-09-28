@@ -24,6 +24,8 @@ import * as callCoord from '@/lib/calls/coordinator';
 import { useIncomingCallSubscription } from '@/hooks/useIncomingCallSubscription';
 import { IncomingCallOverlay } from '@/components/IncomingCallOverlay';
 import { AutoUpdateBanner } from '@/components/AutoUpdateBanner';
+import { CallSessionHost } from '@/components/CallSessionHost';
+import { BlacklistNoticeHost } from '@/components/BlacklistNoticeHost';
 
 initSentry();
 configureNotifications();
@@ -166,7 +168,15 @@ function AuthGate() {
 
   return (
     <>
-      <Slot />
+      <View style={{ flex: 1 }}>
+        <View style={{ flex: 1 }}>
+          <Slot />
+        </View>
+        {account.kind === 'active' ? (
+          <BlacklistNoticeHost key={account.userId} userId={account.userId} role={account.role} />
+        ) : null}
+      </View>
+      <CallSessionHost userId={userId} />
       {/* Foreground OTA auto-updater. Self-guards to real native builds
           (Updates.isEnabled) and renders nothing until an update is staged. */}
       <AutoUpdateBanner />

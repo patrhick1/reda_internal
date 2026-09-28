@@ -1,11 +1,12 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
   listBotInbound,
+  getBotInbound,
   requeueFailedInbound,
   type BotInboundRow,
   type InboundStatus,
@@ -42,12 +43,31 @@ const INBOUND_PILL_TONE: Record<InboundStatus, { label: string; bg: string; fg: 
 export function NeedsReviewScreen() {
   const router = useRouter();
   const user = useCurrentUser();
-  const [tab, setTab] = useState<Tab>('needs_review');
+  const params = useLocalSearchParams<{ tab?: string; inboundId?: string }>();
+  const tab: Tab = TABS.find((t) => t.key === params.tab)?.key ?? 'needs_review';
   const status = TABS.find((t) => t.key === tab)!.status;
   const rowsQ = useAsync<BotInboundRow[]>(() => listBotInbound(status, 100), [status]);
+  const selectedQ = useAsync<BotInboundRow | null>(
+    () =>
+      tab === 'blocked' && params.inboundId && /^[0-9a-f-]{36}$/i.test(params.inboundId)
+        ? getBotInbound(params.inboundId)
+        : Promise.resolve(null),
+    [tab, params.inboundId],
+  );
+  // A notification may refer to an older row outside the latest 100 results.
+  const selected =
+    tab === 'blocked' &&
+    selectedQ.data?.id === params.inboundId &&
+    selectedQ.data?.status === 'blocked'
+      ? selectedQ.data
+      : null;
+  const rows = selected
+    ? [selected, ...(rowsQ.data ?? []).filter((r) => r.id !== selected.id)]
+    : (rowsQ.data ?? []);
 
   useReloadOnFocus(() => {
     rowsQ.reload();
+    selectedQ.reload();
   });
 
   const canFix = canResolveReview(user.role);
@@ -67,17 +87,24 @@ export function NeedsReviewScreen() {
   // Re-queue a failed intake for another parse attempt. The server re-fires the
   // parser asynchronously, so refresh the list a couple of seconds later to pick
   // up its new status (created_delivery / needs_review / still error).
-  const handleRetry = useCallback(async (id: string) => {
-    await requeueFailedInbound([id]);
-    setTimeout(() => rowsQ.reload(), 2500);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const reloadRows = rowsQ.reload;
+  const reloadSelected = selectedQ.reload;
+  const handleRetry = useCallback(
+    async (id: string) => {
+      await requeueFailedInbound([id]);
+      setTimeout(() => {
+        reloadRows();
+        reloadSelected();
+      }, 2500);
+    },
+    [reloadRows, reloadSelected],
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <AppBar
         title="Needs review"
-        subtitle={`${(rowsQ.data ?? []).length} ${tab.replace('_', ' ')}`}
+        subtitle={`${rows.length} ${tab.replace('_', ' ')}`}
         helpTopic="review"
       />
 
@@ -96,7 +123,7 @@ export function NeedsReviewScreen() {
           return (
             <Pressable
               key={t.key}
-              onPress={() => setTab(t.key)}
+              onPress={() => router.setParams({ tab: t.key })}
               style={{
                 paddingVertical: 14,
                 borderBottomWidth: 2,
@@ -119,11 +146,12 @@ export function NeedsReviewScreen() {
       </View>
 
       <FlatList
-        data={rowsQ.data ?? []}
+        data={rows}
         keyExtractor={(r) => r.id}
         renderItem={({ item }) => (
           <InboundCard
             row={item}
+            highlighted={tab === 'blocked' && item.id === params.inboundId}
             onNavigate={onRowPress(item) ?? undefined}
             onRetry={
               (item.status === 'error' || item.status === 'blocked') && canFix
@@ -139,7 +167,10 @@ export function NeedsReviewScreen() {
         refreshControl={
           <RefreshControl
             refreshing={rowsQ.loading && !!rowsQ.data}
-            onRefresh={rowsQ.reload}
+            onRefresh={() => {
+              rowsQ.reload();
+              selectedQ.reload();
+            }}
             tintColor={colors.black}
           />
         }
@@ -197,18 +228,23 @@ type ParseResult = {
 
 function InboundCard({
   row,
+  highlighted = false,
   onNavigate,
   onRetry,
   retryLabel,
 }: {
   row: BotInboundRow;
+  highlighted?: boolean;
   onNavigate?: () => void;
   /** Present on error/blocked rows for admins/dispatchers — re-queues this message. */
   onRetry?: () => Promise<void>;
   /** Overrides the retry button's idle label (blocked rows say why to retry). */
   retryLabel?: string;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(highlighted);
+  useEffect(() => {
+    if (highlighted) setExpanded(true);
+  }, [highlighted]);
   const [retrying, setRetrying] = useState(false);
   const [requeued, setRequeued] = useState(false);
   const [retryErr, setRetryErr] = useState<string | null>(null);
@@ -229,6 +265,11 @@ function InboundCard({
 
   return (
     <Card onPress={onNavigate ?? (() => setExpanded((e) => !e))}>
+      {highlighted ? (
+        <Text style={{ fontFamily: fonts.bold, color: colors.warningDark, marginBottom: 8 }}>
+          From notification
+        </Text>
+      ) : null}
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
         <View
           style={{
@@ -279,6 +320,15 @@ function InboundCard({
         <Text style={{ fontFamily: fonts.bold, fontSize: 15, color: colors.black }}>
           {extracted.customer_name}
         </Text>
+      ) : null}
+      {row.status === 'blocked' ? (
+        <View style={{ marginVertical: 8 }}>
+          <Banner tone="warn" title="No delivery created">
+            {[product?.client_name, row.error_text ?? 'Customer number is blacklisted.']
+              .filter(Boolean)
+              .join(' · ')}
+          </Banner>
+        </View>
       ) : null}
       {product?.product_name || extracted.quantity || extracted.customer_price ? (
         <Text

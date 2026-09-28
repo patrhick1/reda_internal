@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  BackHandler,
   View,
   Text,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
   StatusBar as RNStatusBar,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -12,18 +12,8 @@ import { Icon, Avatar } from '@/components/ui';
 import { colors, fonts, radii, spacing } from '@/lib/theme';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/hooks/useAuth';
-import { cancelCall, endCall, fetchAgoraToken, type Call } from '@/services/calls';
-import {
-  joinChannel,
-  leaveChannel,
-  setMuted as agoraSetMuted,
-  setSpeakerOn as agoraSetSpeakerOn,
-  registerEventHandler,
-  unregisterEventHandler,
-  renewToken,
-} from '@/lib/calls/agora';
-import { dismissCall as callkeepDismiss } from '@/lib/calls/callkeep';
-import { useOutgoingCallSubscription } from '@/hooks/useOutgoingCallSubscription';
+import type { Call } from '@/services/calls';
+import { callSession, useCallSession } from '@/lib/calls/session';
 import { canPlaceCall } from '@/lib/calls/availability';
 
 const TERMINAL_STATES = new Set<Call['status']>([
@@ -61,110 +51,65 @@ function CallScreen() {
   const { account } = useAuth();
   const userId = account.kind === 'active' ? account.userId : null;
 
-  const call = useOutgoingCallSubscription(callId ?? null);
+  const session = useCallSession();
+  const call = session.call?.id === callId ? session.call : null;
+  const { muted, speaker, connected: agoraConnected, remoteJoined, reconnecting, ending } = session;
   const [peer, setPeer] = useState<{ id: string; display_name: string } | null>(null);
-  const [muted, setMuted] = useState(false);
-  const [speaker, setSpeaker] = useState(false);
-  const [agoraConnected, setAgoraConnected] = useState(false);
-  const [remoteJoined, setRemoteJoined] = useState(false);
-  const [reconnecting, setReconnecting] = useState(false);
-  const [ending, setEnding] = useState(false);
+  const seenCall = useRef(false);
+  const [checked, setChecked] = useState(false);
+  const currentCallId = call?.id;
+  const callStatus = call?.status;
+  const peerId =
+    call && userId ? (call.caller_id === userId ? call.callee_id : call.caller_id) : null;
 
-  // Joined Agora? Only run once per call_id so a Realtime update doesn't rejoin.
-  const joinedRef = useRef<string | null>(null);
-
-  // Identify the peer (the OTHER party) and fetch their display name once.
-  // For ops_team calls before accept, callee_id is null — the caller is
-  // ringing the whole team; there's no peer yet. Skip the fetch.
   useEffect(() => {
-    if (!call || !userId) return;
-    const peerId = call.caller_id === userId ? call.callee_id : call.caller_id;
+    let mounted = true;
+    setChecked(false);
+    void callSession.refresh().finally(() => {
+      if (mounted) setChecked(true);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [callId]);
+  useEffect(() => {
+    if (!currentCallId || !userId) return;
+    seenCall.current = true;
     if (!peerId) return;
-    if (peer?.id === peerId) return;
+    let cancelled = false;
     supabase
       .from('users')
       .select('id, display_name')
       .eq('id', peerId)
       .maybeSingle()
       .then(({ data }) => {
-        if (data)
-          setPeer({ id: data.id as string, display_name: (data.display_name as string) ?? '' });
+        if (!cancelled && data) setPeer(data);
       });
-  }, [call, userId, peer?.id]);
-
-  // Join Agora once we have a tokenable call. The caller joins during
-  // 'ringing' (Agora supports join-early). The callee already joined inside
-  // the coordinator's answer() flow before navigating here, so we only join
-  // if we're the caller AND not yet joined.
-  const isCaller = call && userId === call.caller_id;
-  useEffect(() => {
-    if (!call) return;
-    if (joinedRef.current === call.id) return;
-    if (!isCaller) {
-      // Callee already joined inside coord.answer() — just mark joined so we
-      // don't re-fetch a token.
-      joinedRef.current = call.id;
-      return;
-    }
-    if (!['ringing', 'accepted'].includes(call.status)) return;
-
-    joinedRef.current = call.id;
-    (async () => {
-      try {
-        const t = await fetchAgoraToken(call.id);
-        joinChannel(t.app_id, t.token, t.channel, t.uid);
-      } catch (err) {
-        console.error('[call] joinChannel failed', err);
-        Alert.alert('Could not connect call', err instanceof Error ? err.message : String(err));
-        await cancelCallSafe(call.id);
-        router.back();
-      }
-    })();
-  }, [call, router, isCaller]);
-
-  // Wire Agora event handlers — token refresh + remote-user state.
-  useEffect(() => {
-    const handler = {
-      onJoinChannelSuccess: () => setAgoraConnected(true),
-      onUserJoined: () => setRemoteJoined(true),
-      onUserOffline: () => setRemoteJoined(false),
-      // Agora's connection state. 4 = Reconnecting (network blip).
-      // 3 = Connected (we're good). Anything else we treat as transient.
-      onConnectionStateChanged: (_conn: unknown, state: number) => {
-        setReconnecting(state === 4);
-        if (state === 3) setAgoraConnected(true);
-      },
-      onTokenPrivilegeWillExpire: async () => {
-        if (!callId) return;
-        try {
-          const t = await fetchAgoraToken(callId);
-          renewToken(t.token);
-        } catch (err) {
-          console.warn('[call] token renew failed', err);
-        }
-      },
-      onError: (err: number, msg: string) => {
-        console.warn('[call] agora error', err, msg);
-      },
-    };
-    registerEventHandler(handler);
     return () => {
-      unregisterEventHandler(handler);
+      cancelled = true;
     };
-  }, [callId]);
+  }, [currentCallId, peerId, userId]);
 
-  // Terminal state: leave Agora, dismiss CallKeep (no-op for caller side),
-  // pop back after a brief delay so the user sees the final label.
+  const minimize = useCallback(() => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/');
+  }, [router]);
+
+  // Back is minimization. The root session keeps audio and server reconciliation alive.
   useEffect(() => {
-    if (!call) return;
-    if (!TERMINAL_STATES.has(call.status)) return;
-    leaveChannel();
-    callkeepDismiss(call.id);
-    const t = setTimeout(() => {
-      router.back();
-    }, 1500);
-    return () => clearTimeout(t);
-  }, [call?.status, router, call]);
+    const back = BackHandler.addEventListener('hardwareBackPress', () => {
+      minimize();
+      return true;
+    });
+    return () => back.remove();
+  }, [minimize]);
+  useEffect(() => {
+    if (callStatus && TERMINAL_STATES.has(callStatus)) {
+      const timer = setTimeout(minimize, 1500);
+      return () => clearTimeout(timer);
+    }
+    if (!callStatus && seenCall.current) minimize();
+  }, [callStatus, minimize]);
 
   // Tick the duration counter once we're accepted.
   const [now, setNow] = useState(Date.now());
@@ -182,43 +127,43 @@ function CallScreen() {
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }, [call?.started_at, now]);
 
-  const onToggleMute = useCallback(() => {
-    const next = !muted;
-    setMuted(next);
-    agoraSetMuted(next);
-  }, [muted]);
-  const onToggleSpeaker = useCallback(() => {
-    const next = !speaker;
-    setSpeaker(next);
-    agoraSetSpeakerOn(next);
-  }, [speaker]);
-
-  const onEnd = useCallback(async () => {
-    if (!call || ending) return;
-    setEnding(true);
-    try {
-      if (call.status === 'ringing' && isCaller) {
-        await cancelCall(call.id);
-      } else if (call.status === 'accepted') {
-        await endCall(call.id);
-      }
-    } catch (err) {
-      console.warn('[call] end failed', err);
-    } finally {
-      leaveChannel();
-      callkeepDismiss(call.id);
-      router.back();
-    }
-  }, [call, ending, isCaller, router]);
+  const onToggleMute = () => callSession.mute();
+  const onToggleSpeaker = () => callSession.speaker();
+  const onEnd = async () => {
+    if (!call || TERMINAL_STATES.has(call.status)) minimize();
+    else await callSession.end();
+  };
 
   if (!callId) return null;
 
-  const status = call?.status ?? 'ringing';
-  const peerName = peer?.display_name ?? '…';
+  const status = call?.status ?? (checked ? 'completed' : 'ringing');
+  const peerName = call?.callee_audience === 'ops_team' ? 'Reda team' : (peer?.display_name ?? '…');
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.black }}>
       <RNStatusBar barStyle="light-content" />
+      <TouchableOpacity
+        accessibilityRole="button"
+        accessibilityLabel="Minimize call"
+        onPress={minimize}
+        style={{ padding: 20, paddingTop: 48 }}
+      >
+        <Text style={{ color: colors.white, fontFamily: fonts.semibold }}>Minimize call</Text>
+      </TouchableOpacity>
+      {session.error ? (
+        <View style={{ padding: 16 }}>
+          <Text accessibilityRole="alert" style={{ color: colors.white }}>
+            {session.error}
+          </Text>
+          <TouchableOpacity
+            accessibilityRole="button"
+            onPress={() => callSession.reconnect()}
+            style={{ paddingVertical: 14 }}
+          >
+            <Text style={{ color: colors.white, fontFamily: fonts.bold }}>Retry connection</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
       <View
         style={{
           flex: 1,
@@ -366,16 +311,5 @@ function statusLabel(status: Call['status'], remoteJoined: boolean, connected: b
       return 'Call ended';
     case 'failed':
       return 'Call failed';
-  }
-}
-
-// Best-effort cancel that doesn't surface errors — used when we already know
-// we want to bail out (e.g. token fetch failed). The row may already be in a
-// terminal state, in which case cancel_call returns 40001; that's fine.
-async function cancelCallSafe(id: string) {
-  try {
-    await cancelCall(id);
-  } catch {
-    /* noop */
   }
 }

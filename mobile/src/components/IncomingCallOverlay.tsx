@@ -1,14 +1,7 @@
 import { useEffect, useState } from 'react';
-import {
-  Modal,
-  View,
-  Text,
-  TouchableOpacity,
-  Vibration,
-  Platform,
-  Alert,
-  Linking,
-} from 'react-native';
+import { Modal, View, Text, TouchableOpacity, Vibration, Platform, Linking } from 'react-native';
+import { Alert } from '@/lib/alert';
+import { errorMessage } from '@/lib/errors';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Avatar, Icon } from '@/components/ui';
 import { colors, fonts, radii, spacing } from '@/lib/theme';
@@ -96,8 +89,9 @@ export function IncomingCallOverlay() {
     }
     try {
       await coord.answer(callId);
-    } catch {
+    } catch (error) {
       setBusy(null);
+      Alert.alert('Could not answer call', errorMessage(error));
     }
   };
 

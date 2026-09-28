@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { router } from 'expo-router';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from 'react-native';
+import { Alert } from '@/lib/alert';
 import { useCurrentUser } from '@/hooks/useAuth';
 import {
   createDelivery,
@@ -15,6 +16,7 @@ import { formatNaira } from '@/lib/format';
 import { AppBar, Banner, Button } from '@/components/ui';
 import { colors, fonts, STATUS_META } from '@/lib/theme';
 import { errorMessage } from '@/lib/errors';
+import { blacklistCreationError } from '@/lib/blacklist-notices';
 import {
   DeliveryFieldsForm,
   MissingFieldsBanner,
@@ -40,13 +42,8 @@ function lagosHour(): number {
 }
 
 /** Cross-platform yes/no prompt. Resolves true when the admin confirms,
- *  false on cancel / dismiss. On web we fall back to window.confirm
- *  because RN's Alert.alert is a no-op there. */
+ *  false on cancel / dismiss, with the shared alert on every platform. */
 function confirmAsync(title: string, message: string, confirmLabel: string): Promise<boolean> {
-  if (Platform.OS === 'web') {
-    const ok = typeof window !== 'undefined' ? window.confirm(`${title}\n\n${message}`) : false;
-    return Promise.resolve(ok);
-  }
   return new Promise((resolve) => {
     Alert.alert(
       title,
@@ -78,9 +75,16 @@ export function NewDelivery() {
   const [validation, setValidation] = useState<FormValidation>({ isValid: false, missing: [] });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  useEffect(() => {
+    if (!error) return;
+    const frame = requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
+    return () => cancelAnimationFrame(frame);
+  }, [error]);
   const clientUuidRef = useRef<string>(newClientUuid());
 
   const handleFormChange = useCallback((s: DeliveryFormState, v: FormValidation) => {
+    setError(null);
     setState(s);
     setValidation(v);
   }, []);
@@ -196,7 +200,7 @@ export function NewDelivery() {
       });
       router.back();
     } catch (e) {
-      setError(errorMessage(e));
+      setError(blacklistCreationError(e) ?? errorMessage(e));
       setSubmitting(false);
     }
   }
@@ -213,6 +217,7 @@ export function NewDelivery() {
         helpTopic="new-delivery"
       />
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={{ padding: 16, paddingBottom: 32, gap: 16 }}
         keyboardShouldPersistTaps="handled"
       >
@@ -285,9 +290,11 @@ export function NewDelivery() {
         ) : null}
 
         {error ? (
-          <Banner tone="error" icon="alert">
-            {error}
-          </Banner>
+          <View accessibilityLiveRegion="polite" accessibilityRole="alert">
+            <Banner tone="error" icon="alert">
+              {error}
+            </Banner>
+          </View>
         ) : null}
 
         {!isValid ? <MissingFieldsBanner missing={validation.missing} /> : null}

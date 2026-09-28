@@ -1,14 +1,16 @@
 import React from 'react';
 import { Text, View } from 'react-native';
 import { colors, fonts, STATUS_META, TONE_PALETTE } from '@/lib/theme';
+import { isClientPolicyClosure } from '@/lib/delivery-status-display';
 
 export type StatusPillProps = {
   status: string;
+  reason?: string | null;
   variant?: 'filled' | 'subtle';
   size?: 'sm' | 'md';
 };
 
-export function StatusPill({ status, variant = 'filled', size = 'md' }: StatusPillProps) {
+export function StatusPill({ status, reason, variant = 'filled', size = 'md' }: StatusPillProps) {
   const meta = STATUS_META[status] ?? { label: status, tone: 'gray' as const, desc: '' };
   const tone = TONE_PALETTE[meta.tone];
   const subtle = variant === 'subtle';
@@ -43,7 +45,7 @@ export function StatusPill({ status, variant = 'filled', size = 'md' }: StatusPi
           lineHeight: sm ? 14 : 16,
         }}
       >
-        {meta.label}
+        {isClientPolicyClosure(status, reason) ? 'Closed' : meta.label}
       </Text>
     </View>
   );

@@ -1,20 +1,20 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Modal,
-  Platform,
   Pressable,
   RefreshControl,
   Text,
   View,
 } from 'react-native';
+import { Alert } from '@/lib/alert';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
 import { useCurrentUser } from '@/hooks/useAuth';
+import { matchesDeliverySearch } from '@/lib/delivery-search';
 import {
   useSameCustomerBadges,
   useSameCustomerConfig,
@@ -453,11 +453,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
       postponedQ.reload();
       unassignedQ.reload();
       const msg = `Assigned ${updated} ${updated === 1 ? 'delivery' : 'deliveries'}.`;
-      if (Platform.OS === 'web') {
-        if (typeof window !== 'undefined') window.alert(msg);
-      } else {
-        Alert.alert('Done', msg);
-      }
+      Alert.alert('Done', msg);
     },
     [exitSelect, reload, postponedQ, unassignedQ],
   );
@@ -479,11 +475,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
           : null,
       ].filter(Boolean);
       const msg = parts.join('\n');
-      if (Platform.OS === 'web') {
-        if (typeof window !== 'undefined') window.alert(msg);
-      } else {
-        Alert.alert('Back in the queue', msg);
-      }
+      Alert.alert('Back in the queue', msg);
     },
     [exitSelect, reload, postponedQ, unassignedQ],
   );
@@ -499,11 +491,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         counts.skippedCount > 0
           ? `Changed ${counts.changedCount}, skipped ${counts.skippedCount}.`
           : `Changed ${counts.changedCount}.`;
-      if (Platform.OS === 'web') {
-        if (typeof window !== 'undefined') window.alert(msg);
-      } else {
-        Alert.alert('Done', msg);
-      }
+      Alert.alert('Done', msg);
     },
     [exitSelect, reload, postponedQ, unassignedQ],
   );
@@ -519,11 +507,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
         counts.skippedCount > 0
           ? `Deleted ${counts.deletedCount}, skipped ${counts.skippedCount}.`
           : `Deleted ${counts.deletedCount}.`;
-      if (Platform.OS === 'web') {
-        if (typeof window !== 'undefined') window.alert(msg);
-      } else {
-        Alert.alert('Done', msg);
-      }
+      Alert.alert('Done', msg);
     },
     [exitSelect, reload, postponedQ, unassignedQ],
   );
@@ -539,11 +523,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
       if (counts.alreadyTagged > 0) parts.push(`${counts.alreadyTagged} already done`);
       if (counts.failed > 0) parts.push(`${counts.failed} failed`);
       const msg = `${parts.join(', ')}.${counts.firstError ? `\n${counts.firstError}` : ''}`;
-      if (Platform.OS === 'web') {
-        if (typeof window !== 'undefined') window.alert(msg);
-      } else {
-        Alert.alert(counts.failed > 0 ? 'Partly done' : 'Done', msg);
-      }
+      Alert.alert(counts.failed > 0 ? 'Partly done' : 'Done', msg);
     },
     [exitSelect, reload],
   );
@@ -665,12 +645,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     let rows = data ?? [];
     if (agentId) rows = rows.filter((d) => d.assigned_agent_id === agentId);
     if (clientId) rows = rows.filter((d) => d.client_id === clientId);
-    if (nameNeedle)
-      rows = rows.filter(
-        (d) =>
-          (d.customer_name ?? '').toLowerCase().includes(nameNeedle) ||
-          (d.customer_phone ?? '').toLowerCase().includes(nameNeedle),
-      );
+    if (nameNeedle) rows = rows.filter((d) => matchesDeliverySearch(d, nameNeedle));
     return rows;
   }, [data, agentId, clientId, nameNeedle]);
   const buckets = useMemo(
@@ -764,12 +739,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     if (locationIds.size > 0) {
       rows = rows.filter((d) => locationIds.has(d.location_id ?? UNMATCHED_LOCATION));
     }
-    if (nameNeedle)
-      rows = rows.filter(
-        (d) =>
-          (d.customer_name ?? '').toLowerCase().includes(nameNeedle) ||
-          (d.customer_phone ?? '').toLowerCase().includes(nameNeedle),
-      );
+    if (nameNeedle) rows = rows.filter((d) => matchesDeliverySearch(d, nameNeedle));
     return rows;
   }, [unassignedQ.data, clientId, locationIds, nameNeedle, preparedDate]);
 
@@ -827,12 +797,7 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     let rows = postponedQ.data ?? [];
     if (agentId) rows = rows.filter((d) => d.assigned_agent_id === agentId);
     if (clientId) rows = rows.filter((d) => d.client_id === clientId);
-    if (nameNeedle)
-      rows = rows.filter(
-        (d) =>
-          (d.customer_name ?? '').toLowerCase().includes(nameNeedle) ||
-          (d.customer_phone ?? '').toLowerCase().includes(nameNeedle),
-      );
+    if (nameNeedle) rows = rows.filter((d) => matchesDeliverySearch(d, nameNeedle));
     return rows;
   }, [postponedQ.data, agentId, clientId, nameNeedle]);
 

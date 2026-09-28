@@ -1,4 +1,5 @@
-import { Alert, FlatList, Platform, Text, View } from 'react-native';
+import { FlatList, Text, View } from 'react-native';
+import { Alert } from '@/lib/alert';
 import { useRouter } from 'expo-router';
 import { AppBar, Banner, Button, Card, Empty } from '@/components/ui';
 import { useQueue } from '@/queue/QueueProvider';
@@ -13,17 +14,6 @@ export default function DeadLetterReview() {
   );
 
   function confirmDrop(job: Job) {
-    if (Platform.OS === 'web') {
-      if (
-        typeof window !== 'undefined' &&
-        window.confirm(
-          `Discard this change?\n\n${job.label}\n\nThis can't be undone. The server will not be updated.`,
-        )
-      ) {
-        drop([job.id]);
-      }
-      return;
-    }
     Alert.alert(
       'Discard this change?',
       `${job.label}\n\nThis can't be undone. The server will not be updated.`,

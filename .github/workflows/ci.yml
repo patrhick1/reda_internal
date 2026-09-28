@@ -8,6 +8,7 @@ on:
 jobs:
   maintenance:
     name: Order maintenance — database and HTTP integration
+    needs: mobile
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -46,6 +47,34 @@ jobs:
         run: psql -h 127.0.0.1 -p 55449 -U reda_test -d reda_eod_test -c "NOTIFY pgrst, 'reload schema';"
       - name: Exercise actual scheduled HTTP client and private worker permissions
         run: deno test --no-check --no-config --node-modules-dir=none --allow-net=127.0.0.1:55451,127.0.0.1:55452 --allow-env tools/test-eod-compatibility.ts
+      - name: Measure immediate manual EOD through real HTTP and committed batches
+        run: node tools/eod-reliability-20260921/test-immediate-http.mjs
+      - name: Phone search matching rules
+        run: node --experimental-strip-types --test mobile/src/lib/delivery-search.test.mjs
+      - uses: actions/download-artifact@v4
+        with:
+          name: eod-test-web
+          path: mobile/dist
+      - name: Install browser for real EOD integration
+        run: |
+          npm install --prefix "$RUNNER_TEMP/eod-browser" --no-save playwright@1.55.0
+          node "$RUNNER_TEMP/eod-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Verify click-to-completion, lost responses and reload against real HTTP
+        run: node tools/eod-reliability-20260921/test-immediate-http.mjs --browser-only
+        env:
+          PLAYWRIGHT_MODULE_PATH: ${{ runner.temp }}/eod-browser/node_modules/playwright
+      - name: Verify phone search through real browser, API and indexed database
+        run: node --experimental-strip-types tools/eod-reliability-20260921/test-phone-search.mjs --browser
+        env:
+          PLAYWRIGHT_MODULE_PATH: ${{ runner.temp }}/eod-browser/node_modules/playwright
+      - name: Verify policy-closure wording and genuine failure labels
+        run: node --experimental-strip-types tools/eod-reliability-20260921/test-closure-display.mjs
+        env:
+          PLAYWRIGHT_MODULE_PATH: ${{ runner.temp }}/eod-browser/node_modules/playwright
+      - name: Verify atomic Review saves, concurrent devices and slow/lost responses
+        run: node tools/eod-reliability-20260921/test-review-save.mjs --browser
+        env:
+          PLAYWRIGHT_MODULE_PATH: ${{ runner.temp }}/eod-browser/node_modules/playwright
       - run: deno test --no-config supabase/functions/_shared/push-batch.test.ts
 
   mobile:
@@ -58,13 +87,18 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           cache-dependency-path: mobile/package-lock.json
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run format:check
+      - name: Call, blacklist and stock-sharing regression tests
+        run: |
+          npm run test:calls
+          npm run test:blacklist-notices
+          node ../tools/test-client-stock-share.mjs
       - name: Build isolated workflow UI
         run: npx expo export --platform web --max-workers 2
         env:
@@ -74,6 +108,21 @@ jobs:
         run: |
           npm install --prefix "$RUNNER_TEMP/eod-browser" --no-save playwright@1.55.0
           node "$RUNNER_TEMP/eod-browser/node_modules/playwright/cli.js" install --with-deps chromium
+      - name: Shared Android/web confirmations and stock movement layout
+        run: |
+          node ../tools/test-cross-platform-alerts.mjs
+          node ../tools/eod-reliability-20260921/test-stock-wrap.mjs
+        env:
+          ALERT_TEST_BROWSER: chromium
+          ALERT_TEST_WEB_BUILD: '1'
+          PLAYWRIGHT_MODULE: ${{ runner.temp }}/eod-browser/node_modules/playwright/index.mjs
+          PLAYWRIGHT_MODULE_PATH: ${{ runner.temp }}/eod-browser/node_modules/playwright
+          EOD_UI_DIST: dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eod-test-web
+          path: mobile/dist
+          retention-days: 1
       - name: Exercise end of day and assignment at phone and desktop widths
         run: |
           for width in 390 1280; do

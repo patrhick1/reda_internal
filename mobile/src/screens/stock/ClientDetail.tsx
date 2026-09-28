@@ -7,7 +7,7 @@
 // it is drained. Reda staff need to see that (it is stock we hold), so the
 // row stays on screen tagged "Inactive" — but the vendor-facing Stock Update
 // must not list it (Uzo, 2026-09-06), so the share skips it.
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -28,7 +28,7 @@ import {
   type ClientStockGroup,
 } from '@/services/stock';
 import { useActiveProductsByClient } from '@/hooks/queries';
-import { AppBar, Button, Card, Empty, Icon } from '@/components/ui';
+import { AppBar, Banner, Button, Card, Empty, Icon } from '@/components/ui';
 import { canViewGlobalStockHistory } from '@/lib/permissions';
 import { colors, fonts } from '@/lib/theme';
 import { formatDateLagos, todayLagos } from '@/lib/date';
@@ -43,15 +43,31 @@ export function ClientStockDetail({ basePath }: { basePath?: '/(admin)' | '/(dis
 
   // [Egress Phase 3] Only THIS client's stock (scoped by its product ids) instead
   // of the whole matrix; groupByClient() then yields the single group we render.
-  const stockQ = useAsync(() => (id ? listClientStock(id) : Promise.resolve([])), [id]);
+  const stockQ = useAsync(
+    async () => ({ clientId: id, rows: id ? await listClientStock(id) : [] }),
+    [id],
+  );
   const productsQ = useActiveProductsByClient(id ?? null);
-  useReloadOnFocus(() => {
-    stockQ.reload();
-    productsQ.reload();
-  });
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshRequest = useRef(0);
+  async function reloadAll() {
+    const request = ++refreshRequest.current;
+    setRefreshing(true);
+    try {
+      await Promise.all([stockQ.reload(), productsQ.reload()]);
+    } finally {
+      if (request === refreshRequest.current) setRefreshing(false);
+    }
+  }
+  useReloadOnFocus(() => void reloadAll());
+  const loadError = stockQ.error ?? productsQ.error;
+  // Missing stock data is unknown, not zero. Cached rows from another client
+  // and a failed/unfinished refresh must never become a client-facing report.
+  const dataReady = !!id && stockQ.data?.clientId === id && productsQ.data !== null && !loadError;
+  const shareReady = dataReady && !stockQ.loading && !productsQ.loading && !refreshing;
 
   const group = useMemo<ClientStockGroup | null>(() => {
-    const all = groupByClient(stockQ.data ?? []);
+    const all = groupByClient(stockQ.data?.clientId === id ? stockQ.data.rows : []);
     return all.find((g) => g.client_id === id) ?? null;
   }, [stockQ.data, id]);
 
@@ -62,6 +78,7 @@ export function ClientStockDetail({ basePath }: { basePath?: '/(admin)' | '/(dis
   const showMovements = !!basePath && !!id && canViewGlobalStockHistory(user.role);
 
   const products = useMemo<ClientProductTotal[]>(() => {
+    if (!dataReady) return [];
     const byProductId = new Map<string, ClientProductTotal>();
     for (const p of group?.products ?? []) {
       byProductId.set(p.product_catalog_id, p);
@@ -85,32 +102,28 @@ export function ClientStockDetail({ basePath }: { basePath?: '/(admin)' | '/(dis
       if (a.is_active !== b.is_active) return a.is_active ? -1 : 1;
       return a.product_name.localeCompare(b.product_name);
     });
-  }, [group, productsQ.data]);
+  }, [dataReady, group, productsQ.data]);
 
   const outOfStockCount = useMemo(
     () => products.filter((p) => p.total_qty === 0).length,
     [products],
   );
   const inactiveCount = useMemo(() => products.filter((p) => !p.is_active).length, [products]);
-  // Only ACTIVE products we actually hold are shareable — a client with catalog
-  // products but zero on hand would otherwise produce a header-only message,
-  // and a retired product's leftover units are not part of the vendor's
-  // stock update (staff see them on screen; the vendor does not).
-  const shareableProducts = useMemo(
-    () => products.filter((p) => p.total_qty > 0 && p.is_active),
-    [products],
-  );
+  // Share every active catalog product, including zero stock. Inactive products
+  // stay visible to staff when held, but are excluded from the client update.
+  const shareableProducts = useMemo(() => products.filter((p) => p.is_active), [products]);
 
   const onShare = useCallback(async () => {
-    if (shareableProducts.length === 0) return;
+    if (!shareReady || shareableProducts.length === 0) return;
     const dateLabel = formatDateLagos(todayLagos());
     const header = [`📦${clientName} Stock Update`, dateLabel].join('\n');
 
     // Client-facing: just the total on-hand per product (no warehouse/agents
     // split — the vendor only needs how many of theirs we hold, not where).
-    // Out-of-stock and retired products are omitted — the vendor only wants
-    // what we hold now of what they still sell.
-    const lines = shareableProducts.map((p) => `• ${p.product_name}: ${p.total_qty}`).join('\n');
+    // Zero-stock products remain useful to the client; inactive ones are hidden.
+    const lines = shareableProducts
+      .map((p) => `• ${p.product_name}: ${p.total_qty === 0 ? 'Out of stock' : p.total_qty}`)
+      .join('\n');
 
     const message = `${header}\n\n${lines}\n\nSent from Reda Logistics`;
     try {
@@ -118,7 +131,7 @@ export function ClientStockDetail({ basePath }: { basePath?: '/(admin)' | '/(dis
     } catch {
       /* user cancelled */
     }
-  }, [clientName, shareableProducts]);
+  }, [clientName, shareReady, shareableProducts]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface }}>
@@ -145,14 +158,25 @@ export function ClientStockDetail({ basePath }: { basePath?: '/(admin)' | '/(dis
         }
       />
 
+      {loadError ? (
+        <View accessibilityRole="alert" style={{ padding: 16, gap: 8 }}>
+          <Banner tone="error" title="Could not load stock update">
+            {`${loadError} Refresh before sharing with the client.`}
+          </Banner>
+          <Button onPress={() => void reloadAll()} disabled={refreshing}>
+            Retry
+          </Button>
+        </View>
+      ) : null}
+
       <FlatList
         data={products}
         keyExtractor={(p) => p.product_catalog_id}
         contentContainerStyle={{ padding: 16, paddingBottom: 100, gap: 8 }}
         refreshControl={
           <RefreshControl
-            refreshing={stockQ.loading && !!stockQ.data}
-            onRefresh={stockQ.reload}
+            refreshing={refreshing}
+            onRefresh={() => void reloadAll()}
             tintColor={colors.black}
           />
         }
@@ -193,13 +217,7 @@ export function ClientStockDetail({ basePath }: { basePath?: '/(admin)' | '/(dis
         }
         renderItem={({ item }) => <ProductRow product={item} />}
         ListEmptyComponent={
-          stockQ.error || productsQ.error ? (
-            <Empty
-              icon="alert"
-              title="Could not load"
-              sub={stockQ.error ?? productsQ.error ?? ''}
-            />
-          ) : (stockQ.loading && !stockQ.data) || (productsQ.loading && !productsQ.data) ? (
+          loadError ? null : !dataReady || stockQ.loading || productsQ.loading ? (
             <View style={{ padding: 60, alignItems: 'center' }}>
               <ActivityIndicator color={colors.black} />
             </View>
@@ -227,7 +245,7 @@ export function ClientStockDetail({ basePath }: { basePath?: '/(admin)' | '/(dis
           full
           icon="share"
           onPress={onShare}
-          disabled={shareableProducts.length === 0}
+          disabled={!shareReady || shareableProducts.length === 0}
         >
           Share with client
         </Button>

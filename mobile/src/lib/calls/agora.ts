@@ -32,10 +32,11 @@ export function getEngine(appId: string): IRtcEngine {
 
 export function joinChannel(appId: string, token: string, channel: string, uid: number) {
   const e = getEngine(appId);
-  e.joinChannel(token, channel, uid, {
+  const result = e.joinChannel(token, channel, uid, {
     publishMicrophoneTrack: true,
     autoSubscribeAudio: true,
   });
+  if (result < 0) throw new Error(`Could not connect audio (${result}). Please retry the call.`);
 }
 
 export function leaveChannel() {

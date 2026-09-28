@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
+import { Alert } from '@/lib/alert';
 import { useRouter } from 'expo-router';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { updateSelfProfile } from '@/services/users';

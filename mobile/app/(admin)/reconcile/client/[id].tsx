@@ -1,15 +1,7 @@
 import { useFinancialRevision } from '@/lib/financial-refresh';
 import { useCallback, useMemo } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  Platform,
-  RefreshControl,
-  Share,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, FlatList, RefreshControl, Share, Text, View } from 'react-native';
+import { Alert } from '@/lib/alert';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
@@ -119,19 +111,14 @@ export default function ClientReconcileDetail() {
           accountQ.reload();
         } catch (e) {
           const message = errorMessage(e);
-          if (Platform.OS === 'web') window.alert(`Could not void payout\n\n${message}`);
-          else Alert.alert('Could not void payout', message);
+          Alert.alert('Could not void payout', message);
         }
       };
       const message = `Void the ${formatNaira(payout.amount)} payout? The audit record will be kept and the amount will return to the client's balance.`;
-      if (Platform.OS === 'web') {
-        if (window.confirm(message)) run();
-      } else {
-        Alert.alert('Void payout?', message, [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Void payout', style: 'destructive', onPress: run },
-        ]);
-      }
+      Alert.alert('Void payout?', message, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Void payout', style: 'destructive', onPress: run },
+      ]);
     },
     [accountQ, payoutsQ],
   );
@@ -145,19 +132,14 @@ export default function ClientReconcileDetail() {
           accountQ.reload();
         } catch (e) {
           const message = errorMessage(e);
-          if (Platform.OS === 'web') window.alert(`Could not void payment\n\n${message}`);
-          else Alert.alert('Could not void payment', message);
+          Alert.alert('Could not void payment', message);
         }
       };
       const message = `Void the ${formatNaira(payment.amount)} payment received? The audit record will be kept and the amount goes back onto what the client owes.`;
-      if (Platform.OS === 'web') {
-        if (window.confirm(message)) run();
-      } else {
-        Alert.alert('Void payment?', message, [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Void payment', style: 'destructive', onPress: run },
-        ]);
-      }
+      Alert.alert('Void payment?', message, [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Void payment', style: 'destructive', onPress: run },
+      ]);
     },
     [accountQ, paymentsQ],
   );

@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -9,6 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { Alert } from '@/lib/alert';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '@/hooks/useAuth';
 import { sendPasswordReset } from '@/services/users';

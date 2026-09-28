@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { Alert, Platform } from 'react-native';
+import { Alert } from '@/lib/alert';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/hooks/useAuth';
 import { useQueue } from './QueueProvider';
@@ -20,15 +20,6 @@ export function useGuardedSignOut(): () => void {
 
   return useCallback(() => {
     if (!hasUnsynced) {
-      if (Platform.OS === 'web') {
-        if (
-          typeof window !== 'undefined' &&
-          window.confirm('Sign out? You will need to sign in again to use the app.')
-        ) {
-          signOut();
-        }
-        return;
-      }
       Alert.alert('Sign out?', 'You will need to sign in again to use the app.', [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Sign out', style: 'destructive', onPress: () => signOut() },
@@ -38,22 +29,7 @@ export function useGuardedSignOut(): () => void {
     const pending = snapshot.jobs.filter(
       (j) => j.status === 'pending' || j.status === 'in_flight' || j.status === 'failed_retrying',
     ).length;
-    if (Platform.OS === 'web') {
-      if (typeof window === 'undefined') return;
-      const msg = `You have ${pending} ${pending === 1 ? 'change' : 'changes'} that haven't synced. Signing out now will lose them.\n\nOK = sign out & discard.\nCancel = stay (review pending in the queue screen).`;
-      if (window.confirm(msg)) {
-        if (
-          window.confirm(
-            `Are you sure? This will discard ${pending} unsynced ${pending === 1 ? 'change' : 'changes'} permanently.`,
-          )
-        ) {
-          signOut();
-        }
-      } else {
-        router.push('/(queue)/dead-letter');
-      }
-      return;
-    }
+
     Alert.alert(
       'Unsynced changes',
       `You have ${pending} ${pending === 1 ? 'change' : 'changes'} that haven't synced. Signing out now will lose them.`,

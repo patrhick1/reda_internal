@@ -1,4 +1,5 @@
 import { rpcUntyped, supabase } from '@/lib/supabase';
+import { sanitizeDeliverySearch } from '@/lib/delivery-search';
 import { TERMINAL_STATUSES } from '@/lib/theme';
 import { notifyFinancialChange } from '@/lib/financial-refresh';
 import { invalidateDeliveries } from '@/services/deliveries';
@@ -260,7 +261,7 @@ export async function listSameCustomerOrders(
     p_limit: 50,
     p_agent_id: filters.agentId ?? null,
     p_client_id: filters.clientId ?? null,
-    p_search: filters.search ?? null,
+    p_search: sanitizeDeliverySearch(filters.search ?? '') || null,
   });
   if (error) throw error;
   const page = data ?? { groups: [], total_groups: 0, next_cursor: null };

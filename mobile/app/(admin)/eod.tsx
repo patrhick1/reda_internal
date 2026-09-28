@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Platform, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
+import { Alert } from '@/lib/alert';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { useCurrentUser } from '@/hooks/useAuth';
@@ -12,6 +13,7 @@ import { invalidateDeliveries } from '@/services/deliveries';
 import {
   manualPreviewPage,
   manualEodStatus,
+  advanceManualEod,
   prepareMaintenance,
   requestMaintenance,
   type ManualEodResult,
@@ -81,9 +83,25 @@ export default function EndOfDay() {
     if (!processingId) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
+    let failures = 0;
     async function check() {
+      let delay = 3000;
       try {
-        const next = await manualEodStatus(processingId!);
+        let next: ManualEodResult;
+        try {
+          const step = await advanceManualEod(processingId!);
+          next = step;
+          delay = Math.max(
+            step.processed_groups > 0 ? 0 : 1000,
+            Math.min(30000, step.retry_after_ms),
+          );
+          failures = 0;
+        } catch {
+          // A response can be lost after commit. Read saved progress before
+          // retrying the same operation; cron also completes it if we leave.
+          delay = Math.min(30000, 3000 * 2 ** Math.min(failures++, 4));
+          next = await manualEodStatus(processingId!);
+        }
         if (cancelled) return;
         setError(null);
         if (next.complete) {
@@ -101,7 +119,7 @@ export default function EndOfDay() {
           'Waiting for a connection to confirm the result. You do not need to run it again.',
         );
       }
-      if (!cancelled) timer = setTimeout(() => void check(), 3000);
+      if (!cancelled) timer = setTimeout(() => void check(), delay);
     }
     void check();
     return () => {
@@ -220,6 +238,27 @@ export default function EndOfDay() {
                       {forwardCount} to roll forward to {target} · {closeCount} to close out.
                     </Text>
                   </Banner>
+                  {preview.oversized_groups > 0 ? (
+                    <Banner tone="warn">
+                      A group is too large to finish together. Please contact support before running
+                      end of day.
+                    </Banner>
+                  ) : null}
+                  <Button
+                    variant="emphasis"
+                    full
+                    icon="check"
+                    disabled={busy || preview.oversized_groups > 0}
+                    onPress={() => {
+                      const message = `Run end of day?\n\n${forwardCount} orders will move to ${target} (${preview.target_date}). ${closeCount} will close out. This includes all ${preview.total_orders} orders, including those on further pages.`;
+                      Alert.alert('Run end of day?', message, [
+                        { text: 'Cancel', style: 'cancel' },
+                        { text: 'Run end of day', onPress: () => void run() },
+                      ]);
+                    }}
+                  >
+                    Run end of day
+                  </Button>
                   {[true, false].map((forward) => {
                     const count = forward ? forwardCount : closeCount;
                     if (!count) return null;
@@ -291,30 +330,6 @@ export default function EndOfDay() {
                       Show more orders
                     </Button>
                   ) : null}
-                  {preview.oversized_groups > 0 ? (
-                    <Banner tone="warn">
-                      A group is too large to finish together. Please contact support before running
-                      end of day.
-                    </Banner>
-                  ) : null}
-                  <Button
-                    variant="emphasis"
-                    full
-                    icon="check"
-                    disabled={busy || preview.oversized_groups > 0}
-                    onPress={() => {
-                      const message = `Run end of day?\n\n${forwardCount} orders will move to ${target} (${preview.target_date}). ${closeCount} will close out. This includes all ${preview.total_orders} orders, including those on further pages.`;
-                      if (Platform.OS === 'web') {
-                        if (window.confirm(message)) void run();
-                      } else
-                        Alert.alert('Run end of day?', message, [
-                          { text: 'Cancel', style: 'cancel' },
-                          { text: 'Run end of day', onPress: () => void run() },
-                        ]);
-                    }}
-                  >
-                    Run end of day
-                  </Button>
                 </>
               )}
             </>

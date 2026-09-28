@@ -107,6 +107,14 @@ export async function manualEodStatus(previewId: string): Promise<ManualEodResul
   return data as ManualEodResult;
 }
 
+export async function advanceManualEod(
+  previewId: string,
+): Promise<ManualEodResult & { processed_groups: number; retry_after_ms: number }> {
+  const { data, error } = await rpcUntyped('advance_manual_eod', { p_preview_id: previewId });
+  if (error) throw error;
+  return data as ManualEodResult & { processed_groups: number; retry_after_ms: number };
+}
+
 export async function retryMaintenanceGroup(id: number): Promise<void> {
   const { error } = await rpcUntyped('retry_maintenance_group', { p_work_id: id });
   if (error) throw error;

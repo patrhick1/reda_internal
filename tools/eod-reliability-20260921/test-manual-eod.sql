@@ -29,7 +29,11 @@ DO $$ DECLARE p jsonb; r uuid; n int; original_history int; target date:=public.
  r:=public.request_manual_eod((p->>'preview_id')::uuid);
  PERFORM pg_temp.assert(public.request_manual_eod((p->>'preview_id')::uuid)=r,'double submission returns same run');
  FOR n IN 1..20 LOOP
-  PERFORM reda_maintenance.dispatch(); PERFORM reda_maintenance.work();
+  IF current_setting('test.immediate_manual',true)='true' THEN
+   PERFORM public.advance_manual_eod((p->>'preview_id')::uuid);
+  ELSE
+   PERFORM reda_maintenance.dispatch(); PERFORM reda_maintenance.work();
+  END IF;
   EXIT WHEN NOT EXISTS(SELECT 1 FROM reda_maintenance.work WHERE run_id=r AND status IN('pending','claimed'));
  END LOOP;
  RAISE NOTICE 'groups: %',(SELECT jsonb_agg(jsonb_build_object('status',status,'code',error_code,'error',error_message)) FROM reda_maintenance.work WHERE run_id=r);

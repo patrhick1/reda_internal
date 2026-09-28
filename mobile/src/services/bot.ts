@@ -1,4 +1,48 @@
 import { rpcUntyped, supabase } from '@/lib/supabase';
+import { invalidateDeliveries, type CreateDeliveryInput } from '@/services/deliveries';
+
+/** One committed save: order creation, source link and edit-lock release. */
+export async function createDeliveryFromReview(
+  inboundId: string,
+  input: Omit<CreateDeliveryInput, 'clientUuid' | 'botRawMessage'>,
+): Promise<string> {
+  const { data, error } = await rpcUntyped<string>('create_delivery_from_review', {
+    p_inbound_id: inboundId,
+    p_client_id: input.clientId,
+    p_product_catalog_id: input.productCatalogId,
+    p_customer_name: input.customerName,
+    p_customer_phone: input.customerPhone,
+    p_customer_phone_alt: input.customerPhoneAlt ?? null,
+    p_raw_address: input.rawAddress,
+    p_quantity_ordered: input.quantityOrdered,
+    p_customer_price: input.customerPrice,
+    p_location_id: input.locationId,
+    p_scheduled_date: input.scheduledDate,
+    p_assigned_agent_id: input.assignedAgentId,
+    p_delivery_instructions: input.deliveryInstructions ?? null,
+    p_items: input.items?.length
+      ? input.items.map((item) => ({
+          product_catalog_id: item.productCatalogId,
+          quantity_ordered: item.quantityOrdered,
+          customer_price: item.customerPrice ?? null,
+        }))
+      : null,
+  });
+  if (error) {
+    if (error.code === '55P03' && error.message?.includes('edit lock not held')) {
+      throw new Error(
+        'Your editing session has expired or moved to another device. Reopen this review item before saving.',
+      );
+    }
+    if (['55P03', '57014', '40001', '40P01'].includes(error.code ?? '')) {
+      throw new Error('This order is busy. Please try saving again. Your entries are still here.');
+    }
+    throw error;
+  }
+  if (!data) throw new Error('Could not confirm the save. Please try again.');
+  invalidateDeliveries();
+  return data;
+}
 
 export type InboundStatus =
   | 'queued'

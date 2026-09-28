@@ -5,6 +5,7 @@ import type { Role } from '@/lib/permissions';
 import { STATUS_GROUPS, STATUS_META, TERMINAL_STATUSES } from '@/lib/theme';
 import { formatDayMonthLagos } from '@/lib/date';
 import type { DeliveryPay } from '@/lib/delivery-pay';
+import { deliverySearchFilter, sanitizeDeliverySearch } from '@/lib/delivery-search';
 
 /** [Egress Phase 2.4] Invalidate every cached delivery list at once. All list
  *  variants (date-scoped list, unassigned, postponed, agent-postponed — see
@@ -376,16 +377,16 @@ const LIST_JOIN_FRAGMENT = `
 // views if a column the list needs is ever added.
 // [Egress Phase 3] Compact card contract. Dropped vs the old projection (all
 // detail-only or now server-computed, and verified unread by any list/dashboard/
-// sheet path): customer_phone_alt, quantity_delivered, paid,
+// sheet path): quantity_delivered, paid,
 // payment_method, delivery_instructions (detail-only), and latest_message_at +
 // assigned_at (were only sort inputs — now folded into the view's activity_at).
 // The sibling key no longer needs raw_address on the client (server computes it).
 // Added: product_label, sibling_group_key, activity_at (see the deliveries views /
 // scripts/list-projection-phase3.sql). quantity_ordered stays for the bulk mark-
-// delivered legacy fallback; customer_phone stays for ops phone search.
+// delivered legacy fallback; both contact numbers support consistent phone search.
 const LIST_COLUMNS = `
   id, client_id, product_catalog_id, location_id, assigned_agent_id, parent_delivery_id,
-  customer_name, customer_phone, raw_address, quantity_ordered, customer_price,
+  customer_name, customer_phone, customer_phone_alt, raw_address, quantity_ordered, customer_price,
   agent_payment_snapshot, current_status, created_via, created_by_user_id,
   created_date, scheduled_date, created_at, updated_at,
   latest_history_id, latest_changed_at, latest_notified,
@@ -495,16 +496,6 @@ export const FAILED_DELIVERIES_LIMIT = 500;
  *  the cap protects against a too-broad term loading thousands. */
 export const SEARCH_LIMIT = 100;
 
-/** Strip characters that would break PostgREST's .or() filter grammar (comma,
- *  parens, backslash) or act as ILIKE wildcards (%/_), so the term matches
- *  literally. Names/phones never contain these. */
-function sanitizeSearch(term: string): string {
-  return term
-    .replace(/[%_,()\\*]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
 function todayLagos(): string {
   // Africa/Lagos is +01:00 year-round. Convert UTC now to that offset and slice.
   const now = new Date();
@@ -524,14 +515,11 @@ export async function listDeliveries(
     .from(view)
     .select(`${LIST_COLUMNS}, ${LIST_JOIN_FRAGMENT}`)
     .order('created_at', { ascending: false });
-  const searchTerm = filters.search ? sanitizeSearch(filters.search) : '';
+  const searchTerm = filters.search ? sanitizeDeliverySearch(filters.search) : '';
   if (searchTerm.length >= 2) {
     // Search overrides the date scope (you don't know the date) — match name OR
-    // phone substring, server-side + index-backed (pg_trgm), bounded.
-    const digits = searchTerm.replace(/\D/g, '');
-    const ors = [`customer_name.ilike.%${searchTerm}%`];
-    if (digits.length >= 3) ors.push(`customer_phone.ilike.%${digits}%`);
-    query = query.or(ors.join(',')).limit(SEARCH_LIMIT);
+    // normalized phone substring, server-side + index-backed (pg_trgm), bounded.
+    query = query.or(deliverySearchFilter(searchTerm)).limit(SEARCH_LIMIT);
   } else if (!filters.allDates) {
     const d = filters.date ?? todayLagos();
     query = query.eq('scheduled_date', d);
@@ -582,7 +570,7 @@ export async function listDeliveries(
 export async function listFailedDeliveryOutcomes(
   filters: FailedDeliveryFilters,
 ): Promise<FailedDeliveryRow[]> {
-  const search = filters.search ? sanitizeSearch(filters.search) : '';
+  const search = filters.search ? sanitizeDeliverySearch(filters.search) : '';
   const { data, error } = await rpcUntyped<Array<Omit<FailedDeliveryRow, 'items'>>>(
     'list_failed_delivery_outcomes',
     {

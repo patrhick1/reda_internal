@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -13,10 +13,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useCurrentUser } from '@/hooks/useAuth';
 import { useEditLock } from '@/hooks/useEditLock';
-import { getBotInbound, discardInbound, resolveInboundToDelivery } from '@/services/bot';
-import { createDelivery } from '@/services/deliveries';
+import { getBotInbound, discardInbound, createDeliveryFromReview } from '@/services/bot';
 import { canResolveReview } from '@/lib/permissions';
-import { newClientUuid } from '@/lib/uuid';
 import { AppBar, Banner, Button, Card, Empty, Sheet } from '@/components/ui';
 import {
   DeliveryFieldsForm,
@@ -28,6 +26,7 @@ import {
 import { colors, fonts } from '@/lib/theme';
 import { formatDateTime } from '@/lib/format';
 import { errorMessage } from '@/lib/errors';
+import { blacklistCreationError } from '@/lib/blacklist-notices';
 import {
   reviewReason,
   splitPhone,
@@ -100,13 +99,20 @@ export default function InboundDetailScreen() {
   const [state, setState] = useState<DeliveryFormState | null>(null);
   const [validation, setValidation] = useState<FormValidation>({ isValid: false, missing: [] });
   const [error, setError] = useState<string | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  useEffect(() => {
+    if (!error) return;
+    const frame = requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
+    return () => cancelAnimationFrame(frame);
+  }, [error]);
   const [submitting, setSubmitting] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
   const [discarding, setDiscarding] = useState(false);
   const [showFullText, setShowFullText] = useState(false);
-  const clientUuidRef = useRef<string>(newClientUuid());
+  const savingRef = useRef(false);
 
   const handleFormChange = useCallback((s: DeliveryFormState, v: FormValidation) => {
+    setError(null);
     setState(s);
     setValidation(v);
   }, []);
@@ -227,16 +233,17 @@ export default function InboundDetailScreen() {
   // ---- held: render the form ---------------------------------------------
 
   async function handleCreate() {
+    if (savingRef.current) return;
     setError(null);
     if (!state) return;
     if (!isValid) {
       setError('Fill in the required fields');
       return;
     }
+    savingRef.current = true;
     setSubmitting(true);
     try {
-      const newId = await createDelivery({
-        clientUuid: clientUuidRef.current,
+      await createDeliveryFromReview(row!.id, {
         clientId: state.clientId!,
         productCatalogId: state.productCatalogId!,
         customerName: state.customerName.trim(),
@@ -250,17 +257,12 @@ export default function InboundDetailScreen() {
         assignedAgentId: state.assignedAgentId,
         customerPhoneAlt: state.customerPhoneAlt.trim() || null,
         items: completeLines(state.items),
-        // Keep the WhatsApp message on the delivery — the warehouse packs from it.
-        botRawMessage: row?.raw_text ?? null,
       });
-      await resolveInboundToDelivery(row!.id, newId);
-      // Server also drops the lock; release defensively in case of net hiccup.
-      await lock.release().catch(() => {
-        /* swallow */
-      });
+      lock.markReleased();
       router.back();
     } catch (e) {
-      setError(errorMessage(e));
+      savingRef.current = false;
+      setError(blacklistCreationError(e) ?? errorMessage(e));
       setSubmitting(false);
     }
   }
@@ -270,9 +272,7 @@ export default function InboundDetailScreen() {
     setDiscarding(true);
     try {
       await discardInbound(row!.id, reason);
-      await lock.release().catch(() => {
-        /* swallow */
-      });
+      lock.markReleased();
       router.back();
     } catch (e) {
       setError(errorMessage(e));
@@ -296,6 +296,7 @@ export default function InboundDetailScreen() {
         helpTopic="review"
       />
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={{ padding: 16, paddingBottom: 140 + insets.bottom, gap: 16 }}
         keyboardShouldPersistTaps="handled"
       >
@@ -370,9 +371,11 @@ export default function InboundDetailScreen() {
         />
 
         {error ? (
-          <Banner tone="error" icon="alert">
-            {error}
-          </Banner>
+          <View accessibilityLiveRegion="polite" accessibilityRole="alert">
+            <Banner tone="error" icon="alert">
+              {error}
+            </Banner>
+          </View>
         ) : null}
         {!isValid ? <MissingFieldsBanner missing={validation.missing} /> : null}
       </ScrollView>

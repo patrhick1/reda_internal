@@ -26,6 +26,18 @@
     ],
     "@typescript-eslint/no-explicit-any": "error",
     "@typescript-eslint/consistent-type-imports": "error",
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "react-native",
+            "importNames": ["Alert"],
+            "message": "Use Alert from @/lib/alert so confirmations and messages also work on web."
+          }
+        ]
+      }
+    ],
     "no-restricted-syntax": [
       "error",
       {
@@ -34,5 +46,6 @@
       }
     ]
   },
-  "ignorePatterns": ["node_modules", ".expo", "dist", "*.gen.ts"]
+  "ignorePatterns": ["node_modules", ".expo", "dist", "*.gen.ts"],
+  "overrides": [{ "files": ["src/lib/alert.ts"], "rules": { "no-restricted-imports": "off" } }]
 }

@@ -1,16 +1,14 @@
 import { router } from 'expo-router';
-import * as agora from './agora';
 import * as callkeep from './callkeep';
 import { ensureMicPermission } from './permissions';
-import { acceptCall, declineCall, endCall, fetchAgoraToken, type Call } from '@/services/calls';
+import { acceptCall, declineCall, type Call } from '@/services/calls';
+import { callSession } from './session';
 
 // Callee-side coordinator. Owns the CallKeep system UI lifecycle for incoming
 // calls (display → answer/decline → handoff or dismiss). Once a call is
-// answered, the in-call screen takes over and the coordinator's role ends.
+// answered, the app-wide session takes over and the coordinator's role ends.
 //
-// Caller-side state is NOT managed here — the caller's in-call screen owns
-// its own lifecycle since it never invokes CallKeep (the ring UI is purely
-// the callee's experience).
+// Caller-side state lives in session.ts, independently of navigation.
 //
 // Why a module singleton instead of React context: CallKeep event listeners
 // fire from native code via a global JS bridge. They have no React tree to
@@ -115,14 +113,11 @@ export async function answer(callId: string): Promise<void> {
     return;
   }
 
-  let accepted = false;
   try {
-    await acceptCall(callId);
-    accepted = true;
-    const t = await fetchAgoraToken(callId);
-    agora.joinChannel(t.app_id, t.token, t.channel, t.uid);
+    const call = await acceptCall(callId);
+    callSession.adopt(call);
     callkeep.reportConnected(callId);
-    // Hand off — the in-call screen owns the call from here. We DO NOT call
+    // Hand off — the app-wide session owns the call from here. We DO NOT call
     // callkeep.dismissCall here; CallKeep stays in 'active' state so the
     // system call-log entry / lock-screen ongoing-call UI works correctly.
     reset();
@@ -131,19 +126,16 @@ export async function answer(callId: string): Promise<void> {
     console.error('[coord] answer failed', err);
     callkeep.dismissCall(callId);
     reset();
-    // Roll back: if accept_call already succeeded but token/Agora join failed,
-    // the row is in 'accepted' state. Without this end_call the caller sits
-    // forever on "Connected" with no audio. Best-effort — if it fails the
-    // row is stuck, but at least we tried.
-    if (accepted) {
-      endCall(callId).catch((e) => console.warn('[coord] rollback end_call failed', e));
-    }
     throw err;
   }
 }
 
 /** CallKeep 'endCall' event during ringing → decline. */
 export async function declineFromSystemUI(callId: string): Promise<void> {
+  if (callSession.getSnapshot().call?.id === callId) {
+    await callSession.end();
+    return;
+  }
   if (activeCallId !== callId || phase !== 'incoming') return;
   // Team-call rings can't be "declined" on behalf of the team — declining
   // would either kill the page for everyone (wrong) or be refused by the

@@ -1,17 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { router } from 'expo-router';
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Field } from '@/components/Field';
 import { Button } from '@/components/Button';
 import { Select, type SelectOption } from '@/components/Select';
+import { Alert } from '@/lib/alert';
 import { Icon } from '@/components/ui';
 import { useAsync } from '@/hooks/useAsync';
 import { useBulkRows } from '@/hooks/useBulkRows';
@@ -118,6 +111,7 @@ export function StockTransferScreen({ scope }: StockTransferScreenProps) {
 
   // Reset when reason changes; prompt confirm if user has filled anything.
   function changeReason(next: PairedReason | null) {
+    if (next === reason) return;
     const anyDirty =
       !!fromHolderId ||
       !!toHolderId ||

@@ -4,6 +4,12 @@ The nightly job previously depended on an authenticated app client. Payment
 contract enforcement rejected that caller before order processing started.
 Maintenance now uses a private PostgreSQL entry point with a fixed System actor.
 
+The original rollout notes below describe the September 21 background design.
+For the September 28 manual-latency fix, implementation, verification and rollout
+order, see [Immediate manual end of day](immediate-manual-eod.md). Maintenance
+holds and technical processing pushes were retired on September 23; do not
+reapply the historical incident-hold manifest when deploying the new endpoint.
+
 ## Execution
 
 - Dispatcher and worker run once per minute in separate committed transactions.

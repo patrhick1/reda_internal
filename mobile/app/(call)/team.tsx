@@ -1,3 +1,4 @@
+import { errorMessage } from '@/lib/errors';
 import { useCallback, useEffect, useState } from 'react';
 import {
   View,
@@ -5,20 +6,16 @@ import {
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
   RefreshControl,
   Linking,
 } from 'react-native';
+import { Alert } from '@/lib/alert';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { AppBar, Avatar, Banner, Empty, Icon } from '@/components/ui';
 import { colors, fonts, radii, spacing } from '@/lib/theme';
 import { useAuth } from '@/hooks/useAuth';
-import {
-  listCallableUsers,
-  initiateCall,
-  initiateTeamCall,
-  type CallableUser,
-} from '@/services/calls';
+import { listCallableUsers, type CallableUser } from '@/services/calls';
+import { initiateCall, initiateTeamCall } from '@/lib/calls/session';
 import { ensureMicPermission } from '@/lib/calls/permissions';
 import { canPlaceCall, CALL_UNSUPPORTED_HINT } from '@/lib/calls/availability';
 
@@ -64,7 +61,7 @@ export default function TeamScreen() {
       const rows = await listCallableUsers(userId);
       setUsers(rows);
     } catch (err) {
-      Alert.alert('Could not load team', err instanceof Error ? err.message : String(err));
+      Alert.alert('Could not load team', errorMessage(err));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -107,7 +104,7 @@ export default function TeamScreen() {
       const call = await initiateTeamCall({ relatedDeliveryId });
       router.push(`/call/${call.id}`);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       if (msg.includes('ringing call')) {
         Alert.alert('Already on a call', 'You already have a call ringing. Try again in a moment.');
       } else {
@@ -152,9 +149,8 @@ export default function TeamScreen() {
         });
         router.push(`/call/${call.id}`);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        // Translate the partial-unique-index 40001 into something humans
-        // recognize. The DB message is "caller or callee already has a ringing call".
+        const msg = errorMessage(err);
+        // Keep the legacy ringing-conflict response readable during rollout.
         if (msg.includes('ringing call')) {
           Alert.alert(
             'Already on a call',

@@ -4,9 +4,7 @@ import type { ReactNode } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -15,6 +13,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { Alert } from '@/lib/alert';
 import { useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
 import { useReloadOnFocus } from '@/hooks/useReloadOnFocus';
@@ -150,11 +149,7 @@ export default function AdminReconcile() {
   });
 
   const notify = useCallback((title: string, msg: string) => {
-    if (Platform.OS === 'web') {
-      if (typeof window !== 'undefined') window.alert(`${title}\n\n${msg}`);
-    } else {
-      Alert.alert(title, msg);
-    }
+    Alert.alert(title, msg);
   }, []);
 
   const handleSettle = useCallback(
@@ -190,16 +185,7 @@ export default function AdminReconcile() {
           notify('Could not un-settle', errorMessage(e));
         }
       };
-      if (Platform.OS === 'web') {
-        if (
-          typeof window !== 'undefined' &&
-          window.confirm(
-            'Un-settle this day? The frozen record is removed (kept in the audit log).',
-          )
-        )
-          run();
-        return;
-      }
+
       Alert.alert(
         'Un-settle?',
         'The frozen settlement record will be removed (kept in the audit log).',
@@ -925,11 +911,6 @@ function AgentsList({
         item.agent_name
       } for ${formatRangeLagos(eodDate, eodDate)}?`;
       const confirm = () => onSettle(item.agent_id, note);
-
-      if (Platform.OS === 'web') {
-        if (window.confirm(message)) confirm();
-        return;
-      }
 
       Alert.alert('Confirm handover', message, [
         { text: 'Cancel', style: 'cancel' },
