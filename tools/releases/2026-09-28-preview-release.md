@@ -4,9 +4,7 @@ Prepared from the original working directory, the separate workflow-fix
 checkout, and earlier publication records. This covers eleven fixes across the
 tasks, including work completed outside the call/blacklist conversation.
 
-**Status at preparation:** changes are being assembled and verified for main,
-web and EAS preview. This document is not yet a publication receipt. Final
-verification and release identifiers belong in the record at the end.
+**Published:** all eleven fixes are on main and the live web app. Android EAS preview was published on 28 September 2026 at 21:46:58 UTC for runtime `1.1.1`. All five server migrations and the notification function are deployed. Physical Android checks remain with Uzo/testers; all three remote CI jobs passed.
 
 ## Problems and solutions
 
@@ -109,7 +107,7 @@ depend on them. The phone migration checks the existing search definitions for
 drift; its index creation needs a bounded deployment window. Verify the EOD
 function through actual HTTP with the required SERIALIZABLE isolation.
 
-For blacklist notices, deploy the quiet notification policy before activating
+For blacklist notices, the quiet notification policy was deployed before activating
 new push events. Testers should first open the updated Android app so its quiet
 notification channel exists. Do not backfill old refusals into new alerts.
 
@@ -147,18 +145,18 @@ or notifications without an authorized test case.
 
 ## Final release record
 
-Update this section with actual results, not intended actions:
+Publication and verification receipts:
 
 | Item | Result |
 | --- | --- |
-| Combined release commit | Pending publication |
-| Main push | Pending |
+| Combined release commit | [`33320c786a99c74166daa4fb63d84acb65301353`](https://github.com/patrhick1/reda_internal/commit/33320c786a99c74166daa4fb63d84acb65301353) |
+| Main push | Successful fast-forward from `7dd947b` to `33320c7`; this receipt is a documentation-only follow-up. The original older working directory was preserved; the release was built from current main in the isolated `september-28-preview-release` checkout. |
 | Final lint / TypeScript / relevant test suites | TypeScript, lint, format, generated runbook, 25 call/blacklist/search tests, 6 stock-share tests, 12 browser confirmation tests and 37 existing payment/stock/queue regressions passed. Web/Android exports and blacklist browser flows passed. All integrated workflow browser tests passed at 390px/1280px, including actual HTTP EOD, phone search, atomic Review, fee changes, handover and closure wording; stock movements also passed at 320px. |
-| Remote CI | Pending |
-| Reviewed database migrations and function deployment | Private server-side database/source backup verified. Calls, immediate EOD, phone search and atomic Review migrations applied; new functions/indexes verified. Notification source deployed and hashes matched; Edge runtime restarted. Blacklist notice activation follows client publication. |
-| Web deployment and smoke check | Pending |
-| EAS preview update group / Android update ID | Pending |
-| EAS runtime and source-commit verification | Pending |
+| Remote CI | [Run `36488073018`](https://github.com/patrhick1/reda_internal/actions/runs/36488073018) passed at exact source `33320c7`: mobile typecheck/lint/format, security, and maintenance database/HTTP integration all succeeded. |
+| Reviewed database migrations and function deployment | Private server-side database/source backup verified. Calls, immediate EOD, phone search and atomic Review migrations applied; new functions/indexes verified. Notification source deployed and hashes matched; Edge runtime restarted. Blacklist notices activated after Android publication; trigger and permissions verified, zero historical notices backfilled. Notification worker returned the expected unauthorized response through the internal gateway. No live operational orders/calls/notifications were created by release verification. |
+| Web deployment and smoke check | [Live app](https://app.redalogisticss.com) verified against successful Production deployment `6721305789` at `33320c7`. Bundle `entry-7254550b3f836957649cea6b19ef1b66.js` contains the new features. Signed-out browser test opened/dismissed the Email required shared dialog; no JavaScript errors or email sent. |
+| EAS preview update group / Android update ID | [Group `2b755dc8-e5b8-459e-bdc4-9d3aa13f17e9`](https://expo.dev/accounts/patrhick1/projects/reda/updates/2b755dc8-e5b8-459e-bdc4-9d3aa13f17e9); Android update `01a0e9fc-4216-7609-9c44-388f6a890312`, published `2026-09-28T21:46:58.454Z`. |
+| EAS runtime and source-commit verification | Runtime `1.1.1`, Android, preview environment. EAS confirms source `33320c7`, clean working tree, active preview channel pointing to preview branch and this latest group. Published bundle verified to contain the production API/public key and no synthetic test key. |
 | Real Android call and notification checks | Pending Uzo/tester verification after installation |
 
 ## Supporting records
