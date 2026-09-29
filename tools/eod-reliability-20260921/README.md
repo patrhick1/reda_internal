@@ -54,7 +54,7 @@ Its checksum is verified. Only status definitions/transitions are fixture data;
 orders and users are generated synthetic records and rolled back after tests.
 `build-test-fixture.py` documents regeneration from a private schema capture.
 
-Release and sibling-group tests run on the actual date and on every day of a
+Release, rescheduling/failure-recovery and sibling-group tests run on the actual date and on every day of a
 fixed Monday-to-Sunday week. The calendar fixture changes only the default
 timestamp arguments of the three maintenance clock functions, within the
 rolled-back transaction; their production bodies and explicit-time boundary
@@ -111,3 +111,10 @@ Diagnostics: successful notification attempts are retained for 30 days,
 completed work details for 90 days, and previews for seven days. Runs retain
 aggregate outcomes. Unresolved failures/holds remain visible. Order history and
 financial audit records are never deleted by maintenance retention.
+
+The rescheduling/failure-recovery suite closes the actual historical fixture
+scheduled date, including when a nominal Sunday has moved to Saturday. It keeps
+the injected failure, independent-group completion and retry assertions intact.
+Postponement inputs follow the real Lagos date used by the production validation;
+only maintenance scheduling uses the matrix clock. Automatic due-run placeholders
+use the scheduler cutoff functions so the scenario also works around midnight.

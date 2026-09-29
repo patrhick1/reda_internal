@@ -3,7 +3,9 @@
 CREATE FUNCTION pg_temp.assert(ok boolean,message text) RETURNS void LANGUAGE plpgsql AS $$
  BEGIN IF ok IS DISTINCT FROM true THEN RAISE EXCEPTION 'FAIL: %',message; END IF; END $$;
 UPDATE reda_maintenance.settings SET enabled=true,activated_at=now(),reconciled_day=reda_maintenance.business_day();
-DO $$ DECLARE d public.deliveries%rowtype; target date:=reda_maintenance.business_day(); old_date date; r uuid; BEGIN
+-- Postponement validates against the real Lagos clock, independently of the
+-- simulated maintenance dates used by the calendar matrix below.
+DO $$ DECLARE d public.deliveries%rowtype; target date:=(now() AT TIME ZONE 'Africa/Lagos')::date; old_date date; r uuid; BEGIN
  SELECT * INTO d FROM deliveries WHERE id=md5('eod-test-order-1')::uuid;
  old_date:=d.scheduled_date;
  PERFORM public.postpone_delivery('reschedule-test',d.id,target+7,d.updated_at,d.current_status,d.scheduled_date,'Customer postponed');
@@ -30,10 +32,13 @@ CREATE FUNCTION pg_temp.inject_group_failure() RETURNS trigger LANGUAGE plpgsql 
  RETURN new;
 END $$;
 CREATE TRIGGER test_group_failure BEFORE UPDATE ON public.deliveries FOR EACH ROW EXECUTE FUNCTION pg_temp.inject_group_failure();
-DO $$ DECLARE r uuid; target date:=reda_maintenance.business_day(); BEGIN
- r:=reda_maintenance.enqueue('close',target-2);
+DO $$ DECLARE r uuid; due_date date; BEGIN
+ -- Close the actual fixture date: two days ago is Sunday on Tuesdays,
+ -- while the historical-order fixture uses the preceding Saturday.
+ SELECT scheduled_date INTO due_date FROM deliveries WHERE id=md5('eod-test-order-2')::uuid;
+ r:=reda_maintenance.enqueue('close',due_date);
  -- Pre-create empty due-run records to keep this test focused on explicit work.
- INSERT INTO reda_maintenance.runs(kind,business_date,status) VALUES('release',target,'succeeded'),('close',target-1,'succeeded') ON CONFLICT DO NOTHING;
+ INSERT INTO reda_maintenance.runs(kind,business_date,status) VALUES('release',reda_maintenance.release_through(),'succeeded'),('close',reda_maintenance.close_through(),'succeeded') ON CONFLICT DO NOTHING;
  PERFORM reda_maintenance.dispatch(); PERFORM reda_maintenance.work();
  PERFORM pg_temp.assert((SELECT current_status='pending' FROM deliveries WHERE id=md5('eod-test-order-2')::uuid),'failed group rolled back');
  PERFORM pg_temp.assert(NOT EXISTS(SELECT 1 FROM deliveries WHERE parent_delivery_id=md5('eod-test-order-2')::uuid),'failed group leaves no child');
