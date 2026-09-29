@@ -1,6 +1,6 @@
 # WhatsApp delivery-report splitting — 29 September 2026
 
-Status: published to main, the live web app and Android EAS preview on 29 September 2026. No database migration or native dependency change. Physical WhatsApp acceptance remains pending. The sharing/app CI checks passed; an unchanged maintenance calendar-fixture test failed, as detailed below.
+Status: published to main, the live web app and Android EAS preview on 29 September 2026. No database migration or native dependency change. Physical WhatsApp acceptance remains pending. The initial maintenance calendar-fixture failure was subsequently repaired in test-only commit 732ddb3; the full follow-up CI run passed, as detailed below.
 
 ## Problem
 
@@ -44,3 +44,19 @@ Open a long delivered update in the updated app. Share all numbered parts to an 
 - Publishing configuration: an initial EAS export omitted the local API settings; its attempt was stopped before publication. The final export explicitly supplied the values from eas.json, cleared Metro cache, verified the bundle, then published with --skip-bundler. Reuse that verified sequence for future releases; the EAS preview environment currently has no server-defined public variables.
 - [Remote CI run 36624910234](https://github.com/patrhick1/reda_internal/actions/runs/36624910234): mobile typecheck/lint/format, sharing regression/browser tests and security checks passed. The maintenance job failed at test-reschedule-failures.sql:45, assertion 'unrelated group committed'. That test enqueues business_day()-2, which is Sunday on this Tuesday, while fixture.sql moves those historical orders to Saturday and close planning selects the exact requested date. These test/backend files were unchanged by this release. This existing calendar-test mismatch is recorded for follow-up; the complete CI run is not green.
 - Device acceptance remains pending: install the update, share a long report to an authorized WhatsApp test chat, and confirm every numbered part and the final totals arrive intact. Automated tests did not send any real messages.
+## Maintenance CI follow-up — resolved
+
+The original failure was reproduced in fresh isolated PostgreSQL 17 on
+127.0.0.1:55449. On Tuesday, the nominal close date was Sunday, but the fixture
+had correctly normalized historical orders to Saturday. The test requested an
+empty Sunday close and then expected a Saturday order to have completed.
+
+[Test-only fix 732ddb3](https://github.com/patrhick1/reda_internal/commit/732ddb3d9e5956bdc5b30df9b64e3aa18583c196)
+uses the actual fixture order date and scheduler cutoff functions. The suite now
+runs on the real date plus all seven weekdays. Postponement validation retains
+the real Lagos clock; no production function or assertion was weakened.
+
+The full local rollback suite passed. [GitHub run 36627116010](https://github.com/patrhick1/reda_internal/actions/runs/36627116010)
+passed all three jobs: mobile, security, and maintenance database/HTTP/browser
+integration. The isolated test server was stopped afterward. No app update or
+production database migration was needed for this test-only repair.
