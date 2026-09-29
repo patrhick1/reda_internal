@@ -1,6 +1,6 @@
 # WhatsApp delivery-report splitting — 29 September 2026
 
-Status: implemented locally in the existing september-28-preview-release worktree, based on published main 20dbed3. Not yet published. No database migration or native dependency change.
+Status: published to main, the live web app and Android EAS preview on 29 September 2026. No database migration or native dependency change. Physical WhatsApp acceptance remains pending. The sharing/app CI checks passed; an unchanged maintenance calendar-fixture test failed, as detailed below.
 
 ## Problem
 
@@ -34,3 +34,13 @@ Files: mobile/src/lib/share-report.ts, mobile/src/lib/reconcile.ts, mobile/src/c
 ## Device acceptance
 
 Open a long delivered update in the updated app. Share all numbered parts to an authorized test chat. Confirm each part includes its full ending, every order is present and the final total matches Reda. Cancel once, return from WhatsApp, close/reopen the preview, copy a part, and verify the current part is retained. A short update should still open the share menu immediately.
+
+## Publication record
+
+- Source: [ee601e4c68c8fcf565465d03a3851e5f13e8c5a1](https://github.com/patrhick1/reda_internal/commit/ee601e4c68c8fcf565465d03a3851e5f13e8c5a1), pushed to main. Existing older working-directory changes were preserved.
+- Web: [live app](https://app.redalogisticss.com), successful deployment 6744495670. Live HTTP 200 and bundle entry-ca391d2b8db3f83d850bcbe3201a881e.js verified to contain the split preview, Continue sharing and 3500-byte limit, with production API/public key and no synthetic test key.
+- Android: [EAS preview group 83c38204-d674-4188-a651-c20d9e14b6ef](https://expo.dev/accounts/patrhick1/projects/reda/updates/83c38204-d674-4188-a651-c20d9e14b6ef), update 01a0eed2-80b1-7758-8e6b-af2824dfb365, runtime 1.1.1, published 2026-09-29T20:19:28.049Z. Active preview channel points to this group. EAS confirms exact source ee601e4 and a clean working tree.
+- Android bundle verification: production API/public key and new share UI present; synthetic test key absent. Published manifest SHA-256 matches the validated local bundle: 3sW77pj9bHusr4JAgwvGCbILGG4Jo6D6GxZ3OZGfk84.
+- Publishing configuration: an initial EAS export omitted the local API settings; its attempt was stopped before publication. The final export explicitly supplied the values from eas.json, cleared Metro cache, verified the bundle, then published with --skip-bundler. Reuse that verified sequence for future releases; the EAS preview environment currently has no server-defined public variables.
+- [Remote CI run 36624910234](https://github.com/patrhick1/reda_internal/actions/runs/36624910234): mobile typecheck/lint/format, sharing regression/browser tests and security checks passed. The maintenance job failed at test-reschedule-failures.sql:45, assertion 'unrelated group committed'. That test enqueues business_day()-2, which is Sunday on this Tuesday, while fixture.sql moves those historical orders to Saturday and close planning selects the exact requested date. These test/backend files were unchanged by this release. This existing calendar-test mismatch is recorded for follow-up; the complete CI run is not green.
+- Device acceptance remains pending: install the update, share a long report to an authorized WhatsApp test chat, and confirm every numbered part and the final totals arrive intact. Automated tests did not send any real messages.
