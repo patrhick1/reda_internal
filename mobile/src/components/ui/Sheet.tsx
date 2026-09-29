@@ -23,9 +23,23 @@ export type SheetProps = {
    *  scroll area so it can never scroll off the bottom of a tall sheet — the
    *  scrollable content shrinks to leave room for it within the maxHeight cap. */
   footer?: React.ReactNode;
+  /** Remount scroll content when switching paged previews. */
+  contentKey?: string | number;
+  headerAction?: React.ReactNode;
+  maxWidth?: number;
 };
 
-export function Sheet({ open, onClose, title, subtitle, children, footer }: SheetProps) {
+export function Sheet({
+  open,
+  onClose,
+  title,
+  subtitle,
+  children,
+  footer,
+  contentKey,
+  headerAction,
+  maxWidth,
+}: SheetProps) {
   const slide = useRef(new Animated.Value(0)).current;
   const insets = useSafeAreaInsets();
 
@@ -55,6 +69,9 @@ export function Sheet({ open, onClose, title, subtitle, children, footer }: Shee
               borderTopLeftRadius: radii.sheet,
               borderTopRightRadius: radii.sheet,
               maxHeight: '88%',
+              maxWidth,
+              width: maxWidth ? '100%' : undefined,
+              alignSelf: maxWidth ? 'center' : undefined,
               transform: [{ translateY }],
             }}
           >
@@ -65,9 +82,14 @@ export function Sheet({ open, onClose, title, subtitle, children, footer }: Shee
             </View>
             {title ? (
               <View style={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4 }}>
-                <Text style={{ fontFamily: fonts.bold, fontSize: 18, color: colors.black }}>
-                  {title}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text
+                    style={{ flex: 1, fontFamily: fonts.bold, fontSize: 18, color: colors.black }}
+                  >
+                    {title}
+                  </Text>
+                  {headerAction}
+                </View>
                 {subtitle ? (
                   <Text
                     style={{
@@ -83,6 +105,7 @@ export function Sheet({ open, onClose, title, subtitle, children, footer }: Shee
               </View>
             ) : null}
             <ScrollView
+              key={contentKey}
               keyboardShouldPersistTaps="handled"
               // flexShrink lets the ScrollView shrink to the parent's maxHeight
               // cap and scroll when content is tall; without it a tall sheet

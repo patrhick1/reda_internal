@@ -6,6 +6,7 @@
 import { daysAgoLagos, todayLagos, yesterdayLagos } from '@/lib/date';
 import { clientFacingDeliveryNote } from '@/lib/delivery-payment';
 import { formatNaira } from '@/lib/format';
+import { reportText, type ShareReport } from '@/lib/share-report';
 
 export type Preset = 'today' | 'yesterday' | 'last7' | 'custom';
 
@@ -289,7 +290,7 @@ export function clientShareShowsPhone(clientId: string | null | undefined): bool
 // because they are client charges rather than customer deliveries. The Total
 // block keeps delivered units and states who owes whom (the net) — pickup/waybill
 // charges are shown once in the body, not restated in the Total.
-export function buildClientShareMessage(input: {
+export function buildClientShareReport(input: {
   clientName: string;
   rangeLabel: string;
   /** Whether this is one day's update. Controls "Today's remittance" versus
@@ -314,7 +315,7 @@ export function buildClientShareMessage(input: {
     paymentsInPeriod: number;
     currentBalance: number;
   } | null;
-}): string {
+}): ShareReport {
   const format = input.format ?? 'default';
   const showPhone = input.showPhone ?? false;
   const blocks = input.rows.map((r) => {
@@ -401,7 +402,7 @@ export function buildClientShareMessage(input: {
         : `Client owes Reda: ${formatNaira(Math.abs(totalRemit))}`;
 
   const header = `Reda Logistics — ${input.clientName}\nDelivered Update\n${input.rangeLabel}`;
-  const body = input.rows.length === 0 ? '(no deliveries in this range)' : blocks.join('\n\n');
+  const body = input.rows.length === 0 ? ['(no deliveries in this range)'] : blocks;
   const singleDay = input.singleDay ?? true;
   const totalBlock = [
     'Total',
@@ -429,5 +430,12 @@ export function buildClientShareMessage(input: {
     balanceLine,
   ].join('\n');
 
-  return `${header}\n\n${body}\n\n${totalBlock}\n\nThank you for choosing REDA 🥂`;
+  return { header, blocks: body, footer: `${totalBlock}\n\nThank you for choosing REDA 🥂` };
+}
+
+/** Existing consumers retain the exact one-message report format. */
+export function buildClientShareMessage(
+  input: Parameters<typeof buildClientShareReport>[0],
+): string {
+  return reportText(buildClientShareReport(input));
 }

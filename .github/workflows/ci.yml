@@ -98,6 +98,7 @@ jobs:
         run: |
           npm run test:calls
           npm run test:blacklist-notices
+          npm run test:share-report
           node ../tools/test-client-stock-share.mjs
       - name: Build isolated workflow UI
         run: npx expo export --platform web --max-workers 2
@@ -112,12 +113,14 @@ jobs:
         run: |
           node ../tools/test-cross-platform-alerts.mjs
           node ../tools/eod-reliability-20260921/test-stock-wrap.mjs
+          node ../tools/test-client-report-share-ui.mjs
         env:
           ALERT_TEST_BROWSER: chromium
           ALERT_TEST_WEB_BUILD: '1'
           PLAYWRIGHT_MODULE: ${{ runner.temp }}/eod-browser/node_modules/playwright/index.mjs
           PLAYWRIGHT_MODULE_PATH: ${{ runner.temp }}/eod-browser/node_modules/playwright
           EOD_UI_DIST: dist
+          SHARE_UI_DIST: dist
       - uses: actions/upload-artifact@v4
         with:
           name: eod-test-web

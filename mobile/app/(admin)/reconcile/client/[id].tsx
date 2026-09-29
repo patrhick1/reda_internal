@@ -1,6 +1,7 @@
+import { ClientReportShare } from '@/components/ClientReportShare';
 import { useFinancialRevision } from '@/lib/financial-refresh';
 import { useCallback, useMemo } from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, Share, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, RefreshControl, Text, View } from 'react-native';
 import { Alert } from '@/lib/alert';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAsync } from '@/hooks/useAsync';
@@ -23,7 +24,7 @@ import { formatNaira } from '@/lib/format';
 import { formatDateLagos, formatRangeLagos, isYmd } from '@/lib/date';
 import { errorMessage } from '@/lib/errors';
 import {
-  buildClientShareMessage,
+  buildClientShareReport,
   clientShareFormat,
   clientShareShowsPhone,
   deriveDeliveryNote,
@@ -144,10 +145,10 @@ export default function ClientReconcileDetail() {
     [accountQ, paymentsQ],
   );
 
-  const onShare = useCallback(async () => {
+  const buildShareReport = useCallback(() => {
     // Per-delivery blocks + Total in Uzo's preferred shape, built by the shared
     // helper so the admin and rep "Share with client" output stays identical.
-    const message = buildClientShareMessage({
+    return buildClientShareReport({
       clientName,
       rangeLabel,
       singleDay: from === to,
@@ -192,12 +193,6 @@ export default function ClientReconcileDetail() {
         };
       }),
     });
-
-    try {
-      await Share.share({ message });
-    } catch {
-      /* user cancelled */
-    }
   }, [clientName, rangeLabel, from, to, rows, id, account]);
 
   return (
@@ -390,15 +385,22 @@ export default function ClientReconcileDetail() {
           backgroundColor: colors.white,
         }}
       >
-        <Button
-          variant="emphasis"
-          full
-          icon="share"
-          onPress={onShare}
-          disabled={rows.length === 0 && !account}
-        >
-          Share with client
-        </Button>
+        <ClientReportShare
+          key={`${id}:${from}:${to}`}
+          buildReport={buildShareReport}
+          loadError={!!detailQ.error || !!accountQ.error}
+          onRetry={() => {
+            void detailQ.reload();
+            void accountQ.reload();
+          }}
+          disabled={
+            detailQ.loading ||
+            accountQ.loading ||
+            !!detailQ.error ||
+            !!accountQ.error ||
+            (rows.length === 0 && !account)
+          }
+        />
       </View>
     </View>
   );
