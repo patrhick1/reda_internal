@@ -643,10 +643,7 @@ export function DeliveryDetail() {
             </View>
             <StatusPill
               status={status}
-              reason={
-                chainRows.find((row) => row.id === d.latest_history_id && row.to_status === status)
-                  ?.reason
-              }
+              closureKind={status === d.current_status ? d.closure_kind : null}
             />
           </View>
           <View style={{ marginTop: 14, flexDirection: 'row', gap: 8 }}>
@@ -1679,7 +1676,12 @@ function HistoryRow({
       </View>
       <View style={{ flex: 1, paddingBottom: last ? 0 : 16 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <StatusPill status={row.to_status} reason={row.reason} variant="subtle" size="sm" />
+          <StatusPill
+            status={row.to_status}
+            closureKind={row.closure_kind}
+            variant="subtle"
+            size="sm"
+          />
           <Text style={{ fontFamily: fonts.mono, fontSize: 12, color: colors.textSecondary }}>
             {formatDateTime(row.effective_at)}
           </Text>
@@ -1746,7 +1748,7 @@ function HistoryRow({
               {formatDateTime(notification.notifiedAt)}
             </Text>
           </View>
-        ) : canMark ? (
+        ) : canMark && row.notification_required !== false ? (
           <TouchableOpacity
             onPress={() => onMark(row.id)}
             style={{

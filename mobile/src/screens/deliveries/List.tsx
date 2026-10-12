@@ -1802,7 +1802,12 @@ const DeliveryListRow = memo(function DeliveryListRow({
                 </Text>
               </View>
             ) : null}
-            <StatusPill status={status} variant="subtle" size="sm" />
+            <StatusPill
+              status={status}
+              closureKind={delivery.closure_kind}
+              variant="subtle"
+              size="sm"
+            />
           </View>
           {sameCustomerBadge ? (
             <Text

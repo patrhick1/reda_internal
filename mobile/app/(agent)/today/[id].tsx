@@ -337,7 +337,10 @@ export default function AgentDeliveryDetail() {
                 {d.customer_name}
               </Text>
             </View>
-            <StatusPill status={status} />
+            <StatusPill
+              status={status}
+              closureKind={status === d.current_status ? d.closure_kind : null}
+            />
           </View>
           <View style={{ marginTop: 14, gap: 8 }}>
             <Button
@@ -928,7 +931,12 @@ function HistoryRow({
       </View>
       <View style={{ flex: 1, paddingBottom: last ? 0 : 16 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <StatusPill status={row.to_status} variant="subtle" size="sm" />
+          <StatusPill
+            status={row.to_status}
+            closureKind={row.closure_kind}
+            variant="subtle"
+            size="sm"
+          />
           <Text style={{ fontFamily: fonts.mono, fontSize: 12, color: colors.textSecondary }}>
             {formatDateTime(row.effective_at)}
           </Text>

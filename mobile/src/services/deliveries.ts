@@ -52,6 +52,8 @@ export type DeliveryDisplayJoins = {
    *  communicated. Embedded via LEFT JOIN to delivery_client_notifications
    *  in the deliveries views since 2026-06-04. */
   latest_notified: boolean;
+  notification_required?: boolean | null;
+  closure_kind?: 'duplicate' | 'client_policy' | null;
   /** Most recent delivery_messages.created_at for this delivery (from the
    *  view's LATERAL join). Folded into the list sort alongside
    *  latest_changed_at so a new thread message bubbles the row to the top the
@@ -389,7 +391,7 @@ const LIST_COLUMNS = `
   customer_name, customer_phone, customer_phone_alt, raw_address, quantity_ordered, customer_price,
   agent_payment_snapshot, current_status, created_via, created_by_user_id,
   created_date, scheduled_date, created_at, updated_at,
-  latest_history_id, latest_changed_at, latest_notified,
+  latest_history_id, latest_changed_at, latest_notified, notification_required, closure_kind,
   rolled_from_status, rolled_from_date, rollover_count,
   order_type, product_label, sibling_group_key, activity_at
 `;
@@ -440,6 +442,15 @@ function attachJoins<T extends object>(
       'latest_notified' in rest && typeof rest.latest_notified === 'boolean'
         ? rest.latest_notified
         : false,
+    notification_required:
+      'notification_required' in rest && typeof rest.notification_required === 'boolean'
+        ? rest.notification_required
+        : null,
+    closure_kind:
+      'closure_kind' in rest &&
+      (rest.closure_kind === 'duplicate' || rest.closure_kind === 'client_policy')
+        ? rest.closure_kind
+        : null,
     delivery_instructions:
       'delivery_instructions' in rest && typeof rest.delivery_instructions === 'string'
         ? rest.delivery_instructions
@@ -1393,6 +1404,8 @@ export type DeliveryChainHistoryRow =
   Database['public']['Functions']['list_delivery_history_chain']['Returns'][number] & {
     postponed_to?: string | null;
     previous_scheduled_date?: string | null;
+    notification_required?: boolean;
+    closure_kind?: 'duplicate' | 'client_policy' | null;
   };
 
 /** Status history for a delivery AND its rollover ancestry (parent chain),
@@ -1403,7 +1416,7 @@ export type DeliveryChainHistoryRow =
 export async function listDeliveryHistoryChain(
   deliveryId: string,
 ): Promise<DeliveryChainHistoryRow[]> {
-  const { data, error } = await rpcUntyped('list_delivery_history_chain_v2', {
+  const { data, error } = await rpcUntyped('list_delivery_history_chain_v3', {
     p_delivery_id: deliveryId,
   });
   if (error) throw error;

@@ -84,7 +84,8 @@ export async function listBotInbound(
         ' extracted:parse_result->extracted, product:parse_result->product,' +
         ' product_candidates:parse_result->product_candidates,' +
         ' product_matches:parse_result->product_matches,' +
-        ' address:parse_result->address, location_hint:parse_result->location_hint',
+        ' address:parse_result->address, location_hint:parse_result->location_hint,' +
+        ' gift_policy:parse_result->gift_policy, duplicate_review:parse_result->duplicate_review',
     )
     .order('received_at', { ascending: false })
     .limit(limit);
@@ -104,6 +105,8 @@ export async function listBotInbound(
     product_matches: unknown;
     address: unknown;
     location_hint: unknown;
+    gift_policy: unknown;
+    duplicate_review: unknown;
   };
   return ((data ?? []) as unknown as ProjectedRow[]).map((r) => ({
     id: r.id,
@@ -120,6 +123,8 @@ export async function listBotInbound(
       product_matches: r.product_matches,
       address: r.address,
       location_hint: r.location_hint,
+      gift_policy: r.gift_policy,
+      duplicate_review: r.duplicate_review,
     },
   }));
 }

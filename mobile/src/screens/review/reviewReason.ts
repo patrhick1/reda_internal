@@ -19,6 +19,11 @@ export type ProductMatch = {
 /** parse_result shape we care about. The bot writes more than this; we type
  *  only the fields the review-fix screen actually surfaces. */
 export type ParseResultShape = {
+  gift_policy?: {
+    ignored?: Array<{ product_name: string; quantity: number }>;
+    review_reasons?: string[];
+  };
+  duplicate_review?: { existing_delivery_id?: string };
   source?: string;
   address?: {
     confidence?: string | null;
@@ -145,6 +150,9 @@ export function primaryPrice(parse: ParseResultShape): number | null {
  *  hint badge on the list card. */
 export function reviewReason(row: BotInboundRow): string {
   const p = (row.parse_result ?? {}) as ParseResultShape;
+  if (p.duplicate_review)
+    return 'A similar order already exists. Check it before creating another delivery.';
+  if (p.gift_policy?.review_reasons?.length) return p.gift_policy.review_reasons.join(' ');
   const noLocation = !p.address?.matched_location_id;
   const prod = primaryProduct(p);
   const candidates = prod.candidates;

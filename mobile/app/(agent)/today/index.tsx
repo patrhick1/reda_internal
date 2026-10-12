@@ -907,7 +907,7 @@ const DeliveryCard = memo(function DeliveryCard({
                 </Text>
               </View>
             ) : null}
-            <StatusPill status={status} size="sm" />
+            <StatusPill status={status} closureKind={delivery.closure_kind} size="sm" />
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
             <Icon name="mapPin" size={12} color={colors.textSecondary} />

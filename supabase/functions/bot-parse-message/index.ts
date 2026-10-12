@@ -32,6 +32,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { denyIfNotInternal } from '../_shared/internal-auth.ts';
 import { chooseOrderTotal, type OrderTotalChoice } from '../_shared/order-total.ts';
+import { applyPerfumeGiftPolicy, giftPackingInstructions, PERFUME_GIFT_POLICY } from '../_shared/perfume-gifts.ts';
 import {
   PRODUCT_EXTRACTION_SCHEMA,
   PRODUCT_EXTRACTION_PROMPT,
@@ -772,8 +773,9 @@ Deno.serve(async (req) => {
     lineMatches.push({ line: li, match, candidates: pool });
   }
 
-  const matchedLines     = lineMatches.filter((r) => r.match);
-  const unmatchedLines   = lineMatches.filter((r) => !r.match);
+  const giftPolicy = applyPerfumeGiftPolicy(lineMatches, row.raw_text ?? '');
+  const matchedLines     = giftPolicy.rows.filter((r) => r.match);
+  const unmatchedLines   = giftPolicy.rows.filter((r) => !r.match);
   // [free-gift] An unmatched line the MESSAGE marked free (line.free) is a
   // promotional giveaway — "1 Free Nose Trimmer", "FREE DIGITAL BRACELET", a
   // bonus sachet — not a product the customer paid for. Drop it instead of
@@ -878,7 +880,7 @@ Deno.serve(async (req) => {
       customer_phone:     customerPhoneRaw,
       customer_phone_alt: customerPhoneAltRaw,
       raw_address:        rawAddressRaw,
-      instructions:       deliveryInstructions,   // self-extracted handling note (null if none)
+      instructions:       giftPackingInstructions(deliveryInstructions, giftPolicy.ignored),
       client_rep:         clientRep,              // client's trailing rep/closer name (null if none)
       total_amount:       orderTotal,  // the CHOSEN total — see total_sources for each source's own figure
       products:           lineItems,    // [Feature A] the full extracted line set
@@ -895,7 +897,7 @@ Deno.serve(async (req) => {
       chosen:       totalChoice.source,
     } : null,
     // [Feature A] per-line resolution: each line, its chosen SKU, and candidates.
-    product_matches: lineMatches.map((r) => ({
+    product_matches: giftPolicy.rows.map((r) => ({
       line:       r.line,
       matched:    r.match,
       candidates: r.candidates,
@@ -905,6 +907,8 @@ Deno.serve(async (req) => {
     client_id_conflict: multiVendor,                  // true → bundle spans clients
     unmatched_count:    blockingUnmatched.length,     // [free-gift] free unmatched lines don't count
     dropped_free_gifts: droppedFreeGifts,             // [free-gift] unmatched freebies we dropped
+    gift_policy: { version: PERFUME_GIFT_POLICY, ignored: giftPolicy.ignored, review_reasons: giftPolicy.reviewReasons },
+    product_matches_before_gift_policy: giftPolicy.applied || giftPolicy.reviewReasons.length ? lineMatches : undefined,
     order_client_id:    orderClientId,
     address,
     source,                  // "contractor" | "contractor+openrouter" | "openrouter"
@@ -922,7 +926,7 @@ Deno.serve(async (req) => {
     !!customerName && !!customerPhone && !!rawAddress &&
     !!address.matched_location_id && customerPrice !== null &&
     resolvedItems.length > 0 && blockingUnmatched.length === 0 &&
-    !multiVendor && !!orderClientId;
+    !multiVendor && !!orderClientId && giftPolicy.reviewReasons.length === 0;
 
   // Pipeline gating.
   if (!pipelineEnabled || shadowMode) {
@@ -968,7 +972,7 @@ Deno.serve(async (req) => {
 
   // 6. Create delivery via bot_create_delivery RPC (impersonates an admin internally).
   const clientUuid = `bot:${inboundId}`;
-  const { data: deliveryIdData, error: createErr } = await supabase.rpc('bot_create_delivery', {
+  const { data: deliveryIdData, error: createErr } = await supabase.rpc(giftPolicy.applied ? 'bot_create_delivery_with_gifts' : 'bot_create_delivery', {
     p_client_uuid:        clientUuid,
     p_client_id:          orderClientId!,
     p_product_catalog_id: primaryItem!.product_catalog_id,  // legacy primary (dual-write)
@@ -983,7 +987,7 @@ Deno.serve(async (req) => {
     p_bot_raw_message:    row.raw_text,
     p_assigned_agent_id:  agentResolution.agent_id,
     p_items:              resolvedItems,                    // [Feature A] line items
-    p_delivery_instructions: deliveryInstructions,         // self-extracted handling note (null if none)
+    p_delivery_instructions: giftPackingInstructions(deliveryInstructions, giftPolicy.ignored),
     p_client_rep:         clientRep,                        // client's trailing rep/closer name (null if none)
   });
 
@@ -1002,6 +1006,14 @@ Deno.serve(async (req) => {
                      && typeof (createErr as any).hint === 'string';
     if (isOurSignal) {
       try { hint = JSON.parse((createErr as any).hint); } catch { /* not our hint */ }
+    }
+    if (hint?.kind === 'gift_duplicate_review') {
+      await supabase.rpc('mark_inbound_processed', {
+        p_inbound_id: inboundId, p_status: 'needs_review',
+        p_parse: { ...parseResult, duplicate_review: { existing_delivery_id: hint.existing_delivery_id } },
+        p_delivery_id: null, p_error: null,
+      });
+      return new Response('needs_review', { status: 200 });
     }
     if (hint?.kind === 'duplicate_same_agent' && typeof hint.existing_delivery_id === 'string') {
       await supabase.rpc('mark_inbound_processed', {

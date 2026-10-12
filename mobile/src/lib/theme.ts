@@ -1,6 +1,8 @@
 // Reda design tokens — translated from the brand kit. Keep this file as the
 // single source of truth; never inline hex colors or font names in screens.
 
+import { agentCanSelectStatus } from './client-notification';
+export { awaitsClientNotification } from './client-notification';
 import { formatYmdShort } from './format';
 import {
   CLIENT_POLICY_CLOSURE_EXPLANATION,
@@ -324,6 +326,7 @@ export function pickerTransitions<T extends { to_status: string }>(
     (t) =>
       t.to_status !== 'delivered' &&
       !STATUS_HIDDEN_FROM_PICKER.has(t.to_status) &&
+      (!restrictToAgentSet || agentCanSelectStatus(t.to_status)) &&
       (!allow || allow.includes(t.to_status)),
   );
 }
@@ -348,59 +351,8 @@ export function isAssignedActive(d: {
   return statusBucket(d.current_status) === 'active' && !!d.assigned_agent_id;
 }
 
-/** Statuses for which a rep is NOT expected to send the client a status update.
- *  Everything else — every "blue" worked active status (`available` /
- *  `available_evening`), every "yellow" soft-fail (incl. `no_product`), AND the
- *  non-delivered terminal outcomes that still warrant a heads-up (`cancelled`,
- *  `failed_delivery`, `abandoned`) — IS something the client should hear about.
- *  Exempt, by design:
- *    - `pending`     — the not-yet-worked default;
- *    - `delivered`   — relayed in the once-a-day NIGHT BATCH of delivered reports,
- *                      not per-row (the change from the 2026-06-18 behaviour where
- *                      delivered counted here);
- *    - `rolled_over` — automated EOD bookkeeping on the parent row; the order lives
- *                      on as a fresh child for the next day, so there's nothing new
- *                      to tell the client (and it would flood the queue nightly);
- *    - `agent_cancelled` — an agent passing on their own race/route row; the order is
- *                      reassigned and stays alive, so the customer was NOT cancelled;
- *    - `deferred_to_client`, `unserious`, `picked_up`, `waybilled` — terminal
- *                      outcomes the client doesn't need a per-row status ping for
- *                      (Uzo, 2026-06-23: exempt these from "To notify"). This narrows
- *                      the 2026-06-20 "notify every non-delivered terminal" rule.
- *  Client-policy exception: `failed_delivery` is also exempt when the client's
- *  `auto_cancel_soft_fails` policy is on. Those failures are EOD-owned closures
- *  the vendor does not expect Reda to relay (currently Shalom). Deliberately an
- *  exclusion list, not an include list, so a new customer-facing
- *  status added later auto-qualifies. Mirrored by k_notify_exempt in
- *  tools/live-defs/rep-performance.sql (rep-performance SLA denominator). */
-const NOTIFY_EXEMPT_STATUSES = new Set<string>([
-  'pending',
-  'delivered',
-  'rolled_over',
-  'agent_cancelled',
-  'deferred_to_client',
-  'unserious',
-  'picked_up',
-  'waybilled',
-  'replacement_completed',
-]);
-
-/** True when the delivery's LATEST status change is one the client should be told
- *  about but hasn't been yet (latest_notified is false). Powers the rep "Awaiting
- *  client notification" surfaces — the dashboard card and the list's "To notify"
- *  filter — so both share one definition and can't drift. Pure: reads only fields
- *  already on every list row (no extra query). */
-export function awaitsClientNotification(d: {
-  current_status: string | null | undefined;
-  latest_notified: boolean | null | undefined;
-  client_auto_cancel_soft_fails?: boolean | null | undefined;
-}): boolean {
-  if (d.latest_notified) return false;
-  const s = d.current_status;
-  if (!s) return false;
-  if (s === 'failed_delivery' && d.client_auto_cancel_soft_fails) return false;
-  return !NOTIFY_EXEMPT_STATUSES.has(s);
-}
+// Client-notification rules live in client-notification.ts; server event causes
+// are authoritative for internal closures.
 
 export const TONE_PALETTE: Record<
   Tone,

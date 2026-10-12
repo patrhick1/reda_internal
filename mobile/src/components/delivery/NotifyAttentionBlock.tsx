@@ -93,7 +93,12 @@ export function NotifyAttentionBlock({
                 </Text>
               </View>
               {row.current_status ? (
-                <StatusPill status={row.current_status} variant="subtle" size="sm" />
+                <StatusPill
+                  status={row.current_status}
+                  closureKind={row.closure_kind}
+                  variant="subtle"
+                  size="sm"
+                />
               ) : null}
               <Icon name="chevronRight" size={16} color={colors.textSecondary} />
             </TouchableOpacity>
