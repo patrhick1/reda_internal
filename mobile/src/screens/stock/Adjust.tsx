@@ -21,8 +21,8 @@ import { resolveWarehouseHolder } from '@/lib/stock-helpers';
 // the whole batch failed.
 function adjustFailureMessage(failed: number, total: number, firstReason: string): string {
   return total === 1
-    ? firstReason
-    : `${total - failed} of ${total} applied; ${failed} failed: ${firstReason}`;
+    ? `${firstReason}. Open Sync issues to retry this adjustment.`
+    : `${total - failed} of ${total} applied; ${failed} failed: ${firstReason}. Open Sync issues to retry only the failed adjustments.`;
 }
 
 /**
@@ -109,8 +109,10 @@ export function StockAdjustScreen({ scope }: StockAdjustScreenProps) {
 
   const enqueueAdj = useEnqueueStockAdjustment();
   // Owns submit state + "stay on-screen until the queued jobs settle".
-  const { submitting, setSubmitting, error, setError, finish, retrying } =
-    useQueuedSubmit(adjustFailureMessage);
+  const { submitting, setSubmitting, error, setError, finish, retrying } = useQueuedSubmit(
+    adjustFailureMessage,
+    resetRows,
+  );
 
   const activeUsers = useMemo(
     () =>
@@ -288,10 +290,9 @@ export function StockAdjustScreen({ scope }: StockAdjustScreenProps) {
   }
 
   const isWarehouseScope = scope === 'warehouse';
-  // Warehouse path drops `correction` — that's the books-override escape hatch
-  // and the SQL guard refuses it for non-admin callers anyway.
+  // Correction and stock waybills are admin-only; match the database gate.
   const reasonOptions = ADJUSTMENT_REASONS.filter(
-    (r) => scope === 'admin' || r.value !== 'correction',
+    (r) => scope === 'admin' || !['correction', 'waybill'].includes(r.value),
   ).map((r) => ({
     value: r.value,
     label: r.label,
@@ -358,6 +359,13 @@ export function StockAdjustScreen({ scope }: StockAdjustScreenProps) {
         placeholder="Pick a reason"
       />
 
+      {reason === 'waybill' ? (
+        <Text style={styles.hint}>
+          Record products shipped out of REDA stock. This does not record a waybill charge. For
+          stock moving to another REDA rider or warehouse, use Transfer.
+        </Text>
+      ) : null}
+
       {/* `correction` is the only either-sign reason, so it's the only one that
           has to ask. Batch-level, because a sitting is all write-offs or all
           write-ons — mixing the two is two deliberate passes. */}
@@ -409,7 +417,7 @@ export function StockAdjustScreen({ scope }: StockAdjustScreenProps) {
             label={direction === 'add' ? 'Quantity to add' : 'Quantity to remove'}
             required
             value={row.quantity}
-            onChangeText={(v) => updateRow(row.id, { quantity: v.replace(/[^0-9]/g, '') })}
+            onChangeText={(v) => updateRow(row.id, { quantity: v })}
             keyboardType="number-pad"
             autoCapitalize="none"
           />
@@ -429,7 +437,11 @@ export function StockAdjustScreen({ scope }: StockAdjustScreenProps) {
         value={notes}
         onChangeText={setNotes}
         multiline
-        placeholder="Optional — why the books are changing"
+        placeholder={
+          reason === 'waybill'
+            ? 'Optional — shipment reference or destination'
+            : 'Optional — why the books are changing'
+        }
       />
 
       {error || usersQ.error || productsQ.error ? (

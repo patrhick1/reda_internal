@@ -53,7 +53,7 @@ export type CreateStockAdjustmentArgs = {
   agentId: string;
   productCatalogId: string;
   quantityDelta: number;
-  reason: 'loss' | 'theft' | 'damaged' | 'found' | 'correction' | 'bulk_intake';
+  reason: 'loss' | 'theft' | 'damaged' | 'found' | 'correction' | 'bulk_intake' | 'waybill';
   notes: string | null;
 };
 
