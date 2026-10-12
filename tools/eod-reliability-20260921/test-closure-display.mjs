@@ -76,6 +76,7 @@ try {
       };
       const id = "55555555-5555-4555-8555-555555555555",
         historyId = "66666666-6666-4666-8666-666666666666";
+      const policy = isClientPolicyClosure("failed_delivery", reason);
       const delivery = {
         id,
         customer_name: "TEST policy closure",
@@ -87,6 +88,8 @@ try {
         created_at: "2026-09-23T09:00:00Z",
         updated_at: "2026-09-23T21:31:00Z",
         latest_history_id: historyId,
+        closure_kind: policy ? "client_policy" : null,
+        notification_required: !policy,
         order_type: "delivery",
         quantity_ordered: 1,
         customer_price: 10000,
@@ -133,7 +136,7 @@ try {
           ];
         if (["deliveries_admin", "deliveries_safe"].includes(name))
           data = url.searchParams.has("id") ? delivery : [delivery];
-        if (name === "list_delivery_history_chain_v2")
+        if (name === "list_delivery_history_chain_v3")
           data = [
             {
               id: "77777777-7777-4777-8777-777777777777",
@@ -146,6 +149,8 @@ try {
               effective_at: "2026-09-22T21:00:00Z",
               changed_at: "2026-09-22T21:00:00Z",
               reason: "maintenance:close_policy",
+              closure_kind: "client_policy",
+              notification_required: false,
               notes: null,
             },
             {
@@ -159,6 +164,8 @@ try {
               effective_at: "2026-09-23T21:31:00Z",
               changed_at: "2026-09-23T21:31:00Z",
               reason,
+              closure_kind: policy ? "client_policy" : null,
+              notification_required: !policy,
               notes: null,
             },
           ];
@@ -173,9 +180,9 @@ try {
         const explanation =
           "Closed because this client’s orders do not roll over.";
         await page.getByText(explanation, { exact: true }).first().waitFor();
-        const policy = isClientPolicyClosure("failed_delivery", reason);
+
         assert.equal(
-          await page.getByText("Closed", { exact: true }).count(),
+          await page.getByText("Closed — client policy", { exact: true }).count(),
           policy ? 3 : 1,
           "Header uses current event, not ancestor or client setting",
         );
