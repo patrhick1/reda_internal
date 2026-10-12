@@ -3,6 +3,7 @@ export type MovementSummaryReason =
   | 'warehouse_issue'
   | 'warehouse_return'
   | 'transfer'
+  | 'waybill'
   | 'correction'
   | 'loss'
   | 'theft'
@@ -53,6 +54,7 @@ const REASON_BUCKET: Record<MovementSummaryReason, MovementMetric> = {
   warehouse_return: 'warehouseReturns',
   warehouse_issue: 'warehouseIssues',
   transfer: 'transfers',
+  waybill: 'adjustments',
   correction: 'adjustments',
   loss: 'adjustments',
   theft: 'adjustments',

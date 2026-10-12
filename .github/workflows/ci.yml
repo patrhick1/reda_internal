@@ -41,6 +41,7 @@ jobs:
         with:
           deno-version: 'v2.7.1'
       - run: node tools/eod-reliability-20260921/test-runner.mjs --setup
+      - run: node tools/waybill-stock/test.mjs
       - run: node tools/manual-fee-waivers/test-runner.mjs
       - run: node tools/manual-fee-waivers/test-concurrency.mjs
       - name: Reload API schema
@@ -99,6 +100,7 @@ jobs:
           npm run test:calls
           npm run test:blacklist-notices
           npm run test:share-report
+          npm run test:stock-summary
           node ../tools/test-client-stock-share.mjs
       - name: Build isolated workflow UI
         run: npx expo export --platform web --max-workers 2
@@ -113,6 +115,7 @@ jobs:
         run: |
           node ../tools/test-cross-platform-alerts.mjs
           node ../tools/eod-reliability-20260921/test-stock-wrap.mjs
+          node ../tools/waybill-stock/test-ui.mjs
           node ../tools/test-client-report-share-ui.mjs
         env:
           ALERT_TEST_BROWSER: chromium

@@ -448,7 +448,7 @@ export function StockOverview({ basePath }: { basePath: StockBasePath }) {
             <ActionRow
               icon="edit"
               label="Adjustment"
-              sub="Correction, loss, theft, damaged, or found"
+              sub="Correction, waybill stock out, loss, theft, damaged, or found"
               onPress={() => {
                 setOverflowOpen(false);
                 router.push(`${basePath}/stock/adjust` as `${StockBasePath}/stock/adjust`);

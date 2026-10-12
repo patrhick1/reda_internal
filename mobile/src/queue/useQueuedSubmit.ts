@@ -34,8 +34,11 @@ export type QueuedSubmit = {
  *   STABLE reference (module-scope fn or useCallback) so the settle effect
  *   doesn't re-run every render.
  */
+/** With onFailureRetainJobs, keep failed requests in Sync issues with their original
+ * retry IDs. The callback clears submitted rows so successes cannot be sent again. */
 export function useQueuedSubmit(
   makeFailureMessage: (failed: number, total: number, firstReason: string) => string,
+  onFailureRetainJobs?: () => void,
 ): QueuedSubmit {
   const { snapshot, drainNow, drop } = useQueue();
   const [watchIds, setWatchIds] = useState<string[] | null>(null);
@@ -64,9 +67,10 @@ export function useQueuedSubmit(
     const firstReason = watch.failed[0]?.lastError ?? 'Operation failed';
     setError(makeFailureMessage(watch.failed.length, watchIds.length, firstReason));
     setSubmitting(false);
-    void drop(watch.failed.map((j) => j.id));
+    if (onFailureRetainJobs) onFailureRetainJobs();
+    else void drop(watch.failed.map((j) => j.id));
     setWatchIds(null);
-  }, [watch, watchIds, drop, makeFailureMessage]);
+  }, [watch, watchIds, drop, makeFailureMessage, onFailureRetainJobs]);
 
   return {
     submitting,

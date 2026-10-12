@@ -651,6 +651,8 @@ function globalSubtitleFor(row: GlobalMovement): string {
       return `Replacement sent · ${holder} → ${row.customer_name ?? 'customer'}`;
     case 'replacement_return_accepted':
       return `Replacement return accepted into ${holder}`;
+    case 'waybill':
+      return `Waybill — stock out · ${holder}`;
     case 'correction':
       return `Correction · ${holder}`;
     case 'loss':

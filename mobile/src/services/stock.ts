@@ -13,7 +13,14 @@ export function invalidateStock(): void {
   void queryClient.invalidateQueries({ queryKey: ['stock'] });
 }
 
-export type SingleReason = 'loss' | 'theft' | 'damaged' | 'found' | 'correction' | 'bulk_intake';
+export type SingleReason =
+  | 'loss'
+  | 'theft'
+  | 'damaged'
+  | 'found'
+  | 'correction'
+  | 'bulk_intake'
+  | 'waybill';
 export type PairedReason = 'transfer' | 'warehouse_return' | 'warehouse_issue';
 
 export const SINGLE_REASONS: {
@@ -27,6 +34,7 @@ export const SINGLE_REASONS: {
   { value: 'found', label: 'Found', sign: 'positive' },
   { value: 'bulk_intake', label: 'Bulk intake', sign: 'positive' },
   { value: 'correction', label: 'Correction', sign: 'either' },
+  { value: 'waybill', label: 'Waybill — stock out', sign: 'negative' },
 ];
 
 /** Reasons admissible from the generic "Adjustment" screen — every single

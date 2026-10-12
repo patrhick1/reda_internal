@@ -116,3 +116,23 @@ test('old-RPC zero rows do not create misleading empty period cards', () => {
   assert.deepEqual(periods, []);
   assert.equal(total.net, 0);
 });
+
+test('waybill stock leaves adjustments and net exactly once without recording delivery', () => {
+  const { total } = groupMovementSummary(
+    [
+      { period_start: '2026-10-12', reason: 'bulk_intake', qty: 10 },
+      { period_start: '2026-10-12', reason: 'waybill', qty: -5 },
+      { period_start: '2026-10-12', reason: 'correction', qty: 2 },
+      { period_start: '2026-10-12', reason: 'warehouse_issue', qty: 0, activity_qty: 3 },
+    ],
+    true,
+  );
+  assert.equal(total.adjustments, -3);
+  assert.equal(total.net, 7);
+  assert.equal(total.received, 10);
+  assert.equal(total.delivered, 0);
+  assert.equal(total.warehouseIssues, 3);
+  assert(
+    Object.values(total).every((value) => typeof value !== 'number' || Number.isFinite(value)),
+  );
+});
