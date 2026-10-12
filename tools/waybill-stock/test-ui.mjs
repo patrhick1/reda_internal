@@ -202,7 +202,14 @@ try {
         assert.equal(requests.length, 2);
         assert.equal(await page.locator("input").first().inputValue(), "");
         await page.goto("http://127.0.0.1:55453/(queue)/dead-letter");
+        const retried = page.waitForResponse(
+          (response) =>
+            new URL(response.url()).pathname.endsWith(
+              "/create_stock_adjustment",
+            ) && response.status() === 200,
+        );
         await page.getByRole("button", { name: "Retry", exact: true }).click();
+        await retried;
         await page.getByText("All synced", { exact: true }).waitFor();
         assert.equal(requests.length, 3);
         assert.equal(requests[2].p_client_uuid, requests[1].p_client_uuid);
