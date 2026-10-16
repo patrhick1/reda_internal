@@ -9,6 +9,8 @@
 // config, so a bare key is correct.
 
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
+import { useCallback, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
 import { errorMessage } from '@/lib/errors';
 import { queryClient } from '@/lib/query';
 import { todayLagos } from '@/lib/date';
@@ -341,18 +343,29 @@ export function useStockMatrix(): DeliveryListResult<StockMatrixRow[]> {
  *  prefix ON PURPOSE: invalidateStock() (queue drain, incl. change_delivery_status
  *  jobs) refreshes it the moment stock moves OR an order is confirmed — the
  *  self-tightening behaviour the signal's design relies on, with zero new
- *  invalidation wiring. `enabled:false` lets role-shared screens (OpsDashboard)
- *  skip the fetch entirely for roles that never render it. */
+ *  invalidation wiring. Poll every 20s on the focused screen so changes from
+ *  other devices also arrive. React Query pauses in the background/offline and
+ *  revalidates stale data on resume/reconnect. `enabled:false` lets role-shared
+ *  screens (OpsDashboard) skip roles that never render coverage. */
 export function useStockCoverage(
   opts: { enabled?: boolean } = {},
 ): DeliveryListResult<CoverageRow[]> {
   const uid = useUid();
   const queryKey = ['stock', uid, 'coverage'];
+  const [focused, setFocused] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      setFocused(true);
+      return () => setFocused(false);
+    }, []),
+  );
   const q = useQuery({
     queryKey,
     queryFn: () => stockCoverageToday(),
     staleTime: DELIVERIES_STALE,
-    enabled: opts.enabled ?? true,
+    enabled: focused && (opts.enabled ?? true),
+    refetchInterval: DELIVERIES_STALE,
+    refetchIntervalInBackground: false,
   });
   return { ...asAsync(q), fetching: q.isFetching, refetchIfStale: () => refetchIfStale(queryKey) };
 }

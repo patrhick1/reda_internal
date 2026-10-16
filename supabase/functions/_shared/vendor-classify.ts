@@ -18,7 +18,7 @@
 // openrouterExtractProducts (same model, temperature 0, strict json_schema,
 // 30s timeout, fence-strip + defensive coercion).
 
-import { stripJsonFences, sanitizeMessageText, type ProductMatch } from './product-extract.ts';
+import { pickMatch, stripJsonFences, sanitizeMessageText, type ProductMatch } from './product-extract.ts';
 
 export const VENDOR_CLASSIFIER_MODEL = 'openai/gpt-4.1-mini';
 export const VENDOR_CLASSIFIER_VERSION = 'vendor-classify-v1-gpt-4.1-mini';
@@ -72,6 +72,47 @@ export function vendorContenders(pool: ProductMatch[], opts: CrossVendorOpts = {
     }
   }
   return [...byClient.values()].sort((a, b) => b.best_score - a.best_score);
+}
+
+export type ProductHintOutcome =
+  | 'no_hint'
+  | 'confirmed_clear_match'
+  | 'ignored_clear_match'
+  | 'ignored_not_vendor_tie'
+  | 'ignored_not_contender'
+  | 'ignored_ambiguous_vendor'
+  | 'resolved_vendor_tie'
+  | 'ambiguous_hinted_products';
+
+// A contractor's best-guess vendor is only a tie-breaker. Always score the full
+// catalog pool first, so a weak hinted SKU cannot displace a clear match.
+// Keep the pool intact for both the classifier fallback and the audit trail.
+export function pickMatchWithClientHint(
+  pool: ProductMatch[],
+  clientHint: string | null,
+): { match: ProductMatch | null; outcome: ProductHintOutcome } {
+  const match = pickMatch(pool);
+  const hint = clientHint?.trim().toLowerCase();
+  if (!hint) return { match, outcome: 'no_hint' };
+  if (match) {
+    return {
+      match,
+      outcome: match.client_name?.trim().toLowerCase() === hint
+        ? 'confirmed_clear_match' : 'ignored_clear_match',
+    };
+  }
+  if (!isCrossVendorTie(pool)) return { match: null, outcome: 'ignored_not_vendor_tie' };
+  const contenders = vendorContenders(pool);
+  const hinted = contenders.filter(c => c.client_name.trim().toLowerCase() === hint);
+  if (contenders.length < 2 || hinted.length === 0) {
+    return { match: null, outcome: 'ignored_not_contender' };
+  }
+  if (hinted.length > 1) return { match: null, outcome: 'ignored_ambiguous_vendor' };
+  const hintedMatch = pickMatch(pool.filter(c => c.client_id === hinted[0].client_id));
+  return {
+    match: hintedMatch,
+    outcome: hintedMatch ? 'resolved_vendor_tie' : 'ambiguous_hinted_products',
+  };
 }
 
 // One candidate vendor plus a few recent example messages that vendor is known to

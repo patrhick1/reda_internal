@@ -95,6 +95,10 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run format:check
+      - name: Urgent stock and Altior regression tests
+        run: |
+          node --experimental-strip-types --test src/lib/stock-signal.test.mjs ../tools/urgent-ab-20261016/manual-refresh.test.mjs
+          node --test ../tools/altior-age-20261016/altior-report.test.mjs
       - name: Call, blacklist and stock-sharing regression tests
         run: |
           npm run test:calls
@@ -124,6 +128,14 @@ jobs:
           PLAYWRIGHT_MODULE_PATH: ${{ runner.temp }}/eod-browser/node_modules/playwright
           EOD_UI_DIST: dist
           SHARE_UI_DIST: dist
+      - name: Stock refresh and Altior report acceptance
+        run: |
+          node ../tools/urgent-ab-20261016/stock-acceptance.mjs
+          node ../tools/altior-age-20261016/altior-share-acceptance.mjs
+        env:
+          STOCK_UI_DIST: dist
+          ALTIOR_UI_DIST: dist
+          PLAYWRIGHT_MODULE_PATH: ${{ runner.temp }}/eod-browser/node_modules/playwright
       - uses: actions/upload-artifact@v4
         with:
           name: eod-test-web
@@ -148,6 +160,44 @@ jobs:
         env:
           EOD_UI_DIST: dist
           PLAYWRIGHT_MODULE_PATH: ${{ runner.temp }}/eod-browser/node_modules/playwright
+
+  urgent-backend:
+    name: JQ matching and Altior report projection
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: reda_altior_test
+          POSTGRES_PASSWORD: isolated-test-only
+          POSTGRES_DB: reda_altior_test
+          PGPORT: 55459
+        ports: ['55459:55459']
+        options: >-
+          --health-cmd "pg_isready -U reda_altior_test -d reda_altior_test -p 55459"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      PGPASSWORD: isolated-test-only
+      PGPORT: '55459'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: 'v2.7.1'
+      - name: Parser regression and acceptance
+        run: deno test --no-lock --node-modules-dir=none --allow-env=SUPABASE_URL,SUPABASE_SERVICE_ROLE_KEY,INTERNAL_FUNCTION_SECRET,OPENROUTER_API_KEY tools/urgent-ab-20261016/parser-acceptance.test.ts supabase/functions/_shared/product-hint.test.ts supabase/functions/_shared/product-extract.test.ts supabase/functions/_shared/vendor-classify.test.ts supabase/functions/_shared/order-total.test.ts supabase/functions/_shared/perfume-gifts.test.ts
+      - name: Altior SQL projection and idempotency
+        env:
+          TEST_PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          sql() { docker exec -e PGPASSWORD -i "$TEST_PG_CONTAINER" psql -X -h 127.0.0.1 -p 55459 -U reda_altior_test -d reda_altior_test -v ON_ERROR_STOP=1 "$@"; }
+          sql < tools/altior-age-20261016/report-fixture.sql
+          sql < tools/live-defs/client_remit_detail_rep_before_altior_20261016.sql
+          sql -c 'REVOKE ALL ON FUNCTION public.client_remit_detail_rep(uuid,date,date) FROM PUBLIC; GRANT EXECUTE ON FUNCTION public.client_remit_detail_rep(uuid,date,date) TO altior_report_caller;'
+          for attempt in 1 2; do
+            sql < supabase/migrations/20261016170000_altior_delivered_update.sql
+            sql < tools/altior-age-20261016/report-cases.sql
+          done
 
   security:
     name: Security checks

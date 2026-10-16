@@ -252,14 +252,15 @@ export function buildMoniepointPayoutCsv(rows: MoniepointPayoutRow[]): string {
 
 export type ClientShareFormat = 'default' | 'paidAndFee' | 'paidFeeAndRemit';
 
-// Per-client override for the "Share with client" report format. Karami shows
-// customer payment and delivery fee; Decency also shows the net remit.
+// Per-client override for the "Share with client" report format. Karami and
+// Altior show customer payment and delivery fee; Decency also shows net remit.
 // Keyed by client id (stable across renames). Both formats reveal Reda's fee, so the rep RPC
 // returns that fee only for clients mapped here. To add a client, update this
 // map and the matching server-side allow-list (flip both to a clients column if
 // this list ever grows).
 const CLIENT_SHARE_FORMAT: Record<string, ClientShareFormat> = {
   '2acf7d84-3a5c-4532-b47c-568b7f4928f3': 'paidAndFee', // Karami
+  '0b23954d-c5ea-49a1-ae67-f0b6ddf7a3cc': 'paidAndFee', // Altior Essentials
   '88398fcc-d4f7-4b5b-a16e-53ce5c463cf3': 'paidFeeAndRemit', // Decency Stores
 };
 
