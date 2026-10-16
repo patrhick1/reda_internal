@@ -85,6 +85,12 @@ Deno.serve(async (req) => {
   const audience = parseAudience(body);
   if (!audience) return new Response('audience required', { status: 400 });
 
+  // Routine completions are silent for all admins, including delayed/retried events.
+  // Keep this before recipient lookup so stale events cannot generate a push.
+  if (audience.kind === 'status_change' && audience.newStatus === 'delivered') {
+    return new Response('delivered notifications disabled', { status: 200 });
+  }
+
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceKey  = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if (!supabaseUrl || !serviceKey) return new Response('server misconfigured', { status: 500 });
@@ -273,8 +279,7 @@ async function resolve(
   }
 
   if (audience.kind === 'status_change') {
-    // Notify all admins when a delivery hits one of the 5 terminal statuses
-    // we care about (decided trigger-side).
+    // Notify all admins about delivery exceptions selected by the DB trigger.
     const { data: delivery, error } = await supabase
       .from('deliveries')
       .select(`
@@ -299,17 +304,11 @@ async function resolve(
     // [Feature A] Summarize all products ("Opulent Oud ×2, Atomizer ×4").
     const product  = lineItemsOrLegacy(delivery).map((i) => `${i.name} ×${i.qty}`).join(', ') || '—';
     const agent    = (delivery as any).agent?.display_name?.split(/\s+/)[0] ?? 'Agent';
-    const paid     = Number(delivery.paid ?? 0);
     const qty      = delivery.quantity_delivered;
 
     let title = 'Delivery update';
     let bodyText: string;
     switch (audience.newStatus) {
-      case 'delivered':
-        title = 'Delivered';
-        bodyText = `${agent} delivered to ${customer} · ${location}` +
-                   (paid > 0 ? ` · ₦${paid.toLocaleString('en-NG')} collected` : '');
-        break;
       case 'failed_delivery':
         title = 'Failed delivery';
         bodyText = `${agent} marked failed: ${customer} · ${location} · ${product}`;
