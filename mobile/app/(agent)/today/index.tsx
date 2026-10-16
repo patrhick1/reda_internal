@@ -706,17 +706,19 @@ export default function AgentToday() {
         refreshControl={
           <RefreshControl
             refreshing={
-              filter === 'postponed'
+              (coverageQ.fetching && !!coverageQ.data) ||
+              (filter === 'postponed'
                 ? postponedFetching && !!postponedData
                 : filter === 'overdue'
                   ? overdueFetching && !!overdueData
-                  : fetching && !!data
+                  : fetching && !!data)
             }
             onRefresh={() => {
               reload();
               reloadPostponed();
               reloadOverdue();
               earningsQ.reload();
+              coverageQ.reload();
             }}
             tintColor={colors.black}
           />

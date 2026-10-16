@@ -31,6 +31,7 @@
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { denyIfNotInternal } from '../_shared/internal-auth.ts';
+import { resolveCustomerPhones } from '../_shared/customer-phones.ts';
 import { chooseOrderTotal, type OrderTotalChoice } from '../_shared/order-total.ts';
 import { applyPerfumeGiftPolicy, giftPackingInstructions, PERFUME_GIFT_POLICY } from '../_shared/perfume-gifts.ts';
 import {
@@ -44,12 +45,12 @@ import {
   extractLabeledRep,
   extractVendorOrderRef,
   stripJsonFences as stripFencesShared,
-  pickMatch,
   type ExtractedProducts,
   type LineItem,
   type ProductMatch,
 } from '../_shared/product-extract.ts';
 import {
+  pickMatchWithClientHint,
   isCrossVendorTie,
   vendorContenders,
   classifyVendor,
@@ -555,6 +556,7 @@ Deno.serve(async (req) => {
   let customerNameRaw     = contractorFields.customer_name      ?? null;
   let customerPhoneRaw    = contractorFields.customer_phone     ?? null;
   let customerPhoneAltRaw = contractorFields.customer_phone_alt ?? null;
+  let extractedPhones: Array<string | null> = [];
   let rawAddressRaw       = contractorFields.raw_address        ?? null;
   // Delivery instructions are self-extracted from the raw message by our LLM —
   // the contractor doesn't send them, so there's no contractor field to merge.
@@ -605,6 +607,7 @@ Deno.serve(async (req) => {
     }
     // Envelope: contractor wins, LLM fills the gaps.
     customerNameRaw     = customerNameRaw     ?? out.parsed.customer_name;
+    extractedPhones = [out.parsed.customer_phone, out.parsed.customer_phone_alt];
     customerPhoneRaw    = customerPhoneRaw    ?? out.parsed.customer_phone;
     customerPhoneAltRaw = customerPhoneAltRaw ?? out.parsed.customer_phone_alt;
     // raw_address is the ONE envelope field where the contractor's regex is LESS
@@ -672,12 +675,16 @@ Deno.serve(async (req) => {
   }
 
   const customerName  = customerNameRaw?.trim() || null;
-  const customerPhone = normalizePhone(customerPhoneRaw);
-  // Second number: only keep it if it's a real, DISTINCT phone — never store the
-  // primary twice. (Any valid phone in a forward is the customer's; the prompt
-  // keeps account/transfer numbers out.)
-  let customerPhoneAlt = normalizePhone(customerPhoneAltRaw);
-  if (customerPhoneAlt && customerPhoneAlt === customerPhone) customerPhoneAlt = null;
+  // Reconcile the pair together: a contractor-selected WhatsApp number must
+  // not erase the distinct primary recovered from the message or extraction.
+  // Explicit labels also work on the contractor-only path (no LLM call).
+  const { primary: customerPhone, alternate: customerPhoneAlt } = resolveCustomerPhones(
+    row.raw_text ?? '',
+    [contractorFields.customer_phone, contractorFields.customer_phone_alt],
+    extractedPhones,
+  );
+  customerPhoneRaw = customerPhone;
+  customerPhoneAltRaw = customerPhoneAlt;
   const rawAddress    = rawAddressRaw?.trim() || null;
   const deliveryInstructions = deliveryInstructionsRaw?.trim() || null;
   // Client rep + (optional) vendor order number. Some vendors stamp their own
@@ -700,8 +707,8 @@ Deno.serve(async (req) => {
   const clientRep     = repName && orderRef ? `${repName} - ${orderRef}` : (repName ?? orderRef);
   const customerPrice = orderTotal !== null && orderTotal >= 0 ? orderTotal : null;
 
-  // Optional client hint from contractor — disambiguates "same product name,
-  // different client" cases by restricting product matching to one client.
+  // Optional contractor hint breaks a genuine vendor tie; it must never
+  // replace a clear catalog match with a weaker product from that vendor.
   const clientHint = typeof (row.raw_payload as any)?.client_hint === 'string'
     ? (row.raw_payload as any).client_hint.trim().toLowerCase()
     : null;
@@ -737,6 +744,7 @@ Deno.serve(async (req) => {
   // every decision for the parse_result audit trail.
   const vendorClassifyCache = new Map<string, string | null>();
   const vendorClassifications: any[] = [];
+  const productHintDecisions: any[] = [];
 
   const lineMatches: Array<{ line: LineItem; match: ProductMatch | null; candidates: any[] }> = [];
   for (const li of lineItems) {
@@ -746,21 +754,15 @@ Deno.serve(async (req) => {
       p_text: name,
       p_min_similarity: 0.4,
     });
-    let pool: any[] = matches ?? [];
-    // Contractor client hint narrows candidates so one client wins when two
-    // clients share a product name (applied per line).
-    if (clientHint) {
-      const hinted = pool.filter(
-        (m) => typeof m.client_name === 'string' && m.client_name.trim().toLowerCase() === clientHint,
-      );
-      if (hinted.length > 0) pool = hinted;
-    }
-    let match = pickMatch(pool as ProductMatch[]);
-    // Same product name across >1 vendor with no contractor hint: pickMatch
-    // abstains (cross-client tie). Recover the vendor from the message's writing
+    const pool: ProductMatch[] = matches ?? [];
+    const hintDecision = pickMatchWithClientHint(pool, clientHint);
+    productHintDecisions.push({ product_name: name, outcome: hintDecision.outcome });
+    let match = hintDecision.match;
+    // An unresolved cross-client tie can recover the vendor from the writing
     // style; on confident success, take that vendor's best-scoring SKU as the
     // match. Unconfident / any failure → match stays null → needs_review.
-    if (!match && isCrossVendorTie(pool as ProductMatch[])) {
+    // A hint that resolved the vendor but not its SKU must stay in review.
+    if (!match && hintDecision.outcome !== 'ambiguous_hinted_products' && isCrossVendorTie(pool)) {
       const chosen = await resolveCrossVendorTie(
         pool as ProductMatch[], row.raw_text ?? '', supabase, vendorClassifyCache, vendorClassifications,
       );
@@ -904,6 +906,7 @@ Deno.serve(async (req) => {
     })),
     items:             resolvedItems,                 // what we'll store as delivery_items
     vendor_classifications: vendorClassifications,    // cross-vendor tie decisions ([] when none fired)
+    product_hint_decisions: productHintDecisions,     // why each optional hint was used or ignored
     client_id_conflict: multiVendor,                  // true → bundle spans clients
     unmatched_count:    blockingUnmatched.length,     // [free-gift] free unmatched lines don't count
     dropped_free_gifts: droppedFreeGifts,             // [free-gift] unmatched freebies we dropped

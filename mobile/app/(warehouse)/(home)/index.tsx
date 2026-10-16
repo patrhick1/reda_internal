@@ -420,8 +420,11 @@ export default function WarehouseHome() {
         contentContainerStyle={{ paddingBottom: 32 }}
         refreshControl={
           <RefreshControl
-            refreshing={loading && !!stockQ.data}
-            onRefresh={reload}
+            refreshing={(loading && !!stockQ.data) || (coverageQ.fetching && !!coverageQ.data)}
+            onRefresh={() => {
+              reload();
+              coverageQ.reload();
+            }}
             tintColor={colors.black}
           />
         }
