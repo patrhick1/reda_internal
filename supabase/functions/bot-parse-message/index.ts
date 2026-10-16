@@ -31,6 +31,7 @@
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 import { denyIfNotInternal } from '../_shared/internal-auth.ts';
+import { applyBowanQuantities } from '../_shared/bowan-quantity.ts';
 import { resolveCustomerPhones } from '../_shared/customer-phones.ts';
 import { chooseOrderTotal, type OrderTotalChoice } from '../_shared/order-total.ts';
 import { applyPerfumeGiftPolicy, giftPackingInstructions, PERFUME_GIFT_POLICY } from '../_shared/perfume-gifts.ts';
@@ -457,24 +458,7 @@ async function markBlocked(
   if (error) console.error('mark blocked failed', error);
 }
 
-// Bowan's structured template carries the real order quantity in an explicit
-// column: "<product> | qty | unit_price | line_total". Returns that qty ONLY
-// when the message is unmistakably Bowan's template (Order Number + Closer
-// markers) AND the column arithmetic checks out (unit × qty === total), so it
-// cannot fire on any other client's free-form message. Null otherwise → caller
-// leaves the AI-extracted quantity untouched. See the call site for why.
-function bowanColumnQuantity(raw: string | null | undefined): number | null {
-  if (!raw) return null;
-  if (!/order\s*number\s*:/i.test(raw) || !/closer\s*:/i.test(raw)) return null;
-  const m = raw.match(/\|\s*(\d+)\s*\|\s*(\d+)\s*\|\s*(\d+)/);
-  if (!m) return null;
-  const qty = Number(m[1]);
-  const unit = Number(m[2]);
-  const total = Number(m[3]);
-  if (!Number.isInteger(qty) || qty < 1) return null;
-  if (unit * qty !== total) return null; // math guard — reject a stray pipe
-  return qty;
-}
+
 
 async function resolveInboundId(body: any, supabase: any): Promise<string | null> {
   if (typeof body?.inbound_message_id === 'string') return body.inbound_message_id;
@@ -656,23 +640,8 @@ Deno.serve(async (req) => {
     }];
   }
 
-  // ── Bowan structured template: trust the explicit | qty | column ──────────
-  // Bowan forwards a fixed template ("Order Number: … Closer: … <product> | qty
-  // | unit | total"). Both the LLM and the contractor mis-read the product-name
-  // prefix (e.g. "3 - SUCTION SITUP-BAR" — "3 suction cups", not a count) as the
-  // quantity; the real quantity is the column right after the first pipe. Read it
-  // deterministically and trust neither AI for it. Gated on this client's template
-  // markers + a unit×qty==total check, so it can NEVER fire on another client's
-  // format. Scope = quantity of the paid product line(s) only — matching, product
-  // names, free gifts and everything else are untouched. Every Bowan order to date
-  // is single-line / single paid product; the regex reads the first line's qty and
-  // the math guard rejects any mismatch.
-  const bowanQty = bowanColumnQuantity(row.raw_text);
-  if (bowanQty !== null) {
-    for (const li of lineItems) {
-      if ((li.customer_price ?? 0) > 0) li.quantity = bowanQty;
-    }
-  }
+  // Trust explicit per-product units in both supported Bowan templates.
+  lineItems = applyBowanQuantities(row.raw_text, lineItems);
 
   const customerName  = customerNameRaw?.trim() || null;
   // Reconcile the pair together: a contractor-selected WhatsApp number must

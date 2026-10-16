@@ -1,0 +1,5 @@
+Bowan's current message format could turn one Situp Bar into three, and untouched Pending carryovers could consume the two-attempt allowance. This fixes both, re-sorts merged postponed orders by the existing activity order, and connects Admin Home to the existing rider departure indicator.
+
+The two-attempt limit and client-specific closure policies are unchanged. The SQL migration replaces function definitions only; no historical counters, orders, or other records are repaired or replayed.
+
+Validation: 105 parser tests, four ordering tests, the current production database suite (including calendar/immediate-EOD checks and 64 policy combinations), four browser acceptance checks, typecheck, lint, and formatting. Fail-before/pass-after evidence is recorded in tools/to-work-on-20261016/README.md. Production migration rehearsal passed with rollback and a zero-application-row-write assertion. No app dependency changes.

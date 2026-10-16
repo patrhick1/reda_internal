@@ -54,6 +54,7 @@ import {
   canViewSameCustomer,
 } from '@/lib/permissions';
 import { formatNaira, formatYmdShort } from '@/lib/format';
+import { compareDeliveryActivity } from '@/lib/delivery-order';
 import {
   AppBar,
   Banner,
@@ -852,7 +853,9 @@ export function DeliveriesList({ basePath }: { basePath: BasePath }) {
     const extra = postponedRows.filter(
       (p) => p.id && !seen.has(p.id) && ymdLagos(p.latest_changed_at) === viewDate,
     );
-    return extra.length > 0 ? [...buckets.all, ...extra] : buckets.all;
+    return extra.length > 0
+      ? [...buckets.all, ...extra].sort(compareDeliveryActivity)
+      : buckets.all;
   }, [buckets.all, postponedRows, viewDate]);
 
   // Deliveries with an unread agent message — the per-row "agent replied" chip,
