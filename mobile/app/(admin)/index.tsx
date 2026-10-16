@@ -11,6 +11,7 @@ import { getTodayDeliveryRate, getDeliveryRateHistory } from '@/services/reconci
 import { countNeedsReview } from '@/services/bot';
 import { useUsers, useDeliveriesList, useStockCoverage, useRestockSignal } from '@/hooks/queries';
 import { listOpenIssuesForOps } from '@/services/delivery-messages';
+import { listDeparturesToday } from '@/services/agent-departures';
 import { restockStats } from '@/lib/restock-signal';
 import { isWarehousePlace } from '@/services/users';
 import { AppBar, Card, Icon, SectionHeader } from '@/components/ui';
@@ -53,6 +54,7 @@ export default function AdminHome() {
   // Latest six working days for the home trend strip (tap → full history).
   // Sunday is skipped, but each working day remains its own daily bar.
   const today = todayLagos();
+  const departuresQ = useAsync(() => listDeparturesToday(), [today]);
   const sameCustomerConfig = useSameCustomerConfig();
   const sameCustomerSummary = useSameCustomerSummary(
     { day: today },
@@ -79,6 +81,7 @@ export default function AdminHome() {
     todayQ.refetchIfStale();
     reviewQ.reload();
     issuesQ.reload();
+    departuresQ.reload();
     negMarginQ.reload();
     rateQ.reload();
     trendQ.reload();
@@ -336,6 +339,7 @@ export default function AdminHome() {
         <AgentWorkloadCard
           deliveries={todayQ.data ?? []}
           agents={agents}
+          departedAtByAgent={departuresQ.data ?? undefined}
           loading={todayQ.loading && !todayQ.data}
           onAgentPress={(agentId) =>
             router.navigate({ pathname: '/(admin)/deliveries', params: { agent: agentId } })

@@ -33,8 +33,8 @@ DO $$ DECLARE r uuid; p jsonb; before_count int; target date:=reda_maintenance.b
  PERFORM pg_temp.assert((SELECT count(*)=before_count FROM delivery_status_history WHERE delivery_id=md5('eod-test-order-1')::uuid),'retry creates no duplicate history');
  r:=reda_maintenance.enqueue('close',target-2);
  PERFORM reda_maintenance.dispatch(); PERFORM reda_maintenance.work();
- PERFORM pg_temp.assert((SELECT count(*)=1 AND bool_and(scheduled_date=public._ensure_workday(target) AND rollover_count=1)
-  FROM deliveries WHERE parent_delivery_id=md5('eod-test-order-2')::uuid),'missed days produce one actionable child');
+ PERFORM pg_temp.assert((SELECT count(*)=1 AND bool_and(scheduled_date=public._ensure_workday(target) AND rollover_count=0)
+  FROM deliveries WHERE parent_delivery_id=md5('eod-test-order-2')::uuid),'missed Pending days produce one actionable child without consuming an attempt');
  PERFORM pg_temp.assert((SELECT current_status='unserious' FROM deliveries WHERE id=md5('eod-test-order-3')::uuid),'legitimate carry cap');
  PERFORM pg_temp.assert((SELECT current_status='deferred_to_client' FROM deliveries WHERE id=md5('eod-test-order-4')::uuid),'followup closure');
  PERFORM pg_temp.assert((SELECT current_status='unserious' FROM deliveries WHERE id=md5('eod-test-order-5')::uuid),'disinterest closure');

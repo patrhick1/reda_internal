@@ -4,6 +4,7 @@ import type { Database } from '@/types/database.gen';
 import type { Role } from '@/lib/permissions';
 import { STATUS_GROUPS, STATUS_META, TERMINAL_STATUSES } from '@/lib/theme';
 import { formatDayMonthLagos } from '@/lib/date';
+import { compareDeliveryActivity } from '@/lib/delivery-order';
 import type { DeliveryPay } from '@/lib/delivery-pay';
 import { deliverySearchFilter, sanitizeDeliverySearch } from '@/lib/delivery-search';
 
@@ -567,11 +568,7 @@ export async function listDeliveries(
     );
     await attachDeliveryPay(completed);
   }
-  return rows.sort((a, b) => {
-    const x = a.activity_at ?? a.created_at ?? '';
-    const y = b.activity_at ?? b.created_at ?? '';
-    return x < y ? 1 : x > y ? -1 : 0; // most-recent activity first
-  });
+  return rows.sort(compareDeliveryActivity);
 }
 
 /** Ops-only, on-demand failure list. Unlike the normal date list, this is
