@@ -15,6 +15,7 @@ import { listOpenIssuesForOps } from '@/services/delivery-messages';
 import { restockStats } from '@/lib/restock-signal';
 import { isWarehousePlace } from '@/services/users';
 import { AppBar, Card, FAB, Icon } from '@/components/ui';
+import { AgentWorkloadCard } from '@/components/delivery/AgentWorkloadCard';
 import { IssuesAttentionBlock } from '@/components/delivery/IssuesAttentionBlock';
 import { colors, fonts, statusBucket } from '@/lib/theme';
 
@@ -63,6 +64,10 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
   });
 
   const deliveries = useMemo(() => deliveriesQ.data ?? [], [deliveriesQ.data]);
+  const agents = useMemo(
+    () => (usersQ.data ?? []).filter((u) => u.role === 'agent' && u.is_active),
+    [usersQ.data],
+  );
   const stats = useMemo(() => bucketCounts(deliveries), [deliveries]);
   const reviewCount = reviewQ.data ?? 0;
   // Zone-change approvals are dispatcher-only (managers); reps never poll.
@@ -363,10 +368,6 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
           </Card>
         ) : null}
 
-        {/* Available orders — Mary's main work surface. One tap → per-client
-            product totals + per-agent breakdown so she can plan stock
-            allocation for today. Replaces the agent-workload section Uzo
-            said the dispatcher doesn't use. */}
         <Card dense onPress={() => router.push('/(dispatcher)/replacement-new')}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
             <View
@@ -471,6 +472,16 @@ export function OpsDashboard({ basePath }: { basePath: OpsBasePath }) {
             <Icon name="chevronRight" size={20} color={colors.textSecondary} />
           </View>
         </Card>
+        {user.role === 'dispatcher' ? (
+          <AgentWorkloadCard
+            deliveries={deliveries}
+            agents={agents}
+            loading={(deliveriesQ.loading && !deliveriesQ.data) || (usersQ.loading && !usersQ.data)}
+            onAgentPress={(agentId) =>
+              router.navigate({ pathname: `${basePath}/deliveries`, params: { agent: agentId } })
+            }
+          />
+        ) : null}
       </ScrollView>
 
       <FAB
