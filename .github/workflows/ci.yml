@@ -42,6 +42,7 @@ jobs:
           deno-version: 'v2.7.1'
       - run: node tools/eod-reliability-20260921/test-runner.mjs --setup
       - run: node tools/notification-policy-20261016/test-database.mjs
+      - run: node tools/perfume-matching-20261019/test-database.mjs
       - run: node tools/waybill-stock/test.mjs
       - run: node tools/manual-fee-waivers/test-runner.mjs
       - run: node tools/manual-fee-waivers/test-concurrency.mjs
@@ -199,7 +200,7 @@ jobs:
       - name: Admin notification regression and acceptance
         run: deno test --no-lock --node-modules-dir=none --allow-env=SUPABASE_URL,SUPABASE_SERVICE_ROLE_KEY,INTERNAL_FUNCTION_SECRET tools/notification-policy-20261016/handler.test.ts supabase/functions/_shared/push-batch.test.ts
       - name: Parser regression and acceptance
-        run: deno test --no-lock --node-modules-dir=none --allow-env=SUPABASE_URL,SUPABASE_SERVICE_ROLE_KEY,INTERNAL_FUNCTION_SECRET,OPENROUTER_API_KEY tools/to-work-on-20261016/parser-acceptance.test.ts supabase/functions/_shared/bowan-quantity.test.ts tools/urgent-ab-20261016/parser-acceptance.test.ts supabase/functions/_shared/product-hint.test.ts supabase/functions/_shared/product-extract.test.ts supabase/functions/_shared/vendor-classify.test.ts supabase/functions/_shared/order-total.test.ts supabase/functions/_shared/perfume-gifts.test.ts
+        run: deno test --no-lock --node-modules-dir=none --allow-env=SUPABASE_URL,SUPABASE_SERVICE_ROLE_KEY,INTERNAL_FUNCTION_SECRET,OPENROUTER_API_KEY tools/to-work-on-20261016/parser-acceptance.test.ts supabase/functions/_shared/bowan-quantity.test.ts tools/urgent-ab-20261016/parser-acceptance.test.ts supabase/functions/_shared/product-hint.test.ts supabase/functions/_shared/product-extract.test.ts supabase/functions/_shared/vendor-classify.test.ts supabase/functions/_shared/order-total.test.ts supabase/functions/_shared/perfume-gifts.test.ts supabase/functions/_shared/perfume-gifts-regression.test.ts tools/perfume-matching-20261019/parser-acceptance.test.ts
       - name: Altior SQL projection and idempotency
         env:
           TEST_PG_CONTAINER: ${{ job.services.postgres.id }}
