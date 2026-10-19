@@ -135,6 +135,11 @@ jobs:
         env:
           REQUEST_UI_DIST: dist
           PLAYWRIGHT_MODULE_PATH: ${{ runner.temp }}/eod-browser/node_modules/playwright
+      - name: Dispatcher workload and pickup menu acceptance
+        run: node ../tools/to-work-on-20261016/dispatcher-menu-acceptance.mjs
+        env:
+          REQUEST_UI_DIST: dist
+          PLAYWRIGHT_MODULE_PATH: ${{ runner.temp }}/eod-browser/node_modules/playwright
       - name: Stock refresh and Altior report acceptance
         run: |
           node ../tools/urgent-ab-20261016/stock-acceptance.mjs
